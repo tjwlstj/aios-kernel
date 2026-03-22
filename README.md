@@ -130,6 +130,7 @@ make debug      # GDB 디버깅 모드로 실행
 ## Planning Documents
 
 - [SLM 자율 운영/최적화 구조 계획](docs/slm_autonomous_kernel_plan.md)
+- [점검 및 부족한 점 리포트 (2026-03-22)](docs/inspection_and_gaps_ko.md)
 
 ## License
 
