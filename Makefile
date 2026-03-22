@@ -42,6 +42,7 @@ C_SOURCES   = $(KERNEL_DIR)/main.c \
               $(SCHED_DIR)/ai_sched.c \
               $(HAL_DIR)/accel_hal.c \
               $(RUNTIME_DIR)/ai_syscall.c \
+              $(RUNTIME_DIR)/autonomy.c \
               $(DRIVERS_DIR)/vga.c
 
 # Object files

@@ -12,6 +12,7 @@
 #include <sched/ai_sched.h>
 #include <hal/accel_hal.h>
 #include <runtime/ai_syscall.h>
+#include <runtime/autonomy.h>
 
 /* Kernel version info */
 #define AIOS_VERSION_MAJOR  0
@@ -168,6 +169,16 @@ static void init_subsystems(void) {
     console_write_color("[INIT] ", VGA_YELLOW, VGA_BLUE);
     kprintf("AI System Call Interface... ");
     status = ai_syscall_init();
+    if (status == AIOS_OK) {
+        console_write_color("OK\n", VGA_LIGHT_GREEN, VGA_BLUE);
+    } else {
+        console_write_color("FAIL\n", VGA_LIGHT_RED, VGA_BLUE);
+    }
+
+    /* 5. Initialize Autonomy Control Plane */
+    console_write_color("[INIT] ", VGA_YELLOW, VGA_BLUE);
+    kprintf("Autonomy Control Plane... ");
+    status = autonomy_init();
     if (status == AIOS_OK) {
         console_write_color("OK\n", VGA_LIGHT_GREEN, VGA_BLUE);
     } else {

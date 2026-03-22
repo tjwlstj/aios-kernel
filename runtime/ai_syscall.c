@@ -13,6 +13,7 @@
 
 #include <runtime/ai_syscall.h>
 #include <drivers/vga.h>
+#include <runtime/autonomy.h>
 
 /* ============================================================
  * Model Registry
@@ -99,6 +100,9 @@ int64_t ai_syscall_dispatch(uint64_t syscall_num, uint64_t arg1,
                             uint64_t arg2, uint64_t arg3,
                             uint64_t arg4, uint64_t arg5) {
     syscall_stats.total_calls++;
+
+    /* Continuous telemetry feed for autonomous control loop */
+    autonomy_collect_telemetry(model_count, accel_get_count());
 
     /* Route based on syscall number range */
     uint32_t category = (syscall_num >> 8) & 0xFF;
@@ -191,6 +195,18 @@ int64_t ai_syscall_dispatch(uint64_t syscall_num, uint64_t arg1,
                 case SYS_INFO_SYSTEM:
                     sys_info_dump();
                     return AIOS_OK;
+                case SYS_AUTONOMY_ACTION_PROPOSE:
+                    return (int64_t)sys_autonomy_action_propose((autonomy_action_req_t *)arg1);
+                case SYS_AUTONOMY_ACTION_COMMIT:
+                    return (int64_t)sys_autonomy_action_commit((policy_eval_t *)arg1);
+                case SYS_AUTONOMY_ROLLBACK_LAST:
+                    return (int64_t)sys_autonomy_rollback_last();
+                case SYS_AUTONOMY_STATS:
+                    return (int64_t)sys_autonomy_stats((autonomy_stats_t *)arg1);
+                case SYS_AUTONOMY_MODE_SET:
+                    return (int64_t)sys_autonomy_mode_set((syscall_autonomy_mode_t *)arg1);
+                case SYS_AUTONOMY_TELEMETRY_LAST:
+                    return (int64_t)sys_autonomy_telemetry_last((telemetry_frame_t *)arg1);
                 default:
                     break;
             }
@@ -369,6 +385,41 @@ aios_status_t sys_train_step(model_id_t model_id, float learning_rate) {
 }
 
 /* ============================================================
+ * Autonomy Control
+ * ============================================================ */
+
+aios_status_t sys_autonomy_action_propose(autonomy_action_req_t *req) {
+    if (!req) return AIOS_ERR_INVAL;
+    return autonomy_action_propose_req(req);
+}
+
+aios_status_t sys_autonomy_action_commit(policy_eval_t *eval) {
+    return autonomy_action_commit_next(eval);
+}
+
+aios_status_t sys_autonomy_rollback_last(void) {
+    return autonomy_action_rollback_last();
+}
+
+aios_status_t sys_autonomy_stats(autonomy_stats_t *out) {
+    if (!out) return AIOS_ERR_INVAL;
+    autonomy_stats(out);
+    return AIOS_OK;
+}
+
+aios_status_t sys_autonomy_mode_set(syscall_autonomy_mode_t *mode) {
+    if (!mode) return AIOS_ERR_INVAL;
+
+    autonomy_set_safe_mode(mode->safe_mode);
+    autonomy_set_observation_only(mode->observation_only);
+    return AIOS_OK;
+}
+
+aios_status_t sys_autonomy_telemetry_last(telemetry_frame_t *out) {
+    return autonomy_get_latest_telemetry(out);
+}
+
+/* ============================================================
  * System Info
  * ============================================================ */
 
@@ -402,4 +453,5 @@ void sys_info_dump(void) {
     tensor_mm_dump();
     ai_sched_dump();
     accel_hal_dump();
+    autonomy_dump();
 }

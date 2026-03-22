@@ -131,6 +131,7 @@ aios_status_t ai_task_submit(task_id_t id);
 aios_status_t ai_task_suspend(task_id_t id);
 aios_status_t ai_task_resume(task_id_t id);
 aios_status_t ai_task_set_priority(task_id_t id, priority_t priority);
+aios_status_t ai_task_get_priority(task_id_t id, priority_t *out_priority);
 
 /* Scheduling operations */
 ai_task_t *ai_sched_pick_next(void);
