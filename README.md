@@ -21,14 +21,14 @@ AIOS(AI-Native Operating System)는 인공지능 워크로드를 **1급 시민(F
 │         └───────────────┴───────────────┘           │
 ├─────────────────────────────────────────────────────┤
 │              AI System Call Interface                │
-│         (Model / Tensor / Infer / Train)            │
+│    (Model / Tensor / Infer / Train / Autonomy)      │
 ├──────────┬──────────┬──────────┬────────────────────┤
-│  Tensor  │    AI    │  Model   │                    │
-│  Memory  │ Workload │ Registry │  Kernel Core       │
-│  Manager │Scheduler │          │                    │
+│  Tensor  │    AI    │ Autonomy │                    │
+│  Memory  │ Workload │ Control  │  Kernel Core       │
+│  Manager │Scheduler │  Plane   │                    │
 ├──────────┴──────────┴──────────┤                    │
-│     Accelerator HAL            │  VGA Console       │
-│  (GPU / TPU / NPU / CPU SIMD) │  Serial Driver     │
+│     Accelerator HAL            │  IDT / Exceptions  │
+│  (GPU / TPU / NPU / CPU SIMD) │  VGA + Serial      │
 ├────────────────────────────────┴────────────────────┤
 │                   Hardware                          │
 │   x86_64 CPU  │  NVIDIA GPU  │  AMD GPU  │  TPU    │
@@ -40,6 +40,7 @@ AIOS(AI-Native Operating System)는 인공지능 워크로드를 **1급 시민(F
 ### Tensor Memory Manager
 - 텐서 중심 메모리 할당 (64바이트 AVX-512 정렬)
 - 용도별 메모리 풀 분리 (Model / Inference / DMA / KV-Cache)
+- 수명 기반 프로파일링 (SHORT_TERM / LONG_TERM / REALTIME / RANDOM)
 - 2MB 거대 페이지(Huge Page) 지원으로 TLB 미스 최소화
 - 참조 카운팅 기반 자동 메모리 해제
 
@@ -56,6 +57,18 @@ AIOS(AI-Native Operating System)는 인공지능 워크로드를 **1급 시민(F
 - MatMul, Attention 등 AI 핵심 연산 API
 - CPU SIMD(SSE/AVX) Fallback 지원
 
+### Autonomy Control Plane
+- L0~L3 자율 제어 레벨 (관찰 → 안전 적용 → 자율 최적화)
+- 정책 제안/승인/적용/롤백 파이프라인
+- 이벤트 로깅 및 텔레메트리 프레임 수집
+- 스케줄러 액추에이터 통합 (우선순위 자동 조정)
+
+### Interrupt & Exception Handling
+- x86_64 IDT (Interrupt Descriptor Table) 완전 구현
+- 32개 CPU 예외 핸들러 (Divide Error, Page Fault, GPF 등)
+- kernel_panic() 안전 정지 메커니즘
+- 시리얼 + VGA 이중 출력 디버깅
+
 ### AI System Call Interface
 | 범위 | 카테고리 | 주요 시스콜 |
 |------|----------|------------|
@@ -66,28 +79,37 @@ AIOS(AI-Native Operating System)는 인공지능 워크로드를 **1급 시민(F
 | `0x500-0x5FF` | 가속기 | `SYS_ACCEL_LIST`, `SYS_ACCEL_SELECT` |
 | `0x600-0x6FF` | 파이프라인 | `SYS_PIPE_CREATE`, `SYS_PIPE_EXECUTE` |
 | `0x700-0x7FF` | 시스템 정보 | `SYS_INFO_MEMORY`, `SYS_INFO_SYSTEM` |
+| `0x710-0x715` | 자율 제어 | `SYS_AUTONOMY_PROPOSE`, `SYS_AUTONOMY_ROLLBACK` |
 
 ## Project Structure
 
 ```
 aios-kernel/
 ├── boot/               # Multiboot2 부트 어셈블리
-│   └── boot.asm        # x86_64 엔트리포인트, GDT, 페이징, SSE/AVX 활성화
+│   └── boot.asm        # x86_64 엔트리포인트, GDT, 페이징, SSE/AVX, BSS 초기화
 ├── kernel/             # 커널 코어
 │   ├── main.c          # kernel_main 엔트리포인트
 │   └── linker.ld       # 링커 스크립트
+├── interrupt/          # 인터럽트 처리
+│   ├── idt.c           # IDT 설정, 예외 핸들러, kernel_panic
+│   └── isr_stub.asm    # ISR 어셈블리 스텁 (32개 예외)
+├── lib/                # 커널 라이브러리
+│   └── string.c        # memset, memcpy, strlen 등 기본 유틸리티
 ├── mm/                 # 텐서 메모리 관리자
-│   └── tensor_mm.c     # Best-fit 할당, 풀 관리, KV-Cache
+│   └── tensor_mm.c     # Best-fit 할당, 풀 관리, 수명 프로파일링
 ├── sched/              # AI 워크로드 스케줄러
 │   └── ai_sched.c      # MLFQ, CFS, 데드라인 스케줄링
 ├── hal/                # 가속기 HAL
 │   └── accel_hal.c     # PCI 스캔, 디바이스 추상화
-├── runtime/            # AI 시스템 콜 인터페이스
-│   └── ai_syscall.c    # 시스콜 디스패처, 모델 레지스트리
+├── runtime/            # AI 런타임
+│   ├── ai_syscall.c    # 시스콜 디스패처, 모델 레지스트리
+│   └── autonomy.c      # 자율 제어 평면, 정책 엔진
 ├── drivers/            # 디바이스 드라이버
-│   └── vga.c           # VGA 텍스트 모드 콘솔
+│   ├── vga.c           # VGA 텍스트 모드 콘솔
+│   └── serial.c        # COM1 시리얼 콘솔 (115200 8N1)
 ├── include/            # 헤더 파일
 ├── docs/               # 설계 문서
+├── .github/workflows/  # CI/CD 파이프라인
 ├── build/              # 빌드 출력 (자동 생성)
 └── Makefile            # 빌드 시스템
 ```
@@ -96,21 +118,23 @@ aios-kernel/
 
 ### Prerequisites
 ```bash
-sudo apt install nasm gcc binutils qemu-system-x86 grub-pc-bin xorriso mtools
+sudo apt install nasm gcc-12 binutils qemu-system-x86 grub-pc-bin xorriso mtools
 ```
 
 ### Build
 ```bash
-make all        # 커널 바이너리 빌드
-make iso        # 부팅 가능한 ISO 이미지 생성
+CC=gcc-12 make all          # 커널 바이너리 빌드
+CC=gcc-12 make iso          # 부팅 가능한 ISO 이미지 생성
+CC=gcc-12 make test         # QEMU 스모크 테스트
 ```
 
 > 참고: 기본 컴파일러는 `gcc`이며, 다른 툴체인을 사용할 경우 `make CC=clang LD=ld.lld` 또는 `make TOOLCHAIN_PREFIX=x86_64-elf-` 형태로 지정할 수 있습니다.
 
 ### Run in QEMU
 ```bash
-make run        # QEMU에서 커널 실행
-make debug      # GDB 디버깅 모드로 실행
+make run            # QEMU에서 커널 실행 (VGA + 시리얼)
+make run-headless   # Headless 모드 (시리얼 출력만)
+make debug          # GDB 디버깅 모드로 실행
 ```
 
 ## Technical Specifications
@@ -125,7 +149,9 @@ make debug      # GDB 디버깅 모드로 실행
 | 최대 AI 작업 | 256개 동시 실행 |
 | 최대 가속기 | 16개 디바이스 |
 | 최대 모델 | 64개 동시 로드 |
-| 커널 크기 | ~39KB |
+| 커널 크기 | ~51KB |
+| 소스 코드 | ~5,000줄 (C + ASM) |
+| CI | GitHub Actions (빌드 + QEMU 스모크 테스트) |
 
 ## Planning Documents
 

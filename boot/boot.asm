@@ -218,11 +218,23 @@ long_mode_start:
     mov rsi, boot_banner
     call print_string_64
 
+    ; Clear BSS section (zero-initialize uninitialized data)
+    extern __bss_start
+    extern __bss_end
+    mov rdi, __bss_start
+    mov rcx, __bss_end
+    sub rcx, rdi
+    shr rcx, 3              ; Divide by 8 (clear 8 bytes at a time)
+    xor rax, rax
+    rep stosq
+
     ; Enable SSE for floating point (needed for AI computations)
     call enable_sse
 
     ; Call kernel main (C entry point)
-    ; rdi = multiboot info pointer (already set from 32-bit mode)
+    ; rdi = multiboot magic, rsi = multiboot info pointer
+    mov rdi, rsi            ; multiboot magic (saved from 32-bit esi)
+    xor rsi, rsi            ; multiboot info (simplified for now)
     call kernel_main
 
     ; If kernel returns, halt

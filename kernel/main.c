@@ -7,7 +7,10 @@
  */
 
 #include <kernel/types.h>
+#include <lib/string.h>
 #include <drivers/vga.h>
+#include <drivers/serial.h>
+#include <interrupt/idt.h>
 #include <mm/tensor_mm.h>
 #include <sched/ai_sched.h>
 #include <hal/accel_hal.h>
@@ -16,7 +19,7 @@
 
 /* Kernel version info */
 #define AIOS_VERSION_MAJOR  0
-#define AIOS_VERSION_MINOR  1
+#define AIOS_VERSION_MINOR  2
 #define AIOS_VERSION_PATCH  0
 #define AIOS_CODENAME       "Genesis"
 
@@ -25,14 +28,33 @@ static void print_banner(void);
 static void print_system_info(void);
 static void init_subsystems(void);
 
+/* Subsystem init helper macro */
+#define INIT_SUBSYSTEM(name, init_fn) do {                              \
+    console_write_color("[INIT] ", VGA_YELLOW, VGA_BLUE);               \
+    kprintf("%s... ", name);                                            \
+    serial_printf("[INIT] %s... ", (uint64_t)(uintptr_t)name);         \
+    aios_status_t _st = (init_fn);                                     \
+    if (_st == AIOS_OK) {                                              \
+        console_write_color("OK\n", VGA_LIGHT_GREEN, VGA_BLUE);        \
+        serial_write("OK\n");                                           \
+    } else {                                                            \
+        console_write_color("FAIL\n", VGA_LIGHT_RED, VGA_BLUE);        \
+        serial_write("FAIL\n");                                         \
+        kernel_panic("Critical subsystem initialization failed");       \
+    }                                                                   \
+} while (0)
+
 /*
  * kernel_main - Primary C entry point for the AIOS kernel
- * @multiboot_info: Pointer to multiboot2 information structure
  * @multiboot_magic: Multiboot2 magic number for verification
+ * @multiboot_info: Pointer to multiboot2 information structure
  */
 void kernel_main(uint64_t multiboot_magic, uint64_t multiboot_info) {
     /* Initialize console first for output */
     console_init();
+    
+    /* Initialize serial console for headless debugging */
+    serial_init();
     
     /* Display boot banner */
     print_banner();
@@ -42,9 +64,11 @@ void kernel_main(uint64_t multiboot_magic, uint64_t multiboot_info) {
         kprintf("[BOOT] Multiboot2 verified. Info struct at ");
         console_write_hex(multiboot_info);
         console_newline();
+        serial_printf("[BOOT] Multiboot2 verified. Info at %x\n", multiboot_info);
     } else {
         console_write_color("[BOOT] WARNING: Non-standard boot detected\n", 
                           VGA_YELLOW, VGA_BLUE);
+        serial_write("[BOOT] WARNING: Non-standard boot detected\n");
     }
     
     /* Print system information */
@@ -59,8 +83,12 @@ void kernel_main(uint64_t multiboot_magic, uint64_t multiboot_info) {
     console_write_color("AI-Native Operating System is operational.\n", VGA_WHITE, VGA_BLUE);
     console_write_color("All subsystems initialized successfully.\n", VGA_LIGHT_CYAN, VGA_BLUE);
     
+    serial_write("\n=== AIOS Kernel Ready ===\n");
+    serial_write("AI-Native Operating System is operational.\n");
+
     /* Enter kernel idle loop */
     kprintf("\n[KERNEL] Entering idle loop. System awaiting AI workloads...\n");
+    serial_write("[KERNEL] Entering idle loop. System awaiting AI workloads...\n");
     
     /* Halt - in a real OS this would be the scheduler idle task */
     while (1) {
@@ -111,6 +139,14 @@ static void print_banner(void) {
     console_write_color(
         "+======================================================+\n\n",
         VGA_LIGHT_CYAN, VGA_BLUE);
+
+    /* Serial banner */
+    serial_write("\n========================================\n");
+    serial_write("  AIOS - AI-Native Operating System\n");
+    serial_printf("  Version %u.%u.%u \"%s\"\n",
+        (uint64_t)AIOS_VERSION_MAJOR, (uint64_t)AIOS_VERSION_MINOR,
+        (uint64_t)AIOS_VERSION_PATCH, (uint64_t)(uintptr_t)AIOS_CODENAME);
+    serial_write("========================================\n\n");
 }
 
 static void print_system_info(void) {
@@ -130,58 +166,32 @@ static void print_system_info(void) {
         (uint64_t)MAX_AI_TASKS, (uint64_t)MAX_ACCELERATORS);
     
     console_newline();
+
+    serial_printf("[INFO] Architecture: x86_64 (Long Mode)\n");
+    serial_printf("[INFO] Page Size: %u bytes | Huge Page: %u MB\n",
+        (uint64_t)PAGE_SIZE, (uint64_t)(HUGE_PAGE_SIZE / MB(1)));
+    serial_printf("[INFO] Tensor Alignment: %u bytes (AVX-512)\n",
+        (uint64_t)TENSOR_ALIGN);
+    serial_printf("[INFO] Max AI Tasks: %u | Max Accelerators: %u\n",
+        (uint64_t)MAX_AI_TASKS, (uint64_t)MAX_ACCELERATORS);
 }
 
 static void init_subsystems(void) {
-    aios_status_t status;
-    
-    /* 1. Initialize Tensor Memory Manager */
-    console_write_color("[INIT] ", VGA_YELLOW, VGA_BLUE);
-    kprintf("Tensor Memory Manager... ");
-    status = tensor_mm_init();
-    if (status == AIOS_OK) {
-        console_write_color("OK\n", VGA_LIGHT_GREEN, VGA_BLUE);
-    } else {
-        console_write_color("FAIL\n", VGA_LIGHT_RED, VGA_BLUE);
-    }
-    
-    /* 2. Initialize AI Workload Scheduler */
-    console_write_color("[INIT] ", VGA_YELLOW, VGA_BLUE);
-    kprintf("AI Workload Scheduler... ");
-    status = ai_sched_init();
-    if (status == AIOS_OK) {
-        console_write_color("OK\n", VGA_LIGHT_GREEN, VGA_BLUE);
-    } else {
-        console_write_color("FAIL\n", VGA_LIGHT_RED, VGA_BLUE);
-    }
-    
-    /* 3. Initialize Accelerator HAL */
-    console_write_color("[INIT] ", VGA_YELLOW, VGA_BLUE);
-    kprintf("Accelerator HAL... ");
-    status = accel_hal_init();
-    if (status == AIOS_OK) {
-        console_write_color("OK\n", VGA_LIGHT_GREEN, VGA_BLUE);
-    } else {
-        console_write_color("FAIL\n", VGA_LIGHT_RED, VGA_BLUE);
-    }
-    
-    /* 4. Initialize AI System Call Interface */
-    console_write_color("[INIT] ", VGA_YELLOW, VGA_BLUE);
-    kprintf("AI System Call Interface... ");
-    status = ai_syscall_init();
-    if (status == AIOS_OK) {
-        console_write_color("OK\n", VGA_LIGHT_GREEN, VGA_BLUE);
-    } else {
-        console_write_color("FAIL\n", VGA_LIGHT_RED, VGA_BLUE);
-    }
+    /* 1. IDT - must be first to catch any exceptions during init */
+    INIT_SUBSYSTEM("Interrupt Descriptor Table (IDT)", idt_init());
 
-    /* 5. Initialize Autonomy Control Plane */
-    console_write_color("[INIT] ", VGA_YELLOW, VGA_BLUE);
-    kprintf("Autonomy Control Plane... ");
-    status = autonomy_init();
-    if (status == AIOS_OK) {
-        console_write_color("OK\n", VGA_LIGHT_GREEN, VGA_BLUE);
-    } else {
-        console_write_color("FAIL\n", VGA_LIGHT_RED, VGA_BLUE);
-    }
+    /* 2. Tensor Memory Manager */
+    INIT_SUBSYSTEM("Tensor Memory Manager", tensor_mm_init());
+    
+    /* 3. AI Workload Scheduler */
+    INIT_SUBSYSTEM("AI Workload Scheduler", ai_sched_init());
+    
+    /* 4. Accelerator HAL */
+    INIT_SUBSYSTEM("Accelerator HAL", accel_hal_init());
+    
+    /* 5. AI System Call Interface */
+    INIT_SUBSYSTEM("AI System Call Interface", ai_syscall_init());
+
+    /* 6. Autonomy Control Plane */
+    INIT_SUBSYSTEM("Autonomy Control Plane", autonomy_init());
 }

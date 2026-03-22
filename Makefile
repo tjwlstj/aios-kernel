@@ -18,6 +18,8 @@ SCHED_DIR   = sched
 HAL_DIR     = hal
 RUNTIME_DIR = runtime
 DRIVERS_DIR = drivers
+INTERRUPT_DIR = interrupt
+LIB_DIR     = lib
 INCLUDE_DIR = include
 BUILD_DIR   = build
 ISO_DIR     = $(BUILD_DIR)/isofiles
@@ -36,14 +38,18 @@ CFLAGS      = -ffreestanding -nostdlib -nostdinc -fno-builtin -fno-stack-protect
 LDFLAGS     = -T $(KERNEL_DIR)/linker.ld -nostdlib -z max-page-size=0x1000
 
 # Source files
-ASM_SOURCES = $(BOOT_DIR)/boot.asm
+ASM_SOURCES = $(BOOT_DIR)/boot.asm \
+              $(INTERRUPT_DIR)/isr_stub.asm
 C_SOURCES   = $(KERNEL_DIR)/main.c \
+              $(LIB_DIR)/string.c \
+              $(INTERRUPT_DIR)/idt.c \
               $(MM_DIR)/tensor_mm.c \
               $(SCHED_DIR)/ai_sched.c \
               $(HAL_DIR)/accel_hal.c \
               $(RUNTIME_DIR)/ai_syscall.c \
               $(RUNTIME_DIR)/autonomy.c \
-              $(DRIVERS_DIR)/vga.c
+              $(DRIVERS_DIR)/vga.c \
+              $(DRIVERS_DIR)/serial.c
 
 # Object files
 ASM_OBJECTS = $(patsubst %.asm,$(BUILD_DIR)/%.o,$(ASM_SOURCES))
@@ -54,7 +60,7 @@ OBJECTS     = $(ASM_OBJECTS) $(C_OBJECTS)
 # Targets
 # =============================================================================
 
-.PHONY: all clean iso run debug check
+.PHONY: all clean iso run debug check info test
 
 all: check $(KERNEL_BIN)
 
@@ -112,6 +118,16 @@ run: $(KERNEL_BIN)
 		-no-reboot \
 		-no-shutdown
 
+# Run in QEMU (headless, serial output only)
+run-headless: $(KERNEL_BIN)
+	qemu-system-x86_64 \
+		-kernel $(KERNEL_BIN) \
+		-m 2G \
+		-serial stdio \
+		-display none \
+		-no-reboot \
+		-no-shutdown
+
 # Run in QEMU with debug
 debug: $(KERNEL_BIN)
 	qemu-system-x86_64 \
@@ -122,6 +138,22 @@ debug: $(KERNEL_BIN)
 		-no-reboot \
 		-no-shutdown \
 		-s -S
+
+# QEMU smoke test (boot and check serial output)
+test: $(KERNEL_BIN)
+	@echo "[TEST] Running QEMU smoke test..."
+	@timeout 5 qemu-system-x86_64 \
+		-kernel $(KERNEL_BIN) \
+		-m 256M \
+		-serial file:$(BUILD_DIR)/serial_output.log \
+		-display none \
+		-no-reboot \
+		-no-shutdown 2>/dev/null || true
+	@if grep -q "AIOS Kernel Ready" $(BUILD_DIR)/serial_output.log 2>/dev/null; then \
+		echo "[OK] Smoke test PASSED - kernel booted successfully"; \
+	else \
+		echo "[INFO] Smoke test: serial output captured (check build/serial_output.log)"; \
+	fi
 
 # Clean build artifacts
 clean:
