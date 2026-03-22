@@ -13,6 +13,7 @@
 
 #include <runtime/ai_syscall.h>
 #include <drivers/vga.h>
+#include <runtime/autonomy.h>
 
 /* ============================================================
  * Model Registry
@@ -99,6 +100,9 @@ int64_t ai_syscall_dispatch(uint64_t syscall_num, uint64_t arg1,
                             uint64_t arg2, uint64_t arg3,
                             uint64_t arg4, uint64_t arg5) {
     syscall_stats.total_calls++;
+
+    /* Continuous telemetry feed for autonomous control loop */
+    autonomy_collect_telemetry(model_count, accel_get_count());
 
     /* Route based on syscall number range */
     uint32_t category = (syscall_num >> 8) & 0xFF;
@@ -402,4 +406,5 @@ void sys_info_dump(void) {
     tensor_mm_dump();
     ai_sched_dump();
     accel_hal_dump();
+    autonomy_dump();
 }
