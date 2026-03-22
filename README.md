@@ -127,6 +127,10 @@ make debug      # GDB 디버깅 모드로 실행
 | 최대 모델 | 64개 동시 로드 |
 | 커널 크기 | ~39KB |
 
+## Planning Documents
+
+- [SLM 자율 운영/최적화 구조 계획](docs/slm_autonomous_kernel_plan.md)
+
 ## License
 
 MIT License

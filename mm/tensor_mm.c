@@ -59,6 +59,63 @@ static struct {
 };
 #define NUM_POOLS (sizeof(memory_pools) / sizeof(memory_pools[0]))
 
+static mem_lifetime_t default_lifetime_for_region(mem_region_type_t region) {
+    switch (region) {
+        case MEM_REGION_MODEL:
+            return MEM_LIFETIME_LONG_TERM;
+        case MEM_REGION_INFERENCE:
+        case MEM_REGION_ACTIVATION:
+        case MEM_REGION_GRADIENT:
+            return MEM_LIFETIME_SHORT_TERM;
+        case MEM_REGION_KV_CACHE:
+            return MEM_LIFETIME_REALTIME;
+        case MEM_REGION_DMA:
+            return MEM_LIFETIME_REALTIME;
+        default:
+            return MEM_LIFETIME_SHORT_TERM;
+    }
+}
+
+static void stats_add_allocation_profile(const tensor_alloc_t *tensor) {
+    if (!tensor) return;
+    switch (tensor->lifetime) {
+        case MEM_LIFETIME_SHORT_TERM:
+            global_stats.short_term_memory += tensor->size;
+            break;
+        case MEM_LIFETIME_LONG_TERM:
+            global_stats.long_term_memory += tensor->size;
+            break;
+        case MEM_LIFETIME_REALTIME:
+            global_stats.realtime_memory += tensor->size;
+            break;
+        case MEM_LIFETIME_RANDOM:
+            global_stats.random_memory += tensor->size;
+            break;
+        default:
+            break;
+    }
+}
+
+static void stats_remove_allocation_profile(const tensor_alloc_t *tensor) {
+    if (!tensor) return;
+    switch (tensor->lifetime) {
+        case MEM_LIFETIME_SHORT_TERM:
+            global_stats.short_term_memory -= tensor->size;
+            break;
+        case MEM_LIFETIME_LONG_TERM:
+            global_stats.long_term_memory -= tensor->size;
+            break;
+        case MEM_LIFETIME_REALTIME:
+            global_stats.realtime_memory -= tensor->size;
+            break;
+        case MEM_LIFETIME_RANDOM:
+            global_stats.random_memory -= tensor->size;
+            break;
+        default:
+            break;
+    }
+}
+
 /* ============================================================
  * Internal Helper Functions
  * ============================================================ */
@@ -209,6 +266,14 @@ aios_status_t tensor_mm_init(void) {
     global_stats.used_memory = 0;
     global_stats.free_memory = 0;
     global_stats.tensor_count = 0;
+    global_stats.model_memory = 0;
+    global_stats.inference_memory = 0;
+    global_stats.dma_memory = 0;
+    global_stats.short_term_memory = 0;
+    global_stats.long_term_memory = 0;
+    global_stats.realtime_memory = 0;
+    global_stats.random_memory = 0;
+    global_stats.fragmentation = 0;
     global_stats.peak_usage = 0;
     global_stats.alloc_count = 0;
     global_stats.free_count = 0;
@@ -254,6 +319,16 @@ aios_status_t tensor_mm_init(void) {
 
 aios_status_t tensor_alloc(tensor_shape_t *shape, mem_region_type_t region,
                            tensor_alloc_t *out) {
+    mem_lifetime_t lifetime = default_lifetime_for_region(region);
+    bool realtime_critical = (lifetime == MEM_LIFETIME_REALTIME);
+    return tensor_alloc_profiled(shape, region, lifetime,
+                                 realtime_critical, false, out);
+}
+
+aios_status_t tensor_alloc_profiled(tensor_shape_t *shape, mem_region_type_t region,
+                                    mem_lifetime_t lifetime,
+                                    bool realtime_critical, bool stochastic,
+                                    tensor_alloc_t *out) {
     if (!shape || !out) return AIOS_ERR_INVAL;
 
     uint64_t size = tensor_total_size(shape);
@@ -262,12 +337,25 @@ aios_status_t tensor_alloc(tensor_shape_t *shape, mem_region_type_t region,
     /* Align to tensor alignment boundary */
     size = ALIGN_UP(size, TENSOR_ALIGN);
 
-    return tensor_alloc_aligned(size, TENSOR_ALIGN, region, out);
+    return tensor_alloc_aligned_profiled(size, TENSOR_ALIGN, region, lifetime,
+                                         realtime_critical, stochastic, out);
 }
 
 aios_status_t tensor_alloc_aligned(uint64_t size, uint32_t alignment,
                                    mem_region_type_t region,
                                    tensor_alloc_t *out) {
+    mem_lifetime_t lifetime = default_lifetime_for_region(region);
+    bool realtime_critical = (lifetime == MEM_LIFETIME_REALTIME);
+    return tensor_alloc_aligned_profiled(size, alignment, region, lifetime,
+                                         realtime_critical, false, out);
+}
+
+aios_status_t tensor_alloc_aligned_profiled(uint64_t size, uint32_t alignment,
+                                            mem_region_type_t region,
+                                            mem_lifetime_t lifetime,
+                                            bool realtime_critical,
+                                            bool stochastic,
+                                            tensor_alloc_t *out) {
     if (!out || size == 0) return AIOS_ERR_INVAL;
     if (tensor_count >= MAX_TENSORS) return AIOS_ERR_NOMEM;
 
@@ -324,6 +412,9 @@ aios_status_t tensor_alloc_aligned(uint64_t size, uint32_t alignment,
     tensor->virt_addr = block->base; /* Identity mapped for now */
     tensor->size = block->size;
     tensor->region = region;
+    tensor->lifetime = lifetime;
+    tensor->realtime_critical = realtime_critical;
+    tensor->stochastic = stochastic;
     tensor->pinned = false;
     tensor->dma_capable = (region == MEM_REGION_DMA);
     tensor->ref_count = 1;
@@ -338,6 +429,7 @@ aios_status_t tensor_alloc_aligned(uint64_t size, uint32_t alignment,
     global_stats.free_memory -= block->size;
     global_stats.tensor_count++;
     global_stats.alloc_count++;
+    stats_add_allocation_profile(tensor);
     if (global_stats.used_memory > global_stats.peak_usage) {
         global_stats.peak_usage = global_stats.used_memory;
     }
@@ -375,6 +467,7 @@ aios_status_t tensor_free(tensor_id_t id) {
     global_stats.free_memory += tensor->size;
     global_stats.tensor_count--;
     global_stats.free_count++;
+    stats_remove_allocation_profile(tensor);
 
     /* Remove from tensor table (swap with last) */
     uint32_t idx = tensor - tensor_table;
@@ -391,7 +484,10 @@ aios_status_t model_alloc(model_id_t model_id, uint64_t size,
     (void)model_id; /* Model ID used for tracking in future */
     /* Model allocations use huge pages for better TLB performance */
     size = ALIGN_UP(size, HUGE_PAGE_SIZE);
-    return tensor_alloc_aligned(size, HUGE_PAGE_SIZE, MEM_REGION_MODEL, out);
+    return tensor_alloc_aligned_profiled(size, HUGE_PAGE_SIZE,
+                                         MEM_REGION_MODEL,
+                                         MEM_LIFETIME_LONG_TERM,
+                                         false, false, out);
 }
 
 aios_status_t model_free(model_id_t model_id) {
@@ -410,7 +506,10 @@ aios_status_t model_free(model_id_t model_id) {
 aios_status_t dma_alloc(uint64_t size, tensor_alloc_t *out) {
     /* DMA allocations need page alignment and contiguous physical memory */
     size = ALIGN_UP(size, PAGE_SIZE);
-    return tensor_alloc_aligned(size, PAGE_SIZE, MEM_REGION_DMA, out);
+    return tensor_alloc_aligned_profiled(size, PAGE_SIZE,
+                                         MEM_REGION_DMA,
+                                         MEM_LIFETIME_REALTIME,
+                                         true, false, out);
 }
 
 aios_status_t dma_free(tensor_id_t id) {
@@ -426,8 +525,10 @@ aios_status_t kv_cache_alloc(uint64_t num_layers, uint64_t num_heads,
     uint64_t total_size = 2 * num_layers * num_heads * head_dim * seq_len * elem_size;
     total_size = ALIGN_UP(total_size, HUGE_PAGE_SIZE);
 
-    return tensor_alloc_aligned(total_size, HUGE_PAGE_SIZE,
-                                MEM_REGION_KV_CACHE, out);
+    return tensor_alloc_aligned_profiled(total_size, HUGE_PAGE_SIZE,
+                                         MEM_REGION_KV_CACHE,
+                                         MEM_LIFETIME_REALTIME,
+                                         true, false, out);
 }
 
 aios_status_t kv_cache_resize(tensor_id_t id, uint64_t new_seq_len) {
@@ -484,5 +585,10 @@ void tensor_mm_dump(void) {
     kprintf("Peak Usage:       %u MB\n", global_stats.peak_usage / MB(1));
     kprintf("Allocations:      %u\n", global_stats.alloc_count);
     kprintf("Frees:            %u\n", global_stats.free_count);
+    kprintf("\nClass Memory Footprint:\n");
+    kprintf("  Short-Term:     %u MB\n", global_stats.short_term_memory / MB(1));
+    kprintf("  Long-Term:      %u MB\n", global_stats.long_term_memory / MB(1));
+    kprintf("  Realtime:       %u MB\n", global_stats.realtime_memory / MB(1));
+    kprintf("  Random:         %u MB\n", global_stats.random_memory / MB(1));
     kprintf("====================================\n");
 }
