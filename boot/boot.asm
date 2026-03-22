@@ -285,3 +285,5 @@ section .rodata
 boot_banner:
     db "  AIOS - AI-Native Operating System Kernel v0.1.0  ", 0
     db "  Booting AI Kernel... Initializing subsystems...   ", 0
+
+section .note.GNU-stack noalloc noexec nowrite progbits
