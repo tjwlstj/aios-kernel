@@ -317,6 +317,16 @@ aios_status_t ai_task_set_priority(task_id_t id, priority_t priority) {
     return AIOS_OK;
 }
 
+aios_status_t ai_task_get_priority(task_id_t id, priority_t *out_priority) {
+    if (!out_priority) return AIOS_ERR_INVAL;
+
+    ai_task_t *task = find_task(id);
+    if (!task) return AIOS_ERR_INVAL;
+
+    *out_priority = task->sched.priority;
+    return AIOS_OK;
+}
+
 ai_task_t *ai_sched_pick_next(void) {
     /* Priority-based selection: check queues from highest to lowest priority */
     for (uint32_t level = 0; level < NUM_PRIORITY_LEVELS; level++) {

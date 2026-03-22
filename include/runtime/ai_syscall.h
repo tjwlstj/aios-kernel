@@ -20,6 +20,7 @@
 #include <mm/tensor_mm.h>
 #include <sched/ai_sched.h>
 #include <hal/accel_hal.h>
+#include <runtime/autonomy.h>
 
 /* ============================================================
  * System Call Numbers
@@ -72,6 +73,14 @@
 #define SYS_INFO_SCHEDULER      0x701   /* Get scheduler statistics */
 #define SYS_INFO_SYSTEM         0x702   /* Get system information */
 
+/* Autonomy control syscalls (0x710 - 0x71F) */
+#define SYS_AUTONOMY_ACTION_PROPOSE 0x710  /* Propose policy action */
+#define SYS_AUTONOMY_ACTION_COMMIT  0x711  /* Commit next approved action */
+#define SYS_AUTONOMY_ROLLBACK_LAST  0x712  /* Rollback last committed action */
+#define SYS_AUTONOMY_STATS          0x713  /* Read autonomy statistics */
+#define SYS_AUTONOMY_MODE_SET       0x714  /* Set observation/safe mode */
+#define SYS_AUTONOMY_TELEMETRY_LAST 0x715  /* Read latest telemetry frame */
+
 /* ============================================================
  * Syscall Argument Structures
  * ============================================================ */
@@ -112,6 +121,12 @@ typedef struct {
     tensor_id_t     output_tensor;  /* Output tensor */
     accel_id_t      accel_id;       /* Accelerator for this stage */
 } pipeline_stage_t;
+
+/* Autonomy mode control */
+typedef struct {
+    bool observation_only;
+    bool safe_mode;
+} syscall_autonomy_mode_t;
 
 /* ============================================================
  * Model Registry
@@ -160,5 +175,13 @@ aios_status_t sys_train_step(model_id_t model_id, float learning_rate);
 
 /* System info */
 void sys_info_dump(void);
+
+/* Autonomy control */
+aios_status_t sys_autonomy_action_propose(autonomy_action_req_t *req);
+aios_status_t sys_autonomy_action_commit(policy_eval_t *eval);
+aios_status_t sys_autonomy_rollback_last(void);
+aios_status_t sys_autonomy_stats(autonomy_stats_t *out);
+aios_status_t sys_autonomy_mode_set(syscall_autonomy_mode_t *mode);
+aios_status_t sys_autonomy_telemetry_last(telemetry_frame_t *out);
 
 #endif /* _AIOS_AI_SYSCALL_H */
