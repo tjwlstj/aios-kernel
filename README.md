@@ -105,6 +105,8 @@ make all        # 커널 바이너리 빌드
 make iso        # 부팅 가능한 ISO 이미지 생성
 ```
 
+> 참고: 기본 컴파일러는 `gcc`이며, 다른 툴체인을 사용할 경우 `make CC=clang LD=ld.lld` 또는 `make TOOLCHAIN_PREFIX=x86_64-elf-` 형태로 지정할 수 있습니다.
+
 ### Run in QEMU
 ```bash
 make run        # QEMU에서 커널 실행

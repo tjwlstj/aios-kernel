@@ -4,10 +4,11 @@
 # =============================================================================
 
 # Toolchain
-ASM         = nasm
-CC          = gcc-12
-LD          = ld
-OBJCOPY     = objcopy
+TOOLCHAIN_PREFIX ?=
+ASM         ?= nasm
+CC          ?= $(TOOLCHAIN_PREFIX)gcc
+LD          ?= $(TOOLCHAIN_PREFIX)ld
+OBJCOPY     ?= $(TOOLCHAIN_PREFIX)objcopy
 
 # Directories
 BOOT_DIR    = boot
@@ -52,9 +53,18 @@ OBJECTS     = $(ASM_OBJECTS) $(C_OBJECTS)
 # Targets
 # =============================================================================
 
-.PHONY: all clean iso run debug
+.PHONY: all clean iso run debug check
 
-all: $(KERNEL_BIN)
+all: check $(KERNEL_BIN)
+
+check:
+	@echo "[CHECK] Validating build toolchain..."
+	@command -v $(ASM) >/dev/null 2>&1 || { echo "[ERR] Missing assembler: $(ASM)"; exit 1; }
+	@command -v $(CC) >/dev/null 2>&1 || { echo "[ERR] Missing compiler: $(CC)"; exit 1; }
+	@command -v $(LD) >/dev/null 2>&1 || { echo "[ERR] Missing linker: $(LD)"; exit 1; }
+	@echo "[OK] ASM: $$($(ASM) --version | head -n 1)"
+	@echo "[OK]  CC: $$($(CC) --version | head -n 1)"
+	@echo "[OK]  LD: $$($(LD) --version | head -n 1)"
 
 # Build kernel binary
 $(KERNEL_BIN): $(OBJECTS) $(KERNEL_DIR)/linker.ld
