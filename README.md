@@ -130,6 +130,26 @@ CC=gcc-12 make test         # QEMU 스모크 테스트
 
 > 참고: 기본 컴파일러는 `gcc`이며, 다른 툴체인을 사용할 경우 `make CC=clang LD=ld.lld` 또는 `make TOOLCHAIN_PREFIX=x86_64-elf-` 형태로 지정할 수 있습니다.
 
+### Windows (PowerShell)
+
+Windows에서도 빌드 점검이 가능합니다. 현재 저장소에는 PowerShell 기반 헬퍼 스크립트가 포함되어 있으며,
+검증된 조합은 다음과 같습니다.
+
+- `make`: `winget install --id ezwinports.make`
+- `nasm`: `winget install --id BrechtSanders.WinLibs.POSIX.UCRT`
+- `qemu-system-x86_64`: `winget install --id SoftwareFreedomConservancy.QEMU`
+- Unix 유틸리티(`head`, `grep`, `timeout`): Git for Windows
+- bare-metal 크로스 컴파일러: `x86_64-elf-gcc`, `x86_64-elf-ld`, `x86_64-elf-objcopy`
+
+가장 쉬운 실행 방법:
+
+```powershell
+pwsh -File .\scripts\build-windows.ps1 -Target all
+pwsh -File .\scripts\build-windows.ps1 -Target test
+```
+
+Windows용 자세한 설치 및 경로 설정 방법은 [docs/windows_build.md](docs/windows_build.md)를 참고하세요.
+
 ### Run in QEMU
 ```bash
 make run            # QEMU에서 커널 실행 (VGA + 시리얼)
