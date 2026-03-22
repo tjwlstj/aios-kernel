@@ -34,6 +34,14 @@ typedef enum {
     MEM_REGION_KV_CACHE     = 7,    /* KV-cache for transformer models */
 } mem_region_type_t;
 
+/* Allocation lifetime / behavior classes */
+typedef enum {
+    MEM_LIFETIME_SHORT_TERM = 0,    /* Request-scoped / ephemeral buffers */
+    MEM_LIFETIME_LONG_TERM  = 1,    /* Long-lived resident allocations */
+    MEM_LIFETIME_REALTIME   = 2,    /* Latency-critical allocations */
+    MEM_LIFETIME_RANDOM     = 3,    /* Stochastic sampling / RNG workspaces */
+} mem_lifetime_t;
+
 /* Tensor data types (for alignment and size calculation) */
 typedef enum {
     DTYPE_FP32      = 0,    /* 32-bit float */
@@ -75,6 +83,9 @@ typedef struct {
     uint64_t        size;           /* Total size in bytes */
     tensor_shape_t  shape;          /* Tensor shape info */
     mem_region_type_t region;       /* Memory region type */
+    mem_lifetime_t  lifetime;       /* Lifetime/behavior class */
+    bool            realtime_critical; /* Latency-critical allocation */
+    bool            stochastic;     /* Sampling/randomness-heavy workspace */
     bool            pinned;         /* Whether memory is pinned (non-swappable) */
     bool            dma_capable;    /* Whether DMA-capable */
     uint32_t        ref_count;      /* Reference count */
@@ -89,6 +100,10 @@ typedef struct {
     uint64_t    model_memory;       /* Memory used by models */
     uint64_t    inference_memory;   /* Memory used by inference */
     uint64_t    dma_memory;         /* Memory in DMA regions */
+    uint64_t    short_term_memory;  /* Short-lived allocation footprint */
+    uint64_t    long_term_memory;   /* Long-lived allocation footprint */
+    uint64_t    realtime_memory;    /* Real-time critical memory footprint */
+    uint64_t    random_memory;      /* Random/stochastic workspace footprint */
     uint64_t    fragmentation;      /* Fragmentation percentage (0-100) */
     uint64_t    peak_usage;         /* Peak memory usage */
     uint64_t    alloc_count;        /* Total allocation count */
@@ -105,8 +120,18 @@ aios_status_t tensor_mm_init(void);
 /* Tensor allocation */
 aios_status_t tensor_alloc(tensor_shape_t *shape, mem_region_type_t region,
                            tensor_alloc_t *out);
+aios_status_t tensor_alloc_profiled(tensor_shape_t *shape, mem_region_type_t region,
+                                    mem_lifetime_t lifetime,
+                                    bool realtime_critical, bool stochastic,
+                                    tensor_alloc_t *out);
 aios_status_t tensor_alloc_aligned(uint64_t size, uint32_t alignment,
                                    mem_region_type_t region, tensor_alloc_t *out);
+aios_status_t tensor_alloc_aligned_profiled(uint64_t size, uint32_t alignment,
+                                            mem_region_type_t region,
+                                            mem_lifetime_t lifetime,
+                                            bool realtime_critical,
+                                            bool stochastic,
+                                            tensor_alloc_t *out);
 aios_status_t tensor_free(tensor_id_t id);
 
 /* Model memory management */
