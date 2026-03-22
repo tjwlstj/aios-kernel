@@ -1,0 +1,45 @@
+graph TD
+    subgraph "User Space (AI Applications)"
+        Agent1[AI Agent 1]
+        Agent2[AI Agent 2]
+        SDK[AIOS SDK]
+        
+        Agent1 --> SDK
+        Agent2 --> SDK
+    end
+
+    subgraph "Kernel Space (AIOS Kernel)"
+        Syscall[AI System Call Interface]
+        
+        subgraph "Core Subsystems"
+            Sched[AI Workload Scheduler\n- Priority Queues\n- Deadline-aware]
+            Mem[Tensor Memory Manager\n- Huge Pages\n- Zero-copy DMA]
+            ModelReg[Model Registry\n- Lifecycle Management]
+        end
+        
+        subgraph "Hardware Abstraction"
+            HAL[Accelerator HAL\n- Unified API]
+        end
+        
+        Syscall --> Sched
+        Syscall --> Mem
+        Syscall --> ModelReg
+        
+        Sched --> HAL
+        Mem --> HAL
+    end
+
+    subgraph "Hardware"
+        CPU[x86_64 CPU]
+        RAM[System RAM]
+        GPU1[NVIDIA GPU]
+        GPU2[AMD GPU]
+        TPU[Google TPU]
+        
+        HAL --> CPU
+        HAL --> GPU1
+        HAL --> GPU2
+        HAL --> TPU
+    end
+
+    SDK -->|Syscalls| Syscall
