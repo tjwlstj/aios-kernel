@@ -60,7 +60,7 @@ OBJECTS     = $(ASM_OBJECTS) $(C_OBJECTS)
 # Targets
 # =============================================================================
 
-.PHONY: all clean iso run debug check info test
+.PHONY: all clean iso run run-headless debug check info test
 
 all: check $(KERNEL_BIN)
 
@@ -109,9 +109,10 @@ iso: $(KERNEL_BIN)
 	@echo "[OK] Bootable ISO: $(KERNEL_ISO)"
 
 # Run in QEMU
-run: $(KERNEL_BIN)
+run: iso
 	qemu-system-x86_64 \
-		-kernel $(KERNEL_BIN) \
+		-cdrom $(KERNEL_ISO) \
+		-boot d \
 		-m 2G \
 		-serial stdio \
 		-display curses \
@@ -119,9 +120,10 @@ run: $(KERNEL_BIN)
 		-no-shutdown
 
 # Run in QEMU (headless, serial output only)
-run-headless: $(KERNEL_BIN)
+run-headless: iso
 	qemu-system-x86_64 \
-		-kernel $(KERNEL_BIN) \
+		-cdrom $(KERNEL_ISO) \
+		-boot d \
 		-m 2G \
 		-serial stdio \
 		-display none \
@@ -129,9 +131,10 @@ run-headless: $(KERNEL_BIN)
 		-no-shutdown
 
 # Run in QEMU with debug
-debug: $(KERNEL_BIN)
+debug: iso
 	qemu-system-x86_64 \
-		-kernel $(KERNEL_BIN) \
+		-cdrom $(KERNEL_ISO) \
+		-boot d \
 		-m 2G \
 		-serial stdio \
 		-display curses \
@@ -140,10 +143,11 @@ debug: $(KERNEL_BIN)
 		-s -S
 
 # QEMU smoke test (boot and check serial output)
-test: $(KERNEL_BIN)
+test: iso
 	@echo "[TEST] Running QEMU smoke test..."
 	@timeout 5 qemu-system-x86_64 \
-		-kernel $(KERNEL_BIN) \
+		-cdrom $(KERNEL_ISO) \
+		-boot d \
 		-m 256M \
 		-serial file:$(BUILD_DIR)/serial_output.log \
 		-display none \

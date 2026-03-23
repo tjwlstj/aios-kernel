@@ -64,10 +64,18 @@ pwsh -File .\scripts\build-windows.ps1 -Target all
 pwsh -File .\scripts\build-windows.ps1 -Target test
 ```
 
+이 프로젝트의 `test`는 Multiboot2 커널을 GRUB ISO로 부팅하는 방식입니다. 따라서 Windows에서 `test`, `run`, `debug`, `iso`를 실행하려면 다음 도구가 추가로 필요합니다.
+
+- `grub-mkrescue`
+- `xorriso`
+- `mtools`
+
+이 도구가 없다면 `all`로 커널 바이너리 빌드까지만 검증할 수 있습니다.
+
 성공 시 빌드 산출물은 `build\` 아래에 생성됩니다.
 
 ## 5. 주요 주의점
 
 - 일반 WinLibs `gcc`는 Windows 타깃이므로 `-mcmodel=kernel` 커널 빌드에 적합하지 않습니다.
-- `make test`는 QEMU를 실행하지만, 환경에 따라 시리얼 로그가 비어 있을 수 있습니다.
-- ISO 생성 타깃은 `grub-mkrescue`, `xorriso`, `mtools`가 추가로 필요하므로 Windows에서는 기본 지원 대상으로 보지 않습니다.
+- 이전의 `-kernel` 기반 QEMU 실행은 Multiboot2 커널 형식과 맞지 않아 사용할 수 없습니다.
+- ISO 생성 및 부팅 테스트는 `grub-mkrescue`, `xorriso`, `mtools`가 준비된 환경에서만 동작합니다.

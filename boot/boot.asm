@@ -69,7 +69,12 @@ global _start
 extern kernel_main
 extern _init_sse
 
+debug_port equ 0xe9
+
 _start:
+    mov al, 'A'
+    out debug_port, al
+
     ; Save multiboot info pointer
     mov edi, ebx                ; Multiboot2 info structure pointer
     mov esi, eax                ; Multiboot2 magic number
@@ -81,6 +86,9 @@ _start:
     cmp eax, 0x36d76289
     jne .no_multiboot
 
+    mov al, 'B'
+    out debug_port, al
+
     ; Check for CPUID support
     call check_cpuid
     ; Check for long mode support
@@ -89,6 +97,9 @@ _start:
     ; Set up paging
     call setup_page_tables
     call enable_paging
+
+    mov al, 'C'
+    out debug_port, al
 
     ; Load 64-bit GDT
     lgdt [gdt64.pointer]
@@ -199,6 +210,9 @@ enable_paging:
 ; =============================================================================
 bits 64
 long_mode_start:
+    mov al, 'D'
+    out debug_port, al
+
     ; Reload segment registers
     mov ax, gdt64.data
     mov ds, ax
@@ -230,6 +244,9 @@ long_mode_start:
 
     ; Enable SSE for floating point (needed for AI computations)
     call enable_sse
+
+    mov al, 'E'
+    out debug_port, al
 
     ; Call kernel main (C entry point)
     ; rdi = multiboot magic, rsi = multiboot info pointer

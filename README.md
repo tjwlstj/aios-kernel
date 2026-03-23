@@ -157,6 +157,8 @@ make run-headless   # Headless 모드 (시리얼 출력만)
 make debug          # GDB 디버깅 모드로 실행
 ```
 
+> 참고: 이 커널은 Multiboot2 기반이므로 `run`, `run-headless`, `debug`, `test`는 모두 GRUB ISO를 통해 부팅합니다. `grub-mkrescue`가 없는 환경에서는 `make all`까지만 가능하며, 실제 부팅 테스트는 `make iso` 이후에 수행됩니다.
+
 ## Technical Specifications
 
 | 항목 | 사양 |
