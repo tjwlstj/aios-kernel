@@ -27,6 +27,8 @@ ISO_DIR     = $(BUILD_DIR)/isofiles
 # Output
 KERNEL_BIN  = $(BUILD_DIR)/aios-kernel.bin
 KERNEL_ISO  = $(BUILD_DIR)/aios-kernel.iso
+TEST_LOG    = $(BUILD_DIR)/serial_output.log
+TEST_TIMEOUT ?= 8
 
 # Flags
 ASMFLAGS    = -f elf64
@@ -145,18 +147,35 @@ debug: iso
 # QEMU smoke test (boot and check serial output)
 test: iso
 	@echo "[TEST] Running QEMU smoke test..."
-	@timeout 5 qemu-system-x86_64 \
+	@rm -f $(TEST_LOG)
+	@status=0; \
+	timeout $(TEST_TIMEOUT) qemu-system-x86_64 \
 		-cdrom $(KERNEL_ISO) \
 		-boot d \
 		-m 256M \
-		-serial file:$(BUILD_DIR)/serial_output.log \
+		-serial file:$(TEST_LOG) \
 		-display none \
 		-no-reboot \
-		-no-shutdown 2>/dev/null || true
-	@if grep -q "AIOS Kernel Ready" $(BUILD_DIR)/serial_output.log 2>/dev/null; then \
+		-no-shutdown 2>/dev/null || status=$$?; \
+	if [ $$status -ne 0 ] && [ $$status -ne 124 ]; then \
+		echo "[ERR] QEMU exited unexpectedly with status $$status"; \
+		exit $$status; \
+	fi; \
+	if [ ! -f $(TEST_LOG) ]; then \
+		echo "[ERR] Smoke test did not produce a serial log"; \
+		exit 1; \
+	fi; \
+	if [ ! -s $(TEST_LOG) ]; then \
+		echo "[ERR] Smoke test produced an empty serial log"; \
+		exit 1; \
+	fi; \
+	if grep -q "AIOS Kernel Ready" $(TEST_LOG); then \
 		echo "[OK] Smoke test PASSED - kernel booted successfully"; \
 	else \
-		echo "[INFO] Smoke test: serial output captured (check build/serial_output.log)"; \
+		echo "[ERR] Smoke test did not reach kernel ready state"; \
+		echo "[INFO] Last serial log lines:"; \
+		tail -n 40 $(TEST_LOG) || true; \
+		exit 1; \
 	fi
 
 # Clean build artifacts

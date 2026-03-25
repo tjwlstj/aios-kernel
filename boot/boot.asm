@@ -15,10 +15,11 @@ header_start:
     ; Framebuffer tag (request 80x25 text mode)
     dw 5                         ; Type: framebuffer
     dw 1                         ; Flags: optional
-    dd 20                        ; Size
+    dd 24                        ; Size (8-byte aligned)
     dd 80                        ; Width
     dd 25                        ; Height
     dd 0                         ; Depth (text mode)
+    dd 0                         ; Padding for 8-byte alignment
 
     ; End tag
     dw 0                         ; Type
@@ -68,6 +69,8 @@ bits 32
 global _start
 extern kernel_main
 extern _init_sse
+extern __bss_start
+extern __bss_end
 
 debug_port equ 0xe9
 
@@ -75,7 +78,21 @@ _start:
     mov al, 'A'
     out debug_port, al
 
+    ; Preserve multiboot registers across BSS clearing
+    mov esi, eax
+    mov ebp, ebx
+
+    ; Clear BSS before using the boot stack or page tables stored there
+    mov edi, __bss_start
+    mov ecx, __bss_end
+    sub ecx, edi
+    shr ecx, 2
+    xor eax, eax
+    rep stosd
+
     ; Save multiboot info pointer
+    mov eax, esi
+    mov ebx, ebp
     mov edi, ebx                ; Multiboot2 info structure pointer
     mov esi, eax                ; Multiboot2 magic number
 
@@ -84,18 +101,36 @@ _start:
 
     ; Check for multiboot2
     cmp eax, 0x36d76289
-    jne .no_multiboot
+    jne .check_multiboot1
 
     mov al, 'B'
     out debug_port, al
 
+    jmp .multiboot_ok
+
+.check_multiboot1:
+    cmp eax, 0x2badb002
+    jne .no_multiboot
+    mov al, '1'
+    out debug_port, al
+    jmp .multiboot_ok
+
+.multiboot_ok:
+
     ; Check for CPUID support
     call check_cpuid
+    mov al, 'P'
+    out debug_port, al
+
     ; Check for long mode support
     call check_long_mode
+    mov al, 'L'
+    out debug_port, al
 
     ; Set up paging
     call setup_page_tables
+    mov al, 'T'
+    out debug_port, al
     call enable_paging
 
     mov al, 'C'
@@ -108,11 +143,9 @@ _start:
     jmp gdt64.code:long_mode_start
 
 .no_multiboot:
-    ; Error: not booted by multiboot2 compliant bootloader
-    mov dword [0xb8000], 0x4f524f45  ; "ER"
-    mov dword [0xb8004], 0x4f3a4f52  ; "R:"
-    mov dword [0xb8008], 0x4f424f4d  ; "MB"
-    hlt
+    mov al, 'N'
+    out debug_port, al
+    jmp .multiboot_ok
 
 ; =============================================================================
 ; CPU Feature Checks
@@ -213,13 +246,17 @@ long_mode_start:
     mov al, 'D'
     out debug_port, al
 
-    ; Reload segment registers
-    mov ax, gdt64.data
+    ; Reload segment registers and reset the 64-bit stack
+    xor eax, eax
     mov ds, ax
     mov es, ax
     mov fs, ax
     mov gs, ax
     mov ss, ax
+    mov rsp, stack_top
+
+    mov al, 'S'
+    out debug_port, al
 
     ; Clear screen with AIOS branding color (blue background)
     mov rdi, 0xb8000
@@ -232,15 +269,11 @@ long_mode_start:
     mov rsi, boot_banner
     call print_string_64
 
-    ; Clear BSS section (zero-initialize uninitialized data)
-    extern __bss_start
-    extern __bss_end
-    mov rdi, __bss_start
-    mov rcx, __bss_end
-    sub rcx, rdi
-    shr rcx, 3              ; Divide by 8 (clear 8 bytes at a time)
-    xor rax, rax
-    rep stosq
+    mov al, 'V'
+    out debug_port, al
+
+    mov al, 'Z'
+    out debug_port, al
 
     ; Enable SSE for floating point (needed for AI computations)
     call enable_sse
@@ -276,8 +309,10 @@ enable_sse:
     ; Enable AVX if supported (for AI vector operations)
     mov eax, 1
     cpuid
-    test ecx, 1 << 28          ; Check AVX support
-    jz .no_avx
+    mov edx, ecx
+    and edx, (1 << 26) | (1 << 27) | (1 << 28)
+    cmp edx, (1 << 26) | (1 << 27) | (1 << 28)
+    jne .no_avx
 
     ; Enable XSAVE and AVX
     mov rax, cr4

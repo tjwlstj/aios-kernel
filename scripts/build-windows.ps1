@@ -263,10 +263,18 @@ try {
             if (-not $proc.WaitForExit(5000)) {
                 Stop-Process -Id $proc.Id -Force
             }
-            if ((Test-Path $serialLog) -and (Select-String -Path $serialLog -Pattern 'AIOS Kernel Ready' -Quiet -ErrorAction SilentlyContinue)) {
+            if (-not (Test-Path $serialLog)) {
+                throw 'Smoke test did not produce a serial log'
+            }
+            if ((Get-Item $serialLog).Length -eq 0) {
+                throw 'Smoke test produced an empty serial log'
+            }
+            if (Select-String -Path $serialLog -Pattern 'AIOS Kernel Ready' -Quiet -ErrorAction SilentlyContinue) {
                 Write-Host '[OK] Smoke test PASSED - kernel booted successfully'
             } else {
-                Write-Host '[INFO] Smoke test: serial output captured (check build/serial_output.log)'
+                Write-Host '[ERR] Smoke test did not reach kernel ready state'
+                Get-Content $serialLog -Tail 40 -ErrorAction SilentlyContinue
+                throw 'Smoke test failed'
             }
         }
         'run' {
