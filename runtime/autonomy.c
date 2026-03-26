@@ -5,6 +5,7 @@
 
 #include <runtime/autonomy.h>
 #include <kernel/time.h>
+#include <hal/accel_hal.h>
 #include <drivers/vga.h>
 
 static telemetry_frame_t telemetry_ring[AUTONOMY_TELEMETRY_CAP];
@@ -34,6 +35,29 @@ static struct {
 static autonomy_stats_t stats;
 static uint64_t autonomy_now_ns(void) {
     return kernel_time_monotonic_ns();
+}
+
+static void collect_live_telemetry(telemetry_frame_t *out) {
+    if (!out) return;
+
+    out->ts_ns = autonomy_now_ns();
+    tensor_mm_stats(&out->mem);
+    ai_sched_stats(&out->sched);
+    out->active_models = 0;
+    out->active_accels = accel_get_count();
+}
+
+static uint64_t compute_eval_score(const telemetry_frame_t *frame) {
+    if (!frame) return 0;
+
+    uint64_t score = 1000000ULL;
+
+    score -= MIN(frame->mem.fragmentation * 500ULL, 250000ULL);
+    score -= MIN(frame->sched.failed_tasks * 10000ULL, 250000ULL);
+    score -= MIN(frame->sched.avg_wait_ns / 1000ULL, 250000ULL);
+    score -= MIN(frame->sched.active_tasks * 1000ULL, 100000ULL);
+
+    return score;
 }
 
 static void log_event(const policy_action_t *action) {
@@ -254,6 +278,10 @@ aios_status_t autonomy_action_commit_next(policy_eval_t *eval) {
     action_count--;
     stats.action_queue_depth = action_count;
 
+    telemetry_frame_t before_frame;
+    telemetry_frame_t after_frame;
+    collect_live_telemetry(&before_frame);
+
     aios_status_t apply_status = apply_action(&action);
     if (apply_status != AIOS_OK) {
         action.state = ACTION_STATE_REJECTED;
@@ -271,13 +299,22 @@ aios_status_t autonomy_action_commit_next(policy_eval_t *eval) {
     has_last_committed = true;
     stats.actions_committed++;
 
+    collect_live_telemetry(&after_frame);
+
     if (eval) {
-        eval->before_score = 0;
-        eval->after_score = 0;
+        eval->before_score = compute_eval_score(&before_frame);
+        eval->after_score = compute_eval_score(&after_frame);
         eval->rollback_triggered = false;
     }
 
     log_event(&action);
+
+    if (eval && eval->after_score + 5000ULL < eval->before_score) {
+        if (autonomy_action_rollback_last() == AIOS_OK) {
+            eval->rollback_triggered = true;
+        }
+    }
+
     return AIOS_OK;
 }
 
