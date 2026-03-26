@@ -407,6 +407,31 @@ aios_status_t e1000_driver_tx_smoke(void) {
     return e1000_send_frame(frame, sizeof(frame));
 }
 
+aios_status_t e1000_driver_info(e1000_driver_info_t *out) {
+    if (!out) {
+        return AIOS_ERR_INVAL;
+    }
+
+    out->present = g_e1000.present;
+    out->ready = g_e1000.ready;
+    out->link_up = g_e1000.link_up;
+    out->has_eeprom = g_e1000.has_eeprom;
+    out->tx_ready = g_e1000.tx_ready;
+    out->bus = g_e1000.bus;
+    out->slot = g_e1000.slot;
+    out->function = g_e1000.function;
+    out->vendor_id = g_e1000.vendor_id;
+    out->device_id = g_e1000.device_id;
+    out->io_base = g_e1000.io_base;
+    out->mmio_base = g_e1000.mmio_base;
+    out->status = g_e1000.status;
+    for (uint32_t i = 0; i < 6; i++) {
+        out->mac[i] = g_e1000.mac[i];
+    }
+
+    return AIOS_OK;
+}
+
 void e1000_driver_dump(void) {
     if (!g_e1000.present) {
         serial_write("[NET] E1000 dump: controller not present\n");

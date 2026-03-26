@@ -14,6 +14,7 @@
 #include <runtime/ai_syscall.h>
 #include <drivers/vga.h>
 #include <runtime/autonomy.h>
+#include <runtime/slm_orchestrator.h>
 
 /* ============================================================
  * Model Registry
@@ -207,6 +208,18 @@ int64_t ai_syscall_dispatch(uint64_t syscall_num, uint64_t arg1,
                     return (int64_t)sys_autonomy_mode_set((syscall_autonomy_mode_t *)arg1);
                 case SYS_AUTONOMY_TELEMETRY_LAST:
                     return (int64_t)sys_autonomy_telemetry_last((telemetry_frame_t *)arg1);
+                case SYS_SLM_HW_SNAPSHOT:
+                    return (int64_t)sys_slm_hw_snapshot((slm_hw_snapshot_t *)arg1);
+                case SYS_SLM_PLAN_SUBMIT:
+                    return (int64_t)sys_slm_plan_submit((slm_plan_request_t *)arg1,
+                                                        (uint32_t *)arg2);
+                case SYS_SLM_PLAN_APPLY:
+                    return (int64_t)sys_slm_plan_apply((uint32_t)arg1);
+                case SYS_SLM_PLAN_STATUS:
+                    return (int64_t)sys_slm_plan_status((uint32_t)arg1,
+                                                        (slm_plan_t *)arg2);
+                case SYS_SLM_PLAN_LIST:
+                    return (int64_t)sys_slm_plan_list((slm_plan_list_t *)arg1);
                 default:
                     break;
             }
@@ -418,6 +431,27 @@ aios_status_t sys_autonomy_telemetry_last(telemetry_frame_t *out) {
     return autonomy_get_latest_telemetry(out);
 }
 
+aios_status_t sys_slm_hw_snapshot(slm_hw_snapshot_t *out) {
+    return slm_snapshot_read(out);
+}
+
+aios_status_t sys_slm_plan_submit(slm_plan_request_t *req, uint32_t *plan_id_out) {
+    if (!req) return AIOS_ERR_INVAL;
+    return slm_plan_submit(req, plan_id_out);
+}
+
+aios_status_t sys_slm_plan_apply(uint32_t plan_id) {
+    return slm_plan_apply(plan_id);
+}
+
+aios_status_t sys_slm_plan_status(uint32_t plan_id, slm_plan_t *out) {
+    return slm_plan_get(plan_id, out);
+}
+
+aios_status_t sys_slm_plan_list(slm_plan_list_t *out) {
+    return slm_plan_list(out);
+}
+
 /* ============================================================
  * System Info
  * ============================================================ */
@@ -453,4 +487,5 @@ void sys_info_dump(void) {
     ai_sched_dump();
     accel_hal_dump();
     autonomy_dump();
+    slm_orchestrator_dump();
 }

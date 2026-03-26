@@ -21,6 +21,7 @@
 #include <sched/ai_sched.h>
 #include <hal/accel_hal.h>
 #include <runtime/autonomy.h>
+#include <runtime/slm_orchestrator.h>
 
 /* ============================================================
  * System Call Numbers
@@ -80,6 +81,13 @@
 #define SYS_AUTONOMY_STATS          0x713  /* Read autonomy statistics */
 #define SYS_AUTONOMY_MODE_SET       0x714  /* Set observation/safe mode */
 #define SYS_AUTONOMY_TELEMETRY_LAST 0x715  /* Read latest telemetry frame */
+
+/* SLM hardware orchestration syscalls (0x720 - 0x72F) */
+#define SYS_SLM_HW_SNAPSHOT         0x720  /* Read hardware snapshot for SLM */
+#define SYS_SLM_PLAN_SUBMIT         0x721  /* Submit hardware driver plan */
+#define SYS_SLM_PLAN_APPLY          0x722  /* Apply validated hardware plan */
+#define SYS_SLM_PLAN_STATUS         0x723  /* Query plan state */
+#define SYS_SLM_PLAN_LIST           0x724  /* Enumerate queued plans */
 
 /* ============================================================
  * Syscall Argument Structures
@@ -183,5 +191,12 @@ aios_status_t sys_autonomy_rollback_last(void);
 aios_status_t sys_autonomy_stats(autonomy_stats_t *out);
 aios_status_t sys_autonomy_mode_set(syscall_autonomy_mode_t *mode);
 aios_status_t sys_autonomy_telemetry_last(telemetry_frame_t *out);
+
+/* SLM orchestration */
+aios_status_t sys_slm_hw_snapshot(slm_hw_snapshot_t *out);
+aios_status_t sys_slm_plan_submit(slm_plan_request_t *req, uint32_t *plan_id_out);
+aios_status_t sys_slm_plan_apply(uint32_t plan_id);
+aios_status_t sys_slm_plan_status(uint32_t plan_id, slm_plan_t *out);
+aios_status_t sys_slm_plan_list(slm_plan_list_t *out);
 
 #endif /* _AIOS_AI_SYSCALL_H */

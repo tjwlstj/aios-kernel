@@ -20,6 +20,7 @@
 #include <hal/accel_hal.h>
 #include <runtime/ai_syscall.h>
 #include <runtime/autonomy.h>
+#include <runtime/slm_orchestrator.h>
 
 /* Kernel version info */
 #define AIOS_VERSION_MAJOR  0
@@ -227,6 +228,9 @@ static void init_subsystems(void) {
 
     /* 10. Autonomy Control Plane */
     INIT_SUBSYSTEM("Autonomy Control Plane", autonomy_init());
+
+    /* 11. SLM Hardware Orchestrator */
+    INIT_SUBSYSTEM("SLM Hardware Orchestrator", slm_orchestrator_init());
 }
 
 static void run_selftests(void) {
