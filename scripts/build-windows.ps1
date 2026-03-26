@@ -255,6 +255,7 @@ try {
                 '-cdrom', $iso,
                 '-boot', 'd',
                 '-m', '256M',
+                '-nic', 'user,model=e1000',
                 '-serial', "file:$serialLog",
                 '-display', 'none',
                 '-no-reboot',
@@ -283,17 +284,17 @@ try {
         'run' {
             Invoke-MakeTarget 'all'
             $iso = New-WindowsBiosIso
-            & $Qemu -cdrom $iso -boot d -m 2G -serial stdio -display curses -no-reboot -no-shutdown
+            & $Qemu -cdrom $iso -boot d -m 2G -nic user,model=e1000 -serial stdio -display curses -no-reboot -no-shutdown
         }
         'run-headless' {
             Invoke-MakeTarget 'all'
             $iso = New-WindowsBiosIso
-            & $Qemu -cdrom $iso -boot d -m 2G -serial stdio -display none -no-reboot -no-shutdown
+            & $Qemu -cdrom $iso -boot d -m 2G -nic user,model=e1000 -serial stdio -display none -no-reboot -no-shutdown
         }
         'debug' {
             Invoke-MakeTarget 'all'
             $iso = New-WindowsBiosIso
-            & $Qemu -cdrom $iso -boot d -m 2G -serial stdio -display curses -no-reboot -no-shutdown -s -S
+            & $Qemu -cdrom $iso -boot d -m 2G -nic user,model=e1000 -serial stdio -display curses -no-reboot -no-shutdown -s -S
         }
         default {
             throw "Unsupported target: $Target"

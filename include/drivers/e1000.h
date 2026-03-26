@@ -10,6 +10,7 @@
 
 aios_status_t e1000_driver_init(void);
 bool e1000_driver_ready(void);
+aios_status_t e1000_driver_tx_smoke(void);
 void e1000_driver_dump(void);
 
 #endif /* _AIOS_E1000_H */

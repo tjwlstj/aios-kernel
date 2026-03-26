@@ -120,6 +120,7 @@ run: iso
 		-cdrom $(KERNEL_ISO) \
 		-boot d \
 		-m 2G \
+		-nic user,model=e1000 \
 		-serial stdio \
 		-display curses \
 		-no-reboot \
@@ -131,6 +132,7 @@ run-headless: iso
 		-cdrom $(KERNEL_ISO) \
 		-boot d \
 		-m 2G \
+		-nic user,model=e1000 \
 		-serial stdio \
 		-display none \
 		-no-reboot \
@@ -142,6 +144,7 @@ debug: iso
 		-cdrom $(KERNEL_ISO) \
 		-boot d \
 		-m 2G \
+		-nic user,model=e1000 \
 		-serial stdio \
 		-display curses \
 		-no-reboot \
@@ -157,6 +160,7 @@ test: iso
 		-cdrom $(KERNEL_ISO) \
 		-boot d \
 		-m 256M \
+		-nic user,model=e1000 \
 		-serial file:$(TEST_LOG) \
 		-display none \
 		-no-reboot \
