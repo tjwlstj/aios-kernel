@@ -86,6 +86,7 @@ typedef struct ai_task {
     uint64_t            exec_time;      /* Total execution time */
     uint64_t            wait_time;      /* Total wait time */
     uint64_t            start_time;     /* Task start timestamp */
+    uint64_t            last_ready_ns;  /* Last time task entered ready queue */
     uint64_t            last_scheduled; /* Last time this task was scheduled */
     
     /* Resource tracking */

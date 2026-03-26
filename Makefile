@@ -43,6 +43,7 @@ LDFLAGS     = -T $(KERNEL_DIR)/linker.ld -nostdlib -z max-page-size=0x1000
 ASM_SOURCES = $(BOOT_DIR)/boot.asm \
               $(INTERRUPT_DIR)/isr_stub.asm
 C_SOURCES   = $(KERNEL_DIR)/main.c \
+              $(KERNEL_DIR)/time.c \
               $(KERNEL_DIR)/selftest.c \
               $(LIB_DIR)/string.c \
               $(INTERRUPT_DIR)/idt.c \

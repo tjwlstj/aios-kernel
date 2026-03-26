@@ -4,6 +4,7 @@
  */
 
 #include <runtime/autonomy.h>
+#include <kernel/time.h>
 #include <drivers/vga.h>
 
 static telemetry_frame_t telemetry_ring[AUTONOMY_TELEMETRY_CAP];
@@ -31,11 +32,8 @@ static struct {
 } rollback_ctx;
 
 static autonomy_stats_t stats;
-static uint64_t monotonic_tick = 0;
-
 static uint64_t autonomy_now_ns(void) {
-    monotonic_tick += 1000000ULL; /* 1ms coarse monotonic clock */
-    return monotonic_tick;
+    return kernel_time_monotonic_ns();
 }
 
 static void log_event(const policy_action_t *action) {
@@ -140,8 +138,6 @@ aios_status_t autonomy_init(void) {
     stats.safe_mode = false;
     stats.action_queue_depth = 0;
     stats.event_log_depth = 0;
-    monotonic_tick = 0;
-
     kprintf("\n");
     kprintf("    Autonomy Control Plane initialized:\n");
     kprintf("    Telemetry Ring: %u\n", (uint64_t)AUTONOMY_TELEMETRY_CAP);

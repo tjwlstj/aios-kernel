@@ -18,6 +18,7 @@
  */
 
 #include <sched/ai_sched.h>
+#include <kernel/time.h>
 #include <drivers/vga.h>
 
 /* ============================================================
@@ -45,7 +46,7 @@ static ai_task_t *current_task = NULL;
 /* Scheduler statistics */
 static sched_stats_t sched_stats;
 
-/* Simple tick counter (would be driven by timer interrupt) */
+/* Legacy coarse tick counter retained for compatibility/debug output. */
 static uint64_t tick_count = 0;
 
 /* ============================================================
@@ -95,6 +96,7 @@ static void enqueue_task(ai_task_t *task) {
 
     queue_sizes[level]++;
     task->state = TASK_STATE_READY;
+    task->last_ready_ns = kernel_time_monotonic_ns();
 }
 
 /* Dequeue task from run queue */
@@ -232,7 +234,8 @@ aios_status_t ai_task_create(const char *name, workload_type_t workload,
     task->vruntime = 0;
     task->exec_time = 0;
     task->wait_time = 0;
-    task->start_time = tick_count;
+    task->start_time = kernel_time_monotonic_ns();
+    task->last_ready_ns = task->start_time;
     task->last_scheduled = 0;
     task->model_id = 0;
     task->accel_id = 0;
@@ -349,7 +352,8 @@ ai_task_t *ai_sched_pick_next(void) {
 
             dequeue_task(task);
             task->state = TASK_STATE_RUNNING;
-            task->last_scheduled = tick_count;
+            task->last_scheduled = kernel_time_monotonic_ns();
+            task->wait_time += task->last_scheduled - task->last_ready_ns;
 
             /* Track context switch */
             if (current_task != task) {
@@ -369,12 +373,14 @@ void ai_sched_tick(void) {
 
     if (!current_task) return;
 
+    uint64_t now_ns = kernel_time_monotonic_ns();
+    uint64_t elapsed_ns = now_ns - current_task->last_scheduled;
+
     /* Update virtual runtime */
-    update_vruntime(current_task, current_task->sched.time_slice_ns);
+    update_vruntime(current_task, elapsed_ns);
 
     /* Check if time slice expired */
-    uint64_t elapsed = tick_count - current_task->last_scheduled;
-    if (elapsed * 1000000ULL >= current_task->sched.time_slice_ns) {
+    if (elapsed_ns >= current_task->sched.time_slice_ns) {
         /* Time slice expired - preempt and reschedule */
         ai_task_t *task = current_task;
         current_task = NULL;

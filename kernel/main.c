@@ -8,6 +8,7 @@
 
 #include <kernel/types.h>
 #include <kernel/selftest.h>
+#include <kernel/time.h>
 #include <lib/string.h>
 #include <drivers/e1000.h>
 #include <drivers/vga.h>
@@ -200,28 +201,31 @@ static void init_subsystems(void) {
     /* 1. IDT - must be first to catch any exceptions during init */
     INIT_SUBSYSTEM("Interrupt Descriptor Table (IDT)", idt_init());
 
-    /* 2. Tensor Memory Manager */
+    /* 2. Common monotonic time source */
+    INIT_SUBSYSTEM("Kernel Time Source", kernel_time_init());
+
+    /* 3. Tensor Memory Manager */
     INIT_SUBSYSTEM("Tensor Memory Manager", tensor_mm_init());
     
-    /* 3. AI Workload Scheduler */
+    /* 4. AI Workload Scheduler */
     INIT_SUBSYSTEM("AI Workload Scheduler", ai_sched_init());
 
-    /* 4. Boot-time diagnostics and performance profiling */
+    /* 5. Boot-time diagnostics and performance profiling */
     run_selftests();
     
-    /* 5. Accelerator HAL */
+    /* 6. Accelerator HAL */
     INIT_SUBSYSTEM("Accelerator HAL", accel_hal_init());
 
-    /* 6. Minimal peripheral discovery */
+    /* 7. Minimal peripheral discovery */
     INIT_SUBSYSTEM("Peripheral Probe Layer", platform_probe_init());
 
-    /* 7. Intel E1000 network bootstrap */
+    /* 8. Intel E1000 network bootstrap */
     INIT_SUBSYSTEM("Intel E1000 Ethernet", e1000_driver_init());
 
-    /* 8. AI System Call Interface */
+    /* 9. AI System Call Interface */
     INIT_SUBSYSTEM("AI System Call Interface", ai_syscall_init());
 
-    /* 9. Autonomy Control Plane */
+    /* 10. Autonomy Control Plane */
     INIT_SUBSYSTEM("Autonomy Control Plane", autonomy_init());
 }
 
