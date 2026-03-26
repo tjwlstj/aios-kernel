@@ -56,6 +56,8 @@ C_SOURCES   = $(KERNEL_DIR)/main.c \
               $(DRIVERS_DIR)/vga.c \
               $(DRIVERS_DIR)/serial.c \
               $(DRIVERS_DIR)/platform_probe.c \
+              $(DRIVERS_DIR)/usb_host.c \
+              $(DRIVERS_DIR)/storage_host.c \
               $(DRIVERS_DIR)/e1000.c
 
 # Object files
@@ -122,6 +124,7 @@ run: iso
 		-boot d \
 		-m 2G \
 		-nic user,model=e1000 \
+		-device qemu-xhci \
 		-serial stdio \
 		-display curses \
 		-no-reboot \
@@ -134,6 +137,7 @@ run-headless: iso
 		-boot d \
 		-m 2G \
 		-nic user,model=e1000 \
+		-device qemu-xhci \
 		-serial stdio \
 		-display none \
 		-no-reboot \
@@ -146,6 +150,7 @@ debug: iso
 		-boot d \
 		-m 2G \
 		-nic user,model=e1000 \
+		-device qemu-xhci \
 		-serial stdio \
 		-display curses \
 		-no-reboot \
@@ -162,6 +167,7 @@ test: iso
 		-boot d \
 		-m 256M \
 		-nic user,model=e1000 \
+		-device qemu-xhci \
 		-serial file:$(TEST_LOG) \
 		-display none \
 		-no-reboot \

@@ -11,6 +11,8 @@
 #include <kernel/time.h>
 #include <lib/string.h>
 #include <drivers/e1000.h>
+#include <drivers/storage_host.h>
+#include <drivers/usb_host.h>
 #include <drivers/vga.h>
 #include <drivers/serial.h>
 #include <drivers/platform_probe.h>
@@ -223,13 +225,19 @@ static void init_subsystems(void) {
     /* 8. Intel E1000 network bootstrap */
     INIT_SUBSYSTEM("Intel E1000 Ethernet", e1000_driver_init());
 
-    /* 9. AI System Call Interface */
+    /* 9. Minimal USB host bootstrap */
+    INIT_SUBSYSTEM("USB Host Bootstrap", usb_host_init());
+
+    /* 10. Minimal storage host bootstrap */
+    INIT_SUBSYSTEM("Storage Host Bootstrap", storage_host_init());
+
+    /* 11. AI System Call Interface */
     INIT_SUBSYSTEM("AI System Call Interface", ai_syscall_init());
 
-    /* 10. Autonomy Control Plane */
+    /* 12. Autonomy Control Plane */
     INIT_SUBSYSTEM("Autonomy Control Plane", autonomy_init());
 
-    /* 11. SLM Hardware Orchestrator */
+    /* 13. SLM Hardware Orchestrator */
     INIT_SUBSYSTEM("SLM Hardware Orchestrator", slm_orchestrator_init());
 }
 

@@ -27,6 +27,10 @@ typedef enum {
     SLM_ACTION_BOOTSTRAP_E1000 = 2,
     SLM_ACTION_E1000_TX_SMOKE = 3,
     SLM_ACTION_E1000_DUMP = 4,
+    SLM_ACTION_BOOTSTRAP_USB = 5,
+    SLM_ACTION_USB_DUMP = 6,
+    SLM_ACTION_BOOTSTRAP_STORAGE = 7,
+    SLM_ACTION_STORAGE_DUMP = 8,
 } slm_action_t;
 
 typedef enum {
@@ -64,6 +68,10 @@ typedef struct {
     uint32_t listed_devices;
     bool e1000_ready;
     bool e1000_link_up;
+    bool usb_ready;
+    uint8_t usb_controller_kind;
+    bool storage_ready;
+    uint8_t storage_controller_kind;
     slm_hw_device_t devices[SLM_HW_MAX_DEVICES];
 } slm_hw_snapshot_t;
 

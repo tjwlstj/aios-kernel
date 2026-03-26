@@ -6,6 +6,8 @@
 #include <runtime/slm_orchestrator.h>
 #include <kernel/time.h>
 #include <drivers/e1000.h>
+#include <drivers/storage_host.h>
+#include <drivers/usb_host.h>
 #include <drivers/serial.h>
 #include <drivers/vga.h>
 
@@ -27,6 +29,12 @@ static bool request_valid(const slm_plan_request_t *req) {
         case SLM_ACTION_E1000_TX_SMOKE:
         case SLM_ACTION_E1000_DUMP:
             return req->template_id == SLM_TEMPLATE_PCI_ETHERNET;
+        case SLM_ACTION_BOOTSTRAP_USB:
+        case SLM_ACTION_USB_DUMP:
+            return req->template_id == SLM_TEMPLATE_PCI_USB;
+        case SLM_ACTION_BOOTSTRAP_STORAGE:
+        case SLM_ACTION_STORAGE_DUMP:
+            return req->template_id == SLM_TEMPLATE_PCI_STORAGE;
         default:
             return false;
     }
@@ -92,33 +100,71 @@ static void seed_boot_plans(void) {
         }
     }
 
-    if (!ethernet) {
-        return;
-    }
-
-    slm_plan_request_t nic_plan = {
-        .template_id = SLM_TEMPLATE_PCI_ETHERNET,
-        .action = e1000_driver_ready() ? SLM_ACTION_E1000_DUMP
-                                       : SLM_ACTION_BOOTSTRAP_E1000,
-        .target_vendor_id = ethernet->vendor_id,
-        .target_device_id = ethernet->device_id,
-        .target_kind = ethernet->kind,
-        .risk_level = e1000_driver_ready() ? 0 : 1,
-        .allow_apply = false,
-    };
-    seed_plan(&nic_plan, "ethernet-bootstrap");
-
-    if (e1000_driver_ready()) {
-        slm_plan_request_t tx_smoke = {
+    if (ethernet) {
+        slm_plan_request_t nic_plan = {
             .template_id = SLM_TEMPLATE_PCI_ETHERNET,
-            .action = SLM_ACTION_E1000_TX_SMOKE,
+            .action = e1000_driver_ready() ? SLM_ACTION_E1000_DUMP
+                                           : SLM_ACTION_BOOTSTRAP_E1000,
             .target_vendor_id = ethernet->vendor_id,
             .target_device_id = ethernet->device_id,
             .target_kind = ethernet->kind,
-            .risk_level = 1,
+            .risk_level = e1000_driver_ready() ? 0 : 1,
             .allow_apply = false,
         };
-        seed_plan(&tx_smoke, "ethernet-tx-smoke");
+        seed_plan(&nic_plan, "ethernet-bootstrap");
+
+        if (e1000_driver_ready()) {
+            slm_plan_request_t tx_smoke = {
+                .template_id = SLM_TEMPLATE_PCI_ETHERNET,
+                .action = SLM_ACTION_E1000_TX_SMOKE,
+                .target_vendor_id = ethernet->vendor_id,
+                .target_device_id = ethernet->device_id,
+                .target_kind = ethernet->kind,
+                .risk_level = 1,
+                .allow_apply = false,
+            };
+            seed_plan(&tx_smoke, "ethernet-tx-smoke");
+        }
+    }
+
+    for (uint32_t i = 0; i < platform_probe_count(); i++) {
+        const platform_device_t *dev = platform_probe_get(i);
+        if (!dev || dev->kind != PLATFORM_DEVICE_USB) {
+            continue;
+        }
+
+        slm_plan_request_t usb_plan = {
+            .template_id = SLM_TEMPLATE_PCI_USB,
+            .action = usb_host_ready() ? SLM_ACTION_USB_DUMP
+                                       : SLM_ACTION_BOOTSTRAP_USB,
+            .target_vendor_id = dev->vendor_id,
+            .target_device_id = dev->device_id,
+            .target_kind = dev->kind,
+            .risk_level = usb_host_ready() ? 0 : 1,
+            .allow_apply = false,
+        };
+        seed_plan(&usb_plan, "usb-bootstrap");
+        break;
+    }
+
+    for (uint32_t i = 0; i < platform_probe_count(); i++) {
+        const platform_device_t *dev = platform_probe_get(i);
+        if (!dev || dev->kind != PLATFORM_DEVICE_STORAGE) {
+            continue;
+        }
+
+        slm_plan_request_t storage_plan = {
+            .template_id = SLM_TEMPLATE_PCI_STORAGE,
+            .action = storage_host_ready() ? SLM_ACTION_STORAGE_DUMP
+                                           : SLM_ACTION_BOOTSTRAP_STORAGE,
+            .target_vendor_id = dev->vendor_id,
+            .target_device_id = dev->device_id,
+            .target_kind = dev->kind,
+            .risk_level = storage_host_ready() ? 0 : 1,
+            .allow_apply = false,
+        };
+        seed_plan(&storage_plan, "storage-bootstrap");
+        break;
     }
 }
 
@@ -132,6 +178,16 @@ static aios_status_t apply_request(const slm_plan_request_t *req) {
             return e1000_driver_tx_smoke();
         case SLM_ACTION_E1000_DUMP:
             e1000_driver_dump();
+            return AIOS_OK;
+        case SLM_ACTION_BOOTSTRAP_USB:
+            return usb_host_init();
+        case SLM_ACTION_USB_DUMP:
+            usb_host_dump();
+            return AIOS_OK;
+        case SLM_ACTION_BOOTSTRAP_STORAGE:
+            return storage_host_init();
+        case SLM_ACTION_STORAGE_DUMP:
+            storage_host_dump();
             return AIOS_OK;
         default:
             return AIOS_ERR_NOSYS;
@@ -166,7 +222,11 @@ aios_status_t slm_snapshot_read(slm_hw_snapshot_t *out) {
     const memory_selftest_result_t *profile = kernel_memory_selftest_last();
     const platform_probe_summary_t *summary = platform_probe_summary();
     e1000_driver_info_t nic;
+    storage_host_info_t storage;
+    usb_host_info_t usb;
     (void)e1000_driver_info(&nic);
+    (void)storage_host_info(&storage);
+    (void)usb_host_info(&usb);
 
     out->ts_ns = kernel_time_monotonic_ns();
     out->tsc_khz = kernel_time_tsc_khz();
@@ -177,6 +237,10 @@ aios_status_t slm_snapshot_read(slm_hw_snapshot_t *out) {
     out->listed_devices = 0;
     out->e1000_ready = nic.ready;
     out->e1000_link_up = nic.link_up;
+    out->usb_ready = usb.ready;
+    out->usb_controller_kind = (uint8_t)usb.controller_kind;
+    out->storage_ready = storage.ready;
+    out->storage_controller_kind = (uint8_t)storage.controller_kind;
 
     for (uint32_t i = 0; i < SLM_HW_MAX_DEVICES; i++) {
         out->devices[i].vendor_id = 0;
@@ -309,11 +373,15 @@ void slm_orchestrator_dump(void) {
         snapshot.tsc_khz,
         (uint64_t)snapshot.tier,
         snapshot.memcpy_mib_per_sec);
-    kprintf("Devices: detected=%u listed=%u | e1000_ready=%u link=%u\n",
+    kprintf("Devices: detected=%u listed=%u | e1000_ready=%u link=%u | usb_ready=%u type=%u | sto_ready=%u type=%u\n",
         snapshot.total_detected_devices,
         snapshot.listed_devices,
         (uint64_t)snapshot.e1000_ready,
-        (uint64_t)snapshot.e1000_link_up);
+        (uint64_t)snapshot.e1000_link_up,
+        (uint64_t)snapshot.usb_ready,
+        (uint64_t)snapshot.usb_controller_kind,
+        (uint64_t)snapshot.storage_ready,
+        (uint64_t)snapshot.storage_controller_kind);
     for (uint32_t i = 0; i < snapshot.listed_devices; i++) {
         kprintf("  [%u] kind=%u vendor=%x device=%x bus=%u slot=%u prio=%u\n",
             (uint64_t)i,
