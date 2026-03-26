@@ -75,12 +75,12 @@ extern __bss_end
 debug_port equ 0xe9
 
 _start:
-    mov al, 'A'
-    out debug_port, al
-
     ; Preserve multiboot registers across BSS clearing
     mov esi, eax
     mov ebp, ebx
+
+    mov al, 'A'
+    out debug_port, al
 
     ; Clear BSS before using the boot stack or page tables stored there
     mov edi, __bss_start
@@ -246,6 +246,10 @@ long_mode_start:
     mov al, 'D'
     out debug_port, al
 
+    ; Preserve multiboot handoff values before reusing rdi/rsi
+    mov r12, rsi
+    mov r13, rdi
+
     ; Reload segment registers and reset the 64-bit stack
     xor eax, eax
     mov ds, ax
@@ -283,8 +287,8 @@ long_mode_start:
 
     ; Call kernel main (C entry point)
     ; rdi = multiboot magic, rsi = multiboot info pointer
-    mov rdi, rsi            ; multiboot magic (saved from 32-bit esi)
-    xor rsi, rsi            ; multiboot info (simplified for now)
+    mov rdi, r12            ; multiboot magic
+    mov rsi, r13            ; multiboot info pointer
     call kernel_main
 
     ; If kernel returns, halt

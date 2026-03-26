@@ -7,9 +7,12 @@
  */
 
 #include <kernel/types.h>
+#include <kernel/selftest.h>
 #include <lib/string.h>
+#include <drivers/e1000.h>
 #include <drivers/vga.h>
 #include <drivers/serial.h>
+#include <drivers/platform_probe.h>
 #include <interrupt/idt.h>
 #include <mm/tensor_mm.h>
 #include <sched/ai_sched.h>
@@ -25,8 +28,10 @@
 
 /* Forward declarations */
 static void print_banner(void);
+static void print_boot_protocol(uint64_t multiboot_magic, uint64_t multiboot_info);
 static void print_system_info(void);
 static void init_subsystems(void);
+static void run_selftests(void);
 
 /* Subsystem init helper macro */
 #define INIT_SUBSYSTEM(name, init_fn) do {                              \
@@ -58,18 +63,8 @@ void kernel_main(uint64_t multiboot_magic, uint64_t multiboot_info) {
     
     /* Display boot banner */
     print_banner();
-    
-    /* Verify multiboot2 boot */
-    if (multiboot_magic == 0x36d76289) {
-        kprintf("[BOOT] Multiboot2 verified. Info struct at ");
-        console_write_hex(multiboot_info);
-        console_newline();
-        serial_printf("[BOOT] Multiboot2 verified. Info at %x\n", multiboot_info);
-    } else {
-        console_write_color("[BOOT] WARNING: Non-standard boot detected\n", 
-                          VGA_YELLOW, VGA_BLUE);
-        serial_write("[BOOT] WARNING: Non-standard boot detected\n");
-    }
+
+    print_boot_protocol(multiboot_magic, multiboot_info);
     
     /* Print system information */
     print_system_info();
@@ -94,6 +89,31 @@ void kernel_main(uint64_t multiboot_magic, uint64_t multiboot_info) {
     while (1) {
         __asm__ volatile ("hlt");
     }
+}
+
+static void print_boot_protocol(uint64_t multiboot_magic, uint64_t multiboot_info) {
+    if (multiboot_magic == 0x36d76289) {
+        kprintf("[BOOT] Multiboot2 verified. Info struct at ");
+        console_write_hex(multiboot_info);
+        console_newline();
+        serial_printf("[BOOT] Multiboot2 verified. Info at %x\n", multiboot_info);
+        return;
+    }
+
+    if (multiboot_magic == 0x2badb002) {
+        console_write_color("[BOOT] Multiboot1 compatibility path active\n",
+            VGA_YELLOW, VGA_BLUE);
+        serial_printf("[BOOT] Multiboot1 compatibility path active. Info at %x\n",
+            multiboot_info);
+        return;
+    }
+
+    console_write_color("[BOOT] WARNING: Unknown boot handoff. Magic=",
+        VGA_YELLOW, VGA_BLUE);
+    console_write_hex(multiboot_magic);
+    console_newline();
+    serial_printf("[BOOT] WARNING: Unknown boot handoff. Magic=%x info=%x\n",
+        multiboot_magic, multiboot_info);
 }
 
 static void print_banner(void) {
@@ -185,13 +205,36 @@ static void init_subsystems(void) {
     
     /* 3. AI Workload Scheduler */
     INIT_SUBSYSTEM("AI Workload Scheduler", ai_sched_init());
+
+    /* 4. Boot-time diagnostics and performance profiling */
+    run_selftests();
     
-    /* 4. Accelerator HAL */
+    /* 5. Accelerator HAL */
     INIT_SUBSYSTEM("Accelerator HAL", accel_hal_init());
-    
-    /* 5. AI System Call Interface */
+
+    /* 6. Minimal peripheral discovery */
+    INIT_SUBSYSTEM("Peripheral Probe Layer", platform_probe_init());
+
+    /* 7. Intel E1000 network bootstrap */
+    INIT_SUBSYSTEM("Intel E1000 Ethernet", e1000_driver_init());
+
+    /* 8. AI System Call Interface */
     INIT_SUBSYSTEM("AI System Call Interface", ai_syscall_init());
 
-    /* 6. Autonomy Control Plane */
+    /* 9. Autonomy Control Plane */
     INIT_SUBSYSTEM("Autonomy Control Plane", autonomy_init());
+}
+
+static void run_selftests(void) {
+    memory_selftest_result_t mem_result;
+    aios_status_t status = kernel_memory_selftest_run(&mem_result);
+
+    if (status != AIOS_OK) {
+        console_write_color("[SELFTEST] Memory microbench FAIL\n",
+            VGA_LIGHT_RED, VGA_BLUE);
+        serial_write("[SELFTEST] Memory microbench FAIL\n");
+        kernel_panic("Boot-time memory selftest failed");
+    }
+
+    kernel_memory_selftest_print(&mem_result);
 }

@@ -43,6 +43,7 @@ LDFLAGS     = -T $(KERNEL_DIR)/linker.ld -nostdlib -z max-page-size=0x1000
 ASM_SOURCES = $(BOOT_DIR)/boot.asm \
               $(INTERRUPT_DIR)/isr_stub.asm
 C_SOURCES   = $(KERNEL_DIR)/main.c \
+              $(KERNEL_DIR)/selftest.c \
               $(LIB_DIR)/string.c \
               $(INTERRUPT_DIR)/idt.c \
               $(MM_DIR)/tensor_mm.c \
@@ -51,7 +52,9 @@ C_SOURCES   = $(KERNEL_DIR)/main.c \
               $(RUNTIME_DIR)/ai_syscall.c \
               $(RUNTIME_DIR)/autonomy.c \
               $(DRIVERS_DIR)/vga.c \
-              $(DRIVERS_DIR)/serial.c
+              $(DRIVERS_DIR)/serial.c \
+              $(DRIVERS_DIR)/platform_probe.c \
+              $(DRIVERS_DIR)/e1000.c
 
 # Object files
 ASM_OBJECTS = $(patsubst %.asm,$(BUILD_DIR)/%.o,$(ASM_SOURCES))
@@ -169,10 +172,12 @@ test: iso
 		echo "[ERR] Smoke test produced an empty serial log"; \
 		exit 1; \
 	fi; \
-	if grep -q "AIOS Kernel Ready" $(TEST_LOG); then \
+	if grep -q "AIOS Kernel Ready" $(TEST_LOG) && \
+	   grep -q "\\[SELFTEST\\] Memory microbench PASS" $(TEST_LOG) && \
+	   grep -q "\\[DEV\\] Peripheral probe ready" $(TEST_LOG); then \
 		echo "[OK] Smoke test PASSED - kernel booted successfully"; \
 	else \
-		echo "[ERR] Smoke test did not reach kernel ready state"; \
+		echo "[ERR] Smoke test did not reach expected ready/selftest/probe state"; \
 		echo "[INFO] Last serial log lines:"; \
 		tail -n 40 $(TEST_LOG) || true; \
 		exit 1; \

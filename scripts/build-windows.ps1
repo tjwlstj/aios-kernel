@@ -260,7 +260,7 @@ try {
                 '-no-reboot',
                 '-no-shutdown'
             ) -PassThru
-            if (-not $proc.WaitForExit(5000)) {
+            if (-not $proc.WaitForExit(10000)) {
                 Stop-Process -Id $proc.Id -Force
             }
             if (-not (Test-Path $serialLog)) {
@@ -269,10 +269,13 @@ try {
             if ((Get-Item $serialLog).Length -eq 0) {
                 throw 'Smoke test produced an empty serial log'
             }
-            if (Select-String -Path $serialLog -Pattern 'AIOS Kernel Ready' -Quiet -ErrorAction SilentlyContinue) {
+            $hasReady = Select-String -Path $serialLog -Pattern 'AIOS Kernel Ready' -Quiet -ErrorAction SilentlyContinue
+            $hasSelftest = Select-String -Path $serialLog -Pattern '\[SELFTEST\] Memory microbench PASS' -Quiet -ErrorAction SilentlyContinue
+            $hasProbe = Select-String -Path $serialLog -Pattern '\[DEV\] Peripheral probe ready' -Quiet -ErrorAction SilentlyContinue
+            if ($hasReady -and $hasSelftest -and $hasProbe) {
                 Write-Host '[OK] Smoke test PASSED - kernel booted successfully'
             } else {
-                Write-Host '[ERR] Smoke test did not reach kernel ready state'
+                Write-Host '[ERR] Smoke test did not reach expected ready/selftest/probe state'
                 Get-Content $serialLog -Tail 40 -ErrorAction SilentlyContinue
                 throw 'Smoke test failed'
             }
