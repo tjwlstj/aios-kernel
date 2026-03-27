@@ -28,7 +28,7 @@ ISO_DIR     = $(BUILD_DIR)/isofiles
 KERNEL_BIN  = $(BUILD_DIR)/aios-kernel.bin
 KERNEL_ISO  = $(BUILD_DIR)/aios-kernel.iso
 TEST_LOG    = $(BUILD_DIR)/serial_output.log
-TEST_TIMEOUT ?= 8
+TEST_TIMEOUT ?= 12
 
 # Flags
 ASMFLAGS    = -f elf64
@@ -43,6 +43,7 @@ LDFLAGS     = -T $(KERNEL_DIR)/linker.ld -nostdlib -z max-page-size=0x1000
 ASM_SOURCES = $(BOOT_DIR)/boot.asm \
               $(INTERRUPT_DIR)/isr_stub.asm
 C_SOURCES   = $(KERNEL_DIR)/main.c \
+              $(KERNEL_DIR)/health.c \
               $(KERNEL_DIR)/time.c \
               $(KERNEL_DIR)/selftest.c \
               $(LIB_DIR)/string.c \
@@ -186,7 +187,8 @@ test: iso
 	fi; \
 	if grep -q "AIOS Kernel Ready" $(TEST_LOG) && \
 	   grep -q "\\[SELFTEST\\] Memory microbench PASS" $(TEST_LOG) && \
-	   grep -q "\\[DEV\\] Peripheral probe ready" $(TEST_LOG); then \
+	   grep -q "\\[DEV\\] Peripheral probe ready" $(TEST_LOG) && \
+	   grep -q "\\[HEALTH\\] stability=" $(TEST_LOG); then \
 		echo "[OK] Smoke test PASSED - kernel booted successfully"; \
 	else \
 		echo "[ERR] Smoke test did not reach expected ready/selftest/probe state"; \

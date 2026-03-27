@@ -32,6 +32,7 @@ typedef struct {
     uint16_t io_base;
     uint64_t mmio_base;
     uint32_t pci_command;
+    aios_status_t last_init_status;
 } usb_host_state_t;
 
 static usb_host_state_t g_usb_host = {0};
@@ -103,6 +104,7 @@ aios_status_t usb_host_init(void) {
     }
 
     if (!candidate) {
+        g_usb_host.last_init_status = AIOS_ERR_NODEV;
         kprintf("    No USB host controller found.\n");
         serial_write("[USB] No USB host controller found\n");
         return AIOS_OK;
@@ -144,6 +146,7 @@ aios_status_t usb_host_init(void) {
     }
 
     g_usb_host.ready = (g_usb_host.mmio_base != 0 || g_usb_host.io_base != 0);
+    g_usb_host.last_init_status = g_usb_host.ready ? AIOS_OK : AIOS_ERR_IO;
 
     kprintf("    USB %s host: pci=%u:%u cmd=0x%x mmio=0x%x io=0x%x\n",
         (uint64_t)(uintptr_t)label,
@@ -187,6 +190,7 @@ aios_status_t usb_host_info(usb_host_info_t *out) {
     out->io_base = g_usb_host.io_base;
     out->mmio_base = g_usb_host.mmio_base;
     out->pci_command = g_usb_host.pci_command;
+    out->last_init_status = g_usb_host.last_init_status;
     return AIOS_OK;
 }
 
@@ -205,4 +209,6 @@ void usb_host_dump(void) {
         (uint64_t)g_usb_host.slot,
         (uint64_t)g_usb_host.mmio_base,
         (uint64_t)g_usb_host.io_base);
+    serial_printf("[USB] last_init_status=%d\n",
+        (int64_t)g_usb_host.last_init_status);
 }

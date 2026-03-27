@@ -4,6 +4,7 @@
  */
 
 #include <runtime/slm_orchestrator.h>
+#include <kernel/health.h>
 #include <kernel/time.h>
 #include <drivers/e1000.h>
 #include <drivers/storage_host.h>
@@ -94,6 +95,8 @@ static void apply_io_defaults(slm_plan_request_t *req, const slm_io_profile_t *p
 }
 
 static bool request_valid(const slm_plan_request_t *req) {
+    kernel_health_summary_t health;
+
     if (!req) {
         return false;
     }
@@ -102,6 +105,20 @@ static bool request_valid(const slm_plan_request_t *req) {
     }
     if (req->queue_depth_hint > 256 || req->poll_budget_hint > 4096 ||
         req->dma_window_kib_hint > 4096) {
+        return false;
+    }
+
+    kernel_health_get_summary(&health);
+    if (health.level == KERNEL_STABILITY_UNSAFE &&
+        req->action != SLM_ACTION_REPROBE_PCI &&
+        req->action != SLM_ACTION_IO_AUDIT) {
+        return false;
+    }
+    if (!health.risky_io_allowed &&
+        req->risk_level > 0 &&
+        (req->template_id == SLM_TEMPLATE_PCI_ETHERNET ||
+         req->template_id == SLM_TEMPLATE_PCI_USB ||
+         req->template_id == SLM_TEMPLATE_PCI_STORAGE)) {
         return false;
     }
 
@@ -341,9 +358,11 @@ aios_status_t slm_snapshot_read(slm_hw_snapshot_t *out) {
 
     const memory_selftest_result_t *profile = kernel_memory_selftest_last();
     const platform_probe_summary_t *summary = platform_probe_summary();
+    kernel_health_summary_t health;
     e1000_driver_info_t nic;
     storage_host_info_t storage;
     usb_host_info_t usb;
+    kernel_health_get_summary(&health);
     (void)e1000_driver_info(&nic);
     (void)storage_host_info(&storage);
     (void)usb_host_info(&usb);
@@ -355,6 +374,9 @@ aios_status_t slm_snapshot_read(slm_hw_snapshot_t *out) {
     out->memcpy_mib_per_sec = profile->memcpy_mib_per_sec;
     out->total_detected_devices = summary->matched_devices;
     out->listed_devices = 0;
+    out->health_level = health.level;
+    out->autonomy_allowed = health.autonomy_allowed;
+    out->risky_io_allowed = health.risky_io_allowed;
     out->e1000_ready = nic.ready;
     out->e1000_link_up = nic.link_up;
     out->usb_ready = usb.ready;
@@ -506,6 +528,10 @@ void slm_orchestrator_dump(void) {
         (uint64_t)snapshot.usb_controller_kind,
         (uint64_t)snapshot.storage_ready,
         (uint64_t)snapshot.storage_controller_kind);
+    kprintf("Health gate: level=%s autonomy=%u risky_io=%u\n",
+        (uint64_t)(uintptr_t)kernel_stability_name(snapshot.health_level),
+        (uint64_t)snapshot.autonomy_allowed,
+        (uint64_t)snapshot.risky_io_allowed);
     kprintf("I/O profile: mode=%s ready=%u degraded=%u pcie=%u qd=%u poll=%u dma=%uKiB\n",
         io_mode_name(snapshot.io_profile.mode),
         (uint64_t)snapshot.io_profile.ready_controllers,

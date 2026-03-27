@@ -13,6 +13,7 @@
 
 #include <runtime/ai_syscall.h>
 #include <drivers/vga.h>
+#include <kernel/health.h>
 #include <runtime/autonomy.h>
 #include <runtime/slm_orchestrator.h>
 
@@ -196,6 +197,8 @@ int64_t ai_syscall_dispatch(uint64_t syscall_num, uint64_t arg1,
                 case SYS_INFO_SYSTEM:
                     sys_info_dump();
                     return AIOS_OK;
+                case SYS_INFO_HEALTH:
+                    return (int64_t)sys_info_health((kernel_health_summary_t *)arg1);
                 case SYS_AUTONOMY_ACTION_PROPOSE:
                     return (int64_t)sys_autonomy_action_propose((autonomy_action_req_t *)arg1);
                 case SYS_AUTONOMY_ACTION_COMMIT:
@@ -486,6 +489,16 @@ void sys_info_dump(void) {
     tensor_mm_dump();
     ai_sched_dump();
     accel_hal_dump();
+    kernel_health_dump();
     autonomy_dump();
     slm_orchestrator_dump();
+}
+
+aios_status_t sys_info_health(kernel_health_summary_t *out) {
+    if (!out) {
+        return AIOS_ERR_INVAL;
+    }
+
+    kernel_health_get_summary(out);
+    return AIOS_OK;
 }

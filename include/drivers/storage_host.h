@@ -31,6 +31,7 @@ typedef struct {
     uint16_t io_base;
     uint64_t mmio_base;
     uint32_t pci_command;
+    aios_status_t last_init_status;
 } storage_host_info_t;
 
 aios_status_t storage_host_init(void);

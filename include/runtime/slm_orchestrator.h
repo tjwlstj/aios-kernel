@@ -7,6 +7,7 @@
 #define _AIOS_SLM_ORCHESTRATOR_H
 
 #include <kernel/types.h>
+#include <kernel/health.h>
 #include <kernel/selftest.h>
 #include <drivers/platform_probe.h>
 
@@ -83,6 +84,9 @@ typedef struct {
     uint64_t memcpy_mib_per_sec;
     uint32_t total_detected_devices;
     uint32_t listed_devices;
+    kernel_stability_t health_level;
+    bool autonomy_allowed;
+    bool risky_io_allowed;
     bool e1000_ready;
     bool e1000_link_up;
     bool usb_ready;

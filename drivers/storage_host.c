@@ -33,6 +33,7 @@ typedef struct {
     uint16_t io_base;
     uint64_t mmio_base;
     uint32_t pci_command;
+    aios_status_t last_init_status;
 } storage_host_state_t;
 
 static storage_host_state_t g_storage_host = {0};
@@ -107,6 +108,7 @@ aios_status_t storage_host_init(void) {
     }
 
     if (!candidate) {
+        g_storage_host.last_init_status = AIOS_ERR_NODEV;
         kprintf("    No storage controller found.\n");
         serial_write("[STO] No storage controller found\n");
         return AIOS_OK;
@@ -148,6 +150,7 @@ aios_status_t storage_host_init(void) {
     }
 
     g_storage_host.ready = (g_storage_host.io_base != 0 || g_storage_host.mmio_base != 0);
+    g_storage_host.last_init_status = g_storage_host.ready ? AIOS_OK : AIOS_ERR_IO;
 
     kprintf("    Storage %s host: pci=%u:%u.%u cmd=0x%x mmio=0x%x io=0x%x\n",
         (uint64_t)(uintptr_t)label,
@@ -194,6 +197,7 @@ aios_status_t storage_host_info(storage_host_info_t *out) {
     out->io_base = g_storage_host.io_base;
     out->mmio_base = g_storage_host.mmio_base;
     out->pci_command = g_storage_host.pci_command;
+    out->last_init_status = g_storage_host.last_init_status;
     return AIOS_OK;
 }
 
@@ -213,4 +217,6 @@ void storage_host_dump(void) {
         (uint64_t)g_storage_host.function,
         (uint64_t)g_storage_host.mmio_base,
         (uint64_t)g_storage_host.io_base);
+    serial_printf("[STO] last_init_status=%d\n",
+        (int64_t)g_storage_host.last_init_status);
 }

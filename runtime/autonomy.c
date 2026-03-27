@@ -4,6 +4,7 @@
  */
 
 #include <runtime/autonomy.h>
+#include <kernel/health.h>
 #include <kernel/time.h>
 #include <hal/accel_hal.h>
 #include <drivers/vga.h>
@@ -87,6 +88,11 @@ static bool risk_level_valid(uint32_t risk_level) {
 }
 
 static bool risk_allowed(uint32_t risk_level) {
+    kernel_health_summary_t health;
+    kernel_health_get_summary(&health);
+
+    if (health.level == KERNEL_STABILITY_UNSAFE) return false;
+    if (health.level == KERNEL_STABILITY_DEGRADED && risk_level > 0) return false;
     if (stats.safe_mode && risk_level > 0) return false;
     if (stats.observation_only) return false;
     return true;

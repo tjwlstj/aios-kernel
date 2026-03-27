@@ -7,6 +7,7 @@
  */
 
 #include <kernel/types.h>
+#include <kernel/health.h>
 #include <kernel/selftest.h>
 #include <kernel/time.h>
 #include <lib/string.h>
@@ -36,13 +37,19 @@ static void print_boot_protocol(uint64_t multiboot_magic, uint64_t multiboot_inf
 static void print_system_info(void);
 static void init_subsystems(void);
 static void run_selftests(void);
+static void finalize_runtime_health(void);
+static void print_health_summary(void);
+static void enforce_stability_policy(void);
 
 /* Subsystem init helper macro */
-#define INIT_SUBSYSTEM(name, init_fn) do {                              \
+#define INIT_SUBSYSTEM(id, name, init_fn) do {                          \
     console_write_color("[INIT] ", VGA_YELLOW, VGA_BLUE);               \
     kprintf("%s... ", name);                                            \
     serial_printf("[INIT] %s... ", (uint64_t)(uintptr_t)name);         \
     aios_status_t _st = (init_fn);                                     \
+    kernel_health_mark(id,                                             \
+        (_st == AIOS_OK) ? KERNEL_HEALTH_OK : KERNEL_HEALTH_FAILED,    \
+        _st);                                                          \
     if (_st == AIOS_OK) {                                              \
         console_write_color("OK\n", VGA_LIGHT_GREEN, VGA_BLUE);        \
         serial_write("OK\n");                                           \
@@ -64,6 +71,7 @@ void kernel_main(uint64_t multiboot_magic, uint64_t multiboot_info) {
     
     /* Initialize serial console for headless debugging */
     serial_init();
+    kernel_health_init();
     
     /* Display boot banner */
     print_banner();
@@ -75,6 +83,8 @@ void kernel_main(uint64_t multiboot_magic, uint64_t multiboot_info) {
     
     /* Initialize all kernel subsystems */
     init_subsystems();
+    print_health_summary();
+    enforce_stability_policy();
     
     /* Kernel ready */
     console_newline();
@@ -202,43 +212,56 @@ static void print_system_info(void) {
 
 static void init_subsystems(void) {
     /* 1. IDT - must be first to catch any exceptions during init */
-    INIT_SUBSYSTEM("Interrupt Descriptor Table (IDT)", idt_init());
+    INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_IDT,
+        "Interrupt Descriptor Table (IDT)", idt_init());
 
     /* 2. Common monotonic time source */
-    INIT_SUBSYSTEM("Kernel Time Source", kernel_time_init());
+    INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_TIME,
+        "Kernel Time Source", kernel_time_init());
 
     /* 3. Tensor Memory Manager */
-    INIT_SUBSYSTEM("Tensor Memory Manager", tensor_mm_init());
+    INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_TENSOR_MM,
+        "Tensor Memory Manager", tensor_mm_init());
     
     /* 4. AI Workload Scheduler */
-    INIT_SUBSYSTEM("AI Workload Scheduler", ai_sched_init());
+    INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_SCHED,
+        "AI Workload Scheduler", ai_sched_init());
 
     /* 5. Boot-time diagnostics and performance profiling */
     run_selftests();
     
     /* 6. Accelerator HAL */
-    INIT_SUBSYSTEM("Accelerator HAL", accel_hal_init());
+    INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_ACCEL, "Accelerator HAL", accel_hal_init());
 
     /* 7. Minimal peripheral discovery */
-    INIT_SUBSYSTEM("Peripheral Probe Layer", platform_probe_init());
+    INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_PCI_PROBE,
+        "Peripheral Probe Layer", platform_probe_init());
 
     /* 8. Intel E1000 network bootstrap */
-    INIT_SUBSYSTEM("Intel E1000 Ethernet", e1000_driver_init());
+    INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_NETWORK,
+        "Intel E1000 Ethernet", e1000_driver_init());
 
     /* 9. Minimal USB host bootstrap */
-    INIT_SUBSYSTEM("USB Host Bootstrap", usb_host_init());
+    INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_USB, "USB Host Bootstrap", usb_host_init());
 
     /* 10. Minimal storage host bootstrap */
-    INIT_SUBSYSTEM("Storage Host Bootstrap", storage_host_init());
+    INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_STORAGE,
+        "Storage Host Bootstrap", storage_host_init());
+
+    /* Finalize runtime subsystem health before control planes use it */
+    finalize_runtime_health();
 
     /* 11. AI System Call Interface */
-    INIT_SUBSYSTEM("AI System Call Interface", ai_syscall_init());
+    INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_SYSCALL,
+        "AI System Call Interface", ai_syscall_init());
 
     /* 12. Autonomy Control Plane */
-    INIT_SUBSYSTEM("Autonomy Control Plane", autonomy_init());
+    INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_AUTONOMY,
+        "Autonomy Control Plane", autonomy_init());
 
     /* 13. SLM Hardware Orchestrator */
-    INIT_SUBSYSTEM("SLM Hardware Orchestrator", slm_orchestrator_init());
+    INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_SLM,
+        "SLM Hardware Orchestrator", slm_orchestrator_init());
 }
 
 static void run_selftests(void) {
@@ -246,11 +269,88 @@ static void run_selftests(void) {
     aios_status_t status = kernel_memory_selftest_run(&mem_result);
 
     if (status != AIOS_OK) {
+        kernel_health_mark(KERNEL_SUBSYSTEM_SELFTEST, KERNEL_HEALTH_FAILED, status);
         console_write_color("[SELFTEST] Memory microbench FAIL\n",
             VGA_LIGHT_RED, VGA_BLUE);
         serial_write("[SELFTEST] Memory microbench FAIL\n");
         kernel_panic("Boot-time memory selftest failed");
     }
 
+    kernel_health_mark(KERNEL_SUBSYSTEM_SELFTEST, KERNEL_HEALTH_OK, AIOS_OK);
     kernel_memory_selftest_print(&mem_result);
+}
+
+static void finalize_runtime_health(void) {
+    e1000_driver_info_t nic;
+    usb_host_info_t usb;
+    storage_host_info_t storage;
+
+    if (e1000_driver_info(&nic) == AIOS_OK && nic.present) {
+        if (!nic.ready || !nic.link_up || nic.last_tx_status != AIOS_OK) {
+            kernel_health_mark(KERNEL_SUBSYSTEM_NETWORK,
+                KERNEL_HEALTH_DEGRADED,
+                (nic.last_tx_status != AIOS_OK) ? nic.last_tx_status : AIOS_ERR_IO);
+        } else {
+            kernel_health_mark(KERNEL_SUBSYSTEM_NETWORK,
+                KERNEL_HEALTH_OK, AIOS_OK);
+        }
+    } else if (e1000_driver_ready()) {
+        kernel_health_mark(KERNEL_SUBSYSTEM_NETWORK,
+            KERNEL_HEALTH_OK, AIOS_OK);
+    } else {
+        kernel_health_mark(KERNEL_SUBSYSTEM_NETWORK,
+            KERNEL_HEALTH_UNKNOWN, AIOS_ERR_NODEV);
+    }
+
+    if (usb_host_info(&usb) == AIOS_OK && usb.present) {
+        kernel_health_mark(KERNEL_SUBSYSTEM_USB,
+            usb.ready ? KERNEL_HEALTH_OK : KERNEL_HEALTH_DEGRADED,
+            usb.last_init_status);
+    } else {
+        kernel_health_mark(KERNEL_SUBSYSTEM_USB,
+            KERNEL_HEALTH_UNKNOWN, AIOS_ERR_NODEV);
+    }
+
+    if (storage_host_info(&storage) == AIOS_OK && storage.present) {
+        kernel_health_mark(KERNEL_SUBSYSTEM_STORAGE,
+            storage.ready ? KERNEL_HEALTH_OK : KERNEL_HEALTH_DEGRADED,
+            storage.last_init_status);
+    } else {
+        kernel_health_mark(KERNEL_SUBSYSTEM_STORAGE,
+            KERNEL_HEALTH_UNKNOWN, AIOS_ERR_NODEV);
+    }
+}
+
+static void print_health_summary(void) {
+    kernel_health_summary_t summary;
+    kernel_health_get_summary(&summary);
+
+    console_write_color("[HEALTH] ", VGA_LIGHT_GREEN, VGA_BLUE);
+    kprintf("stability=%s ok=%u degraded=%u failed=%u unknown=%u io_degraded=%u\n",
+        (uint64_t)(uintptr_t)kernel_stability_name(summary.level),
+        (uint64_t)summary.ok_count,
+        (uint64_t)summary.degraded_count,
+        (uint64_t)summary.failed_count,
+        (uint64_t)summary.unknown_count,
+        (uint64_t)summary.io_degraded);
+    serial_printf("[HEALTH] stability=%s ok=%u degraded=%u failed=%u unknown=%u io_degraded=%u\n",
+        (uint64_t)(uintptr_t)kernel_stability_name(summary.level),
+        (uint64_t)summary.ok_count,
+        (uint64_t)summary.degraded_count,
+        (uint64_t)summary.failed_count,
+        (uint64_t)summary.unknown_count,
+        (uint64_t)summary.io_degraded);
+}
+
+static void enforce_stability_policy(void) {
+    kernel_health_summary_t summary;
+    kernel_health_get_summary(&summary);
+
+    if (!summary.autonomy_allowed) {
+        autonomy_set_safe_mode(true);
+        serial_write("[HEALTH] Autonomy forced into safe mode by stability gate\n");
+        return;
+    }
+
+    serial_write("[HEALTH] Stability gate allows autonomy escalation\n");
 }

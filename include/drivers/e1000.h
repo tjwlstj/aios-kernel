@@ -23,6 +23,7 @@ typedef struct {
     uint64_t mmio_base;
     uint8_t mac[6];
     uint32_t status;
+    aios_status_t last_tx_status;
 } e1000_driver_info_t;
 
 aios_status_t e1000_driver_init(void);

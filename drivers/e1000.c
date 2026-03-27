@@ -78,6 +78,7 @@ typedef struct {
     uint64_t mmio_base;
     uint8_t mac[6];
     uint32_t status;
+    aios_status_t last_tx_status;
 } e1000_device_t;
 
 static e1000_device_t g_e1000 = {0};
@@ -363,6 +364,7 @@ aios_status_t e1000_driver_init(void) {
     e1000_read_mac();
     e1000_init_tx_ring();
     g_e1000.ready = true;
+    g_e1000.last_tx_status = AIOS_OK;
 
     kprintf("    Intel E1000 ready: io=0x%x status=0x%x link=%s\n",
         (uint64_t)g_e1000.io_base,
@@ -374,7 +376,8 @@ aios_status_t e1000_driver_init(void) {
         (uint64_t)(uintptr_t)(g_e1000.link_up ? "up" : "down"),
         g_e1000.has_eeprom ? 1ULL : 0ULL);
     e1000_print_mac("[NET] E1000 MAC=");
-    if (e1000_driver_tx_smoke() == AIOS_OK) {
+    g_e1000.last_tx_status = e1000_driver_tx_smoke();
+    if (g_e1000.last_tx_status == AIOS_OK) {
         serial_write("[NET] E1000 TX smoke PASS\n");
     } else {
         serial_write("[NET] E1000 TX smoke FAIL\n");
@@ -404,7 +407,9 @@ aios_status_t e1000_driver_tx_smoke(void) {
     const char payload[] = "AIOS e1000 tx smoke";
     memcpy(&frame[14], payload, sizeof(payload) - 1);
 
-    return e1000_send_frame(frame, sizeof(frame));
+    aios_status_t status = e1000_send_frame(frame, sizeof(frame));
+    g_e1000.last_tx_status = status;
+    return status;
 }
 
 aios_status_t e1000_driver_info(e1000_driver_info_t *out) {
@@ -425,6 +430,7 @@ aios_status_t e1000_driver_info(e1000_driver_info_t *out) {
     out->io_base = g_e1000.io_base;
     out->mmio_base = g_e1000.mmio_base;
     out->status = g_e1000.status;
+    out->last_tx_status = g_e1000.last_tx_status;
     for (uint32_t i = 0; i < 6; i++) {
         out->mac[i] = g_e1000.mac[i];
     }
@@ -447,5 +453,7 @@ void e1000_driver_dump(void) {
     serial_printf("[NET] E1000 tx_ready=%u tail=%u\n",
         g_e1000.tx_ready ? 1ULL : 0ULL,
         (uint64_t)g_tx_tail);
+    serial_printf("[NET] E1000 last_tx_status=%d\n",
+        (int64_t)g_e1000.last_tx_status);
     e1000_print_mac("[NET] E1000 MAC=");
 }

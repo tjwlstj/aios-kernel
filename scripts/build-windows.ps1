@@ -62,9 +62,12 @@ function Invoke-MakeTarget {
 
 function New-WindowsBiosIso {
     $isoRoot = Join-Path $RepoRoot 'build\winiso'
-    $grubCfg = Join-Path $isoRoot 'boot\grub\grub.cfg'
-    $coreImg = Join-Path $isoRoot 'core.img'
-    $biosImg = Join-Path $isoRoot 'boot\grub\bios.img'
+    $bootDir = [System.IO.Path]::Combine($isoRoot, 'boot')
+    $grubDir = [System.IO.Path]::Combine($bootDir, 'grub')
+    $grubCfg = [System.IO.Path]::Combine($grubDir, 'grub.cfg')
+    $coreImg = [System.IO.Path]::Combine($isoRoot, 'core.img')
+    $biosImg = [System.IO.Path]::Combine($grubDir, 'bios.img')
+    $kernelIsoPath = [System.IO.Path]::Combine($bootDir, 'aios-kernel.bin')
     $kernelBin = Join-Path $RepoRoot 'build\aios-kernel.bin'
     $outputIso = Join-Path $RepoRoot 'build\aios-kernel.iso'
 
@@ -73,8 +76,8 @@ function New-WindowsBiosIso {
     }
 
     Remove-Item $isoRoot -Recurse -Force -ErrorAction SilentlyContinue
-    New-Item -ItemType Directory -Force -Path (Join-Path $isoRoot 'boot\grub') | Out-Null
-    Copy-Item $kernelBin (Join-Path $isoRoot 'boot\aios-kernel.bin')
+    [System.IO.Directory]::CreateDirectory($grubDir) | Out-Null
+    Copy-Item -Path $kernelBin -Destination $kernelIsoPath -Force
 
     $grubCfgText = @(
         'serial --unit=0 --speed=115200'
@@ -262,7 +265,7 @@ try {
                 '-no-reboot',
                 '-no-shutdown'
             ) -PassThru
-            if (-not $proc.WaitForExit(10000)) {
+            if (-not $proc.WaitForExit(20000)) {
                 Stop-Process -Id $proc.Id -Force
             }
             if (-not (Test-Path $serialLog)) {
@@ -274,7 +277,8 @@ try {
             $hasReady = Select-String -Path $serialLog -Pattern 'AIOS Kernel Ready' -Quiet -ErrorAction SilentlyContinue
             $hasSelftest = Select-String -Path $serialLog -Pattern '\[SELFTEST\] Memory microbench PASS' -Quiet -ErrorAction SilentlyContinue
             $hasProbe = Select-String -Path $serialLog -Pattern '\[DEV\] Peripheral probe ready' -Quiet -ErrorAction SilentlyContinue
-            if ($hasReady -and $hasSelftest -and $hasProbe) {
+            $hasHealth = Select-String -Path $serialLog -Pattern '\[HEALTH\] stability=' -Quiet -ErrorAction SilentlyContinue
+            if ($hasReady -and $hasSelftest -and $hasProbe -and $hasHealth) {
                 Write-Host '[OK] Smoke test PASSED - kernel booted successfully'
             } else {
                 Write-Host '[ERR] Smoke test did not reach expected ready/selftest/probe state'

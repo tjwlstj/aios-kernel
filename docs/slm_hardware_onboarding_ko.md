@@ -112,6 +112,7 @@ SLM은 raw MMIO write를 직접 수행하지 않는다.
 - template/action 조합 검증
 - risk level 보존
 - queue/poll/DMA hint 상한 검증
+- kernel health 기반 risky I/O plan 차단
 - `allow_apply`가 켜진 플랜만 실행
 - 실행 결과를 `APPLIED` 또는 `FAILED`로 기록
 
@@ -123,6 +124,7 @@ SLM은 raw MMIO write를 직접 수행하지 않는다.
 - storage는 IDE/AHCI/NVMe 분류와 bootstrap/dump만 있음
 - wireless, bluetooth는 아직 분류와 plan 템플릿만 있음
 - queue/poll/DMA hint는 아직 실제 드라이버 큐 크기나 DMA allocator까지 연결되진 않음
+- health gate는 들어갔지만 subsystem restart나 watchdog 기반 복구는 아직 없음
 
 ### 다음 추천 단계
 
