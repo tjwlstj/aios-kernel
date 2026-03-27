@@ -32,6 +32,11 @@ typedef struct {
     uint16_t io_base;
     uint64_t mmio_base;
     uint32_t pci_command;
+    uint8_t cap_length;
+    uint16_t hci_version;
+    uint8_t max_ports;
+    uint8_t max_slots;
+    bool capability_valid;
     aios_status_t last_init_status;
 } usb_host_state_t;
 
@@ -45,6 +50,21 @@ static inline uint32_t inl(uint16_t port) {
     uint32_t ret;
     __asm__ volatile ("inl %1, %0" : "=a"(ret) : "Nd"(port));
     return ret;
+}
+
+static inline uint8_t mmio_read8(uint64_t base, uint32_t offset) {
+    volatile uint8_t *mmio = (volatile uint8_t *)(uintptr_t)(base + offset);
+    return *mmio;
+}
+
+static inline uint16_t mmio_read16(uint64_t base, uint32_t offset) {
+    volatile uint16_t *mmio = (volatile uint16_t *)(uintptr_t)(base + offset);
+    return *mmio;
+}
+
+static inline uint32_t mmio_read32(uint64_t base, uint32_t offset) {
+    volatile uint32_t *mmio = (volatile uint32_t *)(uintptr_t)(base + offset);
+    return *mmio;
 }
 
 static uint32_t pci_config_read(uint8_t bus, uint8_t slot, uint8_t function,
@@ -88,6 +108,21 @@ static usb_host_controller_kind_t classify_controller(uint8_t prog_if,
             *label = "USB";
             return USB_HOST_CONTROLLER_NONE;
     }
+}
+
+static void usb_host_probe_xhci_caps(void) {
+    if (g_usb_host.controller_kind != USB_HOST_CONTROLLER_XHCI ||
+        g_usb_host.mmio_base == 0) {
+        return;
+    }
+
+    g_usb_host.cap_length = mmio_read8(g_usb_host.mmio_base, 0x00);
+    g_usb_host.hci_version = mmio_read16(g_usb_host.mmio_base, 0x02);
+
+    uint32_t hcsparams1 = mmio_read32(g_usb_host.mmio_base, 0x04);
+    g_usb_host.max_slots = (uint8_t)(hcsparams1 & 0xFF);
+    g_usb_host.max_ports = (uint8_t)((hcsparams1 >> 24) & 0xFF);
+    g_usb_host.capability_valid = (g_usb_host.cap_length >= 0x20);
 }
 
 aios_status_t usb_host_init(void) {
@@ -148,6 +183,10 @@ aios_status_t usb_host_init(void) {
     g_usb_host.ready = (g_usb_host.mmio_base != 0 || g_usb_host.io_base != 0);
     g_usb_host.last_init_status = g_usb_host.ready ? AIOS_OK : AIOS_ERR_IO;
 
+    if (g_usb_host.ready) {
+        usb_host_probe_xhci_caps();
+    }
+
     kprintf("    USB %s host: pci=%u:%u cmd=0x%x mmio=0x%x io=0x%x\n",
         (uint64_t)(uintptr_t)label,
         (uint64_t)g_usb_host.bus,
@@ -165,6 +204,14 @@ aios_status_t usb_host_init(void) {
         (uint64_t)g_usb_host.pci_command,
         (uint64_t)g_usb_host.mmio_base,
         (uint64_t)g_usb_host.io_base);
+    if (g_usb_host.controller_kind == USB_HOST_CONTROLLER_XHCI) {
+        serial_printf("[USB] XHCI caps valid=%u caplen=%u version=%x slots=%u ports=%u\n",
+            g_usb_host.capability_valid ? 1ULL : 0ULL,
+            (uint64_t)g_usb_host.cap_length,
+            (uint64_t)g_usb_host.hci_version,
+            (uint64_t)g_usb_host.max_slots,
+            (uint64_t)g_usb_host.max_ports);
+    }
 
     return AIOS_OK;
 }
@@ -190,6 +237,11 @@ aios_status_t usb_host_info(usb_host_info_t *out) {
     out->io_base = g_usb_host.io_base;
     out->mmio_base = g_usb_host.mmio_base;
     out->pci_command = g_usb_host.pci_command;
+    out->cap_length = g_usb_host.cap_length;
+    out->hci_version = g_usb_host.hci_version;
+    out->max_ports = g_usb_host.max_ports;
+    out->max_slots = g_usb_host.max_slots;
+    out->capability_valid = g_usb_host.capability_valid;
     out->last_init_status = g_usb_host.last_init_status;
     return AIOS_OK;
 }
@@ -209,6 +261,12 @@ void usb_host_dump(void) {
         (uint64_t)g_usb_host.slot,
         (uint64_t)g_usb_host.mmio_base,
         (uint64_t)g_usb_host.io_base);
+    serial_printf("[USB] caps valid=%u caplen=%u version=%x slots=%u ports=%u\n",
+        g_usb_host.capability_valid ? 1ULL : 0ULL,
+        (uint64_t)g_usb_host.cap_length,
+        (uint64_t)g_usb_host.hci_version,
+        (uint64_t)g_usb_host.max_slots,
+        (uint64_t)g_usb_host.max_ports);
     serial_printf("[USB] last_init_status=%d\n",
         (int64_t)g_usb_host.last_init_status);
 }

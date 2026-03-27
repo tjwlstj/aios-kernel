@@ -28,6 +28,8 @@
 #define E1000_REG_CTRL       0x0000
 #define E1000_REG_STATUS     0x0008
 #define E1000_REG_EERD       0x0014
+#define E1000_REG_IMC        0x00D8
+#define E1000_REG_RCTL       0x0100
 #define E1000_REG_TCTL       0x0400
 #define E1000_REG_TIPG       0x0410
 #define E1000_REG_TDBAL      0x3800
@@ -40,8 +42,11 @@
 
 #define E1000_STATUS_LINK_UP BIT(1)
 #define E1000_CTRL_SLU       BIT(6)
+#define E1000_CTRL_RST       BIT(26)
 #define E1000_EERD_START     BIT(0)
 #define E1000_EERD_DONE      BIT(4)
+#define E1000_RCTL_EN        BIT(1)
+#define E1000_RCTL_BAM       BIT(15)
 #define E1000_TCTL_EN        BIT(1)
 #define E1000_TCTL_PSP       BIT(3)
 #define E1000_TX_CMD_EOP     BIT(0)
@@ -96,6 +101,10 @@ static inline uint32_t inl(uint16_t port) {
     return ret;
 }
 
+static inline void io_wait(void) {
+    __asm__ volatile ("outb %%al, $0x80" : : "a"(0));
+}
+
 static uint32_t pci_config_read(uint8_t bus, uint8_t slot, uint8_t function,
                                 uint8_t offset) {
     uint32_t address = (1U << 31) |
@@ -133,14 +142,41 @@ static bool e1000_is_supported(uint16_t vendor_id, uint16_t device_id) {
     }
 }
 
+static bool e1000_use_mmio(void) {
+    return g_e1000.mmio_base != 0;
+}
+
 static uint32_t e1000_read_reg(uint32_t reg) {
+    if (e1000_use_mmio()) {
+        volatile uint32_t *mmio = (volatile uint32_t *)(uintptr_t)(g_e1000.mmio_base + reg);
+        return *mmio;
+    }
+
     outl((uint16_t)(g_e1000.io_base + 0), reg);
     return inl((uint16_t)(g_e1000.io_base + 4));
 }
 
 static void e1000_write_reg(uint32_t reg, uint32_t value) {
+    if (e1000_use_mmio()) {
+        volatile uint32_t *mmio = (volatile uint32_t *)(uintptr_t)(g_e1000.mmio_base + reg);
+        *mmio = value;
+        (void)*mmio;
+        return;
+    }
+
     outl((uint16_t)(g_e1000.io_base + 0), reg);
     outl((uint16_t)(g_e1000.io_base + 4), value);
+}
+
+static void e1000_reset_controller(void) {
+    uint32_t ctrl = e1000_read_reg(E1000_REG_CTRL);
+    e1000_write_reg(E1000_REG_CTRL, ctrl | E1000_CTRL_RST);
+
+    for (uint32_t spin = 0; spin < 1000; spin++) {
+        io_wait();
+    }
+
+    e1000_write_reg(E1000_REG_IMC, 0xFFFFFFFFU);
 }
 
 static bool e1000_detect_eeprom(void) {
@@ -252,6 +288,7 @@ static aios_status_t e1000_init_tx_ring(void) {
     e1000_write_reg(E1000_REG_TDLEN, sizeof(g_tx_ring));
     e1000_write_reg(E1000_REG_TDH, 0);
     e1000_write_reg(E1000_REG_TDT, 0);
+    e1000_write_reg(E1000_REG_RCTL, E1000_RCTL_EN | E1000_RCTL_BAM);
     e1000_write_reg(E1000_REG_TCTL,
         E1000_TCTL_EN |
         E1000_TCTL_PSP |
@@ -353,11 +390,16 @@ aios_status_t e1000_driver_init(void) {
         g_e1000.io_base = (uint16_t)(bar0 & 0xFFFCU);
     }
 
-    if (g_e1000.io_base == 0) {
-        serial_write("[NET] E1000 found but no usable I/O BAR exposed\n");
+    if (g_e1000.io_base == 0 && g_e1000.mmio_base == 0) {
+        serial_write("[NET] E1000 found but no usable register BAR exposed\n");
         return AIOS_OK;
     }
 
+    serial_printf("[NET] E1000 BARs mmio=%x io=%x\n",
+        (uint64_t)g_e1000.mmio_base,
+        (uint64_t)g_e1000.io_base);
+
+    e1000_reset_controller();
     e1000_write_reg(E1000_REG_CTRL, e1000_read_reg(E1000_REG_CTRL) | E1000_CTRL_SLU);
     e1000_wait_for_link();
     g_e1000.has_eeprom = e1000_detect_eeprom();
@@ -366,11 +408,15 @@ aios_status_t e1000_driver_init(void) {
     g_e1000.ready = true;
     g_e1000.last_tx_status = AIOS_OK;
 
-    kprintf("    Intel E1000 ready: io=0x%x status=0x%x link=%s\n",
+    e1000_refresh_status();
+
+    kprintf("    Intel E1000 ready: mmio=0x%x io=0x%x status=0x%x link=%s\n",
+        (uint64_t)g_e1000.mmio_base,
         (uint64_t)g_e1000.io_base,
         (uint64_t)g_e1000.status,
         g_e1000.link_up ? "up" : "down");
-    serial_printf("[NET] E1000 ready io=%x status=%x link=%s eeprom=%u\n",
+    serial_printf("[NET] E1000 ready mmio=%x io=%x status=%x link=%s eeprom=%u\n",
+        (uint64_t)g_e1000.mmio_base,
         (uint64_t)g_e1000.io_base,
         (uint64_t)g_e1000.status,
         (uint64_t)(uintptr_t)(g_e1000.link_up ? "up" : "down"),

@@ -99,7 +99,7 @@ function New-WindowsBiosIso {
         -p /boot/grub `
         biosdisk iso9660 multiboot2 normal configfile search echo serial terminal
 
-    Copy-Item $coreImg $biosImg -Force
+    [System.IO.File]::Copy($coreImg, $biosImg, $true)
 
     & $script:Xorriso `
         -as mkisofs `

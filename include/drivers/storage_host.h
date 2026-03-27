@@ -29,8 +29,16 @@ typedef struct {
     uint16_t vendor_id;
     uint16_t device_id;
     uint16_t io_base;
+    uint16_t primary_cmd_base;
+    uint16_t primary_ctrl_base;
+    uint16_t secondary_cmd_base;
+    uint16_t secondary_ctrl_base;
     uint64_t mmio_base;
     uint32_t pci_command;
+    uint8_t primary_status;
+    uint8_t secondary_status;
+    bool primary_channel_live;
+    bool secondary_channel_live;
     aios_status_t last_init_status;
 } storage_host_info_t;
 

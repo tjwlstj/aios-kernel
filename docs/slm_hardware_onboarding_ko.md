@@ -77,9 +77,14 @@ AIOS의 SLM 계층은 커널 안에서 직접 "모든 드라이버를 생성"하
 - `SLM_ACTION_STORAGE_DUMP`
 - `SLM_ACTION_IO_AUDIT`
 
-현재 구현은 모두 "bootstrap/dump" 중심이다.
-즉, 장치 레지스터 접근과 준비 상태 확인까지는 가능하지만, 실제 USB transfer,
-storage read/write 같은 데이터 경로는 아직 없다.
+현재 구현은 "bootstrap/dump + 기초 capability smoke" 중심이다.
+즉, 장치 레지스터 접근과 준비 상태 확인은 가능하고,
+- `e1000`는 QEMU 기준 `link up + TX smoke PASS`
+- USB는 `xHCI` capability probe
+- storage는 IDE channel status probe
+까지는 올라왔다.
+
+다만 실제 USB transfer, storage read/write, network RX 같은 일반 데이터 경로는 아직 없다.
 
 I/O 강화 포인트:
 
@@ -119,9 +124,9 @@ SLM은 raw MMIO write를 직접 수행하지 않는다.
 ### 현재 한계
 
 - user-space SLM 런타임은 아직 없음
-- `e1000`는 bootstrap 수준이며 TX smoke도 아직 실패 가능
-- USB는 `xHCI` 기준 bootstrap/dump만 있음
-- storage는 IDE/AHCI/NVMe 분류와 bootstrap/dump만 있음
+- `e1000`는 QEMU 기준 TX smoke까지 성공하지만 RX 경로는 아직 없음
+- USB는 `xHCI` 기준 capability probe까지만 있음
+- storage는 IDE channel probe와 AHCI/NVMe 분류까지만 있음
 - wireless, bluetooth는 아직 분류와 plan 템플릿만 있음
 - queue/poll/DMA hint는 아직 실제 드라이버 큐 크기나 DMA allocator까지 연결되진 않음
 - health gate는 들어갔지만 subsystem restart나 watchdog 기반 복구는 아직 없음

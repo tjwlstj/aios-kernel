@@ -31,8 +31,16 @@ typedef struct {
     uint16_t vendor_id;
     uint16_t device_id;
     uint16_t io_base;
+    uint16_t primary_cmd_base;
+    uint16_t primary_ctrl_base;
+    uint16_t secondary_cmd_base;
+    uint16_t secondary_ctrl_base;
     uint64_t mmio_base;
     uint32_t pci_command;
+    uint8_t primary_status;
+    uint8_t secondary_status;
+    bool primary_channel_live;
+    bool secondary_channel_live;
     aios_status_t last_init_status;
 } storage_host_state_t;
 
@@ -45,6 +53,12 @@ static inline void outl(uint16_t port, uint32_t val) {
 static inline uint32_t inl(uint16_t port) {
     uint32_t ret;
     __asm__ volatile ("inl %1, %0" : "=a"(ret) : "Nd"(port));
+    return ret;
+}
+
+static inline uint8_t inb(uint16_t port) {
+    uint8_t ret;
+    __asm__ volatile ("inb %1, %0" : "=a"(ret) : "Nd"(port));
     return ret;
 }
 
@@ -91,6 +105,54 @@ static storage_host_controller_kind_t classify_controller(uint8_t subclass,
         default:
             *label = "Storage";
             return STORAGE_HOST_CONTROLLER_OTHER;
+    }
+}
+
+static uint16_t pci_bar_io_base(uint8_t bus, uint8_t slot, uint8_t function,
+                                uint8_t offset) {
+    uint32_t bar = pci_config_read(bus, slot, function, offset);
+    if (bar == 0 || (bar & 0x1) == 0) {
+        return 0;
+    }
+    return (uint16_t)(bar & 0xFFFCU);
+}
+
+static void storage_host_configure_ide_channels(void) {
+    bool primary_native = (g_storage_host.prog_if & BIT(0)) != 0;
+    bool secondary_native = (g_storage_host.prog_if & BIT(2)) != 0;
+
+    g_storage_host.primary_cmd_base = primary_native
+        ? pci_bar_io_base(g_storage_host.bus, g_storage_host.slot,
+                          g_storage_host.function, PCI_BAR0_OFFSET)
+        : 0x1F0;
+    g_storage_host.primary_ctrl_base = primary_native
+        ? pci_bar_io_base(g_storage_host.bus, g_storage_host.slot,
+                          g_storage_host.function, PCI_BAR0_OFFSET + 4)
+        : 0x3F6;
+    g_storage_host.secondary_cmd_base = secondary_native
+        ? pci_bar_io_base(g_storage_host.bus, g_storage_host.slot,
+                          g_storage_host.function, PCI_BAR0_OFFSET + 8)
+        : 0x170;
+    g_storage_host.secondary_ctrl_base = secondary_native
+        ? pci_bar_io_base(g_storage_host.bus, g_storage_host.slot,
+                          g_storage_host.function, PCI_BAR0_OFFSET + 12)
+        : 0x376;
+}
+
+static void storage_host_probe_ide_channels(void) {
+    g_storage_host.primary_status = 0xFF;
+    g_storage_host.secondary_status = 0xFF;
+    g_storage_host.primary_channel_live = false;
+    g_storage_host.secondary_channel_live = false;
+
+    if (g_storage_host.primary_cmd_base != 0) {
+        g_storage_host.primary_status = inb((uint16_t)(g_storage_host.primary_cmd_base + 7));
+        g_storage_host.primary_channel_live = (g_storage_host.primary_status != 0xFF);
+    }
+
+    if (g_storage_host.secondary_cmd_base != 0) {
+        g_storage_host.secondary_status = inb((uint16_t)(g_storage_host.secondary_cmd_base + 7));
+        g_storage_host.secondary_channel_live = (g_storage_host.secondary_status != 0xFF);
     }
 }
 
@@ -149,6 +211,11 @@ aios_status_t storage_host_init(void) {
         }
     }
 
+    if (g_storage_host.controller_kind == STORAGE_HOST_CONTROLLER_IDE) {
+        storage_host_configure_ide_channels();
+        storage_host_probe_ide_channels();
+    }
+
     g_storage_host.ready = (g_storage_host.io_base != 0 || g_storage_host.mmio_base != 0);
     g_storage_host.last_init_status = g_storage_host.ready ? AIOS_OK : AIOS_ERR_IO;
 
@@ -171,6 +238,17 @@ aios_status_t storage_host_init(void) {
         (uint64_t)g_storage_host.pci_command,
         (uint64_t)g_storage_host.mmio_base,
         (uint64_t)g_storage_host.io_base);
+    if (g_storage_host.controller_kind == STORAGE_HOST_CONTROLLER_IDE) {
+        serial_printf("[STO] IDE channels primary=%x/%x status=%x live=%u secondary=%x/%x status=%x live=%u\n",
+            (uint64_t)g_storage_host.primary_cmd_base,
+            (uint64_t)g_storage_host.primary_ctrl_base,
+            (uint64_t)g_storage_host.primary_status,
+            g_storage_host.primary_channel_live ? 1ULL : 0ULL,
+            (uint64_t)g_storage_host.secondary_cmd_base,
+            (uint64_t)g_storage_host.secondary_ctrl_base,
+            (uint64_t)g_storage_host.secondary_status,
+            g_storage_host.secondary_channel_live ? 1ULL : 0ULL);
+    }
 
     return AIOS_OK;
 }
@@ -195,8 +273,16 @@ aios_status_t storage_host_info(storage_host_info_t *out) {
     out->vendor_id = g_storage_host.vendor_id;
     out->device_id = g_storage_host.device_id;
     out->io_base = g_storage_host.io_base;
+    out->primary_cmd_base = g_storage_host.primary_cmd_base;
+    out->primary_ctrl_base = g_storage_host.primary_ctrl_base;
+    out->secondary_cmd_base = g_storage_host.secondary_cmd_base;
+    out->secondary_ctrl_base = g_storage_host.secondary_ctrl_base;
     out->mmio_base = g_storage_host.mmio_base;
     out->pci_command = g_storage_host.pci_command;
+    out->primary_status = g_storage_host.primary_status;
+    out->secondary_status = g_storage_host.secondary_status;
+    out->primary_channel_live = g_storage_host.primary_channel_live;
+    out->secondary_channel_live = g_storage_host.secondary_channel_live;
     out->last_init_status = g_storage_host.last_init_status;
     return AIOS_OK;
 }
@@ -217,6 +303,15 @@ void storage_host_dump(void) {
         (uint64_t)g_storage_host.function,
         (uint64_t)g_storage_host.mmio_base,
         (uint64_t)g_storage_host.io_base);
+    serial_printf("[STO] channels primary=%x/%x status=%x live=%u secondary=%x/%x status=%x live=%u\n",
+        (uint64_t)g_storage_host.primary_cmd_base,
+        (uint64_t)g_storage_host.primary_ctrl_base,
+        (uint64_t)g_storage_host.primary_status,
+        g_storage_host.primary_channel_live ? 1ULL : 0ULL,
+        (uint64_t)g_storage_host.secondary_cmd_base,
+        (uint64_t)g_storage_host.secondary_ctrl_base,
+        (uint64_t)g_storage_host.secondary_status,
+        g_storage_host.secondary_channel_live ? 1ULL : 0ULL);
     serial_printf("[STO] last_init_status=%d\n",
         (int64_t)g_storage_host.last_init_status);
 }

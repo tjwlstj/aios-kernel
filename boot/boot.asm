@@ -43,7 +43,7 @@ gdt64:
     dq gdt64                                ; GDT base address
 
 ; =============================================================================
-; Page Tables for Identity Mapping (first 2MB)
+; Page Tables for Identity Mapping (first 4GB)
 ; =============================================================================
 section .bss
 align 4096
@@ -51,7 +51,13 @@ p4_table:
     resb 4096
 p3_table:
     resb 4096
-p2_table:
+p2_table_0:
+    resb 4096
+p2_table_1:
+    resb 4096
+p2_table_2:
+    resb 4096
+p2_table_3:
     resb 4096
 
 ; Stack for the kernel
@@ -188,7 +194,7 @@ check_long_mode:
     hlt
 
 ; =============================================================================
-; Page Table Setup - Identity map first 1GB using 2MB pages
+; Page Table Setup - Identity map first 4GB using 2MB pages
 ; =============================================================================
 setup_page_tables:
     ; Map P4 -> P3
@@ -196,18 +202,48 @@ setup_page_tables:
     or eax, 0b11               ; Present + Writable
     mov [p4_table], eax
 
-    ; Map P3 -> P2
-    mov eax, p2_table
+    ; Map P3 -> P2 tables
+    mov eax, p2_table_0
     or eax, 0b11               ; Present + Writable
     mov [p3_table], eax
 
-    ; Map P2 entries (512 * 2MB = 1GB identity mapped)
+    mov eax, p2_table_1
+    or eax, 0b11
+    mov [p3_table + 8], eax
+
+    mov eax, p2_table_2
+    or eax, 0b11
+    mov [p3_table + 16], eax
+
+    mov eax, p2_table_3
+    or eax, 0b11
+    mov [p3_table + 24], eax
+
+    mov edi, p2_table_0
+    xor eax, eax
+    call map_p2_table
+
+    mov edi, p2_table_1
+    mov eax, 0x40000000        ; 1GB
+    call map_p2_table
+
+    mov edi, p2_table_2
+    mov eax, 0x80000000        ; 2GB
+    call map_p2_table
+
+    mov edi, p2_table_3
+    mov eax, 0xC0000000        ; 3GB
+    call map_p2_table
+    ret
+
+map_p2_table:
+    ; Map 512 * 2MB = 1GB identity mapped
     mov ecx, 0
 .map_p2:
-    mov eax, 0x200000          ; 2MB
-    mul ecx
-    or eax, 0b10000011         ; Present + Writable + Huge Page
-    mov [p2_table + ecx * 8], eax
+    mov edx, eax
+    or edx, 0b10000011         ; Present + Writable + Huge Page
+    mov [edi + ecx * 8], edx
+    add eax, 0x200000          ; 2MB
     inc ecx
     cmp ecx, 512
     jne .map_p2

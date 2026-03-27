@@ -29,6 +29,11 @@ typedef struct {
     uint16_t io_base;
     uint64_t mmio_base;
     uint32_t pci_command;
+    uint8_t cap_length;
+    uint16_t hci_version;
+    uint8_t max_ports;
+    uint8_t max_slots;
+    bool capability_valid;
     aios_status_t last_init_status;
 } usb_host_info_t;
 
