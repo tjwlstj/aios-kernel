@@ -22,3 +22,10 @@
 - 커널은 하드웨어, 시간원, 메모리, 스케줄, 안전한 액추에이터에 집중
 - OS 계층은 메인 AI, 하위 트리, 기억, 학습 파이프라인을 담당
 - 메인 AI만 정적-혼돈 연산자를 사용하고, 하위 노드는 소형 역할 모델로 구성
+
+현재 커널 연결점:
+
+- `SYS_SLM_HW_SNAPSHOT`
+  하드웨어 상태와 함께 메인 AI operator, agent tree, pipeline optimization 힌트를 함께 노출
+- `runtime/slm_orchestrator.c`
+  커널 텔레메트리에서 메인 AI 모드, worker 수, queue depth, token pipeline depth를 계산

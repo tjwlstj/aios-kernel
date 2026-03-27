@@ -85,7 +85,7 @@
 #define SYS_AUTONOMY_TELEMETRY_LAST 0x715  /* Read latest telemetry frame */
 
 /* SLM hardware orchestration syscalls (0x720 - 0x72F) */
-#define SYS_SLM_HW_SNAPSHOT         0x720  /* Read hardware snapshot for SLM */
+#define SYS_SLM_HW_SNAPSHOT         0x720  /* Read hardware + agent tree + pipeline snapshot */
 #define SYS_SLM_PLAN_SUBMIT         0x721  /* Submit hardware driver plan */
 #define SYS_SLM_PLAN_APPLY          0x722  /* Apply validated hardware plan */
 #define SYS_SLM_PLAN_STATUS         0x723  /* Query plan state */

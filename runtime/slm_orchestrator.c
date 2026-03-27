@@ -20,6 +20,18 @@ static uint32_t next_plan_id = 1;
 static slm_learning_profile_t g_learning = {0};
 
 static void compute_fabric_profile(slm_fabric_profile_t *out);
+static void compute_agent_main_profile(agent_main_ai_profile_t *out,
+    const memory_selftest_result_t *profile,
+    const kernel_health_summary_t *health,
+    const slm_fabric_profile_t *fabric,
+    const slm_io_profile_t *io_profile);
+static void compute_agent_pipeline_profile(agent_pipeline_profile_t *out,
+    const agent_main_ai_profile_t *main_ai,
+    const slm_io_profile_t *io_profile);
+static void compute_agent_tree(agent_tree_node_t *nodes, uint32_t *count,
+    const agent_main_ai_profile_t *main_ai,
+    const agent_pipeline_profile_t *pipeline,
+    const slm_io_profile_t *io_profile);
 
 static bool device_is_io_kind(platform_device_kind_t kind) {
     return kind == PLATFORM_DEVICE_ETHERNET ||
@@ -398,6 +410,230 @@ static const char *io_mode_name(slm_io_mode_t mode) {
     }
 }
 
+static const char *agent_mode_name(agent_operator_mode_t mode) {
+    switch (mode) {
+        case AGENT_OPERATOR_MODE_STABILIZE: return "stabilize";
+        case AGENT_OPERATOR_MODE_BALANCE:   return "balance";
+        case AGENT_OPERATOR_MODE_EXPLORE:   return "explore";
+        default:                            return "unknown";
+    }
+}
+
+static const char *agent_role_name(agent_node_role_t role) {
+    switch (role) {
+        case AGENT_NODE_ROLE_MAIN:             return "main";
+        case AGENT_NODE_ROLE_GUARDIAN:         return "guardian";
+        case AGENT_NODE_ROLE_ROUTER:           return "router";
+        case AGENT_NODE_ROLE_PLANNER:          return "planner";
+        case AGENT_NODE_ROLE_CRITIC:           return "critic";
+        case AGENT_NODE_ROLE_SUMMARIZER:       return "summarizer";
+        case AGENT_NODE_ROLE_VERIFIER:         return "verifier";
+        case AGENT_NODE_ROLE_MEMORY_DISTILLER: return "memory-distiller";
+        case AGENT_NODE_ROLE_TOOL_WORKER:      return "tool-worker";
+        case AGENT_NODE_ROLE_DEVICE:           return "device";
+        case AGENT_NODE_ROLE_NONE:
+        default:                               return "none";
+    }
+}
+
+static void agent_tree_set_node(agent_tree_node_t *node, uint8_t node_id,
+                                agent_node_role_t role, agent_model_class_t model_class,
+                                uint8_t priority, uint8_t budget_share,
+                                bool active, bool persistent, bool zero_copy_preferred) {
+    if (!node) {
+        return;
+    }
+    node->node_id = node_id;
+    node->role = role;
+    node->model_class = model_class;
+    node->priority = priority;
+    node->budget_share = budget_share;
+    node->active = active;
+    node->persistent = persistent;
+    node->zero_copy_preferred = zero_copy_preferred;
+}
+
+static void compute_agent_main_profile(agent_main_ai_profile_t *out,
+    const memory_selftest_result_t *profile,
+    const kernel_health_summary_t *health,
+    const slm_fabric_profile_t *fabric,
+    const slm_io_profile_t *io_profile) {
+    int32_t static_sum;
+    int32_t chaos_sum;
+    int32_t sco;
+
+    if (!out || !profile || !health || !fabric || !io_profile) {
+        return;
+    }
+
+    out->self_consistency = clamp_u8(
+        (health->level == KERNEL_STABILITY_STABLE) ? 92 :
+        (health->level == KERNEL_STABILITY_DEGRADED) ? 64 : 28);
+    out->goal_continuity = clamp_u8(
+        45 + (health->autonomy_allowed ? 30 : 0) +
+        ((profile->tier == BOOT_PERF_TIER_HIGH) ? 10 : 0));
+    out->memory_coherence = clamp_u8(40 + (int32_t)g_learning.global_confidence / 2);
+    out->policy_stability = clamp_u8(
+        88 - (int32_t)g_learning.rejected_submissions * 4 -
+        (int32_t)g_learning.applied_failures * 3);
+    out->resource_reserve = clamp_u8(
+        ((profile->tier == BOOT_PERF_TIER_HIGH) ? 82 :
+         (profile->tier == BOOT_PERF_TIER_LOW) ? 46 : 64) +
+        (int32_t)io_profile->ready_controllers * 5 -
+        (int32_t)io_profile->degraded_controllers * 10);
+    out->safety_margin = clamp_u8(
+        (health->level == KERNEL_STABILITY_STABLE) ? 90 :
+        (health->level == KERNEL_STABILITY_DEGRADED) ? 58 : 18);
+
+    out->novelty_pressure = clamp_u8(
+        22 + (int32_t)fabric->pci_pcie_functions * 4 +
+        (int32_t)io_profile->pcie_io_devices * 6);
+    out->prediction_error = clamp_u8(
+        18 + (int32_t)g_learning.applied_failures * 6 +
+        (int32_t)g_learning.rejected_submissions * 4);
+    out->unresolved_uncertainty = clamp_u8(
+        (100 - (int32_t)fabric->compatibility_score) +
+        (int32_t)io_profile->degraded_controllers * 5);
+    out->opportunity_gain = clamp_u8(
+        20 + (int32_t)io_profile->ready_controllers * 8 +
+        ((profile->tier == BOOT_PERF_TIER_HIGH) ? 18 : 0));
+    out->external_surprise = clamp_u8(
+        12 + (int32_t)health->degraded_count * 7 +
+        (int32_t)health->unknown_count * 4 +
+        (int32_t)io_profile->degraded_controllers * 8);
+    out->hypothesis_diversity_demand = clamp_u8(
+        18 + (int32_t)fabric->pci_total_functions * 2 +
+        (int32_t)io_profile->ready_controllers * 4);
+
+    static_sum = (int32_t)out->self_consistency +
+        (int32_t)out->goal_continuity +
+        (int32_t)out->memory_coherence +
+        (int32_t)out->policy_stability +
+        (int32_t)out->resource_reserve +
+        (int32_t)out->safety_margin;
+    chaos_sum = (int32_t)out->novelty_pressure +
+        (int32_t)out->prediction_error +
+        (int32_t)out->unresolved_uncertainty +
+        (int32_t)out->opportunity_gain +
+        (int32_t)out->external_surprise +
+        (int32_t)out->hypothesis_diversity_demand;
+
+    out->static_score = clamp_u8(static_sum / 6);
+    out->chaos_score = clamp_u8(chaos_sum / 6);
+    sco = ((int32_t)out->chaos_score - (int32_t)out->static_score) * 100;
+    out->sco_x100 = (int16_t)sco;
+
+    if (out->sco_x100 <= -800) {
+        out->mode = AGENT_OPERATOR_MODE_STABILIZE;
+    } else if (out->sco_x100 >= 800) {
+        out->mode = AGENT_OPERATOR_MODE_EXPLORE;
+    } else {
+        out->mode = AGENT_OPERATOR_MODE_BALANCE;
+    }
+
+    switch (out->mode) {
+        case AGENT_OPERATOR_MODE_STABILIZE:
+            out->recommended_max_active_workers = 3;
+            out->memory_write_intensity_pct = 85;
+            out->adapter_update_allowed = false;
+            out->memory_only_bias = true;
+            break;
+        case AGENT_OPERATOR_MODE_EXPLORE:
+            out->recommended_max_active_workers = 8;
+            out->memory_write_intensity_pct = 40;
+            out->adapter_update_allowed = health->autonomy_allowed;
+            out->memory_only_bias = false;
+            break;
+        case AGENT_OPERATOR_MODE_BALANCE:
+        default:
+            out->recommended_max_active_workers = 5;
+            out->memory_write_intensity_pct = 60;
+            out->adapter_update_allowed = health->autonomy_allowed;
+            out->memory_only_bias = !health->autonomy_allowed;
+            break;
+    }
+}
+
+static void compute_agent_pipeline_profile(agent_pipeline_profile_t *out,
+    const agent_main_ai_profile_t *main_ai,
+    const slm_io_profile_t *io_profile) {
+    if (!out || !main_ai || !io_profile) {
+        return;
+    }
+
+    out->recommended_worker_queue_depth = clamp_u16(
+        (int32_t)io_profile->recommended_queue_depth / 2 +
+        (main_ai->mode == AGENT_OPERATOR_MODE_EXPLORE ? 4 : 0),
+        2, 32);
+    out->recommended_token_pipeline_depth =
+        (main_ai->mode == AGENT_OPERATOR_MODE_STABILIZE) ? 1 :
+        (main_ai->mode == AGENT_OPERATOR_MODE_BALANCE) ? 2 : 3;
+    out->recommended_planner_fanout =
+        (main_ai->mode == AGENT_OPERATOR_MODE_STABILIZE) ? 1 :
+        (main_ai->mode == AGENT_OPERATOR_MODE_BALANCE) ? 2 : 3;
+    out->recommended_microbatch_tokens =
+        (main_ai->mode == AGENT_OPERATOR_MODE_STABILIZE) ? 32 :
+        (main_ai->mode == AGENT_OPERATOR_MODE_BALANCE) ? 64 : 96;
+    out->recommended_summary_interval_ms =
+        (main_ai->mode == AGENT_OPERATOR_MODE_STABILIZE) ? 260 :
+        (main_ai->mode == AGENT_OPERATOR_MODE_BALANCE) ? 160 : 96;
+    out->recommended_memory_journal_batch =
+        (main_ai->mode == AGENT_OPERATOR_MODE_STABILIZE) ? 24 :
+        (main_ai->mode == AGENT_OPERATOR_MODE_BALANCE) ? 16 : 8;
+    out->recommended_zero_copy_window_kib = clamp_u32(
+        (int32_t)io_profile->recommended_dma_window_kib * 2, 64, 2048);
+    out->zero_copy_preferred = io_profile->ready_controllers > 0;
+    out->shared_kv_preferred = main_ai->mode != AGENT_OPERATOR_MODE_STABILIZE;
+    out->device_nodes_preferred = io_profile->pcie_io_devices > 0 ||
+        io_profile->ready_controllers > 0;
+}
+
+static void compute_agent_tree(agent_tree_node_t *nodes, uint32_t *count,
+    const agent_main_ai_profile_t *main_ai,
+    const agent_pipeline_profile_t *pipeline,
+    const slm_io_profile_t *io_profile) {
+    uint32_t next = 0;
+    bool explore = false;
+    bool stabilize = false;
+
+    if (!nodes || !count || !main_ai || !pipeline || !io_profile) {
+        return;
+    }
+
+    for (uint32_t i = 0; i < AGENT_TREE_MAX_NODES; i++) {
+        agent_tree_set_node(&nodes[i], 0, AGENT_NODE_ROLE_NONE, AGENT_MODEL_CLASS_MICRO,
+            0, 0, false, false, false);
+    }
+
+    explore = main_ai->mode == AGENT_OPERATOR_MODE_EXPLORE;
+    stabilize = main_ai->mode == AGENT_OPERATOR_MODE_STABILIZE;
+
+    agent_tree_set_node(&nodes[next++], 1, AGENT_NODE_ROLE_MAIN, AGENT_MODEL_CLASS_MAIN,
+        100, 32, true, true, true);
+    agent_tree_set_node(&nodes[next++], 2, AGENT_NODE_ROLE_GUARDIAN, AGENT_MODEL_CLASS_SMALL,
+        96, 16, true, true, false);
+    agent_tree_set_node(&nodes[next++], 3, AGENT_NODE_ROLE_ROUTER, AGENT_MODEL_CLASS_SMALL,
+        90, 10, true, true, false);
+    agent_tree_set_node(&nodes[next++], 4, AGENT_NODE_ROLE_PLANNER, AGENT_MODEL_CLASS_MEDIUM,
+        86, explore ? 12 : 8, !stabilize, false, pipeline->zero_copy_preferred);
+    agent_tree_set_node(&nodes[next++], 5, AGENT_NODE_ROLE_CRITIC, AGENT_MODEL_CLASS_MEDIUM,
+        84, 8, !stabilize, false, pipeline->zero_copy_preferred);
+    agent_tree_set_node(&nodes[next++], 6, AGENT_NODE_ROLE_SUMMARIZER, AGENT_MODEL_CLASS_SMALL,
+        82, stabilize ? 12 : 8, true, false, false);
+    agent_tree_set_node(&nodes[next++], 7, AGENT_NODE_ROLE_VERIFIER, AGENT_MODEL_CLASS_SMALL,
+        88, 8, true, false, false);
+    agent_tree_set_node(&nodes[next++], 8, AGENT_NODE_ROLE_MEMORY_DISTILLER, AGENT_MODEL_CLASS_SMALL,
+        80, stabilize ? 8 : 6, true, false, false);
+    agent_tree_set_node(&nodes[next++], 9, AGENT_NODE_ROLE_TOOL_WORKER, AGENT_MODEL_CLASS_MEDIUM,
+        76, explore ? 10 : 6, !stabilize, false, pipeline->zero_copy_preferred);
+    agent_tree_set_node(&nodes[next++], 10, AGENT_NODE_ROLE_DEVICE, AGENT_MODEL_CLASS_MICRO,
+        74, pipeline->device_nodes_preferred ? 10 : 4,
+        pipeline->device_nodes_preferred || io_profile->ready_controllers > 0,
+        false, pipeline->zero_copy_preferred);
+
+    *count = next;
+}
+
 static void compute_io_profile(slm_io_profile_t *out) {
     if (!out) {
         return;
@@ -771,6 +1007,8 @@ static aios_status_t apply_request(const slm_plan_request_t *req) {
 }
 
 aios_status_t slm_orchestrator_init(void) {
+    slm_hw_snapshot_t snapshot;
+
     for (uint32_t i = 0; i < SLM_PLAN_CAP; i++) {
         plan_table[i].plan_id = 0;
         plan_table[i].state = SLM_PLAN_EMPTY;
@@ -796,6 +1034,14 @@ aios_status_t slm_orchestrator_init(void) {
         (uint64_t)g_learning.tuned_poll_budget,
         (uint64_t)g_learning.tuned_dma_window_kib);
     serial_write("[SLM] Hardware orchestrator ready\n");
+    if (slm_snapshot_read(&snapshot) == AIOS_OK) {
+        serial_printf("[SLM] MainAI mode=%s sco=%d workers=%u pipeline_qd=%u depth=%u\n",
+            agent_mode_name(snapshot.main_ai_profile.mode),
+            (int64_t)snapshot.main_ai_profile.sco_x100,
+            (uint64_t)snapshot.main_ai_profile.recommended_max_active_workers,
+            (uint64_t)snapshot.pipeline_profile.recommended_worker_queue_depth,
+            (uint64_t)snapshot.pipeline_profile.recommended_token_pipeline_depth);
+    }
     seed_boot_plans();
     return AIOS_OK;
 }
@@ -835,6 +1081,13 @@ aios_status_t slm_snapshot_read(slm_hw_snapshot_t *out) {
     compute_fabric_profile(&out->fabric_profile);
     out->learning_profile = g_learning;
     compute_io_profile(&out->io_profile);
+    compute_agent_main_profile(&out->main_ai_profile, profile, &health,
+        &out->fabric_profile, &out->io_profile);
+    compute_agent_pipeline_profile(&out->pipeline_profile, &out->main_ai_profile,
+        &out->io_profile);
+    out->agent_tree_nodes = 0;
+    compute_agent_tree(out->agent_tree, &out->agent_tree_nodes,
+        &out->main_ai_profile, &out->pipeline_profile, &out->io_profile);
 
     for (uint32_t i = 0; i < SLM_HW_MAX_DEVICES; i++) {
         out->devices[i].vendor_id = 0;
@@ -994,7 +1247,7 @@ void slm_orchestrator_dump(void) {
         (uint64_t)snapshot.storage_ready,
         (uint64_t)snapshot.storage_controller_kind);
     kprintf("Health gate: level=%s autonomy=%u risky_io=%u\n",
-        (uint64_t)(uintptr_t)kernel_stability_name(snapshot.health_level),
+        kernel_stability_name(snapshot.health_level),
         (uint64_t)snapshot.autonomy_allowed,
         (uint64_t)snapshot.risky_io_allowed);
     kprintf("Learning: global=%u bias=%d qd=%u poll=%u dma=%uKiB success=%u fail=%u reject=%u\n",
@@ -1010,7 +1263,7 @@ void slm_orchestrator_dump(void) {
         (uint64_t)snapshot.fabric_profile.acpi_ready,
         (uint64_t)snapshot.fabric_profile.mcfg_present,
         (uint64_t)snapshot.fabric_profile.madt_present,
-        (uint64_t)(uintptr_t)pci_cfg_access_mode_name(snapshot.fabric_profile.pci_access_mode),
+        pci_cfg_access_mode_name(snapshot.fabric_profile.pci_access_mode),
         (uint64_t)snapshot.fabric_profile.compatibility_score,
         (uint64_t)snapshot.fabric_profile.pci_total_functions,
         (uint64_t)snapshot.fabric_profile.pci_bridge_count,
@@ -1025,6 +1278,35 @@ void slm_orchestrator_dump(void) {
         (uint64_t)snapshot.io_profile.recommended_queue_depth,
         (uint64_t)snapshot.io_profile.recommended_poll_budget,
         (uint64_t)snapshot.io_profile.recommended_dma_window_kib);
+    kprintf("Main AI: mode=%s static=%u chaos=%u sco=%d workers=%u memory_write=%u%% adapter=%u\n",
+        agent_mode_name(snapshot.main_ai_profile.mode),
+        (uint64_t)snapshot.main_ai_profile.static_score,
+        (uint64_t)snapshot.main_ai_profile.chaos_score,
+        (int64_t)snapshot.main_ai_profile.sco_x100,
+        (uint64_t)snapshot.main_ai_profile.recommended_max_active_workers,
+        (uint64_t)snapshot.main_ai_profile.memory_write_intensity_pct,
+        (uint64_t)snapshot.main_ai_profile.adapter_update_allowed);
+    kprintf("Pipeline: qd=%u depth=%u fanout=%u microbatch=%u summary_ms=%u journal=%u zero_copy=%u shared_kv=%u device_nodes=%u\n",
+        (uint64_t)snapshot.pipeline_profile.recommended_worker_queue_depth,
+        (uint64_t)snapshot.pipeline_profile.recommended_token_pipeline_depth,
+        (uint64_t)snapshot.pipeline_profile.recommended_planner_fanout,
+        (uint64_t)snapshot.pipeline_profile.recommended_microbatch_tokens,
+        (uint64_t)snapshot.pipeline_profile.recommended_summary_interval_ms,
+        (uint64_t)snapshot.pipeline_profile.recommended_memory_journal_batch,
+        (uint64_t)snapshot.pipeline_profile.zero_copy_preferred,
+        (uint64_t)snapshot.pipeline_profile.shared_kv_preferred,
+        (uint64_t)snapshot.pipeline_profile.device_nodes_preferred);
+    for (uint32_t i = 0; i < snapshot.agent_tree_nodes; i++) {
+        kprintf("  node[%u] role=%s class=%u active=%u persist=%u prio=%u budget=%u zero_copy=%u\n",
+            (uint64_t)snapshot.agent_tree[i].node_id,
+            agent_role_name(snapshot.agent_tree[i].role),
+            (uint64_t)snapshot.agent_tree[i].model_class,
+            (uint64_t)snapshot.agent_tree[i].active,
+            (uint64_t)snapshot.agent_tree[i].persistent,
+            (uint64_t)snapshot.agent_tree[i].priority,
+            (uint64_t)snapshot.agent_tree[i].budget_share,
+            (uint64_t)snapshot.agent_tree[i].zero_copy_preferred);
+    }
     for (uint32_t i = 0; i < snapshot.listed_devices; i++) {
         kprintf("  [%u] kind=%u vendor=%x device=%x bus=%u slot=%u prio=%u\n",
             (uint64_t)i,

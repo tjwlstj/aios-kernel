@@ -13,6 +13,7 @@
 
 #define SLM_HW_MAX_DEVICES 16
 #define SLM_PLAN_CAP       16
+#define AGENT_TREE_MAX_NODES 10
 
 typedef enum {
     SLM_TEMPLATE_NONE = 0,
@@ -51,6 +52,33 @@ typedef enum {
     SLM_IO_MODE_BALANCED = 1,
     SLM_IO_MODE_AGGRESSIVE = 2,
 } slm_io_mode_t;
+
+typedef enum {
+    AGENT_OPERATOR_MODE_STABILIZE = 0,
+    AGENT_OPERATOR_MODE_BALANCE = 1,
+    AGENT_OPERATOR_MODE_EXPLORE = 2,
+} agent_operator_mode_t;
+
+typedef enum {
+    AGENT_NODE_ROLE_NONE = 0,
+    AGENT_NODE_ROLE_MAIN = 1,
+    AGENT_NODE_ROLE_GUARDIAN = 2,
+    AGENT_NODE_ROLE_ROUTER = 3,
+    AGENT_NODE_ROLE_PLANNER = 4,
+    AGENT_NODE_ROLE_CRITIC = 5,
+    AGENT_NODE_ROLE_SUMMARIZER = 6,
+    AGENT_NODE_ROLE_VERIFIER = 7,
+    AGENT_NODE_ROLE_MEMORY_DISTILLER = 8,
+    AGENT_NODE_ROLE_TOOL_WORKER = 9,
+    AGENT_NODE_ROLE_DEVICE = 10,
+} agent_node_role_t;
+
+typedef enum {
+    AGENT_MODEL_CLASS_MICRO = 0,
+    AGENT_MODEL_CLASS_SMALL = 1,
+    AGENT_MODEL_CLASS_MEDIUM = 2,
+    AGENT_MODEL_CLASS_MAIN = 3,
+} agent_model_class_t;
 
 typedef struct {
     uint16_t vendor_id;
@@ -121,6 +149,53 @@ typedef struct {
 } slm_learning_profile_t;
 
 typedef struct {
+    uint8_t self_consistency;
+    uint8_t goal_continuity;
+    uint8_t memory_coherence;
+    uint8_t policy_stability;
+    uint8_t resource_reserve;
+    uint8_t safety_margin;
+    uint8_t novelty_pressure;
+    uint8_t prediction_error;
+    uint8_t unresolved_uncertainty;
+    uint8_t opportunity_gain;
+    uint8_t external_surprise;
+    uint8_t hypothesis_diversity_demand;
+    uint8_t static_score;
+    uint8_t chaos_score;
+    int16_t sco_x100;
+    agent_operator_mode_t mode;
+    uint8_t recommended_max_active_workers;
+    uint8_t memory_write_intensity_pct;
+    bool adapter_update_allowed;
+    bool memory_only_bias;
+} agent_main_ai_profile_t;
+
+typedef struct {
+    uint16_t recommended_worker_queue_depth;
+    uint16_t recommended_token_pipeline_depth;
+    uint16_t recommended_planner_fanout;
+    uint16_t recommended_microbatch_tokens;
+    uint16_t recommended_summary_interval_ms;
+    uint16_t recommended_memory_journal_batch;
+    uint32_t recommended_zero_copy_window_kib;
+    bool zero_copy_preferred;
+    bool shared_kv_preferred;
+    bool device_nodes_preferred;
+} agent_pipeline_profile_t;
+
+typedef struct {
+    uint8_t node_id;
+    agent_node_role_t role;
+    agent_model_class_t model_class;
+    uint8_t priority;
+    uint8_t budget_share;
+    bool active;
+    bool persistent;
+    bool zero_copy_preferred;
+} agent_tree_node_t;
+
+typedef struct {
     uint64_t ts_ns;
     uint64_t tsc_khz;
     bool invariant_tsc;
@@ -140,6 +215,10 @@ typedef struct {
     slm_fabric_profile_t fabric_profile;
     slm_learning_profile_t learning_profile;
     slm_io_profile_t io_profile;
+    agent_main_ai_profile_t main_ai_profile;
+    agent_pipeline_profile_t pipeline_profile;
+    uint32_t agent_tree_nodes;
+    agent_tree_node_t agent_tree[AGENT_TREE_MAX_NODES];
     slm_hw_device_t devices[SLM_HW_MAX_DEVICES];
 } slm_hw_snapshot_t;
 
