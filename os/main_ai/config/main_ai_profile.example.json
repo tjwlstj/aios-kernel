@@ -1,0 +1,48 @@
+{
+  "profile_name": "main-ai-default",
+  "main_model": {
+    "family": "qwen3",
+    "model": "Qwen3-14B",
+    "quantization": "4bit",
+    "adapter_mode": "lora"
+  },
+  "operator": {
+    "static_weights": {
+      "self_consistency": 1.3,
+      "goal_continuity": 1.2,
+      "memory_coherence": 1.1,
+      "policy_stability": 1.0,
+      "resource_reserve": 0.8,
+      "safety_margin": 1.4
+    },
+    "chaos_weights": {
+      "novelty_pressure": 1.1,
+      "prediction_error": 1.2,
+      "unresolved_uncertainty": 1.0,
+      "opportunity_gain": 0.9,
+      "external_surprise": 1.1,
+      "hypothesis_diversity_demand": 0.8
+    },
+    "mode_thresholds": {
+      "stabilize_max_sco": -8.0,
+      "explore_min_sco": 8.0
+    }
+  },
+  "budgets": {
+    "stabilize": {
+      "max_active_workers": 3,
+      "memory_write_intensity": 0.9,
+      "adapter_update_allowed": false
+    },
+    "balance": {
+      "max_active_workers": 5,
+      "memory_write_intensity": 0.6,
+      "adapter_update_allowed": true
+    },
+    "explore": {
+      "max_active_workers": 8,
+      "memory_write_intensity": 0.4,
+      "adapter_update_allowed": true
+    }
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "tree_name": "main-ai-default-tree",
+  "root": {
+    "node_id": "main-core",
+    "role": "main_ai",
+    "model": "Qwen3-14B",
+    "priority": 100,
+    "persistent": true
+  },
+  "children": [
+    {
+      "node_id": "guardian-01",
+      "role": "guardian",
+      "model": "Qwen3-1.7B",
+      "priority": 95,
+      "persistent": true
+    },
+    {
+      "node_id": "router-01",
+      "role": "router",
+      "model": "Qwen3-1.7B",
+      "priority": 90,
+      "persistent": true
+    },
+    {
+      "node_id": "planner-01",
+      "role": "planner",
+      "model": "Qwen3-8B",
+      "priority": 85,
+      "persistent": false
+    },
+    {
+      "node_id": "critic-01",
+      "role": "critic",
+      "model": "Qwen3-4B",
+      "priority": 82,
+      "persistent": false
+    },
+    {
+      "node_id": "summarizer-01",
+      "role": "summarizer",
+      "model": "Qwen3-4B",
+      "priority": 80,
+      "persistent": false
+    },
+    {
+      "node_id": "verifier-01",
+      "role": "verifier",
+      "model": "Qwen3-4B",
+      "priority": 88,
+      "persistent": false
+    },
+    {
+      "node_id": "memory-distiller-01",
+      "role": "memory_distiller",
+      "model": "Qwen3-1.7B",
+      "priority": 78,
+      "persistent": false
+    },
+    {
+      "node_id": "device-node-eth",
+      "role": "device_node",
+      "model": "Qwen3-0.6B",
+      "priority": 72,
+      "persistent": false,
+      "scope": "ethernet"
+    }
+  ]
+}

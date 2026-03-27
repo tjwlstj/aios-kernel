@@ -1,0 +1,14 @@
+{
+  "self_consistency": 82,
+  "goal_continuity": 78,
+  "memory_coherence": 80,
+  "policy_stability": 74,
+  "resource_reserve": 68,
+  "safety_margin": 84,
+  "novelty_pressure": 56,
+  "prediction_error": 48,
+  "unresolved_uncertainty": 51,
+  "opportunity_gain": 59,
+  "external_surprise": 45,
+  "hypothesis_diversity_demand": 52
+}

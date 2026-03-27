@@ -85,6 +85,7 @@ AIOS(AI-Native Operating System)는 인공지능 워크로드를 **1급 시민(F
 
 ```
 aios-kernel/
+├── os/                 # 상위 OS 계층 (메인 AI, 학습 도구, 노드 트리)
 ├── boot/               # Multiboot2 부트 어셈블리
 │   └── boot.asm        # x86_64 엔트리포인트, GDT, 페이징, SSE/AVX, BSS 초기화
 ├── kernel/             # 커널 코어
@@ -179,6 +180,9 @@ make debug          # GDB 디버깅 모드로 실행
 
 - [SLM 자율 운영/최적화 구조 계획](docs/slm_autonomous_kernel_plan.md)
 - [점검 및 부족한 점 리포트 (2026-03-22)](docs/inspection_and_gaps_ko.md)
+- [AI 에이전트 OS용 모델 스택 추천 (2026-03-28)](docs/agent_model_stack_recommendations_ko.md)
+- [정적-혼돈 연산자 기반 메인 AI/트리 아키텍처 (2026-03-28)](docs/static_chaos_agent_architecture_ko.md)
+- [OS 계층 소개](os/README.md)
 
 ## License
 
