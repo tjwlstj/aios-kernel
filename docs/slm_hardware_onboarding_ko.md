@@ -46,6 +46,12 @@ AIOS의 SLM 계층은 커널 안에서 직접 "모든 드라이버를 생성"하
 - `e1000` 준비 상태와 링크 상태
 - USB host 준비 상태와 컨트롤러 타입
 - storage host 준비 상태와 컨트롤러 타입
+- I/O profile
+  - ready/degraded controller 수
+  - PCIe I/O device 수
+  - recommended queue depth
+  - recommended poll budget
+  - recommended DMA window
 
 이 스냅샷은 SLM이 "무슨 하드웨어가 있고 지금 어느 정도 준비됐는가"를
 짧은 컨텍스트로 이해하도록 돕는다.
@@ -69,20 +75,28 @@ AIOS의 SLM 계층은 커널 안에서 직접 "모든 드라이버를 생성"하
 - `SLM_ACTION_USB_DUMP`
 - `SLM_ACTION_BOOTSTRAP_STORAGE`
 - `SLM_ACTION_STORAGE_DUMP`
+- `SLM_ACTION_IO_AUDIT`
 
 현재 구현은 모두 "bootstrap/dump" 중심이다.
 즉, 장치 레지스터 접근과 준비 상태 확인까지는 가능하지만, 실제 USB transfer,
 storage read/write 같은 데이터 경로는 아직 없다.
+
+I/O 강화 포인트:
+
+- 부팅 시 I/O profile을 계산한다.
+- 모든 seeded plan에 queue/poll/DMA hint를 붙인다.
+- `IO_AUDIT` plan으로 네트워크/USB/storage 상태를 한 번에 검토할 수 있다.
 
 ### 부팅 시 자동 시드되는 플랜
 
 SLM 오케스트레이터는 부팅 시 다음과 같은 저위험 plan을 자동으로 만든다.
 
 1. PCI inventory refresh plan
-2. Ethernet bootstrap 또는 dump plan
-3. `e1000` 준비가 끝난 경우 TX smoke plan
-4. USB bootstrap 또는 dump plan
-5. storage bootstrap 또는 dump plan
+2. I/O audit plan
+3. Ethernet bootstrap 또는 dump plan
+4. `e1000` 준비가 끝난 경우 TX smoke plan
+5. USB bootstrap 또는 dump plan
+6. storage bootstrap 또는 dump plan
 
 이 플랜들은 기본적으로 `allow_apply=false`로 생성된다.
 즉, 현재는 자동 실행보다 "추천 큐 생성"이 목적이다.
@@ -97,6 +111,7 @@ SLM은 raw MMIO write를 직접 수행하지 않는다.
 
 - template/action 조합 검증
 - risk level 보존
+- queue/poll/DMA hint 상한 검증
 - `allow_apply`가 켜진 플랜만 실행
 - 실행 결과를 `APPLIED` 또는 `FAILED`로 기록
 
@@ -107,11 +122,12 @@ SLM은 raw MMIO write를 직접 수행하지 않는다.
 - USB는 `xHCI` 기준 bootstrap/dump만 있음
 - storage는 IDE/AHCI/NVMe 분류와 bootstrap/dump만 있음
 - wireless, bluetooth는 아직 분류와 plan 템플릿만 있음
+- queue/poll/DMA hint는 아직 실제 드라이버 큐 크기나 DMA allocator까지 연결되진 않음
 
 ### 다음 추천 단계
 
 1. plan list/read-next API 추가
 2. user-space SLM daemon 또는 agent runtime 추가
-3. USB transfer ring 또는 AHCI port reset 같은 실제 데이터 경로 추가
-4. plan apply 결과를 autonomy verifier와 연결
-5. 장치별 드라이버 템플릿 레지스트리 도입
+3. queue/poll/DMA hint를 실제 NIC/USB/storage 드라이버 설정값에 연결
+4. USB transfer ring 또는 AHCI port reset 같은 실제 데이터 경로 추가
+5. plan apply 결과를 autonomy verifier와 연결

@@ -14,6 +14,85 @@
 static slm_plan_t plan_table[SLM_PLAN_CAP];
 static uint32_t next_plan_id = 1;
 
+static bool device_is_io_kind(platform_device_kind_t kind) {
+    return kind == PLATFORM_DEVICE_ETHERNET ||
+           kind == PLATFORM_DEVICE_USB ||
+           kind == PLATFORM_DEVICE_STORAGE;
+}
+
+static const char *io_mode_name(slm_io_mode_t mode) {
+    switch (mode) {
+        case SLM_IO_MODE_CONSERVATIVE: return "conservative";
+        case SLM_IO_MODE_BALANCED:     return "balanced";
+        case SLM_IO_MODE_AGGRESSIVE:   return "aggressive";
+        default:                       return "unknown";
+    }
+}
+
+static void compute_io_profile(slm_io_profile_t *out) {
+    if (!out) {
+        return;
+    }
+
+    const platform_probe_summary_t *summary = platform_probe_summary();
+    const memory_selftest_result_t *profile = kernel_memory_selftest_last();
+    uint32_t total_io = summary->ethernet_count + summary->usb_count + summary->storage_count;
+    uint32_t ready = 0;
+
+    ready += e1000_driver_ready() ? 1U : 0U;
+    ready += usb_host_ready() ? 1U : 0U;
+    ready += storage_host_ready() ? 1U : 0U;
+
+    out->ready_controllers = (uint8_t)ready;
+    out->degraded_controllers = (uint8_t)((total_io > ready) ? (total_io - ready) : 0);
+    out->pcie_io_devices = 0;
+
+    for (uint32_t i = 0; i < platform_probe_count(); i++) {
+        const platform_device_t *dev = platform_probe_get(i);
+        if (!dev || !dev->pcie_capable || !device_is_io_kind(dev->kind)) {
+            continue;
+        }
+        out->pcie_io_devices++;
+    }
+
+    if (out->degraded_controllers > 0 || profile->tier == BOOT_PERF_TIER_LOW) {
+        out->mode = SLM_IO_MODE_CONSERVATIVE;
+        out->recommended_queue_depth = 8;
+        out->recommended_poll_budget = 256;
+        out->recommended_dma_window_kib = 64;
+        return;
+    }
+
+    if (profile->tier == BOOT_PERF_TIER_HIGH && out->ready_controllers >= 2) {
+        out->mode = SLM_IO_MODE_AGGRESSIVE;
+        out->recommended_queue_depth = 32;
+        out->recommended_poll_budget = 1024;
+        out->recommended_dma_window_kib = 256;
+        return;
+    }
+
+    out->mode = SLM_IO_MODE_BALANCED;
+    out->recommended_queue_depth = 16;
+    out->recommended_poll_budget = 512;
+    out->recommended_dma_window_kib = 128;
+}
+
+static void apply_io_defaults(slm_plan_request_t *req, const slm_io_profile_t *profile) {
+    if (!req || !profile) {
+        return;
+    }
+
+    if (req->queue_depth_hint == 0) {
+        req->queue_depth_hint = profile->recommended_queue_depth;
+    }
+    if (req->poll_budget_hint == 0) {
+        req->poll_budget_hint = profile->recommended_poll_budget;
+    }
+    if (req->dma_window_kib_hint == 0) {
+        req->dma_window_kib_hint = profile->recommended_dma_window_kib;
+    }
+}
+
 static bool request_valid(const slm_plan_request_t *req) {
     if (!req) {
         return false;
@@ -21,9 +100,14 @@ static bool request_valid(const slm_plan_request_t *req) {
     if (req->risk_level > 3) {
         return false;
     }
+    if (req->queue_depth_hint > 256 || req->poll_budget_hint > 4096 ||
+        req->dma_window_kib_hint > 4096) {
+        return false;
+    }
 
     switch (req->action) {
         case SLM_ACTION_REPROBE_PCI:
+        case SLM_ACTION_IO_AUDIT:
             return req->template_id == SLM_TEMPLATE_DISCOVERY;
         case SLM_ACTION_BOOTSTRAP_E1000:
         case SLM_ACTION_E1000_TX_SMOKE:
@@ -69,14 +153,20 @@ static void seed_plan(const slm_plan_request_t *req, const char *label) {
         return;
     }
 
-    serial_printf("[SLM] Seeded plan %u label=%s action=%u risk=%u\n",
+    serial_printf("[SLM] Seeded plan %u label=%s action=%u risk=%u qd=%u poll=%u dma=%uKiB\n",
         (uint64_t)plan_id,
         (uint64_t)(uintptr_t)label,
         (uint64_t)req->action,
-        (uint64_t)req->risk_level);
+        (uint64_t)req->risk_level,
+        (uint64_t)req->queue_depth_hint,
+        (uint64_t)req->poll_budget_hint,
+        (uint64_t)req->dma_window_kib_hint);
 }
 
 static void seed_boot_plans(void) {
+    slm_io_profile_t io_profile;
+    compute_io_profile(&io_profile);
+
     slm_plan_request_t discovery = {
         .template_id = SLM_TEMPLATE_DISCOVERY,
         .action = SLM_ACTION_REPROBE_PCI,
@@ -86,7 +176,20 @@ static void seed_boot_plans(void) {
         .risk_level = 0,
         .allow_apply = false,
     };
+    apply_io_defaults(&discovery, &io_profile);
     seed_plan(&discovery, "inventory-refresh");
+
+    slm_plan_request_t io_audit = {
+        .template_id = SLM_TEMPLATE_DISCOVERY,
+        .action = SLM_ACTION_IO_AUDIT,
+        .target_vendor_id = 0,
+        .target_device_id = 0,
+        .target_kind = PLATFORM_DEVICE_UNKNOWN,
+        .risk_level = 0,
+        .allow_apply = false,
+    };
+    apply_io_defaults(&io_audit, &io_profile);
+    seed_plan(&io_audit, "io-audit");
 
     const platform_device_t *ethernet = NULL;
     for (uint32_t i = 0; i < platform_probe_count(); i++) {
@@ -111,6 +214,7 @@ static void seed_boot_plans(void) {
             .risk_level = e1000_driver_ready() ? 0 : 1,
             .allow_apply = false,
         };
+        apply_io_defaults(&nic_plan, &io_profile);
         seed_plan(&nic_plan, "ethernet-bootstrap");
 
         if (e1000_driver_ready()) {
@@ -123,6 +227,7 @@ static void seed_boot_plans(void) {
                 .risk_level = 1,
                 .allow_apply = false,
             };
+            apply_io_defaults(&tx_smoke, &io_profile);
             seed_plan(&tx_smoke, "ethernet-tx-smoke");
         }
     }
@@ -143,6 +248,7 @@ static void seed_boot_plans(void) {
             .risk_level = usb_host_ready() ? 0 : 1,
             .allow_apply = false,
         };
+        apply_io_defaults(&usb_plan, &io_profile);
         seed_plan(&usb_plan, "usb-bootstrap");
         break;
     }
@@ -163,15 +269,29 @@ static void seed_boot_plans(void) {
             .risk_level = storage_host_ready() ? 0 : 1,
             .allow_apply = false,
         };
+        apply_io_defaults(&storage_plan, &io_profile);
         seed_plan(&storage_plan, "storage-bootstrap");
         break;
     }
 }
 
 static aios_status_t apply_request(const slm_plan_request_t *req) {
+    serial_printf("[SLM] Apply action=%u qd=%u poll=%u dma=%uKiB\n",
+        (uint64_t)req->action,
+        (uint64_t)req->queue_depth_hint,
+        (uint64_t)req->poll_budget_hint,
+        (uint64_t)req->dma_window_kib_hint);
+
     switch (req->action) {
         case SLM_ACTION_REPROBE_PCI:
             return platform_probe_init();
+        case SLM_ACTION_IO_AUDIT:
+            serial_write("[SLM] I/O audit begin\n");
+            e1000_driver_dump();
+            usb_host_dump();
+            storage_host_dump();
+            serial_write("[SLM] I/O audit end\n");
+            return AIOS_OK;
         case SLM_ACTION_BOOTSTRAP_E1000:
             return e1000_driver_init();
         case SLM_ACTION_E1000_TX_SMOKE:
@@ -241,6 +361,7 @@ aios_status_t slm_snapshot_read(slm_hw_snapshot_t *out) {
     out->usb_controller_kind = (uint8_t)usb.controller_kind;
     out->storage_ready = storage.ready;
     out->storage_controller_kind = (uint8_t)storage.controller_kind;
+    compute_io_profile(&out->io_profile);
 
     for (uint32_t i = 0; i < SLM_HW_MAX_DEVICES; i++) {
         out->devices[i].vendor_id = 0;
@@ -301,11 +422,14 @@ aios_status_t slm_plan_submit(const slm_plan_request_t *req, uint32_t *plan_id_o
     slot->state = SLM_PLAN_PROPOSED;
     slot->state = request_valid(req) ? SLM_PLAN_VALIDATED : SLM_PLAN_REJECTED;
 
-    serial_printf("[SLM] Plan %u submitted template=%u action=%u state=%u\n",
+    serial_printf("[SLM] Plan %u submitted template=%u action=%u state=%u qd=%u poll=%u dma=%uKiB\n",
         (uint64_t)slot->plan_id,
         (uint64_t)slot->request.template_id,
         (uint64_t)slot->request.action,
-        (uint64_t)slot->state);
+        (uint64_t)slot->state,
+        (uint64_t)slot->request.queue_depth_hint,
+        (uint64_t)slot->request.poll_budget_hint,
+        (uint64_t)slot->request.dma_window_kib_hint);
 
     if (plan_id_out) {
         *plan_id_out = slot->plan_id;
@@ -382,6 +506,14 @@ void slm_orchestrator_dump(void) {
         (uint64_t)snapshot.usb_controller_kind,
         (uint64_t)snapshot.storage_ready,
         (uint64_t)snapshot.storage_controller_kind);
+    kprintf("I/O profile: mode=%s ready=%u degraded=%u pcie=%u qd=%u poll=%u dma=%uKiB\n",
+        io_mode_name(snapshot.io_profile.mode),
+        (uint64_t)snapshot.io_profile.ready_controllers,
+        (uint64_t)snapshot.io_profile.degraded_controllers,
+        (uint64_t)snapshot.io_profile.pcie_io_devices,
+        (uint64_t)snapshot.io_profile.recommended_queue_depth,
+        (uint64_t)snapshot.io_profile.recommended_poll_budget,
+        (uint64_t)snapshot.io_profile.recommended_dma_window_kib);
     for (uint32_t i = 0; i < snapshot.listed_devices; i++) {
         kprintf("  [%u] kind=%u vendor=%x device=%x bus=%u slot=%u prio=%u\n",
             (uint64_t)i,
@@ -396,12 +528,15 @@ void slm_orchestrator_dump(void) {
         if (plan_table[i].state == SLM_PLAN_EMPTY) {
             continue;
         }
-        kprintf("  plan[%u] action=%u state=%u risk=%u allow=%u\n",
+        kprintf("  plan[%u] action=%u state=%u risk=%u allow=%u qd=%u poll=%u dma=%uKiB\n",
             (uint64_t)plan_table[i].plan_id,
             (uint64_t)plan_table[i].request.action,
             (uint64_t)plan_table[i].state,
             (uint64_t)plan_table[i].request.risk_level,
-            (uint64_t)plan_table[i].request.allow_apply);
+            (uint64_t)plan_table[i].request.allow_apply,
+            (uint64_t)plan_table[i].request.queue_depth_hint,
+            (uint64_t)plan_table[i].request.poll_budget_hint,
+            (uint64_t)plan_table[i].request.dma_window_kib_hint);
     }
     kprintf("=================================\n");
 }

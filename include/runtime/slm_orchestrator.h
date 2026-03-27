@@ -31,6 +31,7 @@ typedef enum {
     SLM_ACTION_USB_DUMP = 6,
     SLM_ACTION_BOOTSTRAP_STORAGE = 7,
     SLM_ACTION_STORAGE_DUMP = 8,
+    SLM_ACTION_IO_AUDIT = 9,
 } slm_action_t;
 
 typedef enum {
@@ -41,6 +42,12 @@ typedef enum {
     SLM_PLAN_FAILED = 4,
     SLM_PLAN_REJECTED = 5,
 } slm_plan_state_t;
+
+typedef enum {
+    SLM_IO_MODE_CONSERVATIVE = 0,
+    SLM_IO_MODE_BALANCED = 1,
+    SLM_IO_MODE_AGGRESSIVE = 2,
+} slm_io_mode_t;
 
 typedef struct {
     uint16_t vendor_id;
@@ -59,6 +66,16 @@ typedef struct {
 } slm_hw_device_t;
 
 typedef struct {
+    uint8_t ready_controllers;
+    uint8_t degraded_controllers;
+    uint8_t pcie_io_devices;
+    slm_io_mode_t mode;
+    uint16_t recommended_queue_depth;
+    uint16_t recommended_poll_budget;
+    uint32_t recommended_dma_window_kib;
+} slm_io_profile_t;
+
+typedef struct {
     uint64_t ts_ns;
     uint64_t tsc_khz;
     bool invariant_tsc;
@@ -72,6 +89,7 @@ typedef struct {
     uint8_t usb_controller_kind;
     bool storage_ready;
     uint8_t storage_controller_kind;
+    slm_io_profile_t io_profile;
     slm_hw_device_t devices[SLM_HW_MAX_DEVICES];
 } slm_hw_snapshot_t;
 
@@ -82,6 +100,9 @@ typedef struct {
     uint16_t target_device_id;
     platform_device_kind_t target_kind;
     uint32_t risk_level;
+    uint16_t queue_depth_hint;
+    uint16_t poll_budget_hint;
+    uint32_t dma_window_kib_hint;
     bool allow_apply;
 } slm_plan_request_t;
 
