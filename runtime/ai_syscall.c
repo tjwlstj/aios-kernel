@@ -13,6 +13,8 @@
 
 #include <runtime/ai_syscall.h>
 #include <drivers/vga.h>
+#include <drivers/pci_core.h>
+#include <kernel/acpi.h>
 #include <kernel/health.h>
 #include <runtime/autonomy.h>
 #include <runtime/slm_orchestrator.h>
@@ -489,6 +491,8 @@ void sys_info_dump(void) {
     tensor_mm_dump();
     ai_sched_dump();
     accel_hal_dump();
+    acpi_dump();
+    pci_core_dump();
     kernel_health_dump();
     autonomy_dump();
     slm_orchestrator_dump();

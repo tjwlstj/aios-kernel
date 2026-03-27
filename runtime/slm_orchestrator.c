@@ -4,8 +4,10 @@
  */
 
 #include <runtime/slm_orchestrator.h>
+#include <drivers/pci_core.h>
 #include <kernel/health.h>
 #include <kernel/time.h>
+#include <kernel/acpi.h>
 #include <drivers/e1000.h>
 #include <drivers/storage_host.h>
 #include <drivers/usb_host.h>
@@ -19,6 +21,76 @@ static bool device_is_io_kind(platform_device_kind_t kind) {
     return kind == PLATFORM_DEVICE_ETHERNET ||
            kind == PLATFORM_DEVICE_USB ||
            kind == PLATFORM_DEVICE_STORAGE;
+}
+
+static uint8_t compute_compatibility_score(const acpi_info_t *acpi,
+                                           const pci_core_summary_t *pci,
+                                           const platform_probe_summary_t *summary) {
+    int32_t score = 25;
+
+    if (acpi_ready()) {
+        score += 20;
+    }
+    if (acpi->xsdt_present) {
+        score += 5;
+    }
+    if (acpi->mcfg_present) {
+        score += 10;
+    }
+    if (acpi->madt_present) {
+        score += 10;
+    }
+    if (pci->ecam_available) {
+        score += 10;
+    }
+    if (pci->pcie_functions > 0) {
+        score += 10;
+    }
+    if (pci->msi_capable_functions > 0) {
+        score += 5;
+    }
+    if (pci->msix_capable_functions > 0) {
+        score += 5;
+    }
+    if (summary->matched_devices > 0) {
+        score += 10;
+    }
+    if (pci->legacy_irq_functions > 0 && pci->msi_capable_functions == 0) {
+        score -= 10;
+    }
+
+    if (score < 0) {
+        score = 0;
+    }
+    if (score > 100) {
+        score = 100;
+    }
+    return (uint8_t)score;
+}
+
+static void compute_fabric_profile(slm_fabric_profile_t *out) {
+    if (!out) {
+        return;
+    }
+
+    const acpi_info_t *acpi = acpi_info();
+    const pci_core_summary_t *pci = pci_core_summary();
+    const platform_probe_summary_t *summary = platform_probe_summary();
+
+    out->acpi_ready = acpi_ready();
+    out->xsdt_present = acpi->xsdt_present;
+    out->mcfg_present = acpi->mcfg_present;
+    out->madt_present = acpi->madt_present;
+    out->ecam_available = pci->ecam_available;
+    out->pci_access_mode = pci->access_mode;
+    out->pci_bus_start = pci->ecam_start_bus;
+    out->pci_bus_end = pci->ecam_end_bus;
+    out->pci_total_functions = pci->total_functions;
+    out->pci_bridge_count = pci->bridges;
+    out->pci_pcie_functions = pci->pcie_functions;
+    out->pci_msi_capable_functions = pci->msi_capable_functions;
+    out->pci_msix_capable_functions = pci->msix_capable_functions;
+    out->compatibility_score = compute_compatibility_score(acpi, pci, summary);
 }
 
 static const char *io_mode_name(slm_io_mode_t mode) {
@@ -37,8 +109,11 @@ static void compute_io_profile(slm_io_profile_t *out) {
 
     const platform_probe_summary_t *summary = platform_probe_summary();
     const memory_selftest_result_t *profile = kernel_memory_selftest_last();
+    slm_fabric_profile_t fabric;
     uint32_t total_io = summary->ethernet_count + summary->usb_count + summary->storage_count;
     uint32_t ready = 0;
+
+    compute_fabric_profile(&fabric);
 
     ready += e1000_driver_ready() ? 1U : 0U;
     ready += usb_host_ready() ? 1U : 0U;
@@ -56,7 +131,10 @@ static void compute_io_profile(slm_io_profile_t *out) {
         out->pcie_io_devices++;
     }
 
-    if (out->degraded_controllers > 0 || profile->tier == BOOT_PERF_TIER_LOW) {
+    if (out->degraded_controllers > 0 ||
+        profile->tier == BOOT_PERF_TIER_LOW ||
+        !fabric.acpi_ready ||
+        (!fabric.ecam_available && fabric.pci_total_functions > 4)) {
         out->mode = SLM_IO_MODE_CONSERVATIVE;
         out->recommended_queue_depth = 8;
         out->recommended_poll_budget = 256;
@@ -64,7 +142,11 @@ static void compute_io_profile(slm_io_profile_t *out) {
         return;
     }
 
-    if (profile->tier == BOOT_PERF_TIER_HIGH && out->ready_controllers >= 2) {
+    if (profile->tier == BOOT_PERF_TIER_HIGH &&
+        out->ready_controllers >= 2 &&
+        fabric.ecam_available &&
+        fabric.compatibility_score >= 75 &&
+        fabric.pci_msi_capable_functions > 0) {
         out->mode = SLM_IO_MODE_AGGRESSIVE;
         out->recommended_queue_depth = 32;
         out->recommended_poll_budget = 1024;
@@ -111,7 +193,8 @@ static bool request_valid(const slm_plan_request_t *req) {
     kernel_health_get_summary(&health);
     if (health.level == KERNEL_STABILITY_UNSAFE &&
         req->action != SLM_ACTION_REPROBE_PCI &&
-        req->action != SLM_ACTION_IO_AUDIT) {
+        req->action != SLM_ACTION_IO_AUDIT &&
+        req->action != SLM_ACTION_CORE_AUDIT) {
         return false;
     }
     if (!health.risky_io_allowed &&
@@ -125,6 +208,7 @@ static bool request_valid(const slm_plan_request_t *req) {
     switch (req->action) {
         case SLM_ACTION_REPROBE_PCI:
         case SLM_ACTION_IO_AUDIT:
+        case SLM_ACTION_CORE_AUDIT:
             return req->template_id == SLM_TEMPLATE_DISCOVERY;
         case SLM_ACTION_BOOTSTRAP_E1000:
         case SLM_ACTION_E1000_TX_SMOKE:
@@ -195,6 +279,18 @@ static void seed_boot_plans(void) {
     };
     apply_io_defaults(&discovery, &io_profile);
     seed_plan(&discovery, "inventory-refresh");
+
+    slm_plan_request_t core_audit = {
+        .template_id = SLM_TEMPLATE_DISCOVERY,
+        .action = SLM_ACTION_CORE_AUDIT,
+        .target_vendor_id = 0,
+        .target_device_id = 0,
+        .target_kind = PLATFORM_DEVICE_UNKNOWN,
+        .risk_level = 0,
+        .allow_apply = false,
+    };
+    apply_io_defaults(&core_audit, &io_profile);
+    seed_plan(&core_audit, "core-audit");
 
     slm_plan_request_t io_audit = {
         .template_id = SLM_TEMPLATE_DISCOVERY,
@@ -302,6 +398,13 @@ static aios_status_t apply_request(const slm_plan_request_t *req) {
     switch (req->action) {
         case SLM_ACTION_REPROBE_PCI:
             return platform_probe_init();
+        case SLM_ACTION_CORE_AUDIT:
+            serial_write("[SLM] Core audit begin\n");
+            acpi_dump();
+            pci_core_dump();
+            platform_probe_dump();
+            serial_write("[SLM] Core audit end\n");
+            return AIOS_OK;
         case SLM_ACTION_IO_AUDIT:
             serial_write("[SLM] I/O audit begin\n");
             e1000_driver_dump();
@@ -345,7 +448,7 @@ aios_status_t slm_orchestrator_init(void) {
     kprintf("\n");
     kprintf("    SLM Hardware Orchestrator initialized:\n");
     kprintf("    Plan slots: %u\n", (uint64_t)SLM_PLAN_CAP);
-    kprintf("    Templates: discovery, pci-ethernet, pci-usb, pci-storage\n");
+    kprintf("    Templates: discovery/core-audit, pci-ethernet, pci-usb, pci-storage\n");
     serial_write("[SLM] Hardware orchestrator ready\n");
     seed_boot_plans();
     return AIOS_OK;
@@ -372,7 +475,7 @@ aios_status_t slm_snapshot_read(slm_hw_snapshot_t *out) {
     out->invariant_tsc = kernel_time_invariant_tsc();
     out->tier = profile->tier;
     out->memcpy_mib_per_sec = profile->memcpy_mib_per_sec;
-    out->total_detected_devices = summary->matched_devices;
+    out->total_detected_devices = summary->total_pci_devices;
     out->listed_devices = 0;
     out->health_level = health.level;
     out->autonomy_allowed = health.autonomy_allowed;
@@ -383,6 +486,7 @@ aios_status_t slm_snapshot_read(slm_hw_snapshot_t *out) {
     out->usb_controller_kind = (uint8_t)usb.controller_kind;
     out->storage_ready = storage.ready;
     out->storage_controller_kind = (uint8_t)storage.controller_kind;
+    compute_fabric_profile(&out->fabric_profile);
     compute_io_profile(&out->io_profile);
 
     for (uint32_t i = 0; i < SLM_HW_MAX_DEVICES; i++) {
@@ -532,6 +636,17 @@ void slm_orchestrator_dump(void) {
         (uint64_t)(uintptr_t)kernel_stability_name(snapshot.health_level),
         (uint64_t)snapshot.autonomy_allowed,
         (uint64_t)snapshot.risky_io_allowed);
+    kprintf("Fabric: acpi=%u mcfg=%u madt=%u mode=%s score=%u total=%u bridges=%u pcie=%u msi=%u msix=%u\n",
+        (uint64_t)snapshot.fabric_profile.acpi_ready,
+        (uint64_t)snapshot.fabric_profile.mcfg_present,
+        (uint64_t)snapshot.fabric_profile.madt_present,
+        (uint64_t)(uintptr_t)pci_cfg_access_mode_name(snapshot.fabric_profile.pci_access_mode),
+        (uint64_t)snapshot.fabric_profile.compatibility_score,
+        (uint64_t)snapshot.fabric_profile.pci_total_functions,
+        (uint64_t)snapshot.fabric_profile.pci_bridge_count,
+        (uint64_t)snapshot.fabric_profile.pci_pcie_functions,
+        (uint64_t)snapshot.fabric_profile.pci_msi_capable_functions,
+        (uint64_t)snapshot.fabric_profile.pci_msix_capable_functions);
     kprintf("I/O profile: mode=%s ready=%u degraded=%u pcie=%u qd=%u poll=%u dma=%uKiB\n",
         io_mode_name(snapshot.io_profile.mode),
         (uint64_t)snapshot.io_profile.ready_controllers,

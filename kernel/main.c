@@ -7,11 +7,13 @@
  */
 
 #include <kernel/types.h>
+#include <kernel/acpi.h>
 #include <kernel/health.h>
 #include <kernel/selftest.h>
 #include <kernel/time.h>
 #include <lib/string.h>
 #include <drivers/e1000.h>
+#include <drivers/pci_core.h>
 #include <drivers/storage_host.h>
 #include <drivers/usb_host.h>
 #include <drivers/vga.h>
@@ -35,7 +37,7 @@
 static void print_banner(void);
 static void print_boot_protocol(uint64_t multiboot_magic, uint64_t multiboot_info);
 static void print_system_info(void);
-static void init_subsystems(void);
+static void init_subsystems(uint64_t multiboot_magic, uint64_t multiboot_info);
 static void run_selftests(void);
 static void finalize_runtime_health(void);
 static void print_health_summary(void);
@@ -82,7 +84,7 @@ void kernel_main(uint64_t multiboot_magic, uint64_t multiboot_info) {
     print_system_info();
     
     /* Initialize all kernel subsystems */
-    init_subsystems();
+    init_subsystems(multiboot_magic, multiboot_info);
     print_health_summary();
     enforce_stability_policy();
     
@@ -210,7 +212,7 @@ static void print_system_info(void) {
         (uint64_t)MAX_AI_TASKS, (uint64_t)MAX_ACCELERATORS);
 }
 
-static void init_subsystems(void) {
+static void init_subsystems(uint64_t multiboot_magic, uint64_t multiboot_info) {
     /* 1. IDT - must be first to catch any exceptions during init */
     INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_IDT,
         "Interrupt Descriptor Table (IDT)", idt_init());
@@ -219,47 +221,55 @@ static void init_subsystems(void) {
     INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_TIME,
         "Kernel Time Source", kernel_time_init());
 
-    /* 3. Tensor Memory Manager */
+    /* 3. ACPI fabric discovery */
+    INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_ACPI,
+        "ACPI Fabric Parser", acpi_init(multiboot_magic, multiboot_info));
+
+    /* 4. PCI core */
+    INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_PCI_CORE,
+        "PCI Core", pci_core_init());
+
+    /* 5. Tensor Memory Manager */
     INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_TENSOR_MM,
         "Tensor Memory Manager", tensor_mm_init());
     
-    /* 4. AI Workload Scheduler */
+    /* 6. AI Workload Scheduler */
     INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_SCHED,
         "AI Workload Scheduler", ai_sched_init());
 
-    /* 5. Boot-time diagnostics and performance profiling */
+    /* 7. Boot-time diagnostics and performance profiling */
     run_selftests();
     
-    /* 6. Accelerator HAL */
+    /* 8. Accelerator HAL */
     INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_ACCEL, "Accelerator HAL", accel_hal_init());
 
-    /* 7. Minimal peripheral discovery */
+    /* 9. Minimal peripheral discovery */
     INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_PCI_PROBE,
         "Peripheral Probe Layer", platform_probe_init());
 
-    /* 8. Intel E1000 network bootstrap */
+    /* 10. Intel E1000 network bootstrap */
     INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_NETWORK,
         "Intel E1000 Ethernet", e1000_driver_init());
 
-    /* 9. Minimal USB host bootstrap */
+    /* 11. Minimal USB host bootstrap */
     INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_USB, "USB Host Bootstrap", usb_host_init());
 
-    /* 10. Minimal storage host bootstrap */
+    /* 12. Minimal storage host bootstrap */
     INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_STORAGE,
         "Storage Host Bootstrap", storage_host_init());
 
     /* Finalize runtime subsystem health before control planes use it */
     finalize_runtime_health();
 
-    /* 11. AI System Call Interface */
+    /* 13. AI System Call Interface */
     INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_SYSCALL,
         "AI System Call Interface", ai_syscall_init());
 
-    /* 12. Autonomy Control Plane */
+    /* 14. Autonomy Control Plane */
     INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_AUTONOMY,
         "Autonomy Control Plane", autonomy_init());
 
-    /* 13. SLM Hardware Orchestrator */
+    /* 15. SLM Hardware Orchestrator */
     INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_SLM,
         "SLM Hardware Orchestrator", slm_orchestrator_init());
 }
@@ -281,9 +291,32 @@ static void run_selftests(void) {
 }
 
 static void finalize_runtime_health(void) {
+    const acpi_info_t *acpi = acpi_info();
+    const pci_core_summary_t *pci = pci_core_summary();
+    const platform_probe_summary_t *probe = platform_probe_summary();
     e1000_driver_info_t nic;
     usb_host_info_t usb;
     storage_host_info_t storage;
+
+    if (acpi_ready()) {
+        kernel_health_mark(KERNEL_SUBSYSTEM_ACPI, KERNEL_HEALTH_OK, AIOS_OK);
+    } else if (acpi->rsdp_found) {
+        kernel_health_mark(KERNEL_SUBSYSTEM_ACPI, KERNEL_HEALTH_DEGRADED,
+            AIOS_ERR_IO);
+    } else {
+        kernel_health_mark(KERNEL_SUBSYSTEM_ACPI, KERNEL_HEALTH_UNKNOWN,
+            AIOS_ERR_NODEV);
+    }
+
+    if (probe->total_pci_devices > 0) {
+        kernel_health_mark(KERNEL_SUBSYSTEM_PCI_CORE,
+            (pci->ecam_available || pci->total_functions > 0) ? KERNEL_HEALTH_OK
+                                                              : KERNEL_HEALTH_DEGRADED,
+            AIOS_OK);
+    } else {
+        kernel_health_mark(KERNEL_SUBSYSTEM_PCI_CORE,
+            KERNEL_HEALTH_DEGRADED, AIOS_ERR_NODEV);
+    }
 
     if (e1000_driver_info(&nic) == AIOS_OK && nic.present) {
         if (!nic.ready || !nic.link_up || nic.last_tx_status != AIOS_OK) {

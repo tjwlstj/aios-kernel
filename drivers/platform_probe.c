@@ -4,11 +4,9 @@
  */
 
 #include <drivers/platform_probe.h>
+#include <drivers/pci_core.h>
 #include <drivers/vga.h>
 #include <drivers/serial.h>
-
-#define PCI_CONFIG_ADDR 0xCF8
-#define PCI_CONFIG_DATA 0xCFC
 
 #define PCI_CLASS_STORAGE    0x01
 #define PCI_CLASS_NETWORK    0x02
@@ -22,42 +20,6 @@
 static platform_device_t probed_devices[MAX_PLATFORM_DEVICES];
 static uint32_t probed_device_count = 0;
 static platform_probe_summary_t probe_summary = {0};
-
-static inline void outl(uint16_t port, uint32_t val) {
-    __asm__ volatile ("outl %0, %1" : : "a"(val), "Nd"(port));
-}
-
-static inline uint32_t inl(uint16_t port) {
-    uint32_t ret;
-    __asm__ volatile ("inl %1, %0" : "=a"(ret) : "Nd"(port));
-    return ret;
-}
-
-static uint32_t pci_config_read(uint8_t bus, uint8_t slot, uint8_t function,
-                                uint8_t offset) {
-    uint32_t address = (1U << 31) |
-                       ((uint32_t)bus << 16) |
-                       ((uint32_t)slot << 11) |
-                       ((uint32_t)function << 8) |
-                       (offset & 0xFC);
-    outl(PCI_CONFIG_ADDR, address);
-    return inl(PCI_CONFIG_DATA);
-}
-
-static uint8_t pci_config_read8(uint8_t bus, uint8_t slot, uint8_t function,
-                                uint8_t offset) {
-    uint32_t val = pci_config_read(bus, slot, function, offset);
-    return (uint8_t)((val >> ((offset & 3) * 8)) & 0xFF);
-}
-
-static uint8_t pci_function_count(uint8_t bus, uint8_t slot) {
-    uint16_t vendor_id = (uint16_t)(pci_config_read(bus, slot, 0, 0x00) & 0xFFFF);
-    if (vendor_id == 0xFFFF) {
-        return 0;
-    }
-
-    return (pci_config_read8(bus, slot, 0, 0x0E) & BIT(7)) ? 8 : 1;
-}
 
 static void copy_string(char *dst, const char *src, uint32_t max_len) {
     uint32_t i = 0;
@@ -161,32 +123,35 @@ static uint8_t classify_priority(platform_device_kind_t kind, boot_perf_tier_t t
     }
 }
 
-static void probe_pcie_link(platform_device_t *dev) {
-    uint32_t status_reg = pci_config_read(dev->bus, dev->slot, dev->function, 0x04);
-    if (((status_reg >> 16) & BIT(4)) == 0) {
+static void probe_bars(platform_device_t *dev) {
+    if (!dev) {
         return;
     }
 
-    uint8_t cap_ptr = pci_config_read8(dev->bus, dev->slot, dev->function, 0x34) & 0xFC;
-    for (uint32_t guard = 0; guard < 48 && cap_ptr >= 0x40; guard++) {
-        uint8_t cap_id = pci_config_read8(dev->bus, dev->slot, dev->function, cap_ptr);
-        uint8_t next = pci_config_read8(dev->bus, dev->slot, dev->function, cap_ptr + 1) & 0xFC;
+    dev->bar_count = 0;
+    dev->mmio_bar_count = 0;
+    dev->io_bar_count = 0;
+    dev->has_64bit_bar = false;
 
-        if (cap_id == 0x10) {
-            uint32_t link_reg = pci_config_read(dev->bus, dev->slot, dev->function, cap_ptr + 0x10);
-            uint32_t link_status_reg = pci_config_read(dev->bus, dev->slot, dev->function, cap_ptr + 0x14);
-            uint16_t link_status = (uint16_t)(link_status_reg >> 16);
-            (void)link_reg;
-            dev->pcie_capable = true;
-            dev->pcie_link_speed = (uint8_t)(link_status & 0x0F);
-            dev->pcie_link_width = (uint8_t)((link_status >> 4) & 0x3F);
-            return;
+    for (uint8_t i = 0; i < PCI_BAR_COUNT; i++) {
+        pci_bar_t bar;
+        if (pci_read_bar(dev->bus, dev->slot, dev->function, i, &bar) != AIOS_OK ||
+            !bar.present) {
+            continue;
         }
 
-        if (next == 0 || next == cap_ptr) {
-            break;
+        dev->bar_count++;
+        if (bar.io_space) {
+            dev->io_bar_count++;
+        } else if (bar.mem_space) {
+            dev->mmio_bar_count++;
         }
-        cap_ptr = next;
+        if (bar.is_64bit) {
+            dev->has_64bit_bar = true;
+            if (i + 1 < PCI_BAR_COUNT) {
+                i++;
+            }
+        }
     }
 }
 
@@ -244,11 +209,15 @@ aios_status_t platform_probe_init(void) {
     probe_summary.usb_count = 0;
     probe_summary.storage_count = 0;
     probe_summary.boot_tier = profile->tier;
+    pci_core_begin_enumeration();
 
     kprintf("    Probing PCI peripherals (net/wireless/bluetooth/usb)...\n");
     serial_write("[DEV] Probing PCI peripherals...\n");
 
     for (uint16_t bus = 0; bus < 256; bus++) {
+        if (!pci_bus_in_range((uint8_t)bus)) {
+            continue;
+        }
         for (uint16_t slot = 0; slot < 32; slot++) {
             uint8_t function_count = pci_function_count((uint8_t)bus, (uint8_t)slot);
             if (function_count == 0) {
@@ -256,51 +225,54 @@ aios_status_t platform_probe_init(void) {
             }
 
             for (uint8_t function = 0; function < function_count; function++) {
-                uint32_t reg0 = pci_config_read((uint8_t)bus, (uint8_t)slot, function, 0x00);
-                uint16_t vendor_id = (uint16_t)(reg0 & 0xFFFF);
-                uint16_t device_id = (uint16_t)((reg0 >> 16) & 0xFFFF);
-
-                if (vendor_id == 0xFFFF) {
+                pci_identity_t ident;
+                pci_capabilities_t caps;
+                if (pci_read_identity((uint8_t)bus, (uint8_t)slot, function, &ident) != AIOS_OK) {
                     continue;
                 }
+                (void)pci_probe_capabilities((uint8_t)bus, (uint8_t)slot, function, &caps);
+                pci_core_account_function(&ident, &caps);
 
                 probe_summary.total_pci_devices++;
-
-                uint32_t reg2 = pci_config_read((uint8_t)bus, (uint8_t)slot, function, 0x08);
-                uint8_t prog_if = (uint8_t)((reg2 >> 8) & 0xFF);
-                uint8_t subclass = (uint8_t)((reg2 >> 16) & 0xFF);
-                uint8_t class_code = (uint8_t)((reg2 >> 24) & 0xFF);
                 const char *label = NULL;
-                platform_device_kind_t kind = classify_device(class_code, subclass, prog_if, &label);
+                platform_device_kind_t kind = classify_device(ident.class_code, ident.subclass,
+                    ident.prog_if, &label);
 
                 if (kind == PLATFORM_DEVICE_UNKNOWN || probed_device_count >= MAX_PLATFORM_DEVICES) {
                     continue;
                 }
 
                 platform_device_t *dev = &probed_devices[probed_device_count++];
-                dev->vendor_id = vendor_id;
-                dev->device_id = device_id;
-                dev->class_code = class_code;
-                dev->subclass = subclass;
-                dev->prog_if = prog_if;
+                dev->vendor_id = ident.vendor_id;
+                dev->device_id = ident.device_id;
+                dev->class_code = ident.class_code;
+                dev->subclass = ident.subclass;
+                dev->prog_if = ident.prog_if;
                 dev->bus = (uint8_t)bus;
                 dev->slot = (uint8_t)slot;
                 dev->function = function;
+                dev->multifunction = ident.multifunction;
+                dev->bridge = ident.bridge;
                 dev->kind = kind;
-                dev->pcie_capable = false;
-                dev->pcie_link_speed = 0;
-                dev->pcie_link_width = 0;
+                dev->pcie_capable = caps.has_pcie;
+                dev->msi_capable = caps.has_msi;
+                dev->msix_capable = caps.has_msix;
+                dev->power_manage_capable = caps.has_pm;
+                dev->pcie_link_speed = caps.pcie_link_speed;
+                dev->pcie_link_width = caps.pcie_link_width;
+                dev->irq_line = ident.irq_line;
+                dev->irq_pin = ident.irq_pin;
                 dev->init_priority = classify_priority(kind, probe_summary.boot_tier);
                 copy_string(dev->name, label, sizeof(dev->name));
-                probe_pcie_link(dev);
+                probe_bars(dev);
 
                 account_device(kind);
 
                 if (dev->pcie_capable) {
                     kprintf("    %s [%x:%x] PCI %u:%u.%u PCIe gen%u x%u\n",
                         dev->name,
-                        (uint64_t)vendor_id,
-                        (uint64_t)device_id,
+                        (uint64_t)dev->vendor_id,
+                        (uint64_t)dev->device_id,
                         (uint64_t)dev->bus,
                         (uint64_t)dev->slot,
                         (uint64_t)dev->function,
@@ -308,8 +280,8 @@ aios_status_t platform_probe_init(void) {
                         (uint64_t)dev->pcie_link_width);
                     serial_printf("[DEV] %s [%x:%x] PCI %u:%u.%u PCIe gen%u x%u\n",
                         (uint64_t)(uintptr_t)dev->name,
-                        (uint64_t)vendor_id,
-                        (uint64_t)device_id,
+                        (uint64_t)dev->vendor_id,
+                        (uint64_t)dev->device_id,
                         (uint64_t)dev->bus,
                         (uint64_t)dev->slot,
                         (uint64_t)dev->function,
@@ -318,19 +290,29 @@ aios_status_t platform_probe_init(void) {
                 } else {
                     kprintf("    %s [%x:%x] PCI %u:%u.%u\n",
                         dev->name,
-                        (uint64_t)vendor_id,
-                        (uint64_t)device_id,
+                        (uint64_t)dev->vendor_id,
+                        (uint64_t)dev->device_id,
                         (uint64_t)dev->bus,
                         (uint64_t)dev->slot,
                         (uint64_t)dev->function);
                     serial_printf("[DEV] %s [%x:%x] PCI %u:%u.%u\n",
                         (uint64_t)(uintptr_t)dev->name,
-                        (uint64_t)vendor_id,
-                        (uint64_t)device_id,
+                        (uint64_t)dev->vendor_id,
+                        (uint64_t)dev->device_id,
                         (uint64_t)dev->bus,
                         (uint64_t)dev->slot,
                         (uint64_t)dev->function);
                 }
+
+                serial_printf("[DEV] caps irq=%u pin=%u msi=%u msix=%u bars=%u mmio=%u io=%u 64=%u\n",
+                    (uint64_t)dev->irq_line,
+                    (uint64_t)dev->irq_pin,
+                    dev->msi_capable ? 1ULL : 0ULL,
+                    dev->msix_capable ? 1ULL : 0ULL,
+                    (uint64_t)dev->bar_count,
+                    (uint64_t)dev->mmio_bar_count,
+                    (uint64_t)dev->io_bar_count,
+                    dev->has_64bit_bar ? 1ULL : 0ULL);
             }
         }
     }
@@ -338,6 +320,15 @@ aios_status_t platform_probe_init(void) {
     sort_devices_by_priority();
     print_pipeline_plan();
 
+    const pci_core_summary_t *pci = pci_core_summary();
+    serial_printf("[DEV] Core: mode=%s ecam=%u total_fn=%u bridges=%u pcie=%u msi=%u msix=%u\n",
+        (uint64_t)(uintptr_t)pci_cfg_access_mode_name(pci->access_mode),
+        pci->ecam_available ? 1ULL : 0ULL,
+        pci->total_functions,
+        pci->bridges,
+        pci->pcie_functions,
+        pci->msi_capable_functions,
+        pci->msix_capable_functions);
     serial_printf("[DEV] Summary: pci=%u matched=%u eth=%u wifi=%u bt=%u usb=%u storage=%u\n",
         probe_summary.total_pci_devices,
         probe_summary.matched_devices,
@@ -371,13 +362,20 @@ void platform_probe_dump(void) {
         probe_summary.total_pci_devices, probe_summary.matched_devices);
     for (uint32_t i = 0; i < probed_device_count; i++) {
         const platform_device_t *dev = &probed_devices[i];
-        kprintf("  %s [%x:%x] PCI %u:%u.%u\n",
+        kprintf("  %s [%x:%x] PCI %u:%u.%u irq=%u pin=%u msi=%u msix=%u bars=%u mmio=%u io=%u\n",
             dev->name,
             (uint64_t)dev->vendor_id,
             (uint64_t)dev->device_id,
             (uint64_t)dev->bus,
             (uint64_t)dev->slot,
-            (uint64_t)dev->function);
+            (uint64_t)dev->function,
+            (uint64_t)dev->irq_line,
+            (uint64_t)dev->irq_pin,
+            (uint64_t)dev->msi_capable,
+            (uint64_t)dev->msix_capable,
+            (uint64_t)dev->bar_count,
+            (uint64_t)dev->mmio_bar_count,
+            (uint64_t)dev->io_bar_count);
     }
 }
 

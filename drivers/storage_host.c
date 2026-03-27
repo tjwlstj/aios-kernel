@@ -5,19 +5,12 @@
 
 #include <drivers/storage_host.h>
 #include <drivers/platform_probe.h>
+#include <drivers/pci_core.h>
 #include <drivers/serial.h>
 #include <drivers/vga.h>
 #include <lib/string.h>
 
-#define PCI_CONFIG_ADDR    0xCF8
-#define PCI_CONFIG_DATA    0xCFC
-
-#define PCI_COMMAND_OFFSET 0x04
 #define PCI_BAR0_OFFSET    0x10
-#define PCI_BAR_COUNT      6
-#define PCI_CMD_IO         0x1
-#define PCI_CMD_MEM        0x2
-#define PCI_CMD_BUSMASTER  0x4
 
 typedef struct {
     bool present;
@@ -46,42 +39,10 @@ typedef struct {
 
 static storage_host_state_t g_storage_host = {0};
 
-static inline void outl(uint16_t port, uint32_t val) {
-    __asm__ volatile ("outl %0, %1" : : "a"(val), "Nd"(port));
-}
-
-static inline uint32_t inl(uint16_t port) {
-    uint32_t ret;
-    __asm__ volatile ("inl %1, %0" : "=a"(ret) : "Nd"(port));
-    return ret;
-}
-
 static inline uint8_t inb(uint16_t port) {
     uint8_t ret;
     __asm__ volatile ("inb %1, %0" : "=a"(ret) : "Nd"(port));
     return ret;
-}
-
-static uint32_t pci_config_read(uint8_t bus, uint8_t slot, uint8_t function,
-                                uint8_t offset) {
-    uint32_t address = (1U << 31) |
-                       ((uint32_t)bus << 16) |
-                       ((uint32_t)slot << 11) |
-                       ((uint32_t)function << 8) |
-                       (offset & 0xFC);
-    outl(PCI_CONFIG_ADDR, address);
-    return inl(PCI_CONFIG_DATA);
-}
-
-static void pci_config_write(uint8_t bus, uint8_t slot, uint8_t function,
-                             uint8_t offset, uint32_t value) {
-    uint32_t address = (1U << 31) |
-                       ((uint32_t)bus << 16) |
-                       ((uint32_t)slot << 11) |
-                       ((uint32_t)function << 8) |
-                       (offset & 0xFC);
-    outl(PCI_CONFIG_ADDR, address);
-    outl(PCI_CONFIG_DATA, value);
 }
 
 static storage_host_controller_kind_t classify_controller(uint8_t subclass,
@@ -110,11 +71,14 @@ static storage_host_controller_kind_t classify_controller(uint8_t subclass,
 
 static uint16_t pci_bar_io_base(uint8_t bus, uint8_t slot, uint8_t function,
                                 uint8_t offset) {
-    uint32_t bar = pci_config_read(bus, slot, function, offset);
-    if (bar == 0 || (bar & 0x1) == 0) {
+    pci_bar_t bar;
+    uint8_t bar_index = (uint8_t)((offset - PCI_BAR0_OFFSET) / 4);
+    if (pci_read_bar(bus, slot, function, bar_index, &bar) != AIOS_OK ||
+        !bar.present ||
+        !bar.io_space) {
         return 0;
     }
-    return (uint16_t)(bar & 0xFFFCU);
+    return (uint16_t)bar.base;
 }
 
 static void storage_host_configure_ide_channels(void) {
@@ -190,24 +154,22 @@ aios_status_t storage_host_init(void) {
                                                          candidate->prog_if,
                                                          &label);
 
-    uint32_t command_reg = pci_config_read(g_storage_host.bus, g_storage_host.slot,
-                                           g_storage_host.function, PCI_COMMAND_OFFSET);
-    command_reg |= (PCI_CMD_IO | PCI_CMD_MEM | PCI_CMD_BUSMASTER);
-    pci_config_write(g_storage_host.bus, g_storage_host.slot, g_storage_host.function,
-                     PCI_COMMAND_OFFSET, command_reg);
-    g_storage_host.pci_command = command_reg & 0xFFFF;
+    g_storage_host.pci_command = pci_enable_device(g_storage_host.bus, g_storage_host.slot,
+        g_storage_host.function, true, true, true);
 
     for (uint32_t i = 0; i < PCI_BAR_COUNT; i++) {
-        uint32_t bar = pci_config_read(g_storage_host.bus, g_storage_host.slot,
-                                       g_storage_host.function,
-                                       (uint8_t)(PCI_BAR0_OFFSET + i * 4));
-        if (!bar) {
+        pci_bar_t bar;
+        if (pci_read_bar(g_storage_host.bus, g_storage_host.slot, g_storage_host.function,
+                (uint8_t)i, &bar) != AIOS_OK || !bar.present) {
             continue;
         }
-        if ((bar & 0x1) && g_storage_host.io_base == 0) {
-            g_storage_host.io_base = (uint16_t)(bar & 0xFFFCU);
-        } else if (((bar & 0x1) == 0) && g_storage_host.mmio_base == 0) {
-            g_storage_host.mmio_base = (uint64_t)(bar & 0xFFFFFFF0U);
+        if (bar.io_space && g_storage_host.io_base == 0) {
+            g_storage_host.io_base = (uint16_t)bar.base;
+        } else if (bar.mem_space && g_storage_host.mmio_base == 0) {
+            g_storage_host.mmio_base = bar.base;
+        }
+        if (bar.is_64bit && i + 1 < PCI_BAR_COUNT) {
+            i++;
         }
     }
 

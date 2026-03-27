@@ -5,21 +5,12 @@
 
 #include <drivers/e1000.h>
 #include <drivers/platform_probe.h>
+#include <drivers/pci_core.h>
 #include <drivers/vga.h>
 #include <drivers/serial.h>
 #include <lib/string.h>
 
-#define PCI_CONFIG_ADDR      0xCF8
-#define PCI_CONFIG_DATA      0xCFC
-
 #define PCI_VENDOR_INTEL     0x8086
-#define PCI_COMMAND_OFFSET   0x04
-#define PCI_BAR0_OFFSET      0x10
-#define PCI_BAR1_OFFSET      0x14
-#define PCI_BAR2_OFFSET      0x18
-#define PCI_CMD_IO           0x1
-#define PCI_CMD_MEM          0x2
-#define PCI_CMD_BUSMASTER    0x4
 
 #define E1000_DEV_82540EM    0x100E
 #define E1000_DEV_82545EM    0x100F
@@ -103,28 +94,6 @@ static inline uint32_t inl(uint16_t port) {
 
 static inline void io_wait(void) {
     __asm__ volatile ("outb %%al, $0x80" : : "a"(0));
-}
-
-static uint32_t pci_config_read(uint8_t bus, uint8_t slot, uint8_t function,
-                                uint8_t offset) {
-    uint32_t address = (1U << 31) |
-                       ((uint32_t)bus << 16) |
-                       ((uint32_t)slot << 11) |
-                       ((uint32_t)function << 8) |
-                       (offset & 0xFC);
-    outl(PCI_CONFIG_ADDR, address);
-    return inl(PCI_CONFIG_DATA);
-}
-
-static void pci_config_write(uint8_t bus, uint8_t slot, uint8_t function,
-                             uint8_t offset, uint32_t value) {
-    uint32_t address = (1U << 31) |
-                       ((uint32_t)bus << 16) |
-                       ((uint32_t)slot << 11) |
-                       ((uint32_t)function << 8) |
-                       (offset & 0xFC);
-    outl(PCI_CONFIG_ADDR, address);
-    outl(PCI_CONFIG_DATA, value);
 }
 
 static bool e1000_is_supported(uint16_t vendor_id, uint16_t device_id) {
@@ -366,28 +335,25 @@ aios_status_t e1000_driver_init(void) {
     g_e1000.vendor_id = candidate->vendor_id;
     g_e1000.device_id = candidate->device_id;
 
-    uint32_t command_reg = pci_config_read(g_e1000.bus, g_e1000.slot, g_e1000.function,
-                                           PCI_COMMAND_OFFSET);
-    command_reg |= (PCI_CMD_IO | PCI_CMD_MEM | PCI_CMD_BUSMASTER);
-    pci_config_write(g_e1000.bus, g_e1000.slot, g_e1000.function,
-                     PCI_COMMAND_OFFSET, command_reg);
+    (void)pci_enable_device(g_e1000.bus, g_e1000.slot, g_e1000.function,
+        true, true, true);
 
-    uint32_t bar0 = pci_config_read(g_e1000.bus, g_e1000.slot, g_e1000.function, PCI_BAR0_OFFSET);
-    uint32_t bar1 = pci_config_read(g_e1000.bus, g_e1000.slot, g_e1000.function, PCI_BAR1_OFFSET);
-    uint32_t bar2 = pci_config_read(g_e1000.bus, g_e1000.slot, g_e1000.function, PCI_BAR2_OFFSET);
+    for (uint8_t i = 0; i < PCI_BAR_COUNT; i++) {
+        pci_bar_t bar;
+        if (pci_read_bar(g_e1000.bus, g_e1000.slot, g_e1000.function, i, &bar) != AIOS_OK ||
+            !bar.present) {
+            continue;
+        }
 
-    if (bar0 && ((bar0 & 0x1) == 0)) {
-        g_e1000.mmio_base = (uint64_t)(bar0 & 0xFFFFFFF0U);
-    } else if (bar1 && ((bar1 & 0x1) == 0)) {
-        g_e1000.mmio_base = (uint64_t)(bar1 & 0xFFFFFFF0U);
-    }
+        if (bar.io_space && g_e1000.io_base == 0) {
+            g_e1000.io_base = (uint16_t)bar.base;
+        } else if (bar.mem_space && g_e1000.mmio_base == 0) {
+            g_e1000.mmio_base = bar.base;
+        }
 
-    if (bar2 & 0x1) {
-        g_e1000.io_base = (uint16_t)(bar2 & 0xFFFCU);
-    } else if (bar1 & 0x1) {
-        g_e1000.io_base = (uint16_t)(bar1 & 0xFFFCU);
-    } else if (bar0 & 0x1) {
-        g_e1000.io_base = (uint16_t)(bar0 & 0xFFFCU);
+        if (bar.is_64bit && i + 1 < PCI_BAR_COUNT) {
+            i++;
+        }
     }
 
     if (g_e1000.io_base == 0 && g_e1000.mmio_base == 0) {

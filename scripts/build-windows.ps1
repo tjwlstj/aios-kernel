@@ -67,7 +67,7 @@ function New-WindowsBiosIso {
     $grubCfg = [System.IO.Path]::Combine($grubDir, 'grub.cfg')
     $coreImg = [System.IO.Path]::Combine($isoRoot, 'core.img')
     $biosImg = [System.IO.Path]::Combine($grubDir, 'bios.img')
-    $kernelIsoPath = [System.IO.Path]::Combine($bootDir, 'aios-kernel.bin')
+    $kernelIsoPath = [System.IO.Path]::Combine($bootDir, 'kernel.bin')
     $kernelBin = Join-Path $RepoRoot 'build\aios-kernel.bin'
     $outputIso = Join-Path $RepoRoot 'build\aios-kernel.iso'
 
@@ -76,8 +76,10 @@ function New-WindowsBiosIso {
     }
 
     Remove-Item $isoRoot -Recurse -Force -ErrorAction SilentlyContinue
+    [System.IO.Directory]::CreateDirectory($isoRoot) | Out-Null
+    [System.IO.Directory]::CreateDirectory($bootDir) | Out-Null
     [System.IO.Directory]::CreateDirectory($grubDir) | Out-Null
-    Copy-Item -Path $kernelBin -Destination $kernelIsoPath -Force
+    [System.IO.File]::Copy($kernelBin, $kernelIsoPath, $true)
 
     $grubCfgText = @(
         'serial --unit=0 --speed=115200'
@@ -87,11 +89,11 @@ function New-WindowsBiosIso {
         'set default=0'
         ''
         'menuentry "AIOS - AI-Native Operating System" {'
-        '    multiboot2 /boot/aios-kernel.bin'
+        '    multiboot2 /boot/kernel.bin'
         '    boot'
         '}'
     )
-    Set-Content -Path $grubCfg -Value $grubCfgText
+    [System.IO.File]::WriteAllLines($grubCfg, $grubCfgText)
 
     & $script:GrubMkImage `
         -O i386-pc-eltorito `

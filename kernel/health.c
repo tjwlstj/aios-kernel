@@ -27,6 +27,18 @@ static kernel_subsystem_health_t g_health[KERNEL_SUBSYSTEM_COUNT] = {
         .required = true,
         .io_path = false,
     },
+    [KERNEL_SUBSYSTEM_ACPI] = {
+        .id = KERNEL_SUBSYSTEM_ACPI,
+        .name = "ACPI Fabric",
+        .required = false,
+        .io_path = false,
+    },
+    [KERNEL_SUBSYSTEM_PCI_CORE] = {
+        .id = KERNEL_SUBSYSTEM_PCI_CORE,
+        .name = "PCI Core",
+        .required = true,
+        .io_path = true,
+    },
     [KERNEL_SUBSYSTEM_TENSOR_MM] = {
         .id = KERNEL_SUBSYSTEM_TENSOR_MM,
         .name = "Tensor Memory Manager",

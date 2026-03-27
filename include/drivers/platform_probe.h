@@ -8,6 +8,7 @@
 
 #include <kernel/types.h>
 #include <kernel/selftest.h>
+#include <drivers/pci_core.h>
 
 #define MAX_PLATFORM_DEVICES 32
 
@@ -29,9 +30,20 @@ typedef struct {
     uint8_t bus;
     uint8_t slot;
     uint8_t function;
+    bool multifunction;
+    bool bridge;
     bool pcie_capable;
+    bool msi_capable;
+    bool msix_capable;
+    bool power_manage_capable;
+    bool has_64bit_bar;
     uint8_t pcie_link_speed;
     uint8_t pcie_link_width;
+    uint8_t irq_line;
+    uint8_t irq_pin;
+    uint8_t bar_count;
+    uint8_t mmio_bar_count;
+    uint8_t io_bar_count;
     uint8_t init_priority;
     platform_device_kind_t kind;
     char name[64];

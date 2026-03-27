@@ -33,6 +33,7 @@ typedef enum {
     SLM_ACTION_BOOTSTRAP_STORAGE = 7,
     SLM_ACTION_STORAGE_DUMP = 8,
     SLM_ACTION_IO_AUDIT = 9,
+    SLM_ACTION_CORE_AUDIT = 10,
 } slm_action_t;
 
 typedef enum {
@@ -77,6 +78,23 @@ typedef struct {
 } slm_io_profile_t;
 
 typedef struct {
+    bool acpi_ready;
+    bool xsdt_present;
+    bool mcfg_present;
+    bool madt_present;
+    bool ecam_available;
+    pci_cfg_access_mode_t pci_access_mode;
+    uint8_t pci_bus_start;
+    uint8_t pci_bus_end;
+    uint32_t pci_total_functions;
+    uint32_t pci_bridge_count;
+    uint32_t pci_pcie_functions;
+    uint32_t pci_msi_capable_functions;
+    uint32_t pci_msix_capable_functions;
+    uint8_t compatibility_score;
+} slm_fabric_profile_t;
+
+typedef struct {
     uint64_t ts_ns;
     uint64_t tsc_khz;
     bool invariant_tsc;
@@ -93,6 +111,7 @@ typedef struct {
     uint8_t usb_controller_kind;
     bool storage_ready;
     uint8_t storage_controller_kind;
+    slm_fabric_profile_t fabric_profile;
     slm_io_profile_t io_profile;
     slm_hw_device_t devices[SLM_HW_MAX_DEVICES];
 } slm_hw_snapshot_t;

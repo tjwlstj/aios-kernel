@@ -5,19 +5,10 @@
 
 #include <drivers/usb_host.h>
 #include <drivers/platform_probe.h>
+#include <drivers/pci_core.h>
 #include <drivers/serial.h>
 #include <drivers/vga.h>
 #include <lib/string.h>
-
-#define PCI_CONFIG_ADDR    0xCF8
-#define PCI_CONFIG_DATA    0xCFC
-
-#define PCI_COMMAND_OFFSET 0x04
-#define PCI_BAR0_OFFSET    0x10
-#define PCI_BAR1_OFFSET    0x14
-#define PCI_CMD_IO         0x1
-#define PCI_CMD_MEM        0x2
-#define PCI_CMD_BUSMASTER  0x4
 
 typedef struct {
     bool present;
@@ -42,16 +33,6 @@ typedef struct {
 
 static usb_host_state_t g_usb_host = {0};
 
-static inline void outl(uint16_t port, uint32_t val) {
-    __asm__ volatile ("outl %0, %1" : : "a"(val), "Nd"(port));
-}
-
-static inline uint32_t inl(uint16_t port) {
-    uint32_t ret;
-    __asm__ volatile ("inl %1, %0" : "=a"(ret) : "Nd"(port));
-    return ret;
-}
-
 static inline uint8_t mmio_read8(uint64_t base, uint32_t offset) {
     volatile uint8_t *mmio = (volatile uint8_t *)(uintptr_t)(base + offset);
     return *mmio;
@@ -65,28 +46,6 @@ static inline uint16_t mmio_read16(uint64_t base, uint32_t offset) {
 static inline uint32_t mmio_read32(uint64_t base, uint32_t offset) {
     volatile uint32_t *mmio = (volatile uint32_t *)(uintptr_t)(base + offset);
     return *mmio;
-}
-
-static uint32_t pci_config_read(uint8_t bus, uint8_t slot, uint8_t function,
-                                uint8_t offset) {
-    uint32_t address = (1U << 31) |
-                       ((uint32_t)bus << 16) |
-                       ((uint32_t)slot << 11) |
-                       ((uint32_t)function << 8) |
-                       (offset & 0xFC);
-    outl(PCI_CONFIG_ADDR, address);
-    return inl(PCI_CONFIG_DATA);
-}
-
-static void pci_config_write(uint8_t bus, uint8_t slot, uint8_t function,
-                             uint8_t offset, uint32_t value) {
-    uint32_t address = (1U << 31) |
-                       ((uint32_t)bus << 16) |
-                       ((uint32_t)slot << 11) |
-                       ((uint32_t)function << 8) |
-                       (offset & 0xFC);
-    outl(PCI_CONFIG_ADDR, address);
-    outl(PCI_CONFIG_DATA, value);
 }
 
 static usb_host_controller_kind_t classify_controller(uint8_t prog_if,
@@ -156,28 +115,25 @@ aios_status_t usb_host_init(void) {
     const char *label = NULL;
     g_usb_host.controller_kind = classify_controller(candidate->prog_if, &label);
 
-    uint32_t command_reg = pci_config_read(g_usb_host.bus, g_usb_host.slot,
-                                           g_usb_host.function, PCI_COMMAND_OFFSET);
-    command_reg |= (PCI_CMD_IO | PCI_CMD_MEM | PCI_CMD_BUSMASTER);
-    pci_config_write(g_usb_host.bus, g_usb_host.slot, g_usb_host.function,
-                     PCI_COMMAND_OFFSET, command_reg);
-    g_usb_host.pci_command = command_reg & 0xFFFF;
+    g_usb_host.pci_command = pci_enable_device(g_usb_host.bus, g_usb_host.slot,
+        g_usb_host.function, true, true, true);
 
-    uint32_t bar0 = pci_config_read(g_usb_host.bus, g_usb_host.slot,
-                                    g_usb_host.function, PCI_BAR0_OFFSET);
-    uint32_t bar1 = pci_config_read(g_usb_host.bus, g_usb_host.slot,
-                                    g_usb_host.function, PCI_BAR1_OFFSET);
+    for (uint8_t i = 0; i < PCI_BAR_COUNT; i++) {
+        pci_bar_t bar;
+        if (pci_read_bar(g_usb_host.bus, g_usb_host.slot, g_usb_host.function, i, &bar) != AIOS_OK ||
+            !bar.present) {
+            continue;
+        }
 
-    if (bar0 && ((bar0 & 0x1) == 0)) {
-        g_usb_host.mmio_base = (uint64_t)(bar0 & 0xFFFFFFF0U);
-    } else if (bar1 && ((bar1 & 0x1) == 0)) {
-        g_usb_host.mmio_base = (uint64_t)(bar1 & 0xFFFFFFF0U);
-    }
+        if (bar.io_space && g_usb_host.io_base == 0) {
+            g_usb_host.io_base = (uint16_t)bar.base;
+        } else if (bar.mem_space && g_usb_host.mmio_base == 0) {
+            g_usb_host.mmio_base = bar.base;
+        }
 
-    if (bar0 & 0x1) {
-        g_usb_host.io_base = (uint16_t)(bar0 & 0xFFFCU);
-    } else if (bar1 & 0x1) {
-        g_usb_host.io_base = (uint16_t)(bar1 & 0xFFFCU);
+        if (bar.is_64bit && i + 1 < PCI_BAR_COUNT) {
+            i++;
+        }
     }
 
     g_usb_host.ready = (g_usb_host.mmio_base != 0 || g_usb_host.io_base != 0);
