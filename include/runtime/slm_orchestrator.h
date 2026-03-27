@@ -34,6 +34,7 @@ typedef enum {
     SLM_ACTION_STORAGE_DUMP = 8,
     SLM_ACTION_IO_AUDIT = 9,
     SLM_ACTION_CORE_AUDIT = 10,
+    SLM_ACTION_COUNT
 } slm_action_t;
 
 typedef enum {
@@ -95,6 +96,31 @@ typedef struct {
 } slm_fabric_profile_t;
 
 typedef struct {
+    uint32_t attempts;
+    uint32_t successes;
+    uint32_t failures;
+    uint32_t timeouts;
+    uint32_t rejections;
+    uint64_t last_latency_ns;
+    aios_status_t last_status;
+    uint8_t confidence;
+} slm_learning_entry_t;
+
+typedef struct {
+    uint32_t boot_epoch;
+    uint32_t observed_ready_controllers;
+    uint32_t applied_successes;
+    uint32_t applied_failures;
+    uint32_t rejected_submissions;
+    uint8_t global_confidence;
+    int8_t io_aggressiveness_bias;
+    uint16_t tuned_queue_depth;
+    uint16_t tuned_poll_budget;
+    uint32_t tuned_dma_window_kib;
+    slm_learning_entry_t actions[SLM_ACTION_COUNT];
+} slm_learning_profile_t;
+
+typedef struct {
     uint64_t ts_ns;
     uint64_t tsc_khz;
     bool invariant_tsc;
@@ -112,6 +138,7 @@ typedef struct {
     bool storage_ready;
     uint8_t storage_controller_kind;
     slm_fabric_profile_t fabric_profile;
+    slm_learning_profile_t learning_profile;
     slm_io_profile_t io_profile;
     slm_hw_device_t devices[SLM_HW_MAX_DEVICES];
 } slm_hw_snapshot_t;
@@ -134,6 +161,8 @@ typedef struct {
     slm_plan_request_t request;
     slm_plan_state_t state;
     aios_status_t last_status;
+    uint8_t expected_confidence;
+    uint8_t validation_score;
     uint64_t created_ts_ns;
     uint64_t applied_ts_ns;
 } slm_plan_t;

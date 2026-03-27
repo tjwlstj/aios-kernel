@@ -13,14 +13,310 @@
 #include <drivers/usb_host.h>
 #include <drivers/serial.h>
 #include <drivers/vga.h>
+#include <lib/string.h>
 
 static slm_plan_t plan_table[SLM_PLAN_CAP];
 static uint32_t next_plan_id = 1;
+static slm_learning_profile_t g_learning = {0};
+
+static void compute_fabric_profile(slm_fabric_profile_t *out);
 
 static bool device_is_io_kind(platform_device_kind_t kind) {
     return kind == PLATFORM_DEVICE_ETHERNET ||
            kind == PLATFORM_DEVICE_USB ||
            kind == PLATFORM_DEVICE_STORAGE;
+}
+
+static uint8_t clamp_u8(int32_t value) {
+    if (value < 0) {
+        return 0;
+    }
+    if (value > 100) {
+        return 100;
+    }
+    return (uint8_t)value;
+}
+
+static int8_t clamp_i8(int32_t value, int32_t min_value, int32_t max_value) {
+    if (value < min_value) {
+        return (int8_t)min_value;
+    }
+    if (value > max_value) {
+        return (int8_t)max_value;
+    }
+    return (int8_t)value;
+}
+
+static uint16_t clamp_u16(int32_t value, uint16_t min_value, uint16_t max_value) {
+    if (value < min_value) {
+        return min_value;
+    }
+    if (value > max_value) {
+        return max_value;
+    }
+    return (uint16_t)value;
+}
+
+static uint32_t clamp_u32(int32_t value, uint32_t min_value, uint32_t max_value) {
+    if (value < 0 || (uint32_t)value < min_value) {
+        return min_value;
+    }
+    if ((uint32_t)value > max_value) {
+        return max_value;
+    }
+    return value;
+}
+
+static const platform_device_t *find_first_device(platform_device_kind_t kind) {
+    for (uint32_t i = 0; i < platform_probe_count(); i++) {
+        const platform_device_t *dev = platform_probe_get(i);
+        if (dev && dev->kind == kind) {
+            return dev;
+        }
+    }
+    return NULL;
+}
+
+static bool plan_target_present(const slm_plan_request_t *req) {
+    if (!req) {
+        return false;
+    }
+    if (req->template_id == SLM_TEMPLATE_DISCOVERY) {
+        return true;
+    }
+
+    for (uint32_t i = 0; i < platform_probe_count(); i++) {
+        const platform_device_t *dev = platform_probe_get(i);
+        if (!dev) {
+            continue;
+        }
+        if (req->target_kind != PLATFORM_DEVICE_UNKNOWN && dev->kind != req->target_kind) {
+            continue;
+        }
+        if (req->target_vendor_id != 0 && dev->vendor_id != req->target_vendor_id) {
+            continue;
+        }
+        if (req->target_device_id != 0 && dev->device_id != req->target_device_id) {
+            continue;
+        }
+        return true;
+    }
+
+    return false;
+}
+
+static slm_learning_entry_t *learning_entry(slm_action_t action) {
+    if (action < 0 || action >= SLM_ACTION_COUNT) {
+        return NULL;
+    }
+    return &g_learning.actions[action];
+}
+
+static void learning_set_confidence(slm_action_t action, uint8_t confidence) {
+    slm_learning_entry_t *entry = learning_entry(action);
+    if (!entry) {
+        return;
+    }
+    entry->confidence = confidence;
+}
+
+static uint8_t learning_get_confidence(slm_action_t action) {
+    slm_learning_entry_t *entry = learning_entry(action);
+    if (!entry) {
+        return 0;
+    }
+    return entry->confidence;
+}
+
+static void learning_recompute_tuning(void) {
+    int32_t queue_depth = 16 + (g_learning.io_aggressiveness_bias * 4);
+    int32_t poll_budget = 512 + (g_learning.io_aggressiveness_bias * 256);
+    int32_t dma_window_kib = 128 + (g_learning.io_aggressiveness_bias * 64);
+
+    if (g_learning.applied_successes > g_learning.applied_failures + 1) {
+        queue_depth += 4;
+        poll_budget += 128;
+        dma_window_kib += 32;
+    } else if (g_learning.applied_failures > g_learning.applied_successes) {
+        queue_depth -= 4;
+        poll_budget -= 128;
+        dma_window_kib -= 32;
+    }
+
+    if (g_learning.rejected_submissions > 2) {
+        queue_depth -= 2;
+        poll_budget -= 64;
+    }
+
+    g_learning.tuned_queue_depth = clamp_u16(queue_depth, 8, 48);
+    g_learning.tuned_poll_budget = clamp_u16(poll_budget, 128, 2048);
+    g_learning.tuned_dma_window_kib = clamp_u32(dma_window_kib, 32, 512);
+}
+
+static void learning_init(void) {
+    for (uint32_t i = 0; i < SLM_ACTION_COUNT; i++) {
+        g_learning.actions[i].confidence = 50;
+        g_learning.actions[i].last_status = AIOS_OK;
+    }
+
+    g_learning.global_confidence = 50;
+    g_learning.io_aggressiveness_bias = 0;
+    learning_recompute_tuning();
+}
+
+static void learning_refresh_boot_observation(void) {
+    const memory_selftest_result_t *profile = kernel_memory_selftest_last();
+    const platform_probe_summary_t *summary = platform_probe_summary();
+    const kernel_health_summary_t *health_ptr = NULL;
+    kernel_health_summary_t health;
+    slm_fabric_profile_t fabric;
+    const platform_device_t *ethernet = find_first_device(PLATFORM_DEVICE_ETHERNET);
+    const platform_device_t *usb = find_first_device(PLATFORM_DEVICE_USB);
+    const platform_device_t *storage = find_first_device(PLATFORM_DEVICE_STORAGE);
+    int32_t global_bias = 0;
+    uint32_t ready = 0;
+
+    kernel_health_get_summary(&health);
+    health_ptr = &health;
+    compute_fabric_profile(&fabric);
+
+    ready += e1000_driver_ready() ? 1U : 0U;
+    ready += usb_host_ready() ? 1U : 0U;
+    ready += storage_host_ready() ? 1U : 0U;
+
+    g_learning.boot_epoch++;
+    g_learning.observed_ready_controllers = ready;
+    g_learning.global_confidence = clamp_u8((int32_t)fabric.compatibility_score +
+        ((health_ptr->level == KERNEL_STABILITY_STABLE) ? 10 : -10));
+
+    if (profile->tier == BOOT_PERF_TIER_HIGH) {
+        global_bias++;
+    } else if (profile->tier == BOOT_PERF_TIER_LOW) {
+        global_bias--;
+    }
+    if (!fabric.acpi_ready) {
+        global_bias--;
+    }
+    if (!fabric.ecam_available && fabric.pci_total_functions > 4) {
+        global_bias--;
+    }
+    if (health_ptr->level == KERNEL_STABILITY_STABLE) {
+        global_bias++;
+    }
+    if (summary->matched_devices > ready) {
+        global_bias--;
+    }
+
+    g_learning.io_aggressiveness_bias = clamp_i8(global_bias, -2, 2);
+    learning_recompute_tuning();
+
+    learning_set_confidence(SLM_ACTION_REPROBE_PCI,
+        clamp_u8((int32_t)g_learning.global_confidence + (fabric.pci_total_functions > 0 ? 10 : -10)));
+    learning_set_confidence(SLM_ACTION_CORE_AUDIT,
+        clamp_u8((int32_t)g_learning.global_confidence + 15));
+    learning_set_confidence(SLM_ACTION_IO_AUDIT,
+        clamp_u8((int32_t)g_learning.global_confidence +
+            ((summary->matched_devices > 0) ? 5 : -15)));
+
+    learning_set_confidence(SLM_ACTION_BOOTSTRAP_E1000,
+        clamp_u8(ethernet ? (e1000_driver_ready() ? 55 : 72) : 10));
+    learning_set_confidence(SLM_ACTION_E1000_DUMP,
+        clamp_u8(ethernet ? (e1000_driver_ready() ? 88 : 30) : 5));
+    learning_set_confidence(SLM_ACTION_E1000_TX_SMOKE,
+        clamp_u8((ethernet && e1000_driver_ready()) ? 78 : 15));
+
+    learning_set_confidence(SLM_ACTION_BOOTSTRAP_USB,
+        clamp_u8(usb ? (usb_host_ready() ? 58 : 68) : 10));
+    learning_set_confidence(SLM_ACTION_USB_DUMP,
+        clamp_u8(usb ? (usb_host_ready() ? 84 : 25) : 5));
+
+    learning_set_confidence(SLM_ACTION_BOOTSTRAP_STORAGE,
+        clamp_u8(storage ? (storage_host_ready() ? 58 : 70) : 10));
+    learning_set_confidence(SLM_ACTION_STORAGE_DUMP,
+        clamp_u8(storage ? (storage_host_ready() ? 84 : 25) : 5));
+}
+
+static void learning_record_submission(slm_action_t action, bool accepted) {
+    slm_learning_entry_t *entry = learning_entry(action);
+    if (!entry) {
+        return;
+    }
+
+    if (!accepted) {
+        entry->rejections++;
+        entry->confidence = clamp_u8((int32_t)entry->confidence - 5);
+        g_learning.rejected_submissions++;
+        if (g_learning.global_confidence > 2) {
+            g_learning.global_confidence -= 2;
+        }
+        learning_recompute_tuning();
+    }
+}
+
+static void learning_record_result(slm_action_t action, aios_status_t status, uint64_t latency_ns) {
+    slm_learning_entry_t *entry = learning_entry(action);
+    if (!entry) {
+        return;
+    }
+
+    entry->attempts++;
+    entry->last_status = status;
+    entry->last_latency_ns = latency_ns;
+
+    if (status == AIOS_OK) {
+        entry->successes++;
+        entry->confidence = clamp_u8((int32_t)entry->confidence + 6);
+        g_learning.applied_successes++;
+        g_learning.global_confidence = clamp_u8((int32_t)g_learning.global_confidence + 2);
+        if (g_learning.io_aggressiveness_bias < 2 &&
+            (action == SLM_ACTION_E1000_TX_SMOKE ||
+             action == SLM_ACTION_BOOTSTRAP_E1000 ||
+             action == SLM_ACTION_BOOTSTRAP_USB ||
+             action == SLM_ACTION_BOOTSTRAP_STORAGE)) {
+            g_learning.io_aggressiveness_bias++;
+        }
+        learning_recompute_tuning();
+        return;
+    }
+
+    entry->failures++;
+    if (status == AIOS_ERR_TIMEOUT) {
+        entry->timeouts++;
+    }
+    entry->confidence = clamp_u8((int32_t)entry->confidence - ((status == AIOS_ERR_TIMEOUT) ? 12 : 8));
+    g_learning.applied_failures++;
+    g_learning.global_confidence = clamp_u8((int32_t)g_learning.global_confidence - 4);
+    if (g_learning.io_aggressiveness_bias > -2 &&
+        (action == SLM_ACTION_E1000_TX_SMOKE ||
+         action == SLM_ACTION_BOOTSTRAP_E1000 ||
+         action == SLM_ACTION_BOOTSTRAP_USB ||
+         action == SLM_ACTION_BOOTSTRAP_STORAGE)) {
+        g_learning.io_aggressiveness_bias--;
+    }
+    learning_recompute_tuning();
+}
+
+static uint8_t compute_plan_confidence(const slm_plan_request_t *req) {
+    int32_t confidence = 50;
+    slm_learning_entry_t *entry;
+
+    if (!req) {
+        return 0;
+    }
+
+    entry = learning_entry(req->action);
+    if (entry) {
+        confidence = entry->confidence;
+    }
+    confidence += ((int32_t)g_learning.global_confidence - 50) / 2;
+    confidence -= (int32_t)req->risk_level * 8;
+    confidence += ((int32_t)g_learning.io_aggressiveness_bias * 4);
+
+    if (!plan_target_present(req) && req->template_id != SLM_TEMPLATE_DISCOVERY) {
+        confidence = 0;
+    }
+
+    return clamp_u8(confidence);
 }
 
 static uint8_t compute_compatibility_score(const acpi_info_t *acpi,
@@ -139,28 +435,48 @@ static void compute_io_profile(slm_io_profile_t *out) {
         out->recommended_queue_depth = 8;
         out->recommended_poll_budget = 256;
         out->recommended_dma_window_kib = 64;
-        return;
-    }
-
-    if (profile->tier == BOOT_PERF_TIER_HIGH &&
-        out->ready_controllers >= 2 &&
-        fabric.ecam_available &&
-        fabric.compatibility_score >= 75 &&
-        fabric.pci_msi_capable_functions > 0) {
+    } else if (profile->tier == BOOT_PERF_TIER_HIGH &&
+               out->ready_controllers >= 2 &&
+               fabric.ecam_available &&
+               fabric.compatibility_score >= 75 &&
+               fabric.pci_msi_capable_functions > 0) {
         out->mode = SLM_IO_MODE_AGGRESSIVE;
         out->recommended_queue_depth = 32;
         out->recommended_poll_budget = 1024;
         out->recommended_dma_window_kib = 256;
-        return;
+    } else {
+        out->mode = SLM_IO_MODE_BALANCED;
+        out->recommended_queue_depth = 16;
+        out->recommended_poll_budget = 512;
+        out->recommended_dma_window_kib = 128;
     }
 
-    out->mode = SLM_IO_MODE_BALANCED;
-    out->recommended_queue_depth = 16;
-    out->recommended_poll_budget = 512;
-    out->recommended_dma_window_kib = 128;
+    if (g_learning.global_confidence != 0) {
+        out->recommended_queue_depth = clamp_u16(
+            (int32_t)out->recommended_queue_depth + g_learning.io_aggressiveness_bias * 4,
+            8, 64);
+        out->recommended_poll_budget = clamp_u16(
+            (int32_t)out->recommended_poll_budget + g_learning.io_aggressiveness_bias * 128,
+            128, 2048);
+        out->recommended_dma_window_kib = clamp_u32(
+            (int32_t)out->recommended_dma_window_kib + g_learning.io_aggressiveness_bias * 32,
+            32, 512);
+
+        if (g_learning.tuned_queue_depth != 0) {
+            out->recommended_queue_depth = clamp_u16(g_learning.tuned_queue_depth, 8, 64);
+        }
+        if (g_learning.tuned_poll_budget != 0) {
+            out->recommended_poll_budget = clamp_u16(g_learning.tuned_poll_budget, 128, 2048);
+        }
+        if (g_learning.tuned_dma_window_kib != 0) {
+            out->recommended_dma_window_kib = clamp_u32(g_learning.tuned_dma_window_kib, 32, 512);
+        }
+    }
 }
 
 static void apply_io_defaults(slm_plan_request_t *req, const slm_io_profile_t *profile) {
+    uint8_t confidence;
+
     if (!req || !profile) {
         return;
     }
@@ -174,10 +490,22 @@ static void apply_io_defaults(slm_plan_request_t *req, const slm_io_profile_t *p
     if (req->dma_window_kib_hint == 0) {
         req->dma_window_kib_hint = profile->recommended_dma_window_kib;
     }
+
+    confidence = compute_plan_confidence(req);
+    if (confidence < 40) {
+        req->queue_depth_hint = clamp_u16(req->queue_depth_hint / 2, 4, 64);
+        req->poll_budget_hint = clamp_u16(req->poll_budget_hint / 2, 64, 2048);
+        req->dma_window_kib_hint = clamp_u32(req->dma_window_kib_hint / 2, 16, 512);
+    } else if (confidence > 80 && g_learning.io_aggressiveness_bias > 0) {
+        req->queue_depth_hint = clamp_u16(req->queue_depth_hint + 4, 8, 64);
+        req->poll_budget_hint = clamp_u16(req->poll_budget_hint + 128, 128, 2048);
+        req->dma_window_kib_hint = clamp_u32(req->dma_window_kib_hint + 32, 32, 512);
+    }
 }
 
 static bool request_valid(const slm_plan_request_t *req) {
     kernel_health_summary_t health;
+    uint8_t confidence;
 
     if (!req) {
         return false;
@@ -187,6 +515,9 @@ static bool request_valid(const slm_plan_request_t *req) {
     }
     if (req->queue_depth_hint > 256 || req->poll_budget_hint > 4096 ||
         req->dma_window_kib_hint > 4096) {
+        return false;
+    }
+    if (!plan_target_present(req)) {
         return false;
     }
 
@@ -202,6 +533,11 @@ static bool request_valid(const slm_plan_request_t *req) {
         (req->template_id == SLM_TEMPLATE_PCI_ETHERNET ||
          req->template_id == SLM_TEMPLATE_PCI_USB ||
          req->template_id == SLM_TEMPLATE_PCI_STORAGE)) {
+        return false;
+    }
+
+    confidence = compute_plan_confidence(req);
+    if (req->risk_level > 0 && confidence < 30) {
         return false;
     }
 
@@ -249,14 +585,14 @@ static void seed_plan(const slm_plan_request_t *req, const char *label) {
     aios_status_t status = slm_plan_submit(req, &plan_id);
     if (status != AIOS_OK) {
         serial_printf("[SLM] Seed plan skipped label=%s status=%d\n",
-            (uint64_t)(uintptr_t)label,
+            label,
             (int64_t)status);
         return;
     }
 
     serial_printf("[SLM] Seeded plan %u label=%s action=%u risk=%u qd=%u poll=%u dma=%uKiB\n",
         (uint64_t)plan_id,
-        (uint64_t)(uintptr_t)label,
+        label,
         (uint64_t)req->action,
         (uint64_t)req->risk_level,
         (uint64_t)req->queue_depth_hint,
@@ -439,16 +775,26 @@ aios_status_t slm_orchestrator_init(void) {
         plan_table[i].plan_id = 0;
         plan_table[i].state = SLM_PLAN_EMPTY;
         plan_table[i].last_status = AIOS_OK;
+        plan_table[i].expected_confidence = 0;
+        plan_table[i].validation_score = 0;
         plan_table[i].created_ts_ns = 0;
         plan_table[i].applied_ts_ns = 0;
     }
 
     next_plan_id = 1;
+    memset(&g_learning, 0, sizeof(g_learning));
+    learning_init();
+    learning_refresh_boot_observation();
 
     kprintf("\n");
     kprintf("    SLM Hardware Orchestrator initialized:\n");
     kprintf("    Plan slots: %u\n", (uint64_t)SLM_PLAN_CAP);
     kprintf("    Templates: discovery/core-audit, pci-ethernet, pci-usb, pci-storage\n");
+    kprintf("    Learning confidence: %u | tuned qd=%u poll=%u dma=%uKiB\n",
+        (uint64_t)g_learning.global_confidence,
+        (uint64_t)g_learning.tuned_queue_depth,
+        (uint64_t)g_learning.tuned_poll_budget,
+        (uint64_t)g_learning.tuned_dma_window_kib);
     serial_write("[SLM] Hardware orchestrator ready\n");
     seed_boot_plans();
     return AIOS_OK;
@@ -487,6 +833,7 @@ aios_status_t slm_snapshot_read(slm_hw_snapshot_t *out) {
     out->storage_ready = storage.ready;
     out->storage_controller_kind = (uint8_t)storage.controller_kind;
     compute_fabric_profile(&out->fabric_profile);
+    out->learning_profile = g_learning;
     compute_io_profile(&out->io_profile);
 
     for (uint32_t i = 0; i < SLM_HW_MAX_DEVICES; i++) {
@@ -545,14 +892,20 @@ aios_status_t slm_plan_submit(const slm_plan_request_t *req, uint32_t *plan_id_o
     slot->created_ts_ns = kernel_time_monotonic_ns();
     slot->applied_ts_ns = 0;
     slot->last_status = AIOS_OK;
+    slot->expected_confidence = compute_plan_confidence(req);
+    slot->validation_score = clamp_u8((int32_t)slot->expected_confidence +
+        ((req->allow_apply ? 5 : 0) - ((int32_t)req->risk_level * 5)));
     slot->state = SLM_PLAN_PROPOSED;
     slot->state = request_valid(req) ? SLM_PLAN_VALIDATED : SLM_PLAN_REJECTED;
+    learning_record_submission(req->action, slot->state == SLM_PLAN_VALIDATED);
 
-    serial_printf("[SLM] Plan %u submitted template=%u action=%u state=%u qd=%u poll=%u dma=%uKiB\n",
+    serial_printf("[SLM] Plan %u submitted template=%u action=%u state=%u conf=%u score=%u qd=%u poll=%u dma=%uKiB\n",
         (uint64_t)slot->plan_id,
         (uint64_t)slot->request.template_id,
         (uint64_t)slot->request.action,
         (uint64_t)slot->state,
+        (uint64_t)slot->expected_confidence,
+        (uint64_t)slot->validation_score,
         (uint64_t)slot->request.queue_depth_hint,
         (uint64_t)slot->request.poll_budget_hint,
         (uint64_t)slot->request.dma_window_kib_hint);
@@ -566,23 +919,31 @@ aios_status_t slm_plan_submit(const slm_plan_request_t *req, uint32_t *plan_id_o
 
 aios_status_t slm_plan_apply(uint32_t plan_id) {
     slm_plan_t *plan = find_plan(plan_id);
+    uint64_t start_ns;
+
     if (!plan) {
         return AIOS_ERR_INVAL;
     }
     if (plan->state != SLM_PLAN_VALIDATED || !plan->request.allow_apply) {
         plan->state = SLM_PLAN_REJECTED;
         plan->last_status = AIOS_ERR_PERM;
+        learning_record_submission(plan->request.action, false);
         return AIOS_ERR_PERM;
     }
 
+    start_ns = kernel_time_monotonic_ns();
     plan->last_status = apply_request(&plan->request);
     plan->applied_ts_ns = kernel_time_monotonic_ns();
     plan->state = (plan->last_status == AIOS_OK) ? SLM_PLAN_APPLIED : SLM_PLAN_FAILED;
+    learning_record_result(plan->request.action, plan->last_status,
+        plan->applied_ts_ns - start_ns);
 
-    serial_printf("[SLM] Plan %u apply status=%d state=%u\n",
+    serial_printf("[SLM] Plan %u apply status=%d state=%u conf=%u latency=%u ns\n",
         (uint64_t)plan->plan_id,
         (int64_t)plan->last_status,
-        (uint64_t)plan->state);
+        (uint64_t)plan->state,
+        (uint64_t)learning_get_confidence(plan->request.action),
+        plan->applied_ts_ns - start_ns);
 
     return plan->last_status;
 }
@@ -636,6 +997,15 @@ void slm_orchestrator_dump(void) {
         (uint64_t)(uintptr_t)kernel_stability_name(snapshot.health_level),
         (uint64_t)snapshot.autonomy_allowed,
         (uint64_t)snapshot.risky_io_allowed);
+    kprintf("Learning: global=%u bias=%d qd=%u poll=%u dma=%uKiB success=%u fail=%u reject=%u\n",
+        (uint64_t)snapshot.learning_profile.global_confidence,
+        (int64_t)snapshot.learning_profile.io_aggressiveness_bias,
+        (uint64_t)snapshot.learning_profile.tuned_queue_depth,
+        (uint64_t)snapshot.learning_profile.tuned_poll_budget,
+        (uint64_t)snapshot.learning_profile.tuned_dma_window_kib,
+        (uint64_t)snapshot.learning_profile.applied_successes,
+        (uint64_t)snapshot.learning_profile.applied_failures,
+        (uint64_t)snapshot.learning_profile.rejected_submissions);
     kprintf("Fabric: acpi=%u mcfg=%u madt=%u mode=%s score=%u total=%u bridges=%u pcie=%u msi=%u msix=%u\n",
         (uint64_t)snapshot.fabric_profile.acpi_ready,
         (uint64_t)snapshot.fabric_profile.mcfg_present,
@@ -669,15 +1039,32 @@ void slm_orchestrator_dump(void) {
         if (plan_table[i].state == SLM_PLAN_EMPTY) {
             continue;
         }
-        kprintf("  plan[%u] action=%u state=%u risk=%u allow=%u qd=%u poll=%u dma=%uKiB\n",
+        kprintf("  plan[%u] action=%u state=%u risk=%u conf=%u score=%u allow=%u qd=%u poll=%u dma=%uKiB\n",
             (uint64_t)plan_table[i].plan_id,
             (uint64_t)plan_table[i].request.action,
             (uint64_t)plan_table[i].state,
             (uint64_t)plan_table[i].request.risk_level,
+            (uint64_t)plan_table[i].expected_confidence,
+            (uint64_t)plan_table[i].validation_score,
             (uint64_t)plan_table[i].request.allow_apply,
             (uint64_t)plan_table[i].request.queue_depth_hint,
             (uint64_t)plan_table[i].request.poll_budget_hint,
             (uint64_t)plan_table[i].request.dma_window_kib_hint);
+    }
+
+    for (uint32_t action = 1; action < SLM_ACTION_COUNT; action++) {
+        const slm_learning_entry_t *entry = &snapshot.learning_profile.actions[action];
+        if (entry->confidence == 0 && entry->attempts == 0 && entry->rejections == 0) {
+            continue;
+        }
+        kprintf("  learn[action=%u] conf=%u attempts=%u ok=%u fail=%u timeout=%u reject=%u\n",
+            (uint64_t)action,
+            (uint64_t)entry->confidence,
+            (uint64_t)entry->attempts,
+            (uint64_t)entry->successes,
+            (uint64_t)entry->failures,
+            (uint64_t)entry->timeouts,
+            (uint64_t)entry->rejections);
     }
     kprintf("=================================\n");
 }
