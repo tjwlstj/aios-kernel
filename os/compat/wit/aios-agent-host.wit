@@ -1,0 +1,100 @@
+package aios:agent-host@0.1.0;
+
+interface system {
+  enum stability {
+    unsafe,
+    degraded,
+    stable,
+  }
+
+  enum operator-mode {
+    stabilize,
+    balance,
+    explore,
+  }
+
+  record health-summary {
+    stability: stability,
+    autonomy-allowed: bool,
+    risky-io-allowed: bool,
+  }
+
+  record main-ai-profile {
+    mode: operator-mode,
+    static-score: u8,
+    chaos-score: u8,
+    sco-x100: s16,
+    recommended-max-active-workers: u8,
+    memory-write-intensity-pct: u8,
+    adapter-update-allowed: bool,
+    memory-only-bias: bool,
+  }
+
+  record pipeline-profile {
+    recommended-worker-queue-depth: u16,
+    recommended-token-pipeline-depth: u16,
+    recommended-planner-fanout: u16,
+    recommended-microbatch-tokens: u16,
+    recommended-summary-interval-ms: u16,
+    recommended-memory-journal-batch: u16,
+    recommended-zero-copy-window-kib: u32,
+    zero-copy-preferred: bool,
+    shared-kv-preferred: bool,
+    device-nodes-preferred: bool,
+  }
+
+  get-health: func() -> result<health-summary, string>;
+  get-main-ai-profile: func() -> result<main-ai-profile, string>;
+  get-pipeline-profile: func() -> result<pipeline-profile, string>;
+}
+
+interface models {
+  enum tensor-dtype {
+    fp32,
+    fp16,
+    bf16,
+    int8,
+    int4,
+    fp64,
+    int32,
+    int16,
+  }
+
+  record model-info {
+    id: u32,
+    name: string,
+    arch: string,
+    param-count: u64,
+    memory-usage: u64,
+    dtype: tensor-dtype,
+    accel-id: u32,
+    loaded: bool,
+    inference-count: u64,
+    avg-latency-ns: u64,
+  }
+
+  load-model: func(path: string, dtype: tensor-dtype, target-accel: u32) -> result<u32, string>;
+  unload-model: func(model-id: u32) -> result<bool, string>;
+  model-info: func(model-id: u32) -> result<model-info, string>;
+}
+
+interface inference {
+  record infer-request {
+    model-id: u32,
+    input-addr: u64,
+    output-addr: u64,
+    batch-size: u32,
+    seq-len: u32,
+    flags: u32,
+  }
+
+  submit: func(req: infer-request) -> result<u32, string>;
+  wait: func(task-id: u32) -> result<bool, string>;
+  cancel: func(task-id: u32) -> result<bool, string>;
+}
+
+world main-ai {
+  import system;
+  import models;
+  import inference;
+}

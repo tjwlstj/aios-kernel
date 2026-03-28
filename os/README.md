@@ -12,6 +12,10 @@
 
 - `main_ai/`
   메인 AI의 상위 설계와 상태/노드 트리 매니페스트
+- `runtime/`
+  커널 부팅 이후 ring3에서 동작할 유저 공간 런타임 설계
+- `compat/`
+  WASI component / native ELF / OCI bundle 호환 계층 설계
 - `tools/`
   정적-혼돈 점수 계산, 학습 데이터셋 정리, 코퍼스 통계 도구
 - `examples/`
@@ -29,3 +33,12 @@
   하드웨어 상태와 함께 메인 AI operator, agent tree, pipeline optimization 힌트를 함께 노출
 - `runtime/slm_orchestrator.c`
   커널 텔레메트리에서 메인 AI 모드, worker 수, queue depth, token pipeline depth를 계산
+
+추가 문서:
+
+- `../docs/user_space_compat_architecture_ko.md`
+  커널 이후 유저 공간 OS 구조와 호환성 중심 설계
+- `runtime/README.md`
+  AIOS user-space runtime 역할과 코어 서비스
+- `compat/wit/aios-agent-host.wit`
+  WASI component용 AIOS host interface 초안
