@@ -180,6 +180,7 @@ make debug          # GDB 디버깅 모드로 실행
 
 - [SLM 자율 운영/최적화 구조 계획](docs/slm_autonomous_kernel_plan.md)
 - [점검 및 부족한 점 리포트 (2026-03-22)](docs/inspection_and_gaps_ko.md)
+- [현재 커널 부족점과 외부 기준 정리 (2026-03-29)](docs/current_kernel_gap_report_ko.md)
 - [AI 에이전트 OS용 모델 스택 추천 (2026-03-28)](docs/agent_model_stack_recommendations_ko.md)
 - [정적-혼돈 연산자 기반 메인 AI/트리 아키텍처 (2026-03-28)](docs/static_chaos_agent_architecture_ko.md)
 - [유저 공간 OS 구조 및 호환성 설계 (2026-03-29)](docs/user_space_compat_architecture_ko.md)
