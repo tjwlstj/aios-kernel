@@ -44,6 +44,12 @@ AIOS(AI-Native Operating System)는 인공지능 워크로드를 **1급 시민(F
 - 2MB 거대 페이지(Huge Page) 지원으로 TLB 미스 최소화
 - 참조 카운팅 기반 자동 메모리 해제
 
+### Memory Fabric Foundation
+- 멀티 AI 에이전트용 메모리 도메인(seed)과 공유 텐서 window 추적
+- 복사보다 zero-copy / shared window 우선 정책
+- ACPI / PCIe / selftest를 바탕으로 hotset / staging / worker 수 추천
+- 미래의 NUMA / CXL 확장을 막지 않는 fallback-first 설계
+
 ### AI Workload Scheduler
 - 다단계 피드백 큐 (Multi-level Feedback Queue)
 - CFS 기반 공정 스케줄링 (Virtual Runtime 추적)
@@ -97,7 +103,8 @@ aios-kernel/
 ├── lib/                # 커널 라이브러리
 │   └── string.c        # memset, memcpy, strlen 등 기본 유틸리티
 ├── mm/                 # 텐서 메모리 관리자
-│   └── tensor_mm.c     # Best-fit 할당, 풀 관리, 수명 프로파일링
+│   ├── tensor_mm.c     # Best-fit 할당, 풀 관리, 수명 프로파일링
+│   └── memory_fabric.c # 멀티 에이전트 공유/zero-copy 메모리 기반
 ├── sched/              # AI 워크로드 스케줄러
 │   └── ai_sched.c      # MLFQ, CFS, 데드라인 스케줄링
 ├── hal/                # 가속기 HAL
@@ -188,6 +195,7 @@ make debug          # GDB 디버깅 모드로 실행
 - [테스트 툴링 구조와 올인원 도구 (2026-03-29)](docs/test_tooling_ko.md)
 - [Gemini CLI 활용 방향 정리 (2026-03-30)](docs/gemini_cli_usage_strategy_ko.md)
 - [Gemini CLI 1차 검토 기록 (2026-03-30)](docs/gemini_cli_first_review_ko.md)
+- [멀티 AI 에이전트용 Memory Fabric 기초안 (2026-03-30)](docs/multi_agent_memory_fabric_foundation_ko.md)
 - [OS 계층 소개](os/README.md)
 
 ## License

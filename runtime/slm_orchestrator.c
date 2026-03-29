@@ -13,6 +13,7 @@
 #include <drivers/usb_host.h>
 #include <drivers/serial.h>
 #include <drivers/vga.h>
+#include <mm/memory_fabric.h>
 #include <lib/string.h>
 
 static slm_plan_t plan_table[SLM_PLAN_CAP];
@@ -1079,6 +1080,7 @@ aios_status_t slm_snapshot_read(slm_hw_snapshot_t *out) {
     out->storage_ready = storage.ready;
     out->storage_controller_kind = (uint8_t)storage.controller_kind;
     compute_fabric_profile(&out->fabric_profile);
+    out->memory_fabric = *memory_fabric_profile();
     out->learning_profile = g_learning;
     compute_io_profile(&out->io_profile);
     compute_agent_main_profile(&out->main_ai_profile, profile, &health,
@@ -1270,6 +1272,17 @@ void slm_orchestrator_dump(void) {
         (uint64_t)snapshot.fabric_profile.pci_pcie_functions,
         (uint64_t)snapshot.fabric_profile.pci_msi_capable_functions,
         (uint64_t)snapshot.fabric_profile.pci_msix_capable_functions);
+    kprintf("Memory fabric: topology=%s compat=%u locality=%u slots=%u worker_qd=%u hotset=%uKiB staging=%uKiB zero_copy=%u numa=%u cxl=%u\n",
+        (uint64_t)(uintptr_t)memory_fabric_topology_name(snapshot.memory_fabric.topology),
+        (uint64_t)snapshot.memory_fabric.compatibility_score,
+        (uint64_t)snapshot.memory_fabric.locality_score,
+        (uint64_t)snapshot.memory_fabric.recommended_agent_slots,
+        (uint64_t)snapshot.memory_fabric.recommended_worker_queue_depth,
+        (uint64_t)snapshot.memory_fabric.recommended_hotset_kib,
+        (uint64_t)snapshot.memory_fabric.recommended_staging_kib,
+        (uint64_t)snapshot.memory_fabric.zero_copy_preferred,
+        (uint64_t)snapshot.memory_fabric.numa_hint_ready,
+        (uint64_t)snapshot.memory_fabric.fabric_expandable);
     kprintf("I/O profile: mode=%s ready=%u degraded=%u pcie=%u qd=%u poll=%u dma=%uKiB\n",
         io_mode_name(snapshot.io_profile.mode),
         (uint64_t)snapshot.io_profile.ready_controllers,

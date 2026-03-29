@@ -16,6 +16,7 @@
 #include <drivers/pci_core.h>
 #include <kernel/acpi.h>
 #include <kernel/health.h>
+#include <mm/memory_fabric.h>
 #include <runtime/autonomy.h>
 #include <runtime/slm_orchestrator.h>
 
@@ -489,6 +490,7 @@ void sys_info_dump(void) {
 
     /* Also dump subsystem info */
     tensor_mm_dump();
+    memory_fabric_dump();
     ai_sched_dump();
     accel_hal_dump();
     acpi_dump();

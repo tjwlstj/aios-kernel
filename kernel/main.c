@@ -21,6 +21,7 @@
 #include <drivers/platform_probe.h>
 #include <interrupt/idt.h>
 #include <mm/tensor_mm.h>
+#include <mm/memory_fabric.h>
 #include <sched/ai_sched.h>
 #include <hal/accel_hal.h>
 #include <runtime/ai_syscall.h>
@@ -247,29 +248,33 @@ static void init_subsystems(uint64_t multiboot_magic, uint64_t multiboot_info) {
     INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_PCI_PROBE,
         "Peripheral Probe Layer", platform_probe_init());
 
-    /* 10. Intel E1000 network bootstrap */
+    /* 10. Multi-agent shared memory / zero-copy planning baseline */
+    INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_MEMORY_FABRIC,
+        "Memory Fabric Foundation", memory_fabric_init());
+
+    /* 11. Intel E1000 network bootstrap */
     INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_NETWORK,
         "Intel E1000 Ethernet", e1000_driver_init());
 
-    /* 11. Minimal USB host bootstrap */
+    /* 12. Minimal USB host bootstrap */
     INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_USB, "USB Host Bootstrap", usb_host_init());
 
-    /* 12. Minimal storage host bootstrap */
+    /* 13. Minimal storage host bootstrap */
     INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_STORAGE,
         "Storage Host Bootstrap", storage_host_init());
 
     /* Finalize runtime subsystem health before control planes use it */
     finalize_runtime_health();
 
-    /* 13. AI System Call Interface */
+    /* 14. AI System Call Interface */
     INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_SYSCALL,
         "AI System Call Interface", ai_syscall_init());
 
-    /* 14. Autonomy Control Plane */
+    /* 15. Autonomy Control Plane */
     INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_AUTONOMY,
         "Autonomy Control Plane", autonomy_init());
 
-    /* 15. SLM Hardware Orchestrator */
+    /* 16. SLM Hardware Orchestrator */
     INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_SLM,
         "SLM Hardware Orchestrator", slm_orchestrator_init());
 }

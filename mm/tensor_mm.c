@@ -571,6 +571,13 @@ aios_status_t tensor_unref(tensor_id_t id) {
     return AIOS_OK;
 }
 
+aios_status_t tensor_info(tensor_id_t id, tensor_alloc_t *out) {
+    tensor_alloc_t *tensor = find_tensor(id);
+    if (!tensor || !out) return AIOS_ERR_INVAL;
+    *out = *tensor;
+    return AIOS_OK;
+}
+
 void tensor_mm_stats(mem_stats_t *stats) {
     if (!stats) return;
     *stats = global_stats;

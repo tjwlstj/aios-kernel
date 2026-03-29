@@ -155,6 +155,7 @@ aios_status_t tensor_unpin(tensor_id_t id);
 /* Reference counting */
 aios_status_t tensor_ref(tensor_id_t id);
 aios_status_t tensor_unref(tensor_id_t id);
+aios_status_t tensor_info(tensor_id_t id, tensor_alloc_t *out);
 
 /* Statistics */
 void tensor_mm_stats(mem_stats_t *stats);

@@ -10,6 +10,7 @@
 #include <kernel/health.h>
 #include <kernel/selftest.h>
 #include <drivers/platform_probe.h>
+#include <mm/memory_fabric.h>
 
 #define SLM_HW_MAX_DEVICES 16
 #define SLM_PLAN_CAP       16
@@ -213,6 +214,7 @@ typedef struct {
     bool storage_ready;
     uint8_t storage_controller_kind;
     slm_fabric_profile_t fabric_profile;
+    memory_fabric_profile_t memory_fabric;
     slm_learning_profile_t learning_profile;
     slm_io_profile_t io_profile;
     agent_main_ai_profile_t main_ai_profile;

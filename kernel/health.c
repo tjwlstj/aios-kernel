@@ -45,6 +45,12 @@ static kernel_subsystem_health_t g_health[KERNEL_SUBSYSTEM_COUNT] = {
         .required = true,
         .io_path = false,
     },
+    [KERNEL_SUBSYSTEM_MEMORY_FABRIC] = {
+        .id = KERNEL_SUBSYSTEM_MEMORY_FABRIC,
+        .name = "Memory Fabric",
+        .required = true,
+        .io_path = false,
+    },
     [KERNEL_SUBSYSTEM_SCHED] = {
         .id = KERNEL_SUBSYSTEM_SCHED,
         .name = "AI Scheduler",

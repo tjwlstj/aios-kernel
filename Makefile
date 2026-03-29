@@ -50,6 +50,7 @@ C_SOURCES   = $(KERNEL_DIR)/main.c \
               $(LIB_DIR)/string.c \
               $(INTERRUPT_DIR)/idt.c \
               $(MM_DIR)/tensor_mm.c \
+              $(MM_DIR)/memory_fabric.c \
               $(SCHED_DIR)/ai_sched.c \
               $(HAL_DIR)/accel_hal.c \
               $(RUNTIME_DIR)/ai_syscall.c \
