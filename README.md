@@ -186,6 +186,7 @@ make debug          # GDB 디버깅 모드로 실행
 - [정적-혼돈 연산자 기반 메인 AI/트리 아키텍처 (2026-03-28)](docs/static_chaos_agent_architecture_ko.md)
 - [유저 공간 OS 구조 및 호환성 설계 (2026-03-29)](docs/user_space_compat_architecture_ko.md)
 - [테스트 툴링 구조와 올인원 도구 (2026-03-29)](docs/test_tooling_ko.md)
+- [Gemini CLI 활용 방향 정리 (2026-03-30)](docs/gemini_cli_usage_strategy_ko.md)
 - [OS 계층 소개](os/README.md)
 
 ## License
