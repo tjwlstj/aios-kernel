@@ -7,12 +7,48 @@ on:
   pull_request:
 
 jobs:
+  os-tools-matrix:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run OS tool smoke
+        run: python scripts/aios-allinone.py os
+
+      - name: Upload OS tool artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: os-tool-artifacts-${{ matrix.os }}
+          path: |
+            build/tool-smoke/summary.json
+            build/tool-smoke/static-chaos-score.json
+            build/tool-smoke/memory_journal.jsonl
+            build/tool-smoke/adapter_candidates.jsonl
+          if-no-files-found: warn
+
   build-and-boot:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
       - name: Install dependencies
         run: |
@@ -26,14 +62,8 @@ jobs:
             xorriso \
             mtools
 
-      - name: Build kernel
-        run: make all
-
-      - name: Build ISO
-        run: make iso
-
-      - name: Run QEMU smoke test
-        run: make test
+      - name: Run all-in-one kernel + OS smoke
+        run: python scripts/aios-allinone.py all --strict
 
       - name: Upload boot artifacts
         if: always()
@@ -44,4 +74,8 @@ jobs:
             build/aios-kernel.bin
             build/aios-kernel.iso
             build/serial_output.log
+            build/tool-smoke/summary.json
+            build/tool-smoke/static-chaos-score.json
+            build/tool-smoke/memory_journal.jsonl
+            build/tool-smoke/adapter_candidates.jsonl
           if-no-files-found: warn

@@ -14,6 +14,8 @@
 예시:
 
 ```powershell
+python .\scripts\aios-allinone.py os
+
 python .\os\tools\score_static_chaos.py `
   --metrics .\os\examples\static_chaos_metrics.sample.json `
   --profile .\os\main_ai\config\main_ai_profile.example.json
@@ -26,3 +28,8 @@ python .\os\tools\build_learning_dataset.py `
 python .\os\tools\summarize_learning_corpus.py `
   --input .\os\examples\learning_trace.sample.jsonl
 ```
+
+통합 smoke:
+
+- `python .\scripts\aios-allinone.py os`
+- `python .\scripts\aios-allinone.py all --strict`

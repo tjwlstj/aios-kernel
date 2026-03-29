@@ -38,6 +38,19 @@ function Find-Tool {
     throw "Required tool not found: $Name"
 }
 
+function Invoke-NativeCommand {
+    param(
+        [string]$Command,
+        [string[]]$ArgumentList = @()
+    )
+
+    & $Command @ArgumentList
+    if ($LASTEXITCODE -ne 0) {
+        $joined = ($ArgumentList -join ' ')
+        throw "Command failed with exit code ${LASTEXITCODE}: $Command $joined"
+    }
+}
+
 function Test-CommandAvailable {
     param([string]$Name)
 
@@ -52,22 +65,46 @@ function Test-CommandAvailable {
 function Invoke-MakeTarget {
     param([string]$MakeTarget)
 
-    & $script:Make `
-        "CC=$script:CrossGcc" `
-        "LD=$script:CrossLd" `
-        "OBJCOPY=$script:CrossObjcopy" `
-        "ASM=$script:NasmCommand" `
+    Invoke-NativeCommand $script:Make @(
+        "CC=$script:CrossGcc",
+        "LD=$script:CrossLd",
+        "OBJCOPY=$script:CrossObjcopy",
+        "ASM=$script:NasmCommand",
         $MakeTarget
+    )
+}
+
+function Ensure-Directory {
+    param([string]$Path)
+
+    if (-not $Path) {
+        throw 'Directory path must not be empty'
+    }
+
+    New-Item -ItemType Directory -Force -Path $Path | Out-Null
+}
+
+function Convert-ToMsysPath {
+    param([string]$Path)
+
+    $full = [System.IO.Path]::GetFullPath($Path)
+    if ($full -match '^[A-Za-z]:\\') {
+        $drive = $full.Substring(0, 1).ToLowerInvariant()
+        $rest = $full.Substring(2).Replace('\', '/')
+        return "/$drive$rest"
+    }
+
+    return $full.Replace('\', '/')
 }
 
 function New-WindowsBiosIso {
     $isoRoot = Join-Path $RepoRoot 'build\winiso'
-    $bootDir = [System.IO.Path]::Combine($isoRoot, 'boot')
-    $grubDir = [System.IO.Path]::Combine($bootDir, 'grub')
-    $grubCfg = [System.IO.Path]::Combine($grubDir, 'grub.cfg')
-    $coreImg = [System.IO.Path]::Combine($isoRoot, 'core.img')
-    $biosImg = [System.IO.Path]::Combine($grubDir, 'bios.img')
-    $kernelIsoPath = [System.IO.Path]::Combine($bootDir, 'kernel.bin')
+    $bootDir = Join-Path $isoRoot 'boot'
+    $grubDir = Join-Path $bootDir 'grub'
+    $grubCfg = Join-Path $grubDir 'grub.cfg'
+    $coreImg = Join-Path $isoRoot 'core.img'
+    $biosImg = Join-Path $grubDir 'bios.img'
+    $kernelIsoPath = Join-Path $bootDir 'kernel.bin'
     $kernelBin = Join-Path $RepoRoot 'build\aios-kernel.bin'
     $outputIso = Join-Path $RepoRoot 'build\aios-kernel.iso'
 
@@ -76,9 +113,7 @@ function New-WindowsBiosIso {
     }
 
     Remove-Item $isoRoot -Recurse -Force -ErrorAction SilentlyContinue
-    [System.IO.Directory]::CreateDirectory($isoRoot) | Out-Null
-    [System.IO.Directory]::CreateDirectory($bootDir) | Out-Null
-    [System.IO.Directory]::CreateDirectory($grubDir) | Out-Null
+    Ensure-Directory $grubDir
     [System.IO.File]::Copy($kernelBin, $kernelIsoPath, $true)
 
     $grubCfgText = @(
@@ -95,23 +130,25 @@ function New-WindowsBiosIso {
     )
     [System.IO.File]::WriteAllLines($grubCfg, $grubCfgText)
 
-    & $script:GrubMkImage `
-        -O i386-pc-eltorito `
-        -o $coreImg `
-        -p /boot/grub `
-        biosdisk iso9660 multiboot2 normal configfile search echo serial terminal
+    Invoke-NativeCommand $script:GrubMkImage @(
+        '-O', 'i386-pc-eltorito',
+        '-o', $coreImg,
+        '-p', '/boot/grub',
+        'biosdisk', 'iso9660', 'multiboot2', 'normal', 'configfile', 'search', 'echo', 'serial', 'terminal'
+    )
 
     [System.IO.File]::Copy($coreImg, $biosImg, $true)
 
-    & $script:Xorriso `
-        -as mkisofs `
-        -R `
-        -b boot/grub/bios.img `
-        -no-emul-boot `
-        -boot-load-size 4 `
-        -boot-info-table `
-        -o 'build/aios-kernel.iso' `
-        'build/winiso'
+    Invoke-NativeCommand $script:Xorriso @(
+        '-as', 'mkisofs',
+        '-R',
+        '-b', 'boot/grub/bios.img',
+        '-no-emul-boot',
+        '-boot-load-size', '4',
+        '-boot-info-table',
+        '-o', (Convert-ToMsysPath $outputIso),
+        (Convert-ToMsysPath $isoRoot)
+    )
 
     return $outputIso
 }
