@@ -16,3 +16,6 @@ build/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Local-only external tooling scratch space
+__NO_COMMIT__*/
