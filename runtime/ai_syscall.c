@@ -16,6 +16,7 @@
 #include <drivers/pci_core.h>
 #include <kernel/acpi.h>
 #include <kernel/health.h>
+#include <kernel/time.h>
 #include <mm/memory_fabric.h>
 #include <runtime/autonomy.h>
 #include <runtime/slm_orchestrator.h>
@@ -35,6 +36,8 @@ typedef struct {
     bool                    registered;
     uint32_t                ring_id;
     uint32_t                notify_count;
+    uint32_t                last_submit_tail;
+    uint64_t                last_notify_ns;
     ai_ring_registration_t  registration;
 } infer_ring_state_t;
 
@@ -110,6 +113,8 @@ aios_status_t ai_syscall_init(void) {
         infer_ring_table[i].registered = false;
         infer_ring_table[i].ring_id = 0;
         infer_ring_table[i].notify_count = 0;
+        infer_ring_table[i].last_submit_tail = 0;
+        infer_ring_table[i].last_notify_ns = 0;
     }
 
     kprintf("\n");
@@ -395,6 +400,8 @@ aios_status_t sys_infer_ring_setup(syscall_infer_ring_setup_t *req) {
     ring->registered = true;
     ring->ring_id = infer_ring_count + 1;
     ring->notify_count = 0;
+    ring->last_submit_tail = 0;
+    ring->last_notify_ns = 0;
     ring->registration = req->registration;
     infer_ring_count++;
 
@@ -418,6 +425,8 @@ aios_status_t sys_infer_ring_notify(syscall_infer_ring_notify_t *req) {
     if (!ring) return AIOS_ERR_INVAL;
 
     ring->notify_count++;
+    ring->last_submit_tail = req->submit_tail;
+    ring->last_notify_ns = kernel_time_monotonic_ns();
 
     kprintf("[SYSCALL] Inference ring notify: id=%u tail=%u flags=%u\n",
         (uint64_t)req->ring_id,
@@ -452,6 +461,63 @@ aios_status_t sys_infer_ring_status(uint32_t ring_id, syscall_infer_ring_status_
     out->registration = ring->registration;
 
     return AIOS_OK;
+}
+
+void ai_infer_ring_runtime(ai_ring_runtime_snapshot_t *out) {
+    uint32_t total_notifies = 0;
+    uint32_t max_submit_tail = 0;
+    uint16_t active = 0;
+    uint16_t last_ring_id = 0;
+    uint64_t last_notify_ns = 0;
+    bool any_event = false;
+    bool any_shared_kv = false;
+
+    if (!out) {
+        return;
+    }
+
+    out->registered_rings = 0;
+    out->active_rings = 0;
+    out->total_notifies = 0;
+    out->max_submit_tail_observed = 0;
+    out->last_ring_id = 0;
+    out->last_notify_ns = 0;
+    out->any_event_notify = false;
+    out->any_shared_kv = false;
+
+    for (uint32_t i = 0; i < infer_ring_count; i++) {
+        infer_ring_state_t *ring = &infer_ring_table[i];
+        if (!ring->registered) {
+            continue;
+        }
+
+        out->registered_rings++;
+        total_notifies += ring->notify_count;
+        if (ring->notify_count > 0) {
+            active++;
+        }
+        if (ring->last_submit_tail > max_submit_tail) {
+            max_submit_tail = ring->last_submit_tail;
+        }
+        if (ring->last_notify_ns >= last_notify_ns) {
+            last_notify_ns = ring->last_notify_ns;
+            last_ring_id = (uint16_t)ring->ring_id;
+        }
+        if ((ring->registration.flags & AI_RING_REG_F_EVENT_NOTIFY) != 0) {
+            any_event = true;
+        }
+        if ((ring->registration.flags & AI_RING_REG_F_SHARED_KV) != 0) {
+            any_shared_kv = true;
+        }
+    }
+
+    out->active_rings = active;
+    out->total_notifies = total_notifies;
+    out->max_submit_tail_observed = max_submit_tail;
+    out->last_ring_id = last_ring_id;
+    out->last_notify_ns = last_notify_ns;
+    out->any_event_notify = any_event;
+    out->any_shared_kv = any_shared_kv;
 }
 
 /* ============================================================
@@ -583,6 +649,18 @@ void sys_info_dump(void) {
     kprintf("  Info calls:     %u\n", syscall_stats.info_calls);
     kprintf("  Invalid calls:  %u\n", syscall_stats.invalid_calls);
     kprintf("  Registered rings: %u\n", (uint64_t)infer_ring_count);
+    {
+        ai_ring_runtime_snapshot_t ring_runtime;
+        ai_infer_ring_runtime(&ring_runtime);
+        kprintf("  Ring runtime: registered=%u active=%u notify=%u max_tail=%u last_ring=%u event=%u shared_kv=%u\n",
+            (uint64_t)ring_runtime.registered_rings,
+            (uint64_t)ring_runtime.active_rings,
+            (uint64_t)ring_runtime.total_notifies,
+            (uint64_t)ring_runtime.max_submit_tail_observed,
+            (uint64_t)ring_runtime.last_ring_id,
+            (uint64_t)ring_runtime.any_event_notify,
+            (uint64_t)ring_runtime.any_shared_kv);
+    }
 
     kprintf("\nLoaded Models: %u\n", (uint64_t)model_count);
     for (uint32_t i = 0; i < model_count; i++) {

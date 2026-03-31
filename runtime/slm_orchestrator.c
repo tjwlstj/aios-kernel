@@ -14,6 +14,7 @@
 #include <drivers/serial.h>
 #include <drivers/vga.h>
 #include <mm/memory_fabric.h>
+#include <runtime/ai_syscall.h>
 #include <lib/string.h>
 
 static slm_plan_t plan_table[SLM_PLAN_CAP];
@@ -1092,6 +1093,7 @@ aios_status_t slm_snapshot_read(slm_hw_snapshot_t *out) {
     out->memory_fabric = *memory_fabric_profile();
     out->learning_profile = g_learning;
     compute_io_profile(&out->io_profile);
+    ai_infer_ring_runtime(&out->ring_runtime);
     compute_agent_main_profile(&out->main_ai_profile, profile, &health,
         &out->fabric_profile, &out->io_profile);
     compute_agent_pipeline_profile(&out->pipeline_profile, &out->main_ai_profile,
@@ -1300,6 +1302,14 @@ void slm_orchestrator_dump(void) {
         (uint64_t)snapshot.io_profile.recommended_queue_depth,
         (uint64_t)snapshot.io_profile.recommended_poll_budget,
         (uint64_t)snapshot.io_profile.recommended_dma_window_kib);
+    kprintf("Ring runtime: registered=%u active=%u notify=%u max_tail=%u last_ring=%u event=%u shared_kv=%u\n",
+        (uint64_t)snapshot.ring_runtime.registered_rings,
+        (uint64_t)snapshot.ring_runtime.active_rings,
+        (uint64_t)snapshot.ring_runtime.total_notifies,
+        (uint64_t)snapshot.ring_runtime.max_submit_tail_observed,
+        (uint64_t)snapshot.ring_runtime.last_ring_id,
+        (uint64_t)snapshot.ring_runtime.any_event_notify,
+        (uint64_t)snapshot.ring_runtime.any_shared_kv);
     kprintf("Main AI: mode=%s static=%u chaos=%u sco=%d workers=%u memory_write=%u%% adapter=%u\n",
         agent_mode_name(snapshot.main_ai_profile.mode),
         (uint64_t)snapshot.main_ai_profile.static_score,

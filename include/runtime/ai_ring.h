@@ -124,6 +124,19 @@ typedef struct PACKED {
     uint64_t    user_cookie;
 } ai_ring_registration_t;
 
+typedef struct PACKED {
+    uint16_t    registered_rings;
+    uint16_t    active_rings;
+    uint32_t    total_notifies;
+    uint32_t    max_submit_tail_observed;
+    uint16_t    last_ring_id;
+    uint16_t    reserved0;
+    uint64_t    last_notify_ns;
+    bool        any_event_notify;
+    bool        any_shared_kv;
+    uint16_t    reserved1;
+} ai_ring_runtime_snapshot_t;
+
 static inline uint32_t ai_ring_bytes(uint32_t entry_count, uint32_t entry_size) {
     return (uint32_t)(sizeof(ai_ring_header_t) + ((uint64_t)entry_count * entry_size));
 }

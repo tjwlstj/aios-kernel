@@ -212,6 +212,7 @@ aios_status_t sys_infer_ring_setup(syscall_infer_ring_setup_t *req);
 aios_status_t sys_infer_ring_notify(syscall_infer_ring_notify_t *req);
 aios_status_t sys_infer_ring_wait_cq(syscall_infer_ring_wait_t *req);
 aios_status_t sys_infer_ring_status(uint32_t ring_id, syscall_infer_ring_status_t *out);
+void ai_infer_ring_runtime(ai_ring_runtime_snapshot_t *out);
 
 /* Training */
 aios_status_t sys_train_forward(syscall_train_t *req);

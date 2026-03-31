@@ -11,6 +11,7 @@
 #include <kernel/selftest.h>
 #include <drivers/platform_probe.h>
 #include <mm/memory_fabric.h>
+#include <runtime/ai_ring.h>
 
 #define SLM_HW_MAX_DEVICES 16
 #define SLM_PLAN_CAP       16
@@ -220,6 +221,7 @@ typedef struct {
     memory_fabric_profile_t memory_fabric;
     slm_learning_profile_t learning_profile;
     slm_io_profile_t io_profile;
+    ai_ring_runtime_snapshot_t ring_runtime;
     agent_main_ai_profile_t main_ai_profile;
     agent_pipeline_profile_t pipeline_profile;
     uint32_t agent_tree_nodes;
