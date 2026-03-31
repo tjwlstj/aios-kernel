@@ -197,6 +197,7 @@ make debug          # GDB 디버깅 모드로 실행
 - [Gemini CLI 1차 검토 기록 (2026-03-30)](docs/gemini_cli_first_review_ko.md)
 - [멀티 AI 에이전트용 Memory Fabric 기초안 (2026-03-30)](docs/multi_agent_memory_fabric_foundation_ko.md)
 - [커널 엔트로피용 노이즈 소스 정리 (2026-03-30)](docs/kernel_entropy_noise_sources_ko.md)
+- [커널-유저 경계 최적화 우선순위 정리 (2026-03-31)](docs/kernel_user_boundary_optimization_ko.md)
 - [OS 계층 소개](os/README.md)
 
 ## License
