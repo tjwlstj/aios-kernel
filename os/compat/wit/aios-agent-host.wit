@@ -37,10 +37,13 @@ interface system {
     recommended-microbatch-tokens: u16,
     recommended-summary-interval-ms: u16,
     recommended-memory-journal-batch: u16,
+    recommended-submit-ring-entries: u16,
+    recommended-completion-ring-entries: u16,
     recommended-zero-copy-window-kib: u32,
     zero-copy-preferred: bool,
     shared-kv-preferred: bool,
     device-nodes-preferred: bool,
+    shared-infer-ring-preferred: bool,
   }
 
   get-health: func() -> result<health-summary, string>;

@@ -179,10 +179,13 @@ typedef struct {
     uint16_t recommended_microbatch_tokens;
     uint16_t recommended_summary_interval_ms;
     uint16_t recommended_memory_journal_batch;
+    uint16_t recommended_submit_ring_entries;
+    uint16_t recommended_completion_ring_entries;
     uint32_t recommended_zero_copy_window_kib;
     bool zero_copy_preferred;
     bool shared_kv_preferred;
     bool device_nodes_preferred;
+    bool shared_infer_ring_preferred;
 } agent_pipeline_profile_t;
 
 typedef struct {

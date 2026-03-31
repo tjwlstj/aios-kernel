@@ -581,12 +581,19 @@ static void compute_agent_pipeline_profile(agent_pipeline_profile_t *out,
     out->recommended_memory_journal_batch =
         (main_ai->mode == AGENT_OPERATOR_MODE_STABILIZE) ? 24 :
         (main_ai->mode == AGENT_OPERATOR_MODE_BALANCE) ? 16 : 8;
+    out->recommended_submit_ring_entries = clamp_u16(
+        (int32_t)out->recommended_worker_queue_depth * 8, 64, 1024);
+    out->recommended_completion_ring_entries = clamp_u16(
+        (int32_t)out->recommended_worker_queue_depth * 4, 64, 1024);
     out->recommended_zero_copy_window_kib = clamp_u32(
         (int32_t)io_profile->recommended_dma_window_kib * 2, 64, 2048);
     out->zero_copy_preferred = io_profile->ready_controllers > 0;
     out->shared_kv_preferred = main_ai->mode != AGENT_OPERATOR_MODE_STABILIZE;
     out->device_nodes_preferred = io_profile->pcie_io_devices > 0 ||
         io_profile->ready_controllers > 0;
+    out->shared_infer_ring_preferred =
+        out->zero_copy_preferred ||
+        io_profile->recommended_queue_depth >= 16;
 }
 
 static void compute_agent_tree(agent_tree_node_t *nodes, uint32_t *count,
@@ -1036,12 +1043,14 @@ aios_status_t slm_orchestrator_init(void) {
         (uint64_t)g_learning.tuned_dma_window_kib);
     serial_write("[SLM] Hardware orchestrator ready\n");
     if (slm_snapshot_read(&snapshot) == AIOS_OK) {
-        serial_printf("[SLM] MainAI mode=%s sco=%d workers=%u pipeline_qd=%u depth=%u\n",
+        serial_printf("[SLM] MainAI mode=%s sco=%d workers=%u pipeline_qd=%u depth=%u ring=%u/%u\n",
             agent_mode_name(snapshot.main_ai_profile.mode),
             (int64_t)snapshot.main_ai_profile.sco_x100,
             (uint64_t)snapshot.main_ai_profile.recommended_max_active_workers,
             (uint64_t)snapshot.pipeline_profile.recommended_worker_queue_depth,
-            (uint64_t)snapshot.pipeline_profile.recommended_token_pipeline_depth);
+            (uint64_t)snapshot.pipeline_profile.recommended_token_pipeline_depth,
+            (uint64_t)snapshot.pipeline_profile.recommended_submit_ring_entries,
+            (uint64_t)snapshot.pipeline_profile.recommended_completion_ring_entries);
     }
     seed_boot_plans();
     return AIOS_OK;
@@ -1299,16 +1308,19 @@ void slm_orchestrator_dump(void) {
         (uint64_t)snapshot.main_ai_profile.recommended_max_active_workers,
         (uint64_t)snapshot.main_ai_profile.memory_write_intensity_pct,
         (uint64_t)snapshot.main_ai_profile.adapter_update_allowed);
-    kprintf("Pipeline: qd=%u depth=%u fanout=%u microbatch=%u summary_ms=%u journal=%u zero_copy=%u shared_kv=%u device_nodes=%u\n",
+    kprintf("Pipeline: qd=%u depth=%u fanout=%u microbatch=%u summary_ms=%u journal=%u ring=%u/%u zero_copy=%u shared_kv=%u device_nodes=%u shared_ring=%u\n",
         (uint64_t)snapshot.pipeline_profile.recommended_worker_queue_depth,
         (uint64_t)snapshot.pipeline_profile.recommended_token_pipeline_depth,
         (uint64_t)snapshot.pipeline_profile.recommended_planner_fanout,
         (uint64_t)snapshot.pipeline_profile.recommended_microbatch_tokens,
         (uint64_t)snapshot.pipeline_profile.recommended_summary_interval_ms,
         (uint64_t)snapshot.pipeline_profile.recommended_memory_journal_batch,
+        (uint64_t)snapshot.pipeline_profile.recommended_submit_ring_entries,
+        (uint64_t)snapshot.pipeline_profile.recommended_completion_ring_entries,
         (uint64_t)snapshot.pipeline_profile.zero_copy_preferred,
         (uint64_t)snapshot.pipeline_profile.shared_kv_preferred,
-        (uint64_t)snapshot.pipeline_profile.device_nodes_preferred);
+        (uint64_t)snapshot.pipeline_profile.device_nodes_preferred,
+        (uint64_t)snapshot.pipeline_profile.shared_infer_ring_preferred);
     for (uint32_t i = 0; i < snapshot.agent_tree_nodes; i++) {
         kprintf("  node[%u] role=%s class=%u active=%u persist=%u prio=%u budget=%u zero_copy=%u\n",
             (uint64_t)snapshot.agent_tree[i].node_id,

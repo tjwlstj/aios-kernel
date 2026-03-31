@@ -32,7 +32,7 @@
 - control plane은 기존 AI syscall을 유지
 - data plane은 `include/runtime/ai_ring.h` 기준의 shared submit/completion ring을 사용
 - 고빈도 `infer submit / completion`은 shared memory로 넘기고, syscall은 등록/notify/wait에 한정
-- 메인 AI와 worker는 같은 ring ABI를 쓰되, queue depth와 zero-copy window는 kernel snapshot 힌트를 따른다
+- 메인 AI와 worker는 같은 ring ABI를 쓰되, queue depth, ring entry 수, zero-copy window는 kernel snapshot 힌트를 따른다
 
 ## 실행 레인
 
