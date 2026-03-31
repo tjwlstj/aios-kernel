@@ -50,6 +50,10 @@
 #define SYS_INFER_CANCEL        0x302   /* Cancel inference request */
 #define SYS_INFER_BATCH         0x303   /* Submit batch inference */
 #define SYS_INFER_STREAM        0x304   /* Streaming inference (token-by-token) */
+#define SYS_INFER_RING_SETUP    0x305   /* Register shared submit/completion rings */
+#define SYS_INFER_RING_NOTIFY   0x306   /* Notify kernel of new SQ tail */
+#define SYS_INFER_RING_WAIT_CQ  0x307   /* Wait for completion activity */
+#define SYS_INFER_RING_STATUS   0x308   /* Query registered ring state */
 /* High-frequency data plane is expected to move onto ai_ring.h shared rings. */
 
 /* Training syscalls (0x400 - 0x4FF) */
@@ -117,6 +121,31 @@ typedef struct {
     bool            stream;         /* Enable streaming output */
 } syscall_infer_t;
 
+typedef struct {
+    ai_ring_registration_t registration;
+    uint32_t               *ring_id_out;
+} syscall_infer_ring_setup_t;
+
+typedef struct {
+    uint32_t ring_id;
+    uint32_t submit_tail;
+    uint32_t flags;
+} syscall_infer_ring_notify_t;
+
+typedef struct {
+    uint32_t ring_id;
+    uint64_t timeout_ns;
+    uint32_t min_completed;
+    uint32_t flags;
+} syscall_infer_ring_wait_t;
+
+typedef struct {
+    uint32_t                ring_id;
+    bool                    registered;
+    uint32_t                notify_count;
+    ai_ring_registration_t  registration;
+} syscall_infer_ring_status_t;
+
 /* Training step request */
 typedef struct {
     model_id_t      model_id;       /* Model to train */
@@ -179,6 +208,10 @@ aios_status_t sys_model_info(model_id_t id, model_info_t *info);
 aios_status_t sys_infer_submit(syscall_infer_t *req);
 aios_status_t sys_infer_wait(task_id_t task_id);
 aios_status_t sys_infer_cancel(task_id_t task_id);
+aios_status_t sys_infer_ring_setup(syscall_infer_ring_setup_t *req);
+aios_status_t sys_infer_ring_notify(syscall_infer_ring_notify_t *req);
+aios_status_t sys_infer_ring_wait_cq(syscall_infer_ring_wait_t *req);
+aios_status_t sys_infer_ring_status(uint32_t ring_id, syscall_infer_ring_status_t *out);
 
 /* Training */
 aios_status_t sys_train_forward(syscall_train_t *req);

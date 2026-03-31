@@ -25,10 +25,21 @@
  * ============================================================ */
 
 #define MAX_MODELS_REGISTRY 64
+#define MAX_INFER_RINGS     16
 
 static model_info_t model_registry[MAX_MODELS_REGISTRY];
 static uint32_t model_count = 0;
 static model_id_t next_model_id = 1;
+
+typedef struct {
+    bool                    registered;
+    uint32_t                ring_id;
+    uint32_t                notify_count;
+    ai_ring_registration_t  registration;
+} infer_ring_state_t;
+
+static infer_ring_state_t infer_ring_table[MAX_INFER_RINGS];
+static uint32_t infer_ring_count = 0;
 
 /* Syscall statistics */
 static struct {
@@ -53,6 +64,16 @@ static model_info_t *find_model(model_id_t id) {
             return &model_registry[i];
         }
     }
+    return NULL;
+}
+
+static infer_ring_state_t *find_infer_ring(uint32_t ring_id) {
+    for (uint32_t i = 0; i < infer_ring_count; i++) {
+        if (infer_ring_table[i].registered && infer_ring_table[i].ring_id == ring_id) {
+            return &infer_ring_table[i];
+        }
+    }
+
     return NULL;
 }
 
@@ -84,6 +105,12 @@ aios_status_t ai_syscall_init(void) {
     syscall_stats.pipe_calls = 0;
     syscall_stats.info_calls = 0;
     syscall_stats.invalid_calls = 0;
+    infer_ring_count = 0;
+    for (uint32_t i = 0; i < MAX_INFER_RINGS; i++) {
+        infer_ring_table[i].registered = false;
+        infer_ring_table[i].ring_id = 0;
+        infer_ring_table[i].notify_count = 0;
+    }
 
     kprintf("\n");
     kprintf("    AI System Call Interface initialized:\n");
@@ -153,6 +180,15 @@ int64_t ai_syscall_dispatch(uint64_t syscall_num, uint64_t arg1,
                     return (int64_t)sys_infer_wait((task_id_t)arg1);
                 case SYS_INFER_CANCEL:
                     return (int64_t)sys_infer_cancel((task_id_t)arg1);
+                case SYS_INFER_RING_SETUP:
+                    return (int64_t)sys_infer_ring_setup((syscall_infer_ring_setup_t *)arg1);
+                case SYS_INFER_RING_NOTIFY:
+                    return (int64_t)sys_infer_ring_notify((syscall_infer_ring_notify_t *)arg1);
+                case SYS_INFER_RING_WAIT_CQ:
+                    return (int64_t)sys_infer_ring_wait_cq((syscall_infer_ring_wait_t *)arg1);
+                case SYS_INFER_RING_STATUS:
+                    return (int64_t)sys_infer_ring_status((uint32_t)arg1,
+                                                          (syscall_infer_ring_status_t *)arg2);
                 default:
                     break;
             }
@@ -346,6 +382,78 @@ aios_status_t sys_infer_cancel(task_id_t task_id) {
     return ai_task_destroy(task_id);
 }
 
+aios_status_t sys_infer_ring_setup(syscall_infer_ring_setup_t *req) {
+    infer_ring_state_t *ring;
+
+    if (!req || !req->ring_id_out) return AIOS_ERR_INVAL;
+    if (req->registration.abi_version != AI_RING_ABI_VERSION) return AIOS_ERR_INVAL;
+    if (!ai_ring_valid_entries(req->registration.submit_entries)) return AIOS_ERR_INVAL;
+    if (!ai_ring_valid_entries(req->registration.completion_entries)) return AIOS_ERR_INVAL;
+    if (infer_ring_count >= MAX_INFER_RINGS) return AIOS_ERR_NOMEM;
+
+    ring = &infer_ring_table[infer_ring_count];
+    ring->registered = true;
+    ring->ring_id = infer_ring_count + 1;
+    ring->notify_count = 0;
+    ring->registration = req->registration;
+    infer_ring_count++;
+
+    *req->ring_id_out = ring->ring_id;
+
+    kprintf("[SYSCALL] Inference ring registered: id=%u sq=%u cq=%u flags=%u\n",
+        (uint64_t)ring->ring_id,
+        (uint64_t)ring->registration.submit_entries,
+        (uint64_t)ring->registration.completion_entries,
+        (uint64_t)ring->registration.flags);
+
+    return AIOS_OK;
+}
+
+aios_status_t sys_infer_ring_notify(syscall_infer_ring_notify_t *req) {
+    infer_ring_state_t *ring;
+
+    if (!req) return AIOS_ERR_INVAL;
+
+    ring = find_infer_ring(req->ring_id);
+    if (!ring) return AIOS_ERR_INVAL;
+
+    ring->notify_count++;
+
+    kprintf("[SYSCALL] Inference ring notify: id=%u tail=%u flags=%u\n",
+        (uint64_t)req->ring_id,
+        (uint64_t)req->submit_tail,
+        (uint64_t)req->flags);
+
+    return AIOS_OK;
+}
+
+aios_status_t sys_infer_ring_wait_cq(syscall_infer_ring_wait_t *req) {
+    if (!req) return AIOS_ERR_INVAL;
+    if (!find_infer_ring(req->ring_id)) return AIOS_ERR_INVAL;
+
+    kprintf("[SYSCALL] Inference ring wait pending implementation: id=%u timeout=%u ns\n",
+        (uint64_t)req->ring_id,
+        req->timeout_ns);
+
+    return AIOS_ERR_NOSYS;
+}
+
+aios_status_t sys_infer_ring_status(uint32_t ring_id, syscall_infer_ring_status_t *out) {
+    infer_ring_state_t *ring;
+
+    if (!out) return AIOS_ERR_INVAL;
+
+    ring = find_infer_ring(ring_id);
+    if (!ring) return AIOS_ERR_INVAL;
+
+    out->ring_id = ring->ring_id;
+    out->registered = ring->registered;
+    out->notify_count = ring->notify_count;
+    out->registration = ring->registration;
+
+    return AIOS_OK;
+}
+
 /* ============================================================
  * Training Implementation
  * ============================================================ */
@@ -474,6 +582,7 @@ void sys_info_dump(void) {
     kprintf("  Pipeline calls: %u\n", syscall_stats.pipe_calls);
     kprintf("  Info calls:     %u\n", syscall_stats.info_calls);
     kprintf("  Invalid calls:  %u\n", syscall_stats.invalid_calls);
+    kprintf("  Registered rings: %u\n", (uint64_t)infer_ring_count);
 
     kprintf("\nLoaded Models: %u\n", (uint64_t)model_count);
     for (uint32_t i = 0; i < model_count; i++) {
