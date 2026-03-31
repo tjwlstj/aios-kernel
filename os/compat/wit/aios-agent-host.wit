@@ -79,6 +79,17 @@ interface models {
 }
 
 interface inference {
+  record ring-registration {
+    submit-ring-addr: u64,
+    submit-ring-bytes: u32,
+    completion-ring-addr: u64,
+    completion-ring-bytes: u32,
+    submit-entries: u16,
+    completion-entries: u16,
+    flags: u16,
+    queue-depth-hint: u16,
+  }
+
   record infer-request {
     model-id: u32,
     input-addr: u64,
@@ -88,6 +99,9 @@ interface inference {
     flags: u32,
   }
 
+  configure-rings: func(registration: ring-registration) -> result<bool, string>;
+  ring-notify: func(submit-tail: u32) -> result<bool, string>;
+  wait-completions: func(timeout-ns: u64) -> result<u32, string>;
   submit: func(req: infer-request) -> result<u32, string>;
   wait: func(task-id: u32) -> result<bool, string>;
   cancel: func(task-id: u32) -> result<bool, string>;

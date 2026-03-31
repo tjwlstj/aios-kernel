@@ -27,6 +27,13 @@
 - `aios-compatd`
   ELF loader, WASI host, OCI bundle launcher
 
+## 데이터 평면
+
+- control plane은 기존 AI syscall을 유지
+- data plane은 `include/runtime/ai_ring.h` 기준의 shared submit/completion ring을 사용
+- 고빈도 `infer submit / completion`은 shared memory로 넘기고, syscall은 등록/notify/wait에 한정
+- 메인 AI와 worker는 같은 ring ABI를 쓰되, queue depth와 zero-copy window는 kernel snapshot 힌트를 따른다
+
 ## 실행 레인
 
 ### Native lane
@@ -60,6 +67,11 @@
   안전한 정책 변경 / rollback
 - `SYS_SLM_PLAN_*`
   드라이버 / I/O plan 관리
+
+향후에는 `SYS_INFER_*`를 다음 두 층으로 분리한다.
+
+- control path: ring 등록, health gate, notify, completion wait
+- data path: submit/completion shared ring
 
 ## 호환성 우선순위
 

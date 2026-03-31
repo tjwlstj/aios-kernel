@@ -33,6 +33,8 @@
   하드웨어 상태와 함께 메인 AI operator, agent tree, pipeline optimization 힌트를 함께 노출
 - `runtime/slm_orchestrator.c`
   커널 텔레메트리에서 메인 AI 모드, worker 수, queue depth, token pipeline depth를 계산
+- `include/runtime/ai_ring.h`
+  커널-유저 공간이 함께 쓰는 shared submit/completion ring ABI 초안
 
 추가 문서:
 

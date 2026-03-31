@@ -21,6 +21,7 @@
 #include <sched/ai_sched.h>
 #include <hal/accel_hal.h>
 #include <kernel/health.h>
+#include <runtime/ai_ring.h>
 #include <runtime/autonomy.h>
 #include <runtime/slm_orchestrator.h>
 
@@ -49,6 +50,7 @@
 #define SYS_INFER_CANCEL        0x302   /* Cancel inference request */
 #define SYS_INFER_BATCH         0x303   /* Submit batch inference */
 #define SYS_INFER_STREAM        0x304   /* Streaming inference (token-by-token) */
+/* High-frequency data plane is expected to move onto ai_ring.h shared rings. */
 
 /* Training syscalls (0x400 - 0x4FF) */
 #define SYS_TRAIN_FORWARD       0x400   /* Forward pass */
