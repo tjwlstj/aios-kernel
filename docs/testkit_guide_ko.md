@@ -65,6 +65,7 @@
 
 ```powershell
 python .\testkit\aios-testkit.py all --strict
+python .\testkit\aios-testkit.py all --strict --smoke-profile minimal
 ```
 
 ### 커널만
@@ -72,6 +73,7 @@ python .\testkit\aios-testkit.py all --strict
 ```powershell
 python .\testkit\aios-testkit.py kernel --target all --strict
 python .\testkit\aios-testkit.py kernel --target test --strict
+python .\testkit\aios-testkit.py kernel --target test --strict --smoke-profile minimal
 ```
 
 ### OS 도구만
@@ -85,7 +87,32 @@ python .\testkit\aios-testkit.py os
 ```powershell
 pwsh -File .\testkit\kernel\build-windows.ps1 -Target all
 pwsh -File .\testkit\kernel\build-windows.ps1 -Target test
+pwsh -File .\testkit\kernel\build-windows.ps1 -Target test -SmokeProfile minimal
 ```
+
+## 스모크 프로파일
+
+`kernel` lane이 QEMU를 직접 띄우는 경우에는 `--smoke-profile` 또는 `-SmokeProfile`으로
+optional 하드웨어 구성을 나눌 수 있다.
+
+- `full`
+  - 기본값
+  - `e1000` NIC와 `qemu-xhci` 컨트롤러를 추가한 일반 부팅 smoke
+- `minimal`
+  - `-nic none`으로 네트워크를 비우고 USB 컨트롤러도 추가하지 않는다
+  - 즉, "부트 가능한 최소 하드웨어"에서 커널이 준비 상태까지 가는지를 본다
+
+이 프로파일은 "고장난 장치 시뮬레이션"이 아니라 "optional 장치가 없는 상태"를 검증하는 용도다.
+그래서 부팅 기준선과 optional 초기화 경로를 분리해 회귀를 찾기 좋다.
+
+현재 smoke 검증은 두 프로파일을 로그 패턴으로도 구분한다.
+
+- `full`
+  - `[NET] E1000 ready`
+  - `[USB] XHCI ready=1`
+- `minimal`
+  - `[NET] No Intel E1000-compatible controller found`
+  - `[USB] No USB host controller found`
 
 ## 확장 규칙
 

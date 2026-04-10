@@ -63,6 +63,12 @@ def parse_args() -> argparse.Namespace:
         default="test",
         help="Kernel target used by `all`.",
     )
+    all_cmd.add_argument(
+        "--smoke-profile",
+        choices=["full", "minimal"],
+        default="full",
+        help="QEMU optional-hardware profile used when the kernel lane boots a smoke VM.",
+    )
     all_cmd.add_argument("--timeout", type=int, default=DEFAULT_QEMU_TIMEOUT)
     all_cmd.add_argument("--strict", action="store_true")
 
@@ -71,6 +77,12 @@ def parse_args() -> argparse.Namespace:
         "--target",
         choices=["all", "iso", "test", "clean", "info"],
         default="test",
+    )
+    kernel_cmd.add_argument(
+        "--smoke-profile",
+        choices=["full", "minimal"],
+        default="full",
+        help="QEMU optional-hardware profile used when the kernel lane boots a smoke VM.",
     )
     kernel_cmd.add_argument("--timeout", type=int, default=DEFAULT_QEMU_TIMEOUT)
     kernel_cmd.add_argument("--strict", action="store_true")
@@ -82,9 +94,9 @@ def parse_args() -> argparse.Namespace:
 
 def lock_label(args: argparse.Namespace) -> str:
     if args.command == "kernel":
-        return f"kernel:{args.target}"
+        return f"kernel:{args.target}:{getattr(args, 'smoke_profile', 'full')}"
     if args.command == "all":
-        return f"all:{args.kernel_target}"
+        return f"all:{args.kernel_target}:{getattr(args, 'smoke_profile', 'full')}"
     return args.command
 
 
@@ -100,10 +112,10 @@ def main() -> int:
                 run_os_tool_suite()
                 return 0
             if args.command == "kernel":
-                run_kernel_suite(args.target, args.timeout, args.strict)
+                run_kernel_suite(args.target, args.timeout, args.strict, args.smoke_profile)
                 return 0
             if args.command == "all":
-                run_kernel_suite(args.kernel_target, args.timeout, args.strict)
+                run_kernel_suite(args.kernel_target, args.timeout, args.strict, args.smoke_profile)
                 run_os_tool_suite()
                 return 0
             raise ToolError(f"Unsupported command: {args.command}")
@@ -114,4 +126,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

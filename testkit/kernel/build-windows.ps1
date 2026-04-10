@@ -1,6 +1,8 @@
 param(
     [ValidateSet('all', 'test', 'run', 'run-headless', 'debug', 'clean', 'info', 'iso')]
     [string]$Target = 'all',
+    [ValidateSet('full', 'minimal')]
+    [string]$SmokeProfile = 'full',
     [switch]$SkipLock
 )
 
@@ -87,6 +89,64 @@ function Convert-ToMsysPath {
     return $full.Replace('\', '/')
 }
 
+function Get-QemuBootArguments {
+    param(
+        [string]$IsoPath,
+        [string]$SerialMode,
+        [string]$DisplayMode,
+        [string]$Memory = '256M',
+        [switch]$DebugWait
+    )
+
+    $args = @(
+        '-cdrom', $IsoPath,
+        '-boot', 'd',
+        '-m', $Memory
+    )
+
+    if ($script:SmokeProfile -eq 'minimal') {
+        $args += @('-nic', 'none')
+    } else {
+        $args += @('-nic', 'user,model=e1000', '-device', 'qemu-xhci')
+    }
+
+    $args += @(
+        '-serial', $SerialMode,
+        '-display', $DisplayMode,
+        '-no-reboot',
+        '-no-shutdown'
+    )
+
+    if ($DebugWait) {
+        $args += @('-s', '-S')
+    }
+
+    return $args
+}
+
+function Get-SmokeRequiredPatterns {
+    $patterns = @(
+        'AIOS Kernel Ready',
+        '\[SELFTEST\] Memory microbench PASS',
+        '\[DEV\] Peripheral probe ready',
+        '\[HEALTH\] stability='
+    )
+
+    if ($script:SmokeProfile -eq 'minimal') {
+        $patterns += @(
+            '\[NET\] No Intel E1000-compatible controller found',
+            '\[USB\] No USB host controller found'
+        )
+    } else {
+        $patterns += @(
+            '\[NET\] E1000 ready',
+            '\[USB\] XHCI ready=1'
+        )
+    }
+
+    return $patterns
+}
+
 function Enter-TestkitLock {
     Ensure-Directory $script:BuildDir
     try {
@@ -105,7 +165,7 @@ function Enter-TestkitLock {
     }
 
     $ownerPayload = @{
-        label        = "windows-kernel:$Target"
+        label        = "windows-kernel:${Target}:${SmokeProfile}"
         pid          = $PID
         host         = $env:COMPUTERNAME
         cwd          = $script:RepoRoot
@@ -293,6 +353,7 @@ Write-Host "[INFO] Repo root: $RepoRoot"
 Write-Host "[INFO] Toolchain root: $ToolchainRoot"
 Write-Host "[INFO] make: $Make"
 Write-Host "[INFO] nasm: $Nasm"
+Write-Host "[INFO] smoke profile: $SmokeProfile"
 if ($Qemu) {
     Write-Host "[INFO] qemu: $Qemu"
 }
@@ -328,17 +389,7 @@ try {
             $iso = New-WindowsBiosIso
             $serialLog = Join-Path $RepoRoot 'build\serial_output.log'
             Remove-Item $serialLog -Force -ErrorAction SilentlyContinue
-            $proc = Start-Process -FilePath $Qemu -ArgumentList @(
-                '-cdrom', $iso,
-                '-boot', 'd',
-                '-m', '256M',
-                '-nic', 'user,model=e1000',
-                '-device', 'qemu-xhci',
-                '-serial', "file:$serialLog",
-                '-display', 'none',
-                '-no-reboot',
-                '-no-shutdown'
-            ) -PassThru
+            $proc = Start-Process -FilePath $Qemu -ArgumentList (Get-QemuBootArguments -IsoPath $iso -SerialMode "file:$serialLog" -DisplayMode 'none' -Memory '256M') -PassThru
             if (-not $proc.WaitForExit(20000)) {
                 Stop-Process -Id $proc.Id -Force
             }
@@ -348,14 +399,17 @@ try {
             if ((Get-Item $serialLog).Length -eq 0) {
                 throw 'Smoke test produced an empty serial log'
             }
-            $hasReady = Select-String -Path $serialLog -Pattern 'AIOS Kernel Ready' -Quiet -ErrorAction SilentlyContinue
-            $hasSelftest = Select-String -Path $serialLog -Pattern '\[SELFTEST\] Memory microbench PASS' -Quiet -ErrorAction SilentlyContinue
-            $hasProbe = Select-String -Path $serialLog -Pattern '\[DEV\] Peripheral probe ready' -Quiet -ErrorAction SilentlyContinue
-            $hasHealth = Select-String -Path $serialLog -Pattern '\[HEALTH\] stability=' -Quiet -ErrorAction SilentlyContinue
-            if ($hasReady -and $hasSelftest -and $hasProbe -and $hasHealth) {
+            $missingPatterns = @()
+            foreach ($pattern in (Get-SmokeRequiredPatterns)) {
+                $matched = Select-String -Path $serialLog -Pattern $pattern -Quiet -ErrorAction SilentlyContinue
+                if (-not $matched) {
+                    $missingPatterns += $pattern
+                }
+            }
+            if ($missingPatterns.Count -eq 0) {
                 Write-Host '[OK] Smoke test PASSED - kernel booted successfully'
             } else {
-                Write-Host '[ERR] Smoke test did not reach expected ready/selftest/probe state'
+                Write-Host "[ERR] Smoke test did not reach expected state. Missing=$($missingPatterns -join ', ')"
                 Get-Content $serialLog -Tail 40 -ErrorAction SilentlyContinue
                 throw 'Smoke test failed'
             }
@@ -363,17 +417,17 @@ try {
         'run' {
             Invoke-MakeTarget 'all'
             $iso = New-WindowsBiosIso
-            & $Qemu -cdrom $iso -boot d -m 2G -nic user,model=e1000 -device qemu-xhci -serial stdio -display curses -no-reboot -no-shutdown
+            & $Qemu @(Get-QemuBootArguments -IsoPath $iso -SerialMode 'stdio' -DisplayMode 'curses' -Memory '2G')
         }
         'run-headless' {
             Invoke-MakeTarget 'all'
             $iso = New-WindowsBiosIso
-            & $Qemu -cdrom $iso -boot d -m 2G -nic user,model=e1000 -device qemu-xhci -serial stdio -display none -no-reboot -no-shutdown
+            & $Qemu @(Get-QemuBootArguments -IsoPath $iso -SerialMode 'stdio' -DisplayMode 'none' -Memory '2G')
         }
         'debug' {
             Invoke-MakeTarget 'all'
             $iso = New-WindowsBiosIso
-            & $Qemu -cdrom $iso -boot d -m 2G -nic user,model=e1000 -device qemu-xhci -serial stdio -display curses -no-reboot -no-shutdown -s -S
+            & $Qemu @(Get-QemuBootArguments -IsoPath $iso -SerialMode 'stdio' -DisplayMode 'curses' -Memory '2G' -DebugWait)
         }
         default {
             throw "Unsupported target: $Target"
