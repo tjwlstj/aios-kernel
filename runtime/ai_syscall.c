@@ -695,3 +695,5 @@ aios_status_t sys_info_health(kernel_health_summary_t *out) {
     kernel_health_get_summary(out);
     return AIOS_OK;
 }
+
+__asm__(".section .note.GNU-stack,\"\",@progbits\n\t.previous");

@@ -301,3 +301,5 @@ const char *kernel_boot_perf_tier_name(boot_perf_tier_t tier) {
         default:                  return "LOW";
     }
 }
+
+__asm__(".section .note.GNU-stack,\"\",@progbits\n\t.previous");

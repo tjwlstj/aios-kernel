@@ -36,7 +36,7 @@ static kernel_subsystem_health_t g_health[KERNEL_SUBSYSTEM_COUNT] = {
     [KERNEL_SUBSYSTEM_PCI_CORE] = {
         .id = KERNEL_SUBSYSTEM_PCI_CORE,
         .name = "PCI Core",
-        .required = true,
+        .required = false,
         .io_path = true,
     },
     [KERNEL_SUBSYSTEM_TENSOR_MM] = {
@@ -66,7 +66,7 @@ static kernel_subsystem_health_t g_health[KERNEL_SUBSYSTEM_COUNT] = {
     [KERNEL_SUBSYSTEM_PCI_PROBE] = {
         .id = KERNEL_SUBSYSTEM_PCI_PROBE,
         .name = "PCI Probe",
-        .required = true,
+        .required = false,
         .io_path = true,
     },
     [KERNEL_SUBSYSTEM_NETWORK] = {
@@ -266,3 +266,5 @@ void kernel_health_dump(void) {
         (uint64_t)summary.autonomy_allowed,
         (uint64_t)summary.risky_io_allowed);
 }
+
+__asm__(".section .note.GNU-stack,\"\",@progbits\n\t.previous");

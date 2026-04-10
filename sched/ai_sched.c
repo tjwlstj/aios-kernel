@@ -466,3 +466,5 @@ void ai_sched_dump(void) {
 
     kprintf("====================================\n");
 }
+
+__asm__(".section .note.GNU-stack,\"\",@progbits\n\t.previous");

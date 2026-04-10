@@ -111,3 +111,5 @@ uint64_t kernel_time_tsc_khz(void) {
 bool kernel_time_invariant_tsc(void) {
     return g_invariant_tsc;
 }
+
+__asm__(".section .note.GNU-stack,\"\",@progbits\n\t.previous");

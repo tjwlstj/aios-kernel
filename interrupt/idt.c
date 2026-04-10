@@ -219,3 +219,5 @@ NORETURN void kernel_panic(const char *msg) {
         __asm__ volatile ("hlt");
     }
 }
+
+__asm__(".section .note.GNU-stack,\"\",@progbits\n\t.previous");

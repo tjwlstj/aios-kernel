@@ -43,24 +43,13 @@ static void run_selftests(void);
 static void finalize_runtime_health(void);
 static void print_health_summary(void);
 static void enforce_stability_policy(void);
+static void print_boot_ready_banner(void);
+static void init_subsystem(kernel_subsystem_id_t id, const char *name, aios_status_t status);
 
 /* Subsystem init helper macro */
 #define INIT_SUBSYSTEM(id, name, init_fn) do {                          \
-    console_write_color("[INIT] ", VGA_YELLOW, VGA_BLUE);               \
-    kprintf("%s... ", name);                                            \
-    serial_printf("[INIT] %s... ", (uint64_t)(uintptr_t)name);         \
     aios_status_t _st = (init_fn);                                     \
-    kernel_health_mark(id,                                             \
-        (_st == AIOS_OK) ? KERNEL_HEALTH_OK : KERNEL_HEALTH_FAILED,    \
-        _st);                                                          \
-    if (_st == AIOS_OK) {                                              \
-        console_write_color("OK\n", VGA_LIGHT_GREEN, VGA_BLUE);        \
-        serial_write("OK\n");                                           \
-    } else {                                                            \
-        console_write_color("FAIL\n", VGA_LIGHT_RED, VGA_BLUE);        \
-        serial_write("FAIL\n");                                         \
-        kernel_panic("Critical subsystem initialization failed");       \
-    }                                                                   \
+    init_subsystem((id), (name), _st);                                 \
 } while (0)
 
 /*
@@ -90,13 +79,7 @@ void kernel_main(uint64_t multiboot_magic, uint64_t multiboot_info) {
     enforce_stability_policy();
     
     /* Kernel ready */
-    console_newline();
-    console_write_color("=== AIOS Kernel Ready ===\n", VGA_LIGHT_GREEN, VGA_BLUE);
-    console_write_color("AI-Native Operating System is operational.\n", VGA_WHITE, VGA_BLUE);
-    console_write_color("All subsystems initialized successfully.\n", VGA_LIGHT_CYAN, VGA_BLUE);
-    
-    serial_write("\n=== AIOS Kernel Ready ===\n");
-    serial_write("AI-Native Operating System is operational.\n");
+    print_boot_ready_banner();
 
     /* Enter kernel idle loop */
     kprintf("\n[KERNEL] Entering idle loop. System awaiting AI workloads...\n");
@@ -106,6 +89,35 @@ void kernel_main(uint64_t multiboot_magic, uint64_t multiboot_info) {
     while (1) {
         __asm__ volatile ("hlt");
     }
+}
+
+static void init_subsystem(kernel_subsystem_id_t id, const char *name, aios_status_t status) {
+    const kernel_subsystem_health_t *entry = kernel_health_get(id);
+    bool required = !entry || entry->required;
+
+    console_write_color("[INIT] ", VGA_YELLOW, VGA_BLUE);
+    kprintf("%s... ", name);
+    serial_printf("[INIT] %s... ", (uint64_t)(uintptr_t)name);
+
+    kernel_health_mark(id,
+        (status == AIOS_OK) ? KERNEL_HEALTH_OK
+                            : (required ? KERNEL_HEALTH_FAILED : KERNEL_HEALTH_DEGRADED),
+        status);
+
+    if (status == AIOS_OK) {
+        console_write_color("OK\n", VGA_LIGHT_GREEN, VGA_BLUE);
+        serial_write("OK\n");
+        return;
+    }
+
+    if (required) {
+        console_write_color("FAIL\n", VGA_LIGHT_RED, VGA_BLUE);
+        serial_printf("FAIL status=%d\n", (int64_t)status);
+        kernel_panic("Critical subsystem initialization failed");
+    }
+
+    console_write_color("DEGRADED\n", VGA_YELLOW, VGA_BLUE);
+    serial_printf("DEGRADED status=%d\n", (int64_t)status);
 }
 
 static void print_boot_protocol(uint64_t multiboot_magic, uint64_t multiboot_info) {
@@ -392,3 +404,48 @@ static void enforce_stability_policy(void) {
 
     serial_write("[HEALTH] Stability gate allows autonomy escalation\n");
 }
+
+static void print_boot_ready_banner(void) {
+    kernel_health_summary_t summary;
+    kernel_health_get_summary(&summary);
+
+    console_newline();
+    console_write_color("=== AIOS Kernel Ready ===\n", VGA_LIGHT_GREEN, VGA_BLUE);
+    console_write_color("AI-Native Operating System is operational.\n", VGA_WHITE, VGA_BLUE);
+
+    serial_write("\n=== AIOS Kernel Ready ===\n");
+    serial_write("AI-Native Operating System is operational.\n");
+
+    if (summary.level == KERNEL_STABILITY_STABLE) {
+        console_write_color("Core boot path and optional subsystems initialized.\n",
+            VGA_LIGHT_CYAN, VGA_BLUE);
+        serial_write("[BOOT] Core boot path and optional subsystems initialized\n");
+        return;
+    }
+
+    if (summary.level == KERNEL_STABILITY_DEGRADED) {
+        console_write_color("Core boot path initialized with degraded optional services.\n",
+            VGA_YELLOW, VGA_BLUE);
+        kprintf("[BOOT] degraded=%u failed=%u unknown=%u autonomy_safe=%u risky_io=%u\n",
+            (uint64_t)summary.degraded_count,
+            (uint64_t)summary.failed_count,
+            (uint64_t)summary.unknown_count,
+            (uint64_t)!summary.autonomy_allowed,
+            (uint64_t)summary.risky_io_allowed);
+        serial_printf("[BOOT] Core boot path ready with degraded services degraded=%u failed=%u unknown=%u autonomy_safe=%u risky_io=%u\n",
+            (uint64_t)summary.degraded_count,
+            (uint64_t)summary.failed_count,
+            (uint64_t)summary.unknown_count,
+            (uint64_t)!summary.autonomy_allowed,
+            (uint64_t)summary.risky_io_allowed);
+        return;
+    }
+
+    console_write_color("Core boot path reached ready banner in unsafe state.\n",
+        VGA_LIGHT_RED, VGA_BLUE);
+    serial_printf("[BOOT] WARNING ready banner reached with unsafe health failed=%u required_failures=%u\n",
+        (uint64_t)summary.failed_count,
+        (uint64_t)summary.required_failures);
+}
+
+__asm__(".section .note.GNU-stack,\"\",@progbits\n\t.previous");

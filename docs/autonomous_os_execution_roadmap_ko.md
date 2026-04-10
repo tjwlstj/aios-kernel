@@ -1,217 +1,238 @@
 # AI 에이전트 자율 OS 실행 로드맵
 
-## 1. 목표
+갱신일: 2026-04-11
 
-AIOS를 다음 단계로 끌어올리는 목표는 단순하다.
+## 1. 현재 고정 목표
 
-- AI 워크로드를 잘 실행하는 커널
-- 에이전트가 시스템 상태를 이해할 수 있는 커널
-- 정책을 안전하게 적용/롤백할 수 있는 커널
-- 장치, 메모리, 스케줄러를 자율적으로 운영할 수 있는 기반
+현 단계의 초기 설계 목표는 크게 하나다.
 
-즉, 최종 목표는 "AI 친화 커널"이 아니라
-"AI 에이전트가 운영 주체가 될 수 있는 OS substrate"를 만드는 것이다.
+- 부팅한 커널이 정상적으로 하드웨어를 탐지하고
+- health 기준으로 안정/강등 상태를 설명할 수 있으며
+- SLM 오케스트레이터가 최소 하드웨어 계획을 시드하고 실행 가능한 상태로 올라오는 것
 
----
+즉, 지금의 1차 목표는 `범용 OS 완성`이 아니라
+`hardware-aware bootstrap kernel + minimal SLM bring-up`이다.
 
-## 2. 현재 기준선
-
-현재 저장소에는 이미 다음 기반이 있다.
-
-- 안정 부팅과 QEMU 스모크 테스트
-- boot-time selftest / 성능 티어 추정
-- PCI probe와 기본 파이프라인 우선순위
-- 최소 e1000 부트스트랩
-- 텐서 메모리 관리자
-- AI 전용 스케줄러
-- 가속기 HAL 골격
-- autonomy control plane 골격
-- AI syscall 인터페이스
-
-즉, "측정", "탐지", "골격"은 있다.
-이제 필요한 것은 이 골격을 "검증 가능하고, 자율 제어 가능한 시스템"으로 연결하는 일이다.
+이 목표가 만족되면 다음 단계에서 user-space runtime, shell, loader, 실제 I/O 경로를 올릴 수 있다.
 
 ---
 
-## 3. 핵심 우선순위
+## 2. 현재 구현 상태
 
-### Priority 1. 공통 시간원과 KPI 통합
+### 구현된 것
+
+- Multiboot2 기반 커널 부팅
+- VGA + serial 로그 출력
+- QEMU 기반 부팅 smoke test
+- boot-time memory selftest와 성능 tier 추정
+- ACPI RSDP/XSDT/RSDT/MCFG 최소 파싱
+- PCI core / platform probe 기반 장치 inventory
+- e1000 최소 bootstrap + TX smoke
+- USB/xHCI capability probe 수준 bootstrap
+- storage host bootstrap 수준 장치 준비
+- health registry와 stability gate
+- optional subsystem 실패 시 degraded로 계속 부팅하는 정책
+- SLM hardware orchestrator 초기화
+- SLM 기본 plan seed
+  - `inventory-refresh`
+  - `core-audit`
+  - `io-audit`
+  - `ethernet-bootstrap`
+  - `ethernet-tx-smoke`
+  - `ethernet-rx-poll`
+  - `usb-bootstrap`
+  - `storage-bootstrap`
+
+### 부분 구현
+
+- AI syscall surface
+  - 인터페이스와 일부 dispatcher는 있음
+  - 실제 user-space 진입 경로는 아직 없음
+- infer ring ABI
+  - 등록/notify/status는 있음
+  - completion wait와 실제 데이터 평면 처리는 아직 stub
+- autonomy control plane
+  - bounded scheduler action/rollback 기초는 있음
+  - verifier 고도화와 multi-target actuator는 아직 제한적
+
+### 아직 없는 것
+
+- ring3 user-space handoff
+- TSS / syscall entry / process address space
+- static ELF loader / `aios-init`
+- shell / TTY / command execution loop
+- timer IRQ 기반 진짜 preemption
+- 실제 NIC RX / storage read-write / xHCI transfer ring
+
+---
+
+## 3. 현재 완료 기준
+
+지금 단계에서 "초기 목표 충족"은 다음을 의미한다.
+
+1. 커널이 QEMU에서 안정적으로 부팅한다.
+2. ACPI/PCI/driver bootstrap 로그가 serial에서 확인된다.
+3. health summary가 `stable` 또는 설명 가능한 `degraded`로 출력된다.
+4. SLM orchestrator가 올라오고 최소 plan을 seed한다.
+5. `AIOS Kernel Ready`까지 도달한다.
+
+현재 저장소는 이 기준을 QEMU Windows smoke 기준으로 이미 만족한다.
+
+---
+
+## 4. 다음 우선순위
+
+### Priority 1. 부팅 기준선 고정
 
 목표:
-- 모든 subsystem이 같은 시간 기준으로 움직이게 한다.
+- 지금 확보한 부팅/탐지/SLM bring-up 기준을 회귀 없이 유지한다.
 
 필수 작업:
-- monotonic time source 도입
-- scheduler tick/time 모델 통합
-- autonomy telemetry timestamp 정합성 확보
-- latency/throughput/fail-rate KPI를 공통 구조로 정의
+- degraded boot 시나리오를 smoke에 추가
+- optional 장치 부재 시 health와 boot banner가 일관되게 출력되는지 검증
+- serial log 기준 시그니처를 명문화
 
 완료 기준:
-- scheduler/autonomy/selftest가 같은 시간 단위를 사용
-- deadline/wait/latency 계산이 하드웨어 타이머 기준으로 설명 가능
+- NIC/USB/storage 일부가 빠져도 커널이 panic 없이 ready까지 감
+- health/stability/boot banner가 기대한 상태를 설명
 
----
-
-### Priority 2. autonomy verifier와 rollback 고도화
+### Priority 2. 장치 bootstrap을 실제 I/O로 확장
 
 목표:
-- 정책을 적용했다면 "좋아졌는지/나빠졌는지"를 커널이 판단하게 만든다.
+- 현재 "보임 + ready 로그" 수준의 장치를 최소 실사용 경로로 확장한다.
 
 필수 작업:
-- before/after score 계산
-- risk budget / cooldown / retry budget
-- rollback trigger를 KPI와 직접 연결
-- subsystem별 action schema 분리
+- e1000 일반 RX 경로
+- storage read 경로
+- xHCI transfer ring의 최소 bring-up
 
 완료 기준:
-- scheduler action commit 후 verifier 결과가 나온다
-- 성능 악화 시 자동 rollback이 가능하다
+- 네트워크 수신, 저장장치 읽기, USB 전송 중 하나 이상이 실제 데이터 경로로 동작
 
----
-
-### Priority 3. 장치 계층 분리와 최소 실사용 드라이버
+### Priority 3. SLM 실행 조건 강화
 
 목표:
-- discovery와 actual driver lifecycle을 분리한다.
+- SLM이 단순 seed 로그를 넘어서 hardware-aware decision loop의 기반이 되게 한다.
 
 필수 작업:
-- platform_probe는 discovery 전용으로 유지
-- e1000을 send/receive 가능한 최소 NIC driver로 확장
-- USB/xHCI 초기화 skeleton 추가
-- storage/log persistence용 최소 장치 경로 확보
+- plan status/verify/log 정리
+- hardware snapshot과 health summary 결합 강화
+- I/O plan apply 전 verifier 조건 명확화
 
 완료 기준:
-- 최소 1개 NIC에서 패킷 송신 확인
-- persistent log 또는 crash reason 저장 가능
+- SLM plan이 "제안만 하는 상태"가 아니라 상태 조회와 결과 판정까지 갖춤
 
----
-
-### Priority 4. 메모리 정책 계층 강화
+### Priority 4. user-space 경계 준비
 
 목표:
-- tensor memory manager를 자율 정책 대상 자원으로 승격한다.
+- 다음 단계의 `aios-init`와 shell을 올릴 수 있는 최소 커널 경계를 마련한다.
 
 필수 작업:
-- memory pressure signal
-- hot/cold tensor 분류
-- KV-cache residency/eviction 정책
-- pinned/DMA/reclaim 지표 추가
+- ring3 진입
+- TSS + kernel/user stack 경계
+- static ELF loader
+- serial 기반 TTY 초안
 
 완료 기준:
-- autonomy가 메모리 관련 action을 제안/검증/롤백 가능
+- 첫 user-space 프로그램 하나를 serial 경로로 실행 가능
 
 ---
 
-### Priority 5. 에이전트 런타임 경계 확립
+## 5. 단계별 계획
+
+### Phase A. Bootstrap Kernel Baseline
 
 목표:
-- planner/critic/learner를 커널 바깥 user space로 분리한다.
+- 부팅, 하드웨어 탐지, health, SLM seed까지를 안정적인 기준선으로 만든다.
 
-필수 작업:
-- telemetry ABI 정의
-- policy actuator syscall/API 정리
-- capability/allowlist 정리
-- guardian 역할 명확화
+현재 상태:
+- 대부분 구현됨
 
-완료 기준:
-- user-space agent runtime이 telemetry를 받고 policy를 제안할 수 있음
-- 커널은 안전한 executor 역할에 집중
+남은 작업:
+- degraded boot smoke
+- 회귀 시그니처 정리
 
----
-
-## 4. 단계별 실행 계획
-
-### Phase A. Measured Kernel
-
-기간:
-- 즉시 시작
+### Phase B. Device-Useful Kernel
 
 목표:
-- 커널이 자신의 상태를 정확히 측정하고 설명할 수 있어야 한다.
+- bootstrap driver를 실제 데이터 경로가 있는 최소 드라이버로 끌어올린다.
 
-작업:
-- 공통 monotonic time source
-- scheduler/autonomy KPI 구조 통합
-- boot profile을 runtime telemetry와 연결
+현재 상태:
+- e1000 TX smoke / USB caps / storage bootstrap까지 부분 구현
 
----
+남은 작업:
+- e1000 RX
+- storage read
+- xHCI transfer
 
-### Phase B. Safe Autonomous Kernel
-
-목표:
-- 정책 적용이 단순한 데모가 아니라 실제 운영 루프가 되도록 만든다.
-
-작업:
-- verifier
-- rollback policy
-- safe mode / degraded mode
-- subsystem action schema
-
----
-
-### Phase C. Device-Useful Kernel
+### Phase C. Safe SLM Kernel
 
 목표:
-- 실제 외부 세계와 상호작용 가능한 OS가 되도록 만든다.
+- SLM이 hardware-aware plan을 더 안전하게 제안/검증/적용하도록 만든다.
 
-작업:
-- e1000 최소 송수신
-- USB/xHCI skeleton
-- storage/persistent log
+현재 상태:
+- snapshot, seed, bounded plan surface는 있음
 
----
+남은 작업:
+- verify/apply 결과 정리
+- rollback 기준 보강
+- I/O 관련 verifier 확장
 
 ### Phase D. Agent Substrate
 
 목표:
-- user-space agent runtime이 올라와도 안정적으로 작동하는 기반을 만든다.
+- user-space runtime과 shell이 올라올 수 있는 기반을 만든다.
 
-작업:
-- telemetry ABI
-- policy daemon 경계
-- capability / audit / secret boundary
+현재 상태:
+- syscall/UAPI와 ring ABI만 있음
 
----
-
-## 5. 당장 실행할 Next 3
-
-1. 공통 time source 도입
-- scheduler/autonomy를 같은 monotonic time으로 맞춤
-
-2. autonomy verifier MVP
-- scheduler priority 조정에 대해 before/after score 계산
-
-3. e1000 최소 송신 경로
-- descriptor ring 없이도 우선 드라이버 상태와 link/MAC 신뢰도를 높이고, 이후 TX ring 초기화로 확장
+남은 작업:
+- ring3
+- ELF loader
+- `aios-init`
+- serial shell
 
 ---
 
-## 6. 하지 말아야 할 것
+## 6. 당장 실행할 Next 3
 
-- 커널 안에 LLM planner 자체를 넣기
-- telemetry 없이 정책부터 자동 적용하기
-- USB/Bluetooth/Storage/GPU를 동시에 깊게 파기
-- 보안 모델 없이 "자율"을 먼저 키우기
+1. degraded boot smoke를 추가한다.
+- optional device가 빠질 때도 ready까지 가는지 테스트한다.
+
+2. e1000 RX 또는 storage read 중 하나를 실제 데이터 경로로 만든다.
+- bootstrap driver를 실사용 driver로 넘기는 첫 단계다.
+
+3. serial 기반 user-space 진입 계획을 코드 기준으로 고정한다.
+- 첫 대상은 `aios-init`보다 더 작은 `serial shell bootstrap`이어도 된다.
 
 ---
 
-## 7. Definition of Done
+## 7. 하지 말아야 할 것
 
-이 프로젝트에서 어떤 기능이 "완료"로 간주되려면 최소한 다음이 필요하다.
+- user-space가 없는데 상위 AI 런타임 구조를 과장해서 구현 완료처럼 쓰기
+- 모든 장치를 동시에 실사용 수준으로 파고들기
+- verifier 없이 SLM action surface를 크게 넓히기
+- 부팅 기준선이 불안정한데 shell/OCI/WASI부터 올리기
+
+---
+
+## 8. Definition of Done
+
+현 단계 기능이 완료로 간주되려면 최소한 다음이 필요하다.
 
 - 부팅 테스트 통과
 - serial/QEMU 로그로 확인 가능
-- 회귀 시그니처 존재
-- telemetry에 반영됨
-- rollback 또는 failure handling 경로 존재
+- health/stability 상태가 일관되게 남음
+- SLM/driver 관련 결과가 snapshot 또는 log에 반영됨
+- failure handling 또는 degraded handling 경로 존재
 
 ---
 
-## 8. 결론
+## 9. 결론
 
-지금 AIOS에 필요한 것은 거대한 기능 목록이 아니라,
-"측정 -> 판단 -> 적용 -> 검증 -> 복구" 루프를 커널 수준에서 닫는 것이다.
+지금 AIOS의 첫 기준선은
+`정상 부팅 -> 하드웨어 탐지 -> health 판단 -> SLM 최소 실행`
+이다.
 
-이 로드맵은 그 순서를 강제하기 위한 문서다.
-즉, 다음 개발의 기준은 "무엇을 더 넣을까"가 아니라,
-"자율 운영 루프를 얼마나 더 닫았는가"가 되어야 한다.
+이 기준선을 흔들지 않는 선에서,
+다음 확장은 `실제 I/O 경로`와 `user-space handoff` 순으로 가는 것이 맞다.

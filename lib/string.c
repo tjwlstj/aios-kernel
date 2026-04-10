@@ -92,3 +92,5 @@ char *strncpy(char *dest, const char *src, size_t n) {
     }
     return dest;
 }
+
+__asm__(".section .note.GNU-stack,\"\",@progbits\n\t.previous");

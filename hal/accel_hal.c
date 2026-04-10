@@ -436,3 +436,5 @@ uint32_t accel_get_temperature(accel_id_t id) {
     if (id >= device_count) return 0;
     return devices[id].temperature;
 }
+
+__asm__(".section .note.GNU-stack,\"\",@progbits\n\t.previous");

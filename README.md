@@ -186,6 +186,7 @@ make debug          # GDB 디버깅 모드로 실행
 
 ## Planning Documents
 
+- [자율 OS 실행 로드맵 (2026-04-11)](docs/autonomous_os_execution_roadmap_ko.md)
 - [SLM 자율 운영/최적화 구조 계획](docs/slm_autonomous_kernel_plan.md)
 - [Driver Model / Stack Foundation (2026-04-10)](docs/driver_model_foundation_ko.md)
 - [Enum 무결성 + 저레벨 SLM 정렬 기록 (2026-04-10)](docs/enum_and_lowlevel_slm_alignment_ko.md)

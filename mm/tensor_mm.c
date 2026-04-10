@@ -599,3 +599,5 @@ void tensor_mm_dump(void) {
     kprintf("  Random:         %u MB\n", global_stats.random_memory / MB(1));
     kprintf("====================================\n");
 }
+
+__asm__(".section .note.GNU-stack,\"\",@progbits\n\t.previous");
