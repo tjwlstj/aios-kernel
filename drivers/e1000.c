@@ -23,6 +23,11 @@
 #define E1000_REG_RCTL       0x0100
 #define E1000_REG_TCTL       0x0400
 #define E1000_REG_TIPG       0x0410
+#define E1000_REG_RDBAL      0x2800
+#define E1000_REG_RDBAH      0x2804
+#define E1000_REG_RDLEN      0x2808
+#define E1000_REG_RDH        0x2810
+#define E1000_REG_RDT        0x2818
 #define E1000_REG_TDBAL      0x3800
 #define E1000_REG_TDBAH      0x3804
 #define E1000_REG_TDLEN      0x3808
@@ -38,6 +43,9 @@
 #define E1000_EERD_DONE      BIT(4)
 #define E1000_RCTL_EN        BIT(1)
 #define E1000_RCTL_BAM       BIT(15)
+#define E1000_RCTL_SECRC     BIT(26)
+#define E1000_RX_STATUS_DD   BIT(0)
+#define E1000_RX_STATUS_EOP  BIT(1)
 #define E1000_TCTL_EN        BIT(1)
 #define E1000_TCTL_PSP       BIT(3)
 #define E1000_TX_CMD_EOP     BIT(0)
@@ -45,9 +53,20 @@
 #define E1000_TX_CMD_RS      BIT(3)
 #define E1000_TX_STATUS_DD   BIT(0)
 
+#define E1000_RX_RING_SIZE   8
+#define E1000_RX_BUF_SIZE    2048
 #define E1000_TX_RING_SIZE   8
 #define E1000_TX_BUF_SIZE    2048
 #define E1000_TEST_FRAME_LEN 60
+
+typedef struct {
+    uint64_t addr;
+    uint16_t length;
+    uint16_t checksum;
+    uint8_t status;
+    uint8_t errors;
+    uint16_t special;
+} PACKED e1000_rx_desc_t;
 
 typedef struct {
     uint64_t addr;
@@ -64,6 +83,7 @@ typedef struct {
     bool ready;
     bool link_up;
     bool has_eeprom;
+    bool rx_ready;
     bool tx_ready;
     uint8_t bus;
     uint8_t slot;
@@ -74,12 +94,20 @@ typedef struct {
     uint64_t mmio_base;
     uint8_t mac[6];
     uint32_t status;
+    aios_status_t last_rx_status;
     aios_status_t last_tx_status;
+    uint16_t last_rx_length;
+    uint32_t rx_poll_count;
+    uint32_t rx_frame_count;
+    uint32_t rx_drop_count;
 } e1000_device_t;
 
 static e1000_device_t g_e1000 = {0};
+static e1000_rx_desc_t g_rx_ring[E1000_RX_RING_SIZE] ALIGNED(16);
+static uint8_t g_rx_buffers[E1000_RX_RING_SIZE][E1000_RX_BUF_SIZE] ALIGNED(16);
 static e1000_tx_desc_t g_tx_ring[E1000_TX_RING_SIZE] ALIGNED(16);
 static uint8_t g_tx_buffers[E1000_TX_RING_SIZE][E1000_TX_BUF_SIZE] ALIGNED(16);
+static uint32_t g_rx_tail = 0;
 static uint32_t g_tx_tail = 0;
 
 static inline void outl(uint16_t port, uint32_t val) {
@@ -243,6 +271,29 @@ static void e1000_build_test_src_mac(uint8_t mac[6]) {
     mac[5] = g_e1000.function;
 }
 
+static aios_status_t e1000_init_rx_ring(void) {
+    memset(g_rx_ring, 0, sizeof(g_rx_ring));
+    memset(g_rx_buffers, 0, sizeof(g_rx_buffers));
+
+    for (uint32_t i = 0; i < E1000_RX_RING_SIZE; i++) {
+        g_rx_ring[i].addr = (uint64_t)(uintptr_t)&g_rx_buffers[i][0];
+    }
+
+    e1000_write_reg(E1000_REG_RDBAL, (uint32_t)(uintptr_t)&g_rx_ring[0]);
+    e1000_write_reg(E1000_REG_RDBAH, 0);
+    e1000_write_reg(E1000_REG_RDLEN, sizeof(g_rx_ring));
+    e1000_write_reg(E1000_REG_RDH, 0);
+    e1000_write_reg(E1000_REG_RDT, E1000_RX_RING_SIZE - 1);
+    e1000_write_reg(E1000_REG_RCTL,
+        E1000_RCTL_EN |
+        E1000_RCTL_BAM |
+        E1000_RCTL_SECRC);
+
+    g_rx_tail = E1000_RX_RING_SIZE - 1;
+    g_e1000.rx_ready = true;
+    return AIOS_OK;
+}
+
 static aios_status_t e1000_init_tx_ring(void) {
     memset(g_tx_ring, 0, sizeof(g_tx_ring));
     memset(g_tx_buffers, 0, sizeof(g_tx_buffers));
@@ -257,7 +308,6 @@ static aios_status_t e1000_init_tx_ring(void) {
     e1000_write_reg(E1000_REG_TDLEN, sizeof(g_tx_ring));
     e1000_write_reg(E1000_REG_TDH, 0);
     e1000_write_reg(E1000_REG_TDT, 0);
-    e1000_write_reg(E1000_REG_RCTL, E1000_RCTL_EN | E1000_RCTL_BAM);
     e1000_write_reg(E1000_REG_TCTL,
         E1000_TCTL_EN |
         E1000_TCTL_PSP |
@@ -268,6 +318,63 @@ static aios_status_t e1000_init_tx_ring(void) {
     g_tx_tail = 0;
     g_e1000.tx_ready = true;
     return AIOS_OK;
+}
+
+static void e1000_rearm_rx_desc(uint32_t index) {
+    g_rx_ring[index].addr = (uint64_t)(uintptr_t)&g_rx_buffers[index][0];
+    g_rx_ring[index].length = 0;
+    g_rx_ring[index].checksum = 0;
+    g_rx_ring[index].status = 0;
+    g_rx_ring[index].errors = 0;
+    g_rx_ring[index].special = 0;
+    g_rx_tail = index;
+    e1000_write_reg(E1000_REG_RDT, index);
+}
+
+aios_status_t e1000_driver_rx_poll(uint16_t *out_length) {
+    uint32_t index;
+    e1000_rx_desc_t *desc;
+    aios_status_t status = AIOS_ERR_BUSY;
+
+    if (out_length) {
+        *out_length = 0;
+    }
+
+    if (!g_e1000.present || !g_e1000.ready || !g_e1000.rx_ready) {
+        g_e1000.last_rx_status = AIOS_ERR_INVAL;
+        g_e1000.last_rx_length = 0;
+        return AIOS_ERR_INVAL;
+    }
+
+    index = (g_rx_tail + 1) % E1000_RX_RING_SIZE;
+    desc = &g_rx_ring[index];
+    g_e1000.rx_poll_count++;
+
+    if ((desc->status & E1000_RX_STATUS_DD) == 0) {
+        g_e1000.last_rx_status = AIOS_ERR_BUSY;
+        g_e1000.last_rx_length = 0;
+        return AIOS_ERR_BUSY;
+    }
+
+    g_e1000.last_rx_length = desc->length;
+
+    if ((desc->status & E1000_RX_STATUS_EOP) == 0 ||
+        desc->errors != 0 ||
+        desc->length == 0 ||
+        desc->length > E1000_RX_BUF_SIZE) {
+        g_e1000.rx_drop_count++;
+        status = AIOS_ERR_IO;
+    } else {
+        g_e1000.rx_frame_count++;
+        status = AIOS_OK;
+        if (out_length) {
+            *out_length = desc->length;
+        }
+    }
+
+    e1000_rearm_rx_desc(index);
+    g_e1000.last_rx_status = status;
+    return status;
 }
 
 static aios_status_t e1000_send_frame(const uint8_t *frame, uint16_t length) {
@@ -370,8 +477,10 @@ aios_status_t e1000_driver_init(void) {
     e1000_wait_for_link();
     g_e1000.has_eeprom = e1000_detect_eeprom();
     e1000_read_mac();
+    e1000_init_rx_ring();
     e1000_init_tx_ring();
     g_e1000.ready = true;
+    g_e1000.last_rx_status = AIOS_ERR_BUSY;
     g_e1000.last_tx_status = AIOS_OK;
 
     e1000_refresh_status();
@@ -387,6 +496,12 @@ aios_status_t e1000_driver_init(void) {
         (uint64_t)g_e1000.status,
         (uint64_t)(uintptr_t)(g_e1000.link_up ? "up" : "down"),
         g_e1000.has_eeprom ? 1ULL : 0ULL);
+    serial_printf("[NET] E1000 RX ring ready=%u rdh=%u rdt=%u desc=%u buf=%u\n",
+        g_e1000.rx_ready ? 1ULL : 0ULL,
+        (uint64_t)e1000_read_reg(E1000_REG_RDH),
+        (uint64_t)e1000_read_reg(E1000_REG_RDT),
+        (uint64_t)E1000_RX_RING_SIZE,
+        (uint64_t)E1000_RX_BUF_SIZE);
     e1000_print_mac("[NET] E1000 MAC=");
     g_e1000.last_tx_status = e1000_driver_tx_smoke();
     if (g_e1000.last_tx_status == AIOS_OK) {
@@ -433,6 +548,7 @@ aios_status_t e1000_driver_info(e1000_driver_info_t *out) {
     out->ready = g_e1000.ready;
     out->link_up = g_e1000.link_up;
     out->has_eeprom = g_e1000.has_eeprom;
+    out->rx_ready = g_e1000.rx_ready;
     out->tx_ready = g_e1000.tx_ready;
     out->bus = g_e1000.bus;
     out->slot = g_e1000.slot;
@@ -442,7 +558,12 @@ aios_status_t e1000_driver_info(e1000_driver_info_t *out) {
     out->io_base = g_e1000.io_base;
     out->mmio_base = g_e1000.mmio_base;
     out->status = g_e1000.status;
+    out->last_rx_status = g_e1000.last_rx_status;
     out->last_tx_status = g_e1000.last_tx_status;
+    out->last_rx_length = g_e1000.last_rx_length;
+    out->rx_poll_count = g_e1000.rx_poll_count;
+    out->rx_frame_count = g_e1000.rx_frame_count;
+    out->rx_drop_count = g_e1000.rx_drop_count;
     for (uint32_t i = 0; i < 6; i++) {
         out->mac[i] = g_e1000.mac[i];
     }
@@ -456,6 +577,8 @@ void e1000_driver_dump(void) {
         return;
     }
 
+    e1000_refresh_status();
+
     serial_printf("[NET] E1000 dump vendor=%x device=%x io=%x status=%x link=%s\n",
         (uint64_t)g_e1000.vendor_id,
         (uint64_t)g_e1000.device_id,
@@ -465,7 +588,20 @@ void e1000_driver_dump(void) {
     serial_printf("[NET] E1000 tx_ready=%u tail=%u\n",
         g_e1000.tx_ready ? 1ULL : 0ULL,
         (uint64_t)g_tx_tail);
+    serial_printf("[NET] E1000 rx_ready=%u rdh=%u rdt=%u sw_tail=%u\n",
+        g_e1000.rx_ready ? 1ULL : 0ULL,
+        (uint64_t)e1000_read_reg(E1000_REG_RDH),
+        (uint64_t)e1000_read_reg(E1000_REG_RDT),
+        (uint64_t)g_rx_tail);
+    serial_printf("[NET] E1000 last_rx_status=%d len=%u polls=%u frames=%u drops=%u\n",
+        (int64_t)g_e1000.last_rx_status,
+        (uint64_t)g_e1000.last_rx_length,
+        (uint64_t)g_e1000.rx_poll_count,
+        (uint64_t)g_e1000.rx_frame_count,
+        (uint64_t)g_e1000.rx_drop_count);
     serial_printf("[NET] E1000 last_tx_status=%d\n",
         (int64_t)g_e1000.last_tx_status);
     e1000_print_mac("[NET] E1000 MAC=");
 }
+
+__asm__(".section .note.GNU-stack,\"\",@progbits\n\t.previous");

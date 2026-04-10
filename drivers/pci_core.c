@@ -347,3 +347,5 @@ void pci_core_dump(void) {
         g_pci_core.legacy_irq_functions);
     kprintf("================\n");
 }
+
+__asm__(".section .note.GNU-stack,\"\",@progbits\n\t.previous");

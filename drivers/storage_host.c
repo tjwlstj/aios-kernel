@@ -277,3 +277,5 @@ void storage_host_dump(void) {
     serial_printf("[STO] last_init_status=%d\n",
         (int64_t)g_storage_host.last_init_status);
 }
+
+__asm__(".section .note.GNU-stack,\"\",@progbits\n\t.previous");

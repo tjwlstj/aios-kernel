@@ -161,3 +161,5 @@ void serial_printf(const char *fmt, ...) {
 
     __builtin_va_end(args);
 }
+
+__asm__(".section .note.GNU-stack,\"\",@progbits\n\t.previous");

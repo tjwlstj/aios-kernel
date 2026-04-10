@@ -37,10 +37,11 @@ typedef enum {
     SLM_ACTION_STORAGE_DUMP = 8,
     SLM_ACTION_IO_AUDIT = 9,
     SLM_ACTION_CORE_AUDIT = 10,
-    SLM_ACTION_COUNT = 11
+    SLM_ACTION_E1000_RX_POLL = 11,
+    SLM_ACTION_COUNT = 12
 } slm_action_t;
 
-AIOS_STATIC_ASSERT(SLM_ACTION_COUNT == 11,
+AIOS_STATIC_ASSERT(SLM_ACTION_COUNT == 12,
     "Update SLM action lookup tables when enum changes");
 
 static inline bool slm_action_valid(uint32_t action) {
@@ -220,6 +221,12 @@ typedef struct {
     bool risky_io_allowed;
     bool e1000_ready;
     bool e1000_link_up;
+    bool e1000_rx_ready;
+    aios_status_t e1000_last_rx_status;
+    uint16_t e1000_last_rx_length;
+    uint32_t e1000_rx_poll_count;
+    uint32_t e1000_rx_frame_count;
+    uint32_t e1000_rx_drop_count;
     bool usb_ready;
     uint8_t usb_controller_kind;
     bool storage_ready;

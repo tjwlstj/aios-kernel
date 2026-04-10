@@ -5,6 +5,7 @@
 
 #include <runtime/slm_orchestrator.h>
 #include <drivers/pci_core.h>
+#include <drivers/driver_model.h>
 #include <kernel/health.h>
 #include <kernel/time.h>
 #include <kernel/acpi.h>
@@ -34,12 +35,6 @@ static void compute_agent_tree(agent_tree_node_t *nodes, uint32_t *count,
     const agent_main_ai_profile_t *main_ai,
     const agent_pipeline_profile_t *pipeline,
     const slm_io_profile_t *io_profile);
-
-static bool device_is_io_kind(platform_device_kind_t kind) {
-    return kind == PLATFORM_DEVICE_ETHERNET ||
-           kind == PLATFORM_DEVICE_USB ||
-           kind == PLATFORM_DEVICE_STORAGE;
-}
 
 static uint8_t clamp_u8(int32_t value) {
     if (value < 0) {
@@ -79,16 +74,6 @@ static uint32_t clamp_u32(int32_t value, uint32_t min_value, uint32_t max_value)
         return max_value;
     }
     return value;
-}
-
-static const platform_device_t *find_first_device(platform_device_kind_t kind) {
-    for (uint32_t i = 0; i < platform_probe_count(); i++) {
-        const platform_device_t *dev = platform_probe_get(i);
-        if (dev && dev->kind == kind) {
-            return dev;
-        }
-    }
-    return NULL;
 }
 
 static bool plan_target_present(const slm_plan_request_t *req) {
@@ -183,20 +168,23 @@ static void learning_refresh_boot_observation(void) {
     const platform_probe_summary_t *summary = platform_probe_summary();
     const kernel_health_summary_t *health_ptr = NULL;
     kernel_health_summary_t health;
+    driver_stack_snapshot_t driver_stack;
     slm_fabric_profile_t fabric;
-    const platform_device_t *ethernet = find_first_device(PLATFORM_DEVICE_ETHERNET);
-    const platform_device_t *usb = find_first_device(PLATFORM_DEVICE_USB);
-    const platform_device_t *storage = find_first_device(PLATFORM_DEVICE_STORAGE);
+    const driver_stack_entry_t *net = NULL;
+    const driver_stack_entry_t *usb = NULL;
+    const driver_stack_entry_t *storage = NULL;
     int32_t global_bias = 0;
     uint32_t ready = 0;
 
     kernel_health_get_summary(&health);
     health_ptr = &health;
     compute_fabric_profile(&fabric);
+    (void)driver_model_snapshot_read(&driver_stack);
+    net = driver_model_find_class(&driver_stack, DRIVER_CLASS_NET);
+    usb = driver_model_find_class(&driver_stack, DRIVER_CLASS_USB);
+    storage = driver_model_find_class(&driver_stack, DRIVER_CLASS_STORAGE);
 
-    ready += e1000_driver_ready() ? 1U : 0U;
-    ready += usb_host_ready() ? 1U : 0U;
-    ready += storage_host_ready() ? 1U : 0U;
+    ready = driver_stack.ready_count;
 
     g_learning.boot_epoch++;
     g_learning.observed_ready_controllers = ready;
@@ -233,21 +221,24 @@ static void learning_refresh_boot_observation(void) {
             ((summary->matched_devices > 0) ? 5 : -15)));
 
     learning_set_confidence(SLM_ACTION_BOOTSTRAP_E1000,
-        clamp_u8(ethernet ? (e1000_driver_ready() ? 55 : 72) : 10));
+        clamp_u8(net ? (driver_stage_ready(net->stage) ? 55 : 72) : 10));
     learning_set_confidence(SLM_ACTION_E1000_DUMP,
-        clamp_u8(ethernet ? (e1000_driver_ready() ? 88 : 30) : 5));
+        clamp_u8(net ? (driver_stage_ready(net->stage) ? 88 : 30) : 5));
     learning_set_confidence(SLM_ACTION_E1000_TX_SMOKE,
-        clamp_u8((ethernet && e1000_driver_ready()) ? 78 : 15));
+        clamp_u8((net && driver_stage_ready(net->stage)) ? 78 : 15));
+    learning_set_confidence(SLM_ACTION_E1000_RX_POLL,
+        clamp_u8((net && driver_stage_data_path_ready(net->stage) &&
+            net->data_path_ready) ? 74 : 12));
 
     learning_set_confidence(SLM_ACTION_BOOTSTRAP_USB,
-        clamp_u8(usb ? (usb_host_ready() ? 58 : 68) : 10));
+        clamp_u8(usb ? (driver_stage_ready(usb->stage) ? 58 : 68) : 10));
     learning_set_confidence(SLM_ACTION_USB_DUMP,
-        clamp_u8(usb ? (usb_host_ready() ? 84 : 25) : 5));
+        clamp_u8(usb ? (driver_stage_ready(usb->stage) ? 84 : 25) : 5));
 
     learning_set_confidence(SLM_ACTION_BOOTSTRAP_STORAGE,
-        clamp_u8(storage ? (storage_host_ready() ? 58 : 70) : 10));
+        clamp_u8(storage ? (driver_stage_ready(storage->stage) ? 58 : 70) : 10));
     learning_set_confidence(SLM_ACTION_STORAGE_DUMP,
-        clamp_u8(storage ? (storage_host_ready() ? 84 : 25) : 5));
+        clamp_u8(storage ? (driver_stage_ready(storage->stage) ? 84 : 25) : 5));
 }
 
 static void learning_record_submission(slm_action_t action, bool accepted) {
@@ -284,6 +275,7 @@ static void learning_record_result(slm_action_t action, aios_status_t status, ui
         g_learning.global_confidence = clamp_u8((int32_t)g_learning.global_confidence + 2);
         if (g_learning.io_aggressiveness_bias < 2 &&
             (action == SLM_ACTION_E1000_TX_SMOKE ||
+             action == SLM_ACTION_E1000_RX_POLL ||
              action == SLM_ACTION_BOOTSTRAP_E1000 ||
              action == SLM_ACTION_BOOTSTRAP_USB ||
              action == SLM_ACTION_BOOTSTRAP_STORAGE)) {
@@ -302,6 +294,7 @@ static void learning_record_result(slm_action_t action, aios_status_t status, ui
     g_learning.global_confidence = clamp_u8((int32_t)g_learning.global_confidence - 4);
     if (g_learning.io_aggressiveness_bias > -2 &&
         (action == SLM_ACTION_E1000_TX_SMOKE ||
+         action == SLM_ACTION_E1000_RX_POLL ||
          action == SLM_ACTION_BOOTSTRAP_E1000 ||
          action == SLM_ACTION_BOOTSTRAP_USB ||
          action == SLM_ACTION_BOOTSTRAP_STORAGE)) {
@@ -648,34 +641,22 @@ static void compute_io_profile(slm_io_profile_t *out) {
         return;
     }
 
-    const platform_probe_summary_t *summary = platform_probe_summary();
     const memory_selftest_result_t *profile = kernel_memory_selftest_last();
+    driver_stack_snapshot_t driver_stack;
     slm_fabric_profile_t fabric;
-    uint32_t total_io = summary->ethernet_count + summary->usb_count + summary->storage_count;
-    uint32_t ready = 0;
 
     compute_fabric_profile(&fabric);
+    (void)driver_model_snapshot_read(&driver_stack);
 
-    ready += e1000_driver_ready() ? 1U : 0U;
-    ready += usb_host_ready() ? 1U : 0U;
-    ready += storage_host_ready() ? 1U : 0U;
-
-    out->ready_controllers = (uint8_t)ready;
-    out->degraded_controllers = (uint8_t)((total_io > ready) ? (total_io - ready) : 0);
-    out->pcie_io_devices = 0;
-
-    for (uint32_t i = 0; i < platform_probe_count(); i++) {
-        const platform_device_t *dev = platform_probe_get(i);
-        if (!dev || !dev->pcie_capable || !device_is_io_kind(dev->kind)) {
-            continue;
-        }
-        out->pcie_io_devices++;
-    }
+    out->ready_controllers = (uint8_t)driver_stack.ready_count;
+    out->degraded_controllers = (uint8_t)driver_stack.degraded_count;
+    out->pcie_io_devices = (uint8_t)driver_stack.pcie_device_count;
 
     if (out->degraded_controllers > 0 ||
         profile->tier == BOOT_PERF_TIER_LOW ||
         !fabric.acpi_ready ||
-        (!fabric.ecam_available && fabric.pci_total_functions > 4)) {
+        (!fabric.ecam_available && fabric.pci_total_functions > 4) ||
+        driver_stack.merged_policy.observe_only) {
         out->mode = SLM_IO_MODE_CONSERVATIVE;
         out->recommended_queue_depth = 8;
         out->recommended_poll_budget = 256;
@@ -694,6 +675,16 @@ static void compute_io_profile(slm_io_profile_t *out) {
         out->recommended_queue_depth = 16;
         out->recommended_poll_budget = 512;
         out->recommended_dma_window_kib = 128;
+    }
+
+    if (driver_stack.merged_policy.queue_depth_hint != 0) {
+        out->recommended_queue_depth = driver_stack.merged_policy.queue_depth_hint;
+    }
+    if (driver_stack.merged_policy.poll_budget_hint != 0) {
+        out->recommended_poll_budget = driver_stack.merged_policy.poll_budget_hint;
+    }
+    if (driver_stack.merged_policy.dma_window_kib_hint != 0) {
+        out->recommended_dma_window_kib = driver_stack.merged_policy.dma_window_kib_hint;
     }
 
     if (g_learning.global_confidence != 0) {
@@ -750,6 +741,7 @@ static void apply_io_defaults(slm_plan_request_t *req, const slm_io_profile_t *p
 
 static bool request_valid(const slm_plan_request_t *req) {
     kernel_health_summary_t health;
+    e1000_driver_info_t nic;
     uint8_t confidence;
 
     if (!req) {
@@ -795,6 +787,12 @@ static bool request_valid(const slm_plan_request_t *req) {
         case SLM_ACTION_E1000_TX_SMOKE:
         case SLM_ACTION_E1000_DUMP:
             return req->template_id == SLM_TEMPLATE_PCI_ETHERNET;
+        case SLM_ACTION_E1000_RX_POLL:
+            (void)e1000_driver_info(&nic);
+            return req->template_id == SLM_TEMPLATE_PCI_ETHERNET &&
+                   nic.present &&
+                   nic.ready &&
+                   nic.rx_ready;
         case SLM_ACTION_BOOTSTRAP_USB:
         case SLM_ACTION_USB_DUMP:
             return req->template_id == SLM_TEMPLATE_PCI_USB;
@@ -923,6 +921,18 @@ static void seed_boot_plans(void) {
             };
             apply_io_defaults(&tx_smoke, &io_profile);
             seed_plan(&tx_smoke, "ethernet-tx-smoke");
+
+            slm_plan_request_t rx_poll = {
+                .template_id = SLM_TEMPLATE_PCI_ETHERNET,
+                .action = SLM_ACTION_E1000_RX_POLL,
+                .target_vendor_id = ethernet->vendor_id,
+                .target_device_id = ethernet->device_id,
+                .target_kind = ethernet->kind,
+                .risk_level = 0,
+                .allow_apply = false,
+            };
+            apply_io_defaults(&rx_poll, &io_profile);
+            seed_plan(&rx_poll, "ethernet-rx-poll");
         }
     }
 
@@ -1000,6 +1010,19 @@ static aios_status_t apply_request(const slm_plan_request_t *req) {
         case SLM_ACTION_E1000_DUMP:
             e1000_driver_dump();
             return AIOS_OK;
+        case SLM_ACTION_E1000_RX_POLL: {
+            uint16_t rx_length = 0;
+            aios_status_t status = e1000_driver_rx_poll(&rx_length);
+            if (status == AIOS_ERR_BUSY) {
+                serial_write("[SLM] E1000 RX poll: no completed frame\n");
+                return AIOS_OK;
+            }
+            if (status == AIOS_OK) {
+                serial_printf("[SLM] E1000 RX poll: frame_len=%u\n",
+                    (uint64_t)rx_length);
+            }
+            return status;
+        }
         case SLM_ACTION_BOOTSTRAP_USB:
             return usb_host_init();
         case SLM_ACTION_USB_DUMP:
@@ -1085,6 +1108,12 @@ aios_status_t slm_snapshot_read(slm_hw_snapshot_t *out) {
     out->risky_io_allowed = health.risky_io_allowed;
     out->e1000_ready = nic.ready;
     out->e1000_link_up = nic.link_up;
+    out->e1000_rx_ready = nic.rx_ready;
+    out->e1000_last_rx_status = nic.last_rx_status;
+    out->e1000_last_rx_length = nic.last_rx_length;
+    out->e1000_rx_poll_count = nic.rx_poll_count;
+    out->e1000_rx_frame_count = nic.rx_frame_count;
+    out->e1000_rx_drop_count = nic.rx_drop_count;
     out->usb_ready = usb.ready;
     out->usb_controller_kind = (uint8_t)usb.controller_kind;
     out->storage_ready = storage.ready;
@@ -1250,15 +1279,22 @@ void slm_orchestrator_dump(void) {
         snapshot.tsc_khz,
         (uint64_t)snapshot.tier,
         snapshot.memcpy_mib_per_sec);
-    kprintf("Devices: detected=%u listed=%u | e1000_ready=%u link=%u | usb_ready=%u type=%u | sto_ready=%u type=%u\n",
+    kprintf("Devices: detected=%u listed=%u | e1000_ready=%u link=%u rx_ready=%u | usb_ready=%u type=%u | sto_ready=%u type=%u\n",
         snapshot.total_detected_devices,
         snapshot.listed_devices,
         (uint64_t)snapshot.e1000_ready,
         (uint64_t)snapshot.e1000_link_up,
+        (uint64_t)snapshot.e1000_rx_ready,
         (uint64_t)snapshot.usb_ready,
         (uint64_t)snapshot.usb_controller_kind,
         (uint64_t)snapshot.storage_ready,
         (uint64_t)snapshot.storage_controller_kind);
+    kprintf("E1000 RX: last=%d len=%u polls=%u frames=%u drops=%u\n",
+        (int64_t)snapshot.e1000_last_rx_status,
+        (uint64_t)snapshot.e1000_last_rx_length,
+        (uint64_t)snapshot.e1000_rx_poll_count,
+        (uint64_t)snapshot.e1000_rx_frame_count,
+        (uint64_t)snapshot.e1000_rx_drop_count);
     kprintf("Health gate: level=%s autonomy=%u risky_io=%u\n",
         kernel_stability_name(snapshot.health_level),
         (uint64_t)snapshot.autonomy_allowed,
@@ -1302,6 +1338,7 @@ void slm_orchestrator_dump(void) {
         (uint64_t)snapshot.io_profile.recommended_queue_depth,
         (uint64_t)snapshot.io_profile.recommended_poll_budget,
         (uint64_t)snapshot.io_profile.recommended_dma_window_kib);
+    driver_model_dump();
     kprintf("Ring runtime: registered=%u active=%u notify=%u max_tail=%u last_ring=%u event=%u shared_kv=%u\n",
         (uint64_t)snapshot.ring_runtime.registered_rings,
         (uint64_t)snapshot.ring_runtime.active_rings,
@@ -1385,3 +1422,5 @@ void slm_orchestrator_dump(void) {
     }
     kprintf("=================================\n");
 }
+
+__asm__(".section .note.GNU-stack,\"\",@progbits\n\t.previous");

@@ -58,6 +58,7 @@ C_SOURCES   = $(KERNEL_DIR)/main.c \
               $(RUNTIME_DIR)/slm_orchestrator.c \
               $(DRIVERS_DIR)/vga.c \
               $(DRIVERS_DIR)/serial.c \
+              $(DRIVERS_DIR)/driver_model.c \
               $(DRIVERS_DIR)/pci_core.c \
               $(DRIVERS_DIR)/platform_probe.c \
               $(DRIVERS_DIR)/usb_host.c \
