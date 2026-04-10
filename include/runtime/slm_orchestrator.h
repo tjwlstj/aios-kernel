@@ -37,8 +37,15 @@ typedef enum {
     SLM_ACTION_STORAGE_DUMP = 8,
     SLM_ACTION_IO_AUDIT = 9,
     SLM_ACTION_CORE_AUDIT = 10,
-    SLM_ACTION_COUNT
+    SLM_ACTION_COUNT = 11
 } slm_action_t;
+
+AIOS_STATIC_ASSERT(SLM_ACTION_COUNT == 11,
+    "Update SLM action lookup tables when enum changes");
+
+static inline bool slm_action_valid(uint32_t action) {
+    return action < SLM_ACTION_COUNT;
+}
 
 typedef enum {
     SLM_PLAN_EMPTY = 0,

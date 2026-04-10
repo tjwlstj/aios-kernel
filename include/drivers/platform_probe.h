@@ -14,12 +14,20 @@
 
 typedef enum {
     PLATFORM_DEVICE_UNKNOWN = 0,
-    PLATFORM_DEVICE_ETHERNET,
-    PLATFORM_DEVICE_WIRELESS,
-    PLATFORM_DEVICE_BLUETOOTH,
-    PLATFORM_DEVICE_USB,
-    PLATFORM_DEVICE_STORAGE,
+    PLATFORM_DEVICE_ETHERNET = 1,
+    PLATFORM_DEVICE_WIRELESS = 2,
+    PLATFORM_DEVICE_BLUETOOTH = 3,
+    PLATFORM_DEVICE_USB = 4,
+    PLATFORM_DEVICE_STORAGE = 5,
+    PLATFORM_DEVICE_KIND_COUNT = 6,
 } platform_device_kind_t;
+
+AIOS_STATIC_ASSERT(PLATFORM_DEVICE_KIND_COUNT == 6,
+    "Update platform device classifiers when enum changes");
+
+static inline bool platform_device_kind_valid(uint32_t kind) {
+    return kind < PLATFORM_DEVICE_KIND_COUNT;
+}
 
 typedef struct {
     uint16_t vendor_id;

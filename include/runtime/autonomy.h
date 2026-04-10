@@ -26,11 +26,18 @@ typedef enum {
 } autonomy_target_t;
 
 typedef enum {
+    AUTONOMY_SUPPORT_NONE = 0,
+    AUTONOMY_SUPPORT_OBSERVE_ONLY = 1,
+    AUTONOMY_SUPPORT_APPLY = 2,
+} autonomy_target_support_t;
+
+typedef enum {
     ACTION_STATE_PROPOSED = 0,
     ACTION_STATE_APPROVED = 1,
     ACTION_STATE_COMMITTED = 2,
     ACTION_STATE_ROLLED_BACK = 3,
     ACTION_STATE_REJECTED = 4,
+    ACTION_STATE_COUNT = 5,
 } policy_action_state_t;
 
 typedef enum {
@@ -41,7 +48,25 @@ typedef enum {
     AUTONOMY_REASON_MODE_BLOCKED = 4,
     AUTONOMY_REASON_UNSUPPORTED_TARGET = 5,
     AUTONOMY_REASON_QUEUE_FULL = 6,
+    AUTONOMY_REASON_COUNT = 7,
 } autonomy_reason_t;
+
+AIOS_STATIC_ASSERT(ACTION_STATE_COUNT == 5,
+    "Update autonomy action state handlers when enum changes");
+AIOS_STATIC_ASSERT(AUTONOMY_REASON_COUNT == 7,
+    "Update autonomy reason handlers when enum changes");
+
+static inline bool autonomy_target_valid(uint32_t target_subsys) {
+    return target_subsys <= AUTONOMY_TARGET_INFER;
+}
+
+static inline bool policy_action_state_valid(uint32_t state) {
+    return state < ACTION_STATE_COUNT;
+}
+
+static inline bool autonomy_reason_valid(uint32_t reason) {
+    return reason < AUTONOMY_REASON_COUNT;
+}
 
 typedef struct {
     uint64_t ts_ns;
@@ -105,6 +130,9 @@ aios_status_t autonomy_action_rollback_last(void);
 aios_status_t autonomy_get_last_event(autonomy_event_t *out);
 void autonomy_set_observation_only(bool enabled);
 void autonomy_set_safe_mode(bool enabled);
+autonomy_target_support_t autonomy_target_support(uint32_t target_subsys);
+const char *autonomy_target_name(uint32_t target_subsys);
+const char *autonomy_target_support_name(autonomy_target_support_t support);
 void autonomy_stats(autonomy_stats_t *out);
 void autonomy_dump(void);
 

@@ -120,7 +120,7 @@ static bool plan_target_present(const slm_plan_request_t *req) {
 }
 
 static slm_learning_entry_t *learning_entry(slm_action_t action) {
-    if (action < 0 || action >= SLM_ACTION_COUNT) {
+    if (!slm_action_valid((uint32_t)action)) {
         return NULL;
     }
     return &g_learning.actions[action];

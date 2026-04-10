@@ -187,6 +187,7 @@ make debug          # GDB 디버깅 모드로 실행
 ## Planning Documents
 
 - [SLM 자율 운영/최적화 구조 계획](docs/slm_autonomous_kernel_plan.md)
+- [Enum 무결성 + 저레벨 SLM 정렬 기록 (2026-04-10)](docs/enum_and_lowlevel_slm_alignment_ko.md)
 - [점검 및 부족한 점 리포트 (2026-03-22)](docs/inspection_and_gaps_ko.md)
 - [현재 커널 부족점과 외부 기준 정리 (2026-03-29)](docs/current_kernel_gap_report_ko.md)
 - [AI 에이전트 OS용 모델 스택 추천 (2026-03-28)](docs/agent_model_stack_recommendations_ko.md)

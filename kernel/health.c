@@ -107,6 +107,9 @@ static kernel_subsystem_health_t g_health[KERNEL_SUBSYSTEM_COUNT] = {
     },
 };
 
+AIOS_STATIC_ASSERT(ARRAY_SIZE(g_health) == KERNEL_SUBSYSTEM_COUNT,
+    "Health registry table must stay aligned with kernel_subsystem_id_t");
+
 static uint64_t health_now_ns(void) {
     return kernel_time_monotonic_ns();
 }
@@ -122,7 +125,7 @@ aios_status_t kernel_health_init(void) {
 
 void kernel_health_mark(kernel_subsystem_id_t id, kernel_health_state_t state,
                         aios_status_t status) {
-    if (id >= KERNEL_SUBSYSTEM_COUNT) {
+    if (!kernel_subsystem_id_valid((uint32_t)id)) {
         return;
     }
 
@@ -132,7 +135,7 @@ void kernel_health_mark(kernel_subsystem_id_t id, kernel_health_state_t state,
 }
 
 const kernel_subsystem_health_t *kernel_health_get(kernel_subsystem_id_t id) {
-    if (id >= KERNEL_SUBSYSTEM_COUNT) {
+    if (!kernel_subsystem_id_valid((uint32_t)id)) {
         return NULL;
     }
     return &g_health[id];

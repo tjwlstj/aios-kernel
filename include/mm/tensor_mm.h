@@ -52,7 +52,15 @@ typedef enum {
     DTYPE_FP64      = 5,    /* 64-bit float (double) */
     DTYPE_INT32     = 6,    /* 32-bit integer */
     DTYPE_INT16     = 7,    /* 16-bit integer */
+    DTYPE_INVALID   = 255,
 } tensor_dtype_t;
+
+AIOS_STATIC_ASSERT(DTYPE_INT16 == 7,
+    "Keep tensor dtype ABI stable for persisted metadata");
+
+static inline bool tensor_dtype_valid(uint32_t dtype) {
+    return dtype <= DTYPE_INT16;
+}
 
 /* Tensor shape descriptor */
 typedef struct {

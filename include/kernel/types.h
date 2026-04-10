@@ -95,6 +95,14 @@ typedef enum {
 /* Array size */
 #define ARRAY_SIZE(arr)     (sizeof(arr) / sizeof((arr)[0]))
 
+/* Compile-time assertions */
+#if defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 201112L)
+#define AIOS_STATIC_ASSERT(cond, msg) _Static_assert(cond, msg)
+#else
+#define AIOS_STATIC_ASSERT(cond, msg) \
+    typedef char aios_static_assertion_##__LINE__[(cond) ? 1 : -1]
+#endif
+
 /* Memory size helpers */
 #define KB(x)               ((x) * 1024ULL)
 #define MB(x)               ((x) * 1024ULL * 1024ULL)

@@ -34,6 +34,13 @@ static struct {
 } rollback_ctx;
 
 static autonomy_stats_t stats;
+static const uint8_t k_target_support_map[256] = {
+    [AUTONOMY_TARGET_MEM] = AUTONOMY_SUPPORT_OBSERVE_ONLY,
+    [AUTONOMY_TARGET_SCHED] = AUTONOMY_SUPPORT_APPLY,
+    [AUTONOMY_TARGET_ACCEL] = AUTONOMY_SUPPORT_OBSERVE_ONLY,
+    [AUTONOMY_TARGET_INFER] = AUTONOMY_SUPPORT_OBSERVE_ONLY,
+};
+
 static uint64_t autonomy_now_ns(void) {
     return kernel_time_monotonic_ns();
 }
@@ -61,6 +68,32 @@ static uint64_t compute_eval_score(const telemetry_frame_t *frame) {
     return score;
 }
 
+autonomy_target_support_t autonomy_target_support(uint32_t target_subsys) {
+    if (!autonomy_target_valid(target_subsys)) {
+        return AUTONOMY_SUPPORT_NONE;
+    }
+    return (autonomy_target_support_t)k_target_support_map[target_subsys];
+}
+
+const char *autonomy_target_name(uint32_t target_subsys) {
+    switch (target_subsys) {
+        case AUTONOMY_TARGET_MEM:   return "mem";
+        case AUTONOMY_TARGET_SCHED: return "sched";
+        case AUTONOMY_TARGET_ACCEL: return "accel";
+        case AUTONOMY_TARGET_INFER: return "infer";
+        default:                    return "unknown";
+    }
+}
+
+const char *autonomy_target_support_name(autonomy_target_support_t support) {
+    switch (support) {
+        case AUTONOMY_SUPPORT_APPLY:        return "apply";
+        case AUTONOMY_SUPPORT_OBSERVE_ONLY: return "observe-only";
+        case AUTONOMY_SUPPORT_NONE:
+        default:                            return "none";
+    }
+}
+
 static void log_event(const policy_action_t *action) {
     if (!action) return;
 
@@ -79,8 +112,7 @@ static void log_event(const policy_action_t *action) {
 }
 
 static bool target_supported(uint32_t target_subsys) {
-    /* MVP actuator exists for scheduler target only. */
-    return target_subsys == AUTONOMY_TARGET_SCHED;
+    return autonomy_target_support(target_subsys) == AUTONOMY_SUPPORT_APPLY;
 }
 
 static bool risk_level_valid(uint32_t risk_level) {
@@ -224,6 +256,14 @@ aios_status_t autonomy_action_propose(const policy_action_t *action) {
         return AIOS_ERR_INVAL;
     }
 
+    if (!autonomy_target_valid(copy.target_subsys)) {
+        copy.state = ACTION_STATE_REJECTED;
+        copy.reason = AUTONOMY_REASON_BAD_TARGET;
+        stats.actions_rejected++;
+        log_event(&copy);
+        return AIOS_ERR_INVAL;
+    }
+
     if (!target_supported(copy.target_subsys)) {
         copy.state = ACTION_STATE_REJECTED;
         copy.reason = AUTONOMY_REASON_UNSUPPORTED_TARGET;
@@ -290,8 +330,15 @@ aios_status_t autonomy_action_commit_next(policy_eval_t *eval) {
 
     aios_status_t apply_status = apply_action(&action);
     if (apply_status != AIOS_OK) {
+        autonomy_target_support_t support = autonomy_target_support(action.target_subsys);
         action.state = ACTION_STATE_REJECTED;
-        action.reason = AUTONOMY_REASON_UNSUPPORTED_TARGET;
+        if (!autonomy_target_valid(action.target_subsys)) {
+            action.reason = AUTONOMY_REASON_BAD_TARGET;
+        } else if (support != AUTONOMY_SUPPORT_APPLY) {
+            action.reason = AUTONOMY_REASON_UNSUPPORTED_TARGET;
+        } else {
+            action.reason = AUTONOMY_REASON_MODE_BLOCKED;
+        }
         stats.actions_rejected++;
         log_event(&action);
         return apply_status;
@@ -382,7 +429,7 @@ void autonomy_stats(autonomy_stats_t *out) {
 }
 
 void autonomy_dump(void) {
-    autonomy_event_t last_event;
+    autonomy_event_t last_event = {0};
     bool has_event = (autonomy_get_last_event(&last_event) == AIOS_OK);
 
     kprintf("\n=== Autonomy Control Plane ===\n");
@@ -401,15 +448,20 @@ void autonomy_dump(void) {
             (uint64_t)event_count);
 
     if (has_last_committed) {
-        kprintf("Last committed action: id=%u target=%u risk=%u\n",
+        kprintf("Last committed action: id=%u target=%s(%u) support=%s risk=%u\n",
                 (uint64_t)last_committed.action_id,
+                (uint64_t)(uintptr_t)autonomy_target_name(last_committed.target_subsys),
                 (uint64_t)last_committed.target_subsys,
+                (uint64_t)(uintptr_t)autonomy_target_support_name(
+                    autonomy_target_support(last_committed.target_subsys)),
                 (uint64_t)last_committed.risk_level);
     }
 
     if (has_event) {
-        kprintf("Last event: action=%u state=%u reason=%u\n",
+        kprintf("Last event: action=%u target=%s(%u) state=%u reason=%u\n",
                 (uint64_t)last_event.action_id,
+                (uint64_t)(uintptr_t)autonomy_target_name(last_event.target_subsys),
+                (uint64_t)last_event.target_subsys,
                 (uint64_t)last_event.state,
                 (uint64_t)last_event.reason);
     }

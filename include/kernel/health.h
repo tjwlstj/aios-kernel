@@ -10,23 +10,26 @@
 
 typedef enum {
     KERNEL_SUBSYSTEM_IDT = 0,
-    KERNEL_SUBSYSTEM_TIME,
-    KERNEL_SUBSYSTEM_SELFTEST,
-    KERNEL_SUBSYSTEM_ACPI,
-    KERNEL_SUBSYSTEM_PCI_CORE,
-    KERNEL_SUBSYSTEM_TENSOR_MM,
-    KERNEL_SUBSYSTEM_MEMORY_FABRIC,
-    KERNEL_SUBSYSTEM_SCHED,
-    KERNEL_SUBSYSTEM_ACCEL,
-    KERNEL_SUBSYSTEM_PCI_PROBE,
-    KERNEL_SUBSYSTEM_NETWORK,
-    KERNEL_SUBSYSTEM_USB,
-    KERNEL_SUBSYSTEM_STORAGE,
-    KERNEL_SUBSYSTEM_SYSCALL,
-    KERNEL_SUBSYSTEM_AUTONOMY,
-    KERNEL_SUBSYSTEM_SLM,
-    KERNEL_SUBSYSTEM_COUNT
+    KERNEL_SUBSYSTEM_TIME = 1,
+    KERNEL_SUBSYSTEM_SELFTEST = 2,
+    KERNEL_SUBSYSTEM_ACPI = 3,
+    KERNEL_SUBSYSTEM_PCI_CORE = 4,
+    KERNEL_SUBSYSTEM_TENSOR_MM = 5,
+    KERNEL_SUBSYSTEM_MEMORY_FABRIC = 6,
+    KERNEL_SUBSYSTEM_SCHED = 7,
+    KERNEL_SUBSYSTEM_ACCEL = 8,
+    KERNEL_SUBSYSTEM_PCI_PROBE = 9,
+    KERNEL_SUBSYSTEM_NETWORK = 10,
+    KERNEL_SUBSYSTEM_USB = 11,
+    KERNEL_SUBSYSTEM_STORAGE = 12,
+    KERNEL_SUBSYSTEM_SYSCALL = 13,
+    KERNEL_SUBSYSTEM_AUTONOMY = 14,
+    KERNEL_SUBSYSTEM_SLM = 15,
+    KERNEL_SUBSYSTEM_COUNT = 16
 } kernel_subsystem_id_t;
+
+AIOS_STATIC_ASSERT(KERNEL_SUBSYSTEM_COUNT == 16,
+    "Update health registry when kernel subsystem enum changes");
 
 typedef enum {
     KERNEL_HEALTH_UNKNOWN = 0,
@@ -62,6 +65,10 @@ typedef struct {
     bool autonomy_allowed;
     bool risky_io_allowed;
 } kernel_health_summary_t;
+
+static inline bool kernel_subsystem_id_valid(uint32_t id) {
+    return id < KERNEL_SUBSYSTEM_COUNT;
+}
 
 aios_status_t kernel_health_init(void);
 void kernel_health_mark(kernel_subsystem_id_t id, kernel_health_state_t state,
