@@ -19,3 +19,7 @@ Thumbs.db
 
 # Local-only external tooling scratch space
 __NO_COMMIT__*/
+
+# Python caches
+__pycache__/
+*.pyc

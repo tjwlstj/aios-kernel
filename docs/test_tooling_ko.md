@@ -2,6 +2,8 @@
 
 작성일: 2026-03-29
 
+추가 갱신: 2026-04-10
+
 ## 현재 테스트 구조
 
 AIOS 저장소의 테스트 구조는 크게 두 갈래다.
@@ -22,26 +24,37 @@ AIOS 저장소의 테스트 구조는 크게 두 갈래다.
 - macOS 같은 비주류 개발 호스트에서 무엇이 가능하고 무엇이 skip인지 기준이 없다
 - CI에서 어떤 조합을 공통 기준으로 볼지 명확하지 않다
 
-## 새 구조
+## 현재 권장 구조
 
-새 올인원 도구:
+전용 디렉토리:
+
+- `testkit/`
+  - `aios-testkit.py`
+  - `lib/common.py`
+  - `lib/kernel_lane.py`
+  - `lib/os_lane.py`
+  - `kernel/build-windows.ps1`
+
+호환 래퍼:
 
 - `scripts/aios-allinone.py`
+- `scripts/build-windows.ps1`
 
 지원 명령:
 
-- `python scripts/aios-allinone.py info`
-- `python scripts/aios-allinone.py os`
-- `python scripts/aios-allinone.py kernel --target all`
-- `python scripts/aios-allinone.py kernel --target test --strict`
-- `python scripts/aios-allinone.py all --strict`
+- `python testkit/aios-testkit.py info`
+- `python testkit/aios-testkit.py os`
+- `python testkit/aios-testkit.py kernel --target all`
+- `python testkit/aios-testkit.py kernel --target test --strict`
+- `python testkit/aios-testkit.py all --strict`
+- `pwsh -File .\testkit\kernel\build-windows.ps1 -Target test`
 
 ## 동작 원리
 
 ### Kernel lane
 
 - Windows
-  - `build-windows.ps1`를 호출
+  - `testkit/kernel/build-windows.ps1`를 호출
 - Linux / macOS
   - `make all`, `make iso`를 호출
   - `test`는 Python이 직접 QEMU timeout/log 검증 수행
@@ -86,6 +99,18 @@ AIOS 저장소의 테스트 구조는 크게 두 갈래다.
 1. Linux에서 kernel + os 통합 smoke
 2. Windows에서 os tool smoke
 3. 필요 시 Windows local kernel smoke는 수동 또는 self-hosted
+
+## 병렬 실행 정책
+
+현재 `testkit`은 `build/.testkit-lock/` 디렉토리 락으로 동시 실행을 막는다.
+
+이유:
+
+- kernel build/test와 os smoke가 모두 `build/`를 공유
+- Windows에서는 같은 object/ISO를 동시에 만질 때 lock 충돌이 나기 쉬움
+- 지금 단계에서는 병렬 처리보다 산출물 무결성과 재현성이 더 중요함
+
+자세한 구조와 확장 규칙은 [docs/testkit_guide_ko.md](docs/testkit_guide_ko.md)를 참고한다.
 
 ## 이유
 

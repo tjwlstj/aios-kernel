@@ -48,7 +48,7 @@ Z:\aios\
 저장소 루트에서 실행합니다.
 
 ```powershell
-pwsh -File .\scripts\build-windows.ps1 -Target all
+pwsh -File .\testkit\kernel\build-windows.ps1 -Target all
 ```
 
 이 스크립트는 다음을 자동으로 처리합니다.
@@ -61,8 +61,11 @@ pwsh -File .\scripts\build-windows.ps1 -Target all
 ## 4. 스모크 테스트
 
 ```powershell
-pwsh -File .\scripts\build-windows.ps1 -Target test
+pwsh -File .\testkit\kernel\build-windows.ps1 -Target test
 ```
+
+기존 `scripts/build-windows.ps1`도 남아 있지만, 이제는 `testkit/kernel/build-windows.ps1`로
+위임하는 호환 래퍼다.
 
 이 프로젝트의 `test`는 Multiboot2 커널을 GRUB ISO로 부팅하는 방식입니다. 따라서 Windows에서 `test`, `run`, `debug`, `iso`를 실행하려면 다음 도구가 추가로 필요합니다.
 
