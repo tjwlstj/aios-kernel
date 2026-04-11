@@ -129,6 +129,7 @@ function Get-SmokeRequiredPatterns {
         'AIOS Kernel Ready',
         '\[SELFTEST\] Memory microbench PASS',
         '\[DEV\] Peripheral probe ready',
+        '\[USER\] Ring3 scaffold ready=1',
         '\[HEALTH\] stability='
     )
 

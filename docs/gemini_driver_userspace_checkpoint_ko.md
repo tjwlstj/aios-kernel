@@ -84,17 +84,23 @@
 즉, 네트워크/저장장치/USB 모두 "호스트 bring-up"은 시작됐지만, 아직 일반 data path나
 실제 장치 서비스 계층이라고 부를 단계는 아니다.
 
-### 3. userspace 전이는 아직 시작 전 단계다
+### 3. userspace 전이는 이제 scaffold 단계다
 
 `runtime/ai_syscall.c`에는 AI 전용 syscall 디스패처와 ring 상태 통계가 있고,
 `runtime/autonomy.c`, `runtime/slm_orchestrator.c`는 커널 내부 control plane과
 boot-time 계획 추천을 이미 제공한다.
 
+현재 부트 경로에는 다음 최소 scaffold가 들어갔다.
+
+- user code/data selector
+- boot-time TSS descriptor
+- `ltr`로 로드된 task register
+- boot summary에서 확인 가능한 `[USER] Ring3 scaffold ready=1` marker
+
 하지만 현재 저장소에는 아직 다음이 없다.
 
-- ring3 handoff
+- 실제 ring3 handoff
 - user-mode execution context
-- TSS 기반 stack switch
 - static ELF loader
 - `init` 프로세스를 띄우는 경로
 
@@ -132,7 +138,7 @@ Gemini는 현재 드라이버 축을 다음처럼 봤다.
 Gemini는 이 축의 핵심 blocker를 다음처럼 정리했다.
 
 - `kernel_main()`이 idle loop로 끝남
-- ring3 진입 뼈대가 없음
+- ring3 진입용 최소 뼈대는 생겼지만 실제 handoff는 아직 없음
 - 프로세스/주소공간/ELF loader 부재
 - `musl`이나 POSIX-lite를 얹을 최소 UAPI가 아직 없다
 

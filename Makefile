@@ -47,6 +47,7 @@ C_SOURCES   = $(KERNEL_DIR)/main.c \
               $(KERNEL_DIR)/health.c \
               $(KERNEL_DIR)/time.c \
               $(KERNEL_DIR)/selftest.c \
+              $(KERNEL_DIR)/user_mode.c \
               $(LIB_DIR)/string.c \
               $(INTERRUPT_DIR)/idt.c \
               $(MM_DIR)/tensor_mm.c \

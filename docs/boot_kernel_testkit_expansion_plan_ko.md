@@ -34,6 +34,7 @@
 - 부분 구현
   - 부팅 검증은 여전히 serial log의 문자열 패턴에 의존한다
   - boot summary는 단일 실행 export와 `full/minimal/storage-only` matrix까지 가능하다
+  - `boot_log.py`는 현재 `ring3 scaffold` marker도 checkpoint와 `user_mode` 요약으로 파싱한다
   - boot inventory baseline은 `full/minimal/storage-only` QEMU fixture 비교까지 가능하다
   - boot perf baseline은 로컬 `build/` 기준선과 `full/minimal/storage-only` threshold 비교까지 가능하다
   - `boot-matrix`는 아직 `debug-wait` 같은 추가 프로파일을 지원하지 않는다

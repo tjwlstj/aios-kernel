@@ -30,7 +30,7 @@ header_end:
 ; =============================================================================
 ; GDT (Global Descriptor Table) for 64-bit mode
 ; =============================================================================
-section .rodata
+section .data
 align 16
 gdt64:
     dq 0                                    ; Null descriptor
@@ -38,7 +38,15 @@ gdt64:
     dq (1<<43) | (1<<44) | (1<<47) | (1<<53) ; Code segment: 64-bit, present, executable
 .data: equ $ - gdt64
     dq (1<<44) | (1<<47) | (1<<41)          ; Data segment: present, writable
-.pointer:
+.user_data: equ $ - gdt64
+    dq (1<<44) | (1<<47) | (1<<41) | (3<<45) ; User data: present, writable, DPL=3
+.user_code: equ $ - gdt64
+    dq (1<<43) | (1<<44) | (1<<47) | (1<<53) | (3<<45) ; User code: 64-bit, present, executable, DPL=3
+.tss: equ $ - gdt64
+gdt64_tss_descriptor:
+    dq 0
+    dq 0
+gdt64_pointer:
     dw $ - gdt64 - 1                        ; GDT limit
     dq gdt64                                ; GDT base address
 
@@ -65,6 +73,12 @@ align 16
 stack_bottom:
     resb 16384 * 4  ; 64KB stack
 stack_top:
+
+; Boot-time TSS scaffold for later ring3 handoff work
+align 16
+global aios_boot_tss64
+aios_boot_tss64:
+    resb 104
 
 ; =============================================================================
 ; Boot Entry Point
@@ -143,7 +157,7 @@ _start:
     out debug_port, al
 
     ; Load 64-bit GDT
-    lgdt [gdt64.pointer]
+    lgdt [gdt64_pointer]
 
     ; Jump to 64-bit code
     jmp gdt64.code:long_mode_start
@@ -298,6 +312,9 @@ long_mode_start:
     mov al, 'S'
     out debug_port, al
 
+    ; Prepare user-mode selectors and a valid TSS before entering C.
+    call setup_ring3_scaffold
+
     ; Clear screen with AIOS branding color (blue background)
     mov rdi, 0xb8000
     mov rcx, 2000              ; 80*25 characters
@@ -332,6 +349,30 @@ long_mode_start:
 .halt:
     hlt
     jmp .halt
+
+; =============================================================================
+; Prepare ring3/user-mode scaffold (GDT user segments + TSS + TR load)
+; =============================================================================
+setup_ring3_scaffold:
+    lea rax, [rel stack_top]
+    mov [rel aios_boot_tss64 + 4], rax
+    mov word [rel aios_boot_tss64 + 102], 104
+
+    lea rax, [rel aios_boot_tss64]
+    mov word [rel gdt64_tss_descriptor + 0], 103
+    mov word [rel gdt64_tss_descriptor + 2], ax
+    shr rax, 16
+    mov byte [rel gdt64_tss_descriptor + 4], al
+    mov byte [rel gdt64_tss_descriptor + 5], 0x89
+    mov byte [rel gdt64_tss_descriptor + 6], 0x00
+    mov byte [rel gdt64_tss_descriptor + 7], ah
+    shr rax, 16
+    mov dword [rel gdt64_tss_descriptor + 8], eax
+    mov dword [rel gdt64_tss_descriptor + 12], 0
+
+    mov ax, gdt64.tss
+    ltr ax
+    ret
 
 ; =============================================================================
 ; Enable SSE (Streaming SIMD Extensions) - Critical for AI workloads

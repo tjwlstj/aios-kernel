@@ -48,7 +48,14 @@
 
 - `--export-boot-summary`
   - smoke 성공 후 `build/boot-summary/test-<profile>.json` 생성
-  - checkpoint, selftest, perf profile, device summary, health, controller state, SLM seed 결과를 저장
+  - checkpoint, selftest, perf profile, device summary, health, user-mode scaffold,
+    controller state, SLM seed 결과를 저장
+
+공통 smoke marker:
+
+- `[DEV] Peripheral probe ready`
+- `[USER] Ring3 scaffold ready=1`
+- `[HEALTH] stability=...`
 
 부팅 매트릭스:
 

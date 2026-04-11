@@ -15,6 +15,8 @@ AIOS는 부팅 가능한 AI 전용 커널로 빠르게 진전했지만, 메인 A
 2026-04-12 기준으로 실제 코드에서 확인되는 현실은 다음과 같다.
 
 - `kernel/main.c`는 모든 초기화 후 `hlt` idle loop로 들어간다
+- boot path에는 user code/data selector와 TSS를 준비하는 최소 scaffold가 들어갔고,
+  boot log에는 `[USER] Ring3 scaffold ready=1` marker가 남는다
 - `runtime/ai_syscall.c`는 syscall surface와 ring 상태 통계를 제공하지만,
   아직 ring3 caller가 실제로 진입하는 경로는 없다
 - `runtime/autonomy.c`와 `runtime/slm_orchestrator.c`는 커널 내부 control plane으로는 의미가 있지만,

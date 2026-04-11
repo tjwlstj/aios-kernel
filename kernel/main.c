@@ -11,6 +11,7 @@
 #include <kernel/health.h>
 #include <kernel/selftest.h>
 #include <kernel/time.h>
+#include <kernel/user_mode.h>
 #include <lib/string.h>
 #include <drivers/e1000.h>
 #include <drivers/pci_core.h>
@@ -75,6 +76,7 @@ void kernel_main(uint64_t multiboot_magic, uint64_t multiboot_info) {
     
     /* Initialize all kernel subsystems */
     init_subsystems(multiboot_magic, multiboot_info);
+    user_mode_scaffold_init();
     print_health_summary();
     enforce_stability_policy();
     

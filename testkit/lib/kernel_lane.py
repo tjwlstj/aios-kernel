@@ -62,6 +62,7 @@ def required_smoke_patterns(smoke_profile: str) -> list[str]:
         "AIOS Kernel Ready",
         "[SELFTEST] Memory microbench PASS",
         "[DEV] Peripheral probe ready",
+        "[USER] Ring3 scaffold ready=1",
         "[HEALTH] stability=",
     ]
     if smoke_profile == "storage-only":

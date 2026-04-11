@@ -27,6 +27,7 @@ CHECKPOINT_PATTERNS = {
     "syscall": "[INIT] AI System Call Interface... OK",
     "autonomy": "[INIT] Autonomy Control Plane... OK",
     "slm_orchestrator": "[INIT] SLM Hardware Orchestrator... OK",
+    "ring3_scaffold": "[USER] Ring3 scaffold ready=1",
     "health": "[HEALTH] stability=",
     "ready": "AIOS Kernel Ready",
 }
@@ -65,6 +66,9 @@ SLM_MAIN_RE = re.compile(
     r"\[SLM\] MainAI mode=(?P<mode>\w+) sco=(?P<sco>-?\d+) workers=(?P<workers>\d+) pipeline_qd=(?P<pipeline_qd>\d+) depth=(?P<depth>\d+) ring=(?P<ring_used>\d+)/(?P<ring_total>\d+)"
 )
 SLM_SEEDED_RE = re.compile(r"\[SLM\] Seeded plan (?P<plan_id>\d+) label=(?P<label>[a-z0-9\-]+)")
+USER_SCAFFOLD_RE = re.compile(
+    r"\[USER\] Ring3 scaffold ready=(?P<ready>\d+) tr=(?P<tr>\S+) user_cs=(?P<user_cs>\S+) user_ds=(?P<user_ds>\S+) rsp0=(?P<rsp0>\S+) gdt_base=(?P<gdt_base>\S+) gdt_limit=(?P<gdt_limit>\d+)"
+)
 
 
 def _sanitize_lines(log_text: str) -> list[str]:
@@ -288,6 +292,23 @@ def parse_boot_log_text(log_text: str, smoke_profile: str, serial_log_path: str 
     slm["seeded_plan_count"] = len(seeded_labels)
     slm["seeded_labels"] = seeded_labels
 
+    user_mode: dict[str, object] = {"ready": checkpoints["ring3_scaffold"]["seen"]}
+    index, line, match = _search_match(lines, USER_SCAFFOLD_RE)
+    if match:
+        user_mode.update(
+            {
+                "line": index,
+                "text": line,
+                "ready": int(match.group("ready")),
+                "tr": match.group("tr"),
+                "user_cs": match.group("user_cs"),
+                "user_ds": match.group("user_ds"),
+                "rsp0": match.group("rsp0"),
+                "gdt_base": match.group("gdt_base"),
+                "gdt_limit": int(match.group("gdt_limit")),
+            }
+        )
+
     summary = {
         "smoke_profile": smoke_profile,
         "serial_log": serial_log_path,
@@ -299,6 +320,7 @@ def parse_boot_log_text(log_text: str, smoke_profile: str, serial_log_path: str 
         "health": health,
         "controllers": _parse_controller_states(lines),
         "slm": slm,
+        "user_mode": user_mode,
     }
     return summary
 

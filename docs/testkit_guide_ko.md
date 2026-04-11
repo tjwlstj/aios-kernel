@@ -143,6 +143,10 @@ optional 하드웨어 구성을 나눌 수 있다.
 
 현재 smoke 검증은 두 프로파일을 로그 패턴으로도 구분한다.
 
+- `공통`
+  - `[DEV] Peripheral probe ready`
+  - `[USER] Ring3 scaffold ready=1`
+  - `[HEALTH] stability=...`
 - `full`
   - `[NET] E1000 ready`
   - `[USB] XHCI ready=1`
@@ -174,6 +178,7 @@ optional 하드웨어 구성을 나눌 수 있다.
 - profile 요약과 cache/latency 정보
 - device summary
 - health summary
+- `user_mode` scaffold 상태
 - network / usb / storage controller 상태
 - SLM MainAI 설정과 seeded plan 목록
 
