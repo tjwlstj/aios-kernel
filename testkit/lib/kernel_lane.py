@@ -20,7 +20,7 @@ from lib.common import (
 
 
 DEFAULT_SMOKE_PROFILE = "full"
-SUPPORTED_SMOKE_PROFILES = {"full", "minimal"}
+SUPPORTED_SMOKE_PROFILES = {"full", "minimal", "storage-only"}
 
 
 def ensure_smoke_profile(smoke_profile: str) -> str:
@@ -41,7 +41,7 @@ def build_qemu_smoke_command(qemu: str, iso: str, serial_target: str, smoke_prof
         "-m",
         "256M",
     ]
-    if smoke_profile == "minimal":
+    if smoke_profile in {"minimal", "storage-only"}:
         cmd += ["-nic", "none"]
     else:
         cmd += ["-nic", "user,model=e1000", "-device", "qemu-xhci"]
@@ -64,7 +64,15 @@ def required_smoke_patterns(smoke_profile: str) -> list[str]:
         "[DEV] Peripheral probe ready",
         "[HEALTH] stability=",
     ]
-    if smoke_profile == "minimal":
+    if smoke_profile == "storage-only":
+        required += [
+            "[NET] No Intel E1000-compatible controller found",
+            "[USB] No USB host controller found",
+            "[STO] IDE ready=1",
+            "[STO] IDE channels",
+            "label=storage-bootstrap",
+        ]
+    elif smoke_profile == "minimal":
         required += [
             "[NET] No Intel E1000-compatible controller found",
             "[USB] No USB host controller found",

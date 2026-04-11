@@ -1,0 +1,27 @@
+{
+  "profile": "storage-only",
+  "ready": true,
+  "stability": "stable",
+  "device_summary": {
+    "pci": 5,
+    "matched": 1,
+    "eth": 0,
+    "wifi": 0,
+    "bt": 0,
+    "usb": 0,
+    "storage": 1
+  },
+  "health_summary": {
+    "ok": 14,
+    "degraded": 0,
+    "failed": 0,
+    "unknown": 2,
+    "io_degraded": 0
+  },
+  "controller_states": {
+    "network": "absent",
+    "usb": "absent",
+    "storage": "ready"
+  },
+  "slm_seeded_plan_count": 4
+}

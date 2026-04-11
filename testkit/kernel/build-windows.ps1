@@ -1,7 +1,7 @@
 param(
     [ValidateSet('all', 'test', 'run', 'run-headless', 'debug', 'clean', 'info', 'iso')]
     [string]$Target = 'all',
-    [ValidateSet('full', 'minimal')]
+    [ValidateSet('full', 'minimal', 'storage-only')]
     [string]$SmokeProfile = 'full',
     [switch]$SkipLock
 )
@@ -104,7 +104,7 @@ function Get-QemuBootArguments {
         '-m', $Memory
     )
 
-    if ($script:SmokeProfile -eq 'minimal') {
+    if ($script:SmokeProfile -in @('minimal', 'storage-only')) {
         $args += @('-nic', 'none')
     } else {
         $args += @('-nic', 'user,model=e1000', '-device', 'qemu-xhci')
@@ -132,7 +132,15 @@ function Get-SmokeRequiredPatterns {
         '\[HEALTH\] stability='
     )
 
-    if ($script:SmokeProfile -eq 'minimal') {
+    if ($script:SmokeProfile -eq 'storage-only') {
+        $patterns += @(
+            '\[NET\] No Intel E1000-compatible controller found',
+            '\[USB\] No USB host controller found',
+            '\[STO\] IDE ready=1',
+            '\[STO\] IDE channels',
+            'label=storage-bootstrap'
+        )
+    } elseif ($script:SmokeProfile -eq 'minimal') {
         $patterns += @(
             '\[NET\] No Intel E1000-compatible controller found',
             '\[USB\] No USB host controller found'

@@ -12,11 +12,11 @@
     - `--export-boot-summary`
   - `testkit/lib/kernel_lane.py`
     - 커널 `all` / `iso` / `test` / `clean` / `info`
-    - QEMU smoke profile `full`, `minimal`
+    - QEMU smoke profile `full`, `minimal`, `storage-only`
     - serial log 기반 ready/selftest/probe/health 확인
     - smoke 성공 시 `build/boot-summary/test-<profile>.json` export 가능
   - `testkit/lib/boot_matrix_lane.py`
-    - `full`, `minimal` 프로파일을 순차 실행
+    - `full`, `minimal`, `storage-only` 프로파일을 순차 실행
     - `build/boot-matrix/<profile>.json`, `build/boot-matrix/summary.json` 생성
   - `testkit/lib/boot_inventory.py`
     - compact inventory를 `testkit/fixtures/boot-baseline/<profile>.json`과 비교
@@ -33,10 +33,10 @@
 
 - 부분 구현
   - 부팅 검증은 여전히 serial log의 문자열 패턴에 의존한다
-  - boot summary는 단일 실행 export와 `full/minimal` matrix까지 가능하다
-  - boot inventory baseline은 `full/minimal` QEMU fixture 비교까지 가능하다
-  - boot perf baseline은 로컬 `build/` 기준선과 `full/minimal` threshold 비교까지 가능하다
-  - `boot-matrix`는 아직 `storage-only`, `debug-wait` 같은 추가 프로파일을 지원하지 않는다
+  - boot summary는 단일 실행 export와 `full/minimal/storage-only` matrix까지 가능하다
+  - boot inventory baseline은 `full/minimal/storage-only` QEMU fixture 비교까지 가능하다
+  - boot perf baseline은 로컬 `build/` 기준선과 `full/minimal/storage-only` threshold 비교까지 가능하다
+  - `boot-matrix`는 아직 `debug-wait` 같은 추가 프로파일을 지원하지 않는다
   - `full` / `minimal` 프로파일은 있으나, 세부 실패 상황을 분리해 재현하지는 못한다
 
 - 아직 없음
@@ -101,8 +101,8 @@
 
 상태:
 - 부분 구현
-  - 현재 `full`, `minimal`만 지원
-  - `storage-only`, `debug-wait`는 아직 계획
+  - 현재 `full`, `minimal`, `storage-only` 지원
+  - `debug-wait`는 아직 계획
 
 ### 2. `boot-checkpoint` parser
 
@@ -156,7 +156,7 @@
 
 상태:
 - 부분 구현
-  - 현재 `full`, `minimal` fixture 비교 가능
+  - 현재 `full`, `minimal`, `storage-only` fixture 비교 가능
   - `strict`와 `--write-baseline` 지원
   - advisory 전용 리포트 모드는 아직 별도 분리하지 않았다
 
@@ -186,7 +186,7 @@
 
 상태:
 - 부분 구현
-  - 현재 `full`, `minimal` 프로파일만 지원
+  - 현재 `full`, `minimal`, `storage-only` 프로파일 지원
   - baseline은 로컬 `build/boot-perf/baseline/`에 저장
   - 공용 fixture 비교는 아직 하지 않는다
 
@@ -228,7 +228,7 @@
    - smoke 성공 시 `build/boot-summary/test-<profile>.json` 생성
 
 3. 완료: `boot-matrix` 엔트리 추가
-   - 현재 `full` + `minimal` 두 프로파일만 순차 실행
+   - 현재 `full` + `minimal` + `storage-only` 프로파일 순차 실행 가능
 
 지금 testkit은 단순 smoke를 넘어서 "단일 부팅 기록 + 기본 matrix"까지는 올라왔다.
 다음부터는 이 기록을 baseline 비교와 threshold 비교로 연결하면 된다.
@@ -241,6 +241,7 @@
 python .\testkit\aios-testkit.py boot-matrix --profiles full minimal
 python .\testkit\aios-testkit.py kernel --target test --strict --smoke-profile full --export-boot-summary
 python .\testkit\aios-testkit.py kernel --target test --strict --smoke-profile minimal --export-boot-summary
+python .\testkit\aios-testkit.py kernel --target test --strict --smoke-profile storage-only --export-boot-summary
 ```
 
 ## 검증 경로
@@ -266,9 +267,9 @@ python .\testkit\aios-testkit.py kernel --target test --strict --smoke-profile m
 
 ## 우선순위
 
-1. `storage-only` 같은 추가 inventory-aware profile
-2. `boot-fault` lane
-3. perf 정책 세분화
+1. `boot-fault` lane
+2. perf 정책 세분화
+3. `debug-wait` 같은 추가 profile
 
 ## 정리
 
@@ -278,6 +279,6 @@ python .\testkit\aios-testkit.py kernel --target test --strict --smoke-profile m
 
 그래서 추천 순서는 다음과 같다.
 
-1. `storage-only` 같은 추가 matrix profile 확장
-2. perf 정책 세분화
+1. perf 정책 세분화
+2. `debug-wait` 같은 추가 profile
 3. 그 다음에만 fault injection으로 넘어가기

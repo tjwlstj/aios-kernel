@@ -68,7 +68,7 @@ def parse_args() -> argparse.Namespace:
     )
     all_cmd.add_argument(
         "--smoke-profile",
-        choices=["full", "minimal"],
+        choices=["full", "minimal", "storage-only"],
         default="full",
         help="QEMU optional-hardware profile used when the kernel lane boots a smoke VM.",
     )
@@ -88,7 +88,7 @@ def parse_args() -> argparse.Namespace:
     )
     kernel_cmd.add_argument(
         "--smoke-profile",
-        choices=["full", "minimal"],
+        choices=["full", "minimal", "storage-only"],
         default="full",
         help="QEMU optional-hardware profile used when the kernel lane boots a smoke VM.",
     )
@@ -107,7 +107,7 @@ def parse_args() -> argparse.Namespace:
     matrix_cmd.add_argument(
         "--profiles",
         nargs="+",
-        choices=["full", "minimal"],
+        choices=["full", "minimal", "storage-only"],
         default=["full", "minimal"],
         help="Ordered smoke profiles to execute in the boot matrix.",
     )
@@ -121,7 +121,7 @@ def parse_args() -> argparse.Namespace:
     inventory_cmd.add_argument(
         "--profiles",
         nargs="+",
-        choices=["full", "minimal"],
+        choices=["full", "minimal", "storage-only"],
         default=["full", "minimal"],
         help="Ordered smoke profiles to verify against inventory baselines.",
     )
@@ -140,7 +140,7 @@ def parse_args() -> argparse.Namespace:
     perf_cmd.add_argument(
         "--profiles",
         nargs="+",
-        choices=["full", "minimal"],
+        choices=["full", "minimal", "storage-only"],
         default=["full", "minimal"],
         help="Ordered smoke profiles to verify against local boot-perf baselines.",
     )

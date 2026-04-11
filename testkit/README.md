@@ -11,7 +11,7 @@
 - `lib/kernel_lane.py`
   - 커널 빌드/ISO/QEMU smoke
 - `lib/boot_matrix_lane.py`
-  - `full/minimal` 부팅 smoke를 순차 실행하고 matrix 요약을 생성
+  - `full/minimal/storage-only` 부팅 smoke를 순차 실행하고 matrix 요약을 생성
 - `lib/boot_inventory.py`
   - compact inventory를 baseline과 비교하고 baseline fixture를 갱신
 - `lib/boot_perf.py`
@@ -39,6 +39,10 @@
   - optional NIC/USB 없이 커널이 기본 부팅 경로를 완료하는지 본다
   - 하드웨어가 비어 있는 환경에서도 부팅 기준선을 유지하는지 확인할 때 쓴다
   - 로그에서는 `No Intel E1000-compatible controller found`, `No USB host controller found`를 기대한다
+- `storage-only`
+  - 현재 QEMU 토폴로지는 `minimal`과 같다
+  - 대신 storage bring-up과 `storage-bootstrap` SLM seed를 추가로 요구한다
+  - 즉, "저장장치만 남은 최소 부팅 경로"를 별도 프로파일로 강하게 본다
 
 부팅 요약 내보내기:
 
@@ -49,7 +53,7 @@
 부팅 매트릭스:
 
 - `boot-matrix`
-  - 현재는 `full`, `minimal` 두 프로파일만 지원
+  - 현재는 `full`, `minimal`, `storage-only` 프로파일을 지원
   - 각 프로파일의 full summary를 `build/boot-matrix/<profile>.json`에 저장
   - aggregate summary를 `build/boot-matrix/summary.json`에 저장
 
@@ -77,11 +81,12 @@ python .\testkit\aios-testkit.py kernel --target test --strict
 python .\testkit\aios-testkit.py kernel --target test --strict --export-boot-summary
 python .\testkit\aios-testkit.py kernel --target test --strict --smoke-profile minimal
 python .\testkit\aios-testkit.py kernel --target test --strict --smoke-profile minimal --export-boot-summary
-python .\testkit\aios-testkit.py boot-matrix --profiles full minimal --strict
-python .\testkit\aios-testkit.py boot-inventory --profiles full minimal --strict
-python .\testkit\aios-testkit.py boot-inventory --profiles full minimal --strict --write-baseline
-python .\testkit\aios-testkit.py boot-perf --profiles full minimal --strict --write-baseline
-python .\testkit\aios-testkit.py boot-perf --profiles full minimal --strict
+python .\testkit\aios-testkit.py kernel --target test --strict --smoke-profile storage-only --export-boot-summary
+python .\testkit\aios-testkit.py boot-matrix --profiles full minimal storage-only --strict
+python .\testkit\aios-testkit.py boot-inventory --profiles full minimal storage-only --strict
+python .\testkit\aios-testkit.py boot-inventory --profiles full minimal storage-only --strict --write-baseline
+python .\testkit\aios-testkit.py boot-perf --profiles full minimal storage-only --strict --write-baseline
+python .\testkit\aios-testkit.py boot-perf --profiles full minimal storage-only --strict
 python .\testkit\aios-testkit.py os
 python .\testkit\aios-testkit.py all --strict
 python .\testkit\aios-testkit.py all --strict --smoke-profile minimal --export-boot-summary

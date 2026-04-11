@@ -24,7 +24,7 @@
 - `testkit/lib/kernel_lane.py`
   - 커널 빌드/ISO/QEMU smoke
 - `testkit/lib/boot_matrix_lane.py`
-  - `full/minimal` 프로파일을 순차 실행하고 matrix 요약 생성
+  - `full/minimal/storage-only` 프로파일을 순차 실행하고 matrix 요약 생성
 - `testkit/lib/boot_inventory.py`
   - compact inventory를 baseline fixture와 비교
 - `testkit/lib/boot_perf.py`
@@ -85,26 +85,27 @@ python .\testkit\aios-testkit.py kernel --target test --strict
 python .\testkit\aios-testkit.py kernel --target test --strict --export-boot-summary
 python .\testkit\aios-testkit.py kernel --target test --strict --smoke-profile minimal
 python .\testkit\aios-testkit.py kernel --target test --strict --smoke-profile minimal --export-boot-summary
+python .\testkit\aios-testkit.py kernel --target test --strict --smoke-profile storage-only --export-boot-summary
 ```
 
 ### 부팅 매트릭스
 
 ```powershell
-python .\testkit\aios-testkit.py boot-matrix --profiles full minimal --strict
+python .\testkit\aios-testkit.py boot-matrix --profiles full minimal storage-only --strict
 ```
 
 ### 부팅 인벤토리
 
 ```powershell
-python .\testkit\aios-testkit.py boot-inventory --profiles full minimal --strict
-python .\testkit\aios-testkit.py boot-inventory --profiles full minimal --strict --write-baseline
+python .\testkit\aios-testkit.py boot-inventory --profiles full minimal storage-only --strict
+python .\testkit\aios-testkit.py boot-inventory --profiles full minimal storage-only --strict --write-baseline
 ```
 
 ### 부팅 성능
 
 ```powershell
-python .\testkit\aios-testkit.py boot-perf --profiles full minimal --strict --write-baseline
-python .\testkit\aios-testkit.py boot-perf --profiles full minimal --strict
+python .\testkit\aios-testkit.py boot-perf --profiles full minimal storage-only --strict --write-baseline
+python .\testkit\aios-testkit.py boot-perf --profiles full minimal storage-only --strict
 ```
 
 ### OS 도구만
@@ -132,6 +133,10 @@ optional 하드웨어 구성을 나눌 수 있다.
 - `minimal`
   - `-nic none`으로 네트워크를 비우고 USB 컨트롤러도 추가하지 않는다
   - 즉, "부트 가능한 최소 하드웨어"에서 커널이 준비 상태까지 가는지를 본다
+- `storage-only`
+  - 현재 QEMU 토폴로지는 `minimal`과 같다
+  - 대신 storage bring-up과 `storage-bootstrap` seed를 추가로 요구한다
+  - 즉, "저장장치만 남은 최소 경로"를 별도 프로파일로 강하게 본다
 
 이 프로파일은 "고장난 장치 시뮬레이션"이 아니라 "optional 장치가 없는 상태"를 검증하는 용도다.
 그래서 부팅 기준선과 optional 초기화 경로를 분리해 회귀를 찾기 좋다.
@@ -144,6 +149,12 @@ optional 하드웨어 구성을 나눌 수 있다.
 - `minimal`
   - `[NET] No Intel E1000-compatible controller found`
   - `[USB] No USB host controller found`
+- `storage-only`
+  - `[NET] No Intel E1000-compatible controller found`
+  - `[USB] No USB host controller found`
+  - `[STO] IDE ready=1`
+  - `[STO] IDE channels`
+  - `label=storage-bootstrap`
 
 ## 부팅 요약 export
 
@@ -154,6 +165,7 @@ optional 하드웨어 구성을 나눌 수 있다.
 
 - `build/boot-summary/test-full.json`
 - `build/boot-summary/test-minimal.json`
+- `build/boot-summary/test-storage-only.json`
 
 현재 JSON에는 다음 정보가 들어간다.
 
@@ -169,13 +181,14 @@ optional 하드웨어 구성을 나눌 수 있다.
 
 ## boot-matrix
 
-`boot-matrix`는 현재 `full`과 `minimal`만 지원하는 첫 번째 matrix orchestration이다.
+`boot-matrix`는 현재 `full`, `minimal`, `storage-only`를 지원하는 첫 번째 matrix orchestration이다.
 이 lane은 각 프로파일마다 기존 `kernel --target test --export-boot-summary` 경로를 재사용한다.
 
 산출물:
 
 - `build/boot-matrix/full.json`
 - `build/boot-matrix/minimal.json`
+- `build/boot-matrix/storage-only.json`
 - `build/boot-matrix/summary.json`
 
 `summary.json`에는 다음이 들어간다.
@@ -214,7 +227,7 @@ repo 안의 baseline fixture와 비교하는 lane이다.
 - `--write-baseline`
   - 현재 inventory를 fixture로 저장 또는 갱신
 
-현재 단계의 baseline은 QEMU `full/minimal` 프로파일용 정적 fixture다.
+현재 단계의 baseline은 QEMU `full/minimal/storage-only` 프로파일용 정적 fixture다.
 즉, 성능 수치가 아니라 장치 수, health 요약, controller state, seeded plan 수 같은
 비교적 안정적인 항목만 포함한다.
 
