@@ -203,6 +203,8 @@ make debug          # GDB 디버깅 모드로 실행
 - [커널 엔트로피용 노이즈 소스 정리 (2026-03-30)](docs/kernel_entropy_noise_sources_ko.md)
 - [커널-유저 경계 최적화 우선순위 정리 (2026-03-31)](docs/kernel_user_boundary_optimization_ko.md)
 - [코드 경계 가이드와 변경 가능한 구조 트리 (2026-04-12)](docs/code_boundary_and_structure_tree_ko.md)
+- [유기적 커널 구조 정리 (2026-04-12)](docs/organic_kernel_structure_ko.md)
+- [메모리 병렬처리 최적화 정리 (2026-04-12)](docs/memory_parallel_optimization_ko.md)
 - [OS 계층 소개](os/README.md)
 
 ## License
