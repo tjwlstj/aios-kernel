@@ -202,6 +202,7 @@ make debug          # GDB 디버깅 모드로 실행
 - [멀티 AI 에이전트용 Memory Fabric 기초안 (2026-03-30)](docs/multi_agent_memory_fabric_foundation_ko.md)
 - [커널 엔트로피용 노이즈 소스 정리 (2026-03-30)](docs/kernel_entropy_noise_sources_ko.md)
 - [커널-유저 경계 최적화 우선순위 정리 (2026-03-31)](docs/kernel_user_boundary_optimization_ko.md)
+- [코드 경계 가이드와 변경 가능한 구조 트리 (2026-04-12)](docs/code_boundary_and_structure_tree_ko.md)
 - [OS 계층 소개](os/README.md)
 
 ## License

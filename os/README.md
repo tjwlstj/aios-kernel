@@ -40,6 +40,8 @@
 
 - `../docs/user_space_compat_architecture_ko.md`
   커널 이후 유저 공간 OS 구조와 호환성 중심 설계
+- `../docs/code_boundary_and_structure_tree_ko.md`
+  현재 C 커널을 유지하면서도 이후 구조 변경과 유저 공간 분리를 쉽게 하기 위한 코드 경계/구조 트리 가이드
 - `runtime/README.md`
   AIOS user-space runtime 역할과 코어 서비스
 - `compat/wit/aios-agent-host.wit`
