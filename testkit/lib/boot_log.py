@@ -308,9 +308,12 @@ def parse_boot_log_file(path: Path, smoke_profile: str) -> dict[str, object]:
     return parse_boot_log_text(text, smoke_profile, str(path))
 
 
+def boot_summary_path(target: str, smoke_profile: str) -> Path:
+    return BUILD_DIR / "boot-summary" / f"{target}-{smoke_profile}.json"
+
+
 def write_boot_summary(summary: dict[str, object], target: str, smoke_profile: str) -> Path:
-    output_dir = BUILD_DIR / "boot-summary"
-    ensure_dir(output_dir)
-    output_path = output_dir / f"{target}-{smoke_profile}.json"
+    output_path = boot_summary_path(target, smoke_profile)
+    ensure_dir(output_path.parent)
     output_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     return output_path

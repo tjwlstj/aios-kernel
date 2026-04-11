@@ -28,6 +28,7 @@ from lib.common import (
     host_name,
     which_any,
 )
+from lib.boot_matrix_lane import run_boot_matrix
 from lib.kernel_lane import run_kernel_suite
 from lib.os_lane import run_os_tool_suite
 
@@ -97,6 +98,20 @@ def parse_args() -> argparse.Namespace:
     kernel_cmd.add_argument("--timeout", type=int, default=DEFAULT_QEMU_TIMEOUT)
     kernel_cmd.add_argument("--strict", action="store_true")
 
+    matrix_cmd = sub.add_parser(
+        "boot-matrix",
+        help="Run multiple kernel smoke profiles sequentially and export a matrix summary.",
+    )
+    matrix_cmd.add_argument(
+        "--profiles",
+        nargs="+",
+        choices=["full", "minimal"],
+        default=["full", "minimal"],
+        help="Ordered smoke profiles to execute in the boot matrix.",
+    )
+    matrix_cmd.add_argument("--timeout", type=int, default=DEFAULT_QEMU_TIMEOUT)
+    matrix_cmd.add_argument("--strict", action="store_true")
+
     sub.add_parser("os", help="Run OS-layer tool smoke tests.")
     sub.add_parser("info", help="Print environment/toolkit info.")
     return parser.parse_args()
@@ -107,6 +122,9 @@ def lock_label(args: argparse.Namespace) -> str:
         return f"kernel:{args.target}:{getattr(args, 'smoke_profile', 'full')}"
     if args.command == "all":
         return f"all:{args.kernel_target}:{getattr(args, 'smoke_profile', 'full')}"
+    if args.command == "boot-matrix":
+        profiles = ",".join(getattr(args, "profiles", []))
+        return f"boot-matrix:{profiles}"
     return args.command
 
 
@@ -139,6 +157,9 @@ def main() -> int:
                     args.export_boot_summary,
                 )
                 run_os_tool_suite()
+                return 0
+            if args.command == "boot-matrix":
+                run_boot_matrix(args.profiles, args.timeout, args.strict)
                 return 0
             raise ToolError(f"Unsupported command: {args.command}")
     except (ToolError, subprocess.CalledProcessError, FileNotFoundError) as exc:

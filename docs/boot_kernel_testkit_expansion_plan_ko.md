@@ -15,6 +15,9 @@
     - QEMU smoke profile `full`, `minimal`
     - serial log 기반 ready/selftest/probe/health 확인
     - smoke 성공 시 `build/boot-summary/test-<profile>.json` export 가능
+  - `testkit/lib/boot_matrix_lane.py`
+    - `full`, `minimal` 프로파일을 순차 실행
+    - `build/boot-matrix/<profile>.json`, `build/boot-matrix/summary.json` 생성
   - `testkit/lib/boot_log.py`
     - serial log를 checkpoint / selftest / profile / inventory / health / controller / SLM 요약으로 파싱
   - `testkit/kernel/build-windows.ps1`
@@ -24,7 +27,8 @@
 
 - 부분 구현
   - 부팅 검증은 여전히 serial log의 문자열 패턴에 의존한다
-  - boot summary는 단일 실행 export까지 가능하지만, 여러 프로파일을 한 번에 묶는 matrix는 아직 없다
+  - boot summary는 단일 실행 export와 `full/minimal` matrix까지 가능하다
+  - `boot-matrix`는 아직 `storage-only`, `debug-wait` 같은 추가 프로파일을 지원하지 않는다
   - `full` / `minimal` 프로파일은 있으나, 세부 실패 상황을 분리해 재현하지는 못한다
 
 - 아직 없음
@@ -76,7 +80,7 @@
 
 권장 산출물:
 - `build/boot-matrix/summary.json`
-- `build/boot-matrix/<profile>/serial.log`
+- `build/boot-matrix/<profile>.json`
 
 최소 검증:
 - profile별 ready 도달 여부
@@ -88,7 +92,9 @@
 - 엔트리포인트 `python .\testkit\aios-testkit.py boot-matrix`
 
 상태:
-- 계획
+- 부분 구현
+  - 현재 `full`, `minimal`만 지원
+  - `storage-only`, `debug-wait`는 아직 계획
 
 ### 2. `boot-checkpoint` parser
 
@@ -206,15 +212,15 @@
 2. 완료: `kernel` lane에 `--export-boot-summary` 추가
    - smoke 성공 시 `build/boot-summary/test-<profile>.json` 생성
 
-3. 다음 단계: `boot-matrix` 엔트리 추가
-   - 우선 `full` + `minimal` 두 프로파일만 순차 실행
+3. 완료: `boot-matrix` 엔트리 추가
+   - 현재 `full` + `minimal` 두 프로파일만 순차 실행
 
-지금 testkit은 단순 smoke를 넘어서 "단일 부팅 기록을 남기는 parser"까지는 올라왔다.
-다음부터는 이 기록을 여러 프로파일/여러 커밋 간 비교로 연결하면 된다.
+지금 testkit은 단순 smoke를 넘어서 "단일 부팅 기록 + 기본 matrix"까지는 올라왔다.
+다음부터는 이 기록을 baseline 비교와 threshold 비교로 연결하면 된다.
 
 ## 권장 명령 형태
 
-아래 두 명령은 이미 구현되었고, 첫 번째 matrix 명령은 아직 목표 형태다.
+아래 명령은 현재 구현되어 있다.
 
 ```powershell
 python .\testkit\aios-testkit.py boot-matrix --profiles full minimal
@@ -245,11 +251,9 @@ python .\testkit\aios-testkit.py kernel --target test --strict --smoke-profile m
 
 ## 우선순위
 
-1. `boot_log.py`
-2. `boot-matrix` lane
-3. `boot-inventory` baseline
-4. `boot-perf` threshold 비교
-5. `boot-fault` lane
+1. `boot-inventory` baseline
+2. `boot-perf` threshold 비교
+3. `boot-fault` lane
 
 ## 정리
 
@@ -259,7 +263,6 @@ python .\testkit\aios-testkit.py kernel --target test --strict --smoke-profile m
 
 그래서 추천 순서는 다음과 같다.
 
-1. 부팅 로그 parser 추가
-2. `full/minimal` 순차 실행 matrix 추가
-3. inventory/perf 기준선 저장
-4. 그 다음에만 fault injection으로 넘어가기
+1. inventory/perf 기준선 저장
+2. `storage-only` 같은 추가 matrix profile 확장
+3. 그 다음에만 fault injection으로 넘어가기

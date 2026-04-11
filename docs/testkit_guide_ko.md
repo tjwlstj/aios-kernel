@@ -23,6 +23,8 @@
   - 공통 경로, 실행 함수, host 판별, run lock
 - `testkit/lib/kernel_lane.py`
   - 커널 빌드/ISO/QEMU smoke
+- `testkit/lib/boot_matrix_lane.py`
+  - `full/minimal` 프로파일을 순차 실행하고 matrix 요약 생성
 - `testkit/lib/boot_log.py`
   - serial log를 checkpoint / health / inventory / selftest 요약 JSON으로 파싱
 - `testkit/lib/os_lane.py`
@@ -79,6 +81,12 @@ python .\testkit\aios-testkit.py kernel --target test --strict
 python .\testkit\aios-testkit.py kernel --target test --strict --export-boot-summary
 python .\testkit\aios-testkit.py kernel --target test --strict --smoke-profile minimal
 python .\testkit\aios-testkit.py kernel --target test --strict --smoke-profile minimal --export-boot-summary
+```
+
+### 부팅 매트릭스
+
+```powershell
+python .\testkit\aios-testkit.py boot-matrix --profiles full minimal --strict
 ```
 
 ### OS 도구만
@@ -140,7 +148,26 @@ optional 하드웨어 구성을 나눌 수 있다.
 - SLM MainAI 설정과 seeded plan 목록
 
 즉, 지금 단계의 export는 "부팅 이벤트 파서 + 단일 실행 기록"까지 구현된 상태다.
-아직 여러 프로파일을 한 번에 돌리는 matrix orchestration은 구현되지 않았다.
+
+## boot-matrix
+
+`boot-matrix`는 현재 `full`과 `minimal`만 지원하는 첫 번째 matrix orchestration이다.
+이 lane은 각 프로파일마다 기존 `kernel --target test --export-boot-summary` 경로를 재사용한다.
+
+산출물:
+
+- `build/boot-matrix/full.json`
+- `build/boot-matrix/minimal.json`
+- `build/boot-matrix/summary.json`
+
+`summary.json`에는 다음이 들어간다.
+
+- 요청한 프로파일 순서
+- baseline profile
+- profile별 ready / stability / device summary / controller state / SLM seeded plan count
+- baseline 대비 device delta
+- baseline 대비 controller state delta
+- baseline 대비 seeded plan 수 차이
 
 ## 확장 규칙
 

@@ -10,6 +10,8 @@
   - 호스트 탐지, 공통 실행 함수, build lock
 - `lib/kernel_lane.py`
   - 커널 빌드/ISO/QEMU smoke
+- `lib/boot_matrix_lane.py`
+  - `full/minimal` 부팅 smoke를 순차 실행하고 matrix 요약을 생성
 - `lib/boot_log.py`
   - serial log를 checkpoint / health / inventory / microbench 요약 JSON으로 파싱
 - `lib/os_lane.py`
@@ -40,6 +42,13 @@
   - smoke 성공 후 `build/boot-summary/test-<profile>.json` 생성
   - checkpoint, selftest, perf profile, device summary, health, controller state, SLM seed 결과를 저장
 
+부팅 매트릭스:
+
+- `boot-matrix`
+  - 현재는 `full`, `minimal` 두 프로파일만 지원
+  - 각 프로파일의 full summary를 `build/boot-matrix/<profile>.json`에 저장
+  - aggregate summary를 `build/boot-matrix/summary.json`에 저장
+
 권장 사용:
 
 ```powershell
@@ -48,6 +57,7 @@ python .\testkit\aios-testkit.py kernel --target test --strict
 python .\testkit\aios-testkit.py kernel --target test --strict --export-boot-summary
 python .\testkit\aios-testkit.py kernel --target test --strict --smoke-profile minimal
 python .\testkit\aios-testkit.py kernel --target test --strict --smoke-profile minimal --export-boot-summary
+python .\testkit\aios-testkit.py boot-matrix --profiles full minimal --strict
 python .\testkit\aios-testkit.py os
 python .\testkit\aios-testkit.py all --strict
 python .\testkit\aios-testkit.py all --strict --smoke-profile minimal --export-boot-summary
