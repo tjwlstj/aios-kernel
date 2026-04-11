@@ -27,6 +27,8 @@
   - `full/minimal` 프로파일을 순차 실행하고 matrix 요약 생성
 - `testkit/lib/boot_inventory.py`
   - compact inventory를 baseline fixture와 비교
+- `testkit/lib/boot_perf.py`
+  - host-local perf baseline과 threshold 기반 비교
 - `testkit/lib/boot_log.py`
   - serial log를 checkpoint / health / inventory / selftest 요약 JSON으로 파싱
 - `testkit/lib/os_lane.py`
@@ -96,6 +98,13 @@ python .\testkit\aios-testkit.py boot-matrix --profiles full minimal --strict
 ```powershell
 python .\testkit\aios-testkit.py boot-inventory --profiles full minimal --strict
 python .\testkit\aios-testkit.py boot-inventory --profiles full minimal --strict --write-baseline
+```
+
+### 부팅 성능
+
+```powershell
+python .\testkit\aios-testkit.py boot-perf --profiles full minimal --strict --write-baseline
+python .\testkit\aios-testkit.py boot-perf --profiles full minimal --strict
 ```
 
 ### OS 도구만
@@ -208,6 +217,39 @@ repo 안의 baseline fixture와 비교하는 lane이다.
 현재 단계의 baseline은 QEMU `full/minimal` 프로파일용 정적 fixture다.
 즉, 성능 수치가 아니라 장치 수, health 요약, controller state, seeded plan 수 같은
 비교적 안정적인 항목만 포함한다.
+
+## boot-perf
+
+`boot-perf`는 serial log에서 이미 뽑아둔 selftest/profile 정보를 다시 사용해,
+같은 호스트에서의 성능 회귀를 완만한 threshold로 확인하는 lane이다.
+
+현재 baseline 위치:
+
+- `build/boot-perf/baseline/<profile>.json`
+
+현재 결과 위치:
+
+- `build/boot-perf/current/<profile>.json`
+- `build/boot-perf/summary.json`
+
+현재 비교 대상:
+
+- `profile memcpy MiB/s`
+- `memset` / `memcpy` / `memmove`의 `cyc_per_kib`
+- `dram latency x100`
+
+기본 threshold:
+
+- throughput(`memcpy MiB/s`)
+  - baseline 대비 35% 이상 하락 시 실패
+- cycle/latency 계열
+  - baseline 대비 45~50% 이상 상승 시 실패
+
+중요:
+
+- `boot-perf` baseline은 기본적으로 로컬 `build/` 아래에만 둔다
+- 즉, inventory처럼 팀 공용 fixture를 기본값으로 삼지 않는다
+- 이유는 QEMU와 호스트 환경 차이로 성능 수치가 장치/OS마다 크게 흔들릴 수 있기 때문이다
 
 ## 확장 규칙
 

@@ -14,6 +14,8 @@
   - `full/minimal` 부팅 smoke를 순차 실행하고 matrix 요약을 생성
 - `lib/boot_inventory.py`
   - compact inventory를 baseline과 비교하고 baseline fixture를 갱신
+- `lib/boot_perf.py`
+  - host-local perf baseline을 생성하고 threshold 기반 회귀를 비교
 - `lib/boot_log.py`
   - serial log를 checkpoint / health / inventory / microbench 요약 JSON으로 파싱
 - `lib/os_lane.py`
@@ -59,6 +61,14 @@
   - current 결과는 `build/boot-inventory/current/<profile>.json`
   - baseline fixture는 `testkit/fixtures/boot-baseline/<profile>.json`
 
+부팅 성능:
+
+- `boot-perf`
+  - `build/boot-summary/test-<profile>.json`을 재사용해 perf record를 비교
+  - current 결과는 `build/boot-perf/current/<profile>.json`
+  - baseline은 로컬 전용 `build/boot-perf/baseline/<profile>.json`
+  - 기본 비교는 `memcpy MiB/s`, `memset/memcpy/memmove cyc_per_kib`, `dram latency x100`
+
 권장 사용:
 
 ```powershell
@@ -70,6 +80,8 @@ python .\testkit\aios-testkit.py kernel --target test --strict --smoke-profile m
 python .\testkit\aios-testkit.py boot-matrix --profiles full minimal --strict
 python .\testkit\aios-testkit.py boot-inventory --profiles full minimal --strict
 python .\testkit\aios-testkit.py boot-inventory --profiles full minimal --strict --write-baseline
+python .\testkit\aios-testkit.py boot-perf --profiles full minimal --strict --write-baseline
+python .\testkit\aios-testkit.py boot-perf --profiles full minimal --strict
 python .\testkit\aios-testkit.py os
 python .\testkit\aios-testkit.py all --strict
 python .\testkit\aios-testkit.py all --strict --smoke-profile minimal --export-boot-summary

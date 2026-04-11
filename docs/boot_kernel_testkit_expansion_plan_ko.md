@@ -21,6 +21,9 @@
   - `testkit/lib/boot_inventory.py`
     - compact inventory를 `testkit/fixtures/boot-baseline/<profile>.json`과 비교
     - `build/boot-inventory/current/<profile>.json`, `build/boot-inventory/summary.json` 생성
+  - `testkit/lib/boot_perf.py`
+    - host-local `build/boot-perf/baseline/<profile>.json`과 threshold 비교
+    - `build/boot-perf/current/<profile>.json`, `build/boot-perf/summary.json` 생성
   - `testkit/lib/boot_log.py`
     - serial log를 checkpoint / selftest / profile / inventory / health / controller / SLM 요약으로 파싱
   - `testkit/kernel/build-windows.ps1`
@@ -32,6 +35,7 @@
   - 부팅 검증은 여전히 serial log의 문자열 패턴에 의존한다
   - boot summary는 단일 실행 export와 `full/minimal` matrix까지 가능하다
   - boot inventory baseline은 `full/minimal` QEMU fixture 비교까지 가능하다
+  - boot perf baseline은 로컬 `build/` 기준선과 `full/minimal` threshold 비교까지 가능하다
   - `boot-matrix`는 아직 `storage-only`, `debug-wait` 같은 추가 프로파일을 지원하지 않는다
   - `full` / `minimal` 프로파일은 있으나, 세부 실패 상황을 분리해 재현하지는 못한다
 
@@ -138,7 +142,7 @@
 - health의 `ok/degraded/failed/unknown`
 
 권장 산출물:
-- `build/boot-inventory/current.json`
+- `build/boot-inventory/current/<profile>.json`
 - `testkit/fixtures/boot-baseline/<profile>.json`
 
 비교 방식:
@@ -169,8 +173,9 @@
 - `[PROFILE] Cache KiB ...`
 
 권장 산출물:
-- `build/boot-perf/<profile>.json`
-- `build/boot-perf/compare.json`
+- `build/boot-perf/current/<profile>.json`
+- `build/boot-perf/baseline/<profile>.json`
+- `build/boot-perf/summary.json`
 
 검증 방식:
 - 절대 수치 고정이 아니라 허용 편차 기반
@@ -180,7 +185,10 @@
 - `testkit/lib/boot_perf.py`
 
 상태:
-- 계획
+- 부분 구현
+  - 현재 `full`, `minimal` 프로파일만 지원
+  - baseline은 로컬 `build/boot-perf/baseline/`에 저장
+  - 공용 fixture 비교는 아직 하지 않는다
 
 ### 5. `boot-fault` lane
 
@@ -258,9 +266,9 @@ python .\testkit\aios-testkit.py kernel --target test --strict --smoke-profile m
 
 ## 우선순위
 
-1. `boot-perf` threshold 비교
-2. `storage-only` 같은 추가 inventory-aware profile
-3. `boot-fault` lane
+1. `storage-only` 같은 추가 inventory-aware profile
+2. `boot-fault` lane
+3. perf 정책 세분화
 
 ## 정리
 
@@ -270,6 +278,6 @@ python .\testkit\aios-testkit.py kernel --target test --strict --smoke-profile m
 
 그래서 추천 순서는 다음과 같다.
 
-1. `boot-perf` 기준선과 threshold 비교 추가
-2. `storage-only` 같은 추가 matrix profile 확장
+1. `storage-only` 같은 추가 matrix profile 확장
+2. perf 정책 세분화
 3. 그 다음에만 fault injection으로 넘어가기

@@ -30,6 +30,7 @@ from lib.common import (
 )
 from lib.boot_inventory import run_boot_inventory
 from lib.boot_matrix_lane import run_boot_matrix
+from lib.boot_perf import run_boot_perf
 from lib.kernel_lane import run_kernel_suite
 from lib.os_lane import run_os_tool_suite
 
@@ -132,6 +133,25 @@ def parse_args() -> argparse.Namespace:
     inventory_cmd.add_argument("--timeout", type=int, default=DEFAULT_QEMU_TIMEOUT)
     inventory_cmd.add_argument("--strict", action="store_true")
 
+    perf_cmd = sub.add_parser(
+        "boot-perf",
+        help="Refresh boot summaries and compare host-local performance baselines with tolerance thresholds.",
+    )
+    perf_cmd.add_argument(
+        "--profiles",
+        nargs="+",
+        choices=["full", "minimal"],
+        default=["full", "minimal"],
+        help="Ordered smoke profiles to verify against local boot-perf baselines.",
+    )
+    perf_cmd.add_argument(
+        "--write-baseline",
+        action="store_true",
+        help="Write or refresh build/boot-perf/baseline/<profile>.json from the current run.",
+    )
+    perf_cmd.add_argument("--timeout", type=int, default=DEFAULT_QEMU_TIMEOUT)
+    perf_cmd.add_argument("--strict", action="store_true")
+
     sub.add_parser("os", help="Run OS-layer tool smoke tests.")
     sub.add_parser("info", help="Print environment/toolkit info.")
     return parser.parse_args()
@@ -149,6 +169,10 @@ def lock_label(args: argparse.Namespace) -> str:
         profiles = ",".join(getattr(args, "profiles", []))
         mode = "write" if getattr(args, "write_baseline", False) else "check"
         return f"boot-inventory:{mode}:{profiles}"
+    if args.command == "boot-perf":
+        profiles = ",".join(getattr(args, "profiles", []))
+        mode = "write" if getattr(args, "write_baseline", False) else "check"
+        return f"boot-perf:{mode}:{profiles}"
     return args.command
 
 
@@ -187,6 +211,9 @@ def main() -> int:
                 return 0
             if args.command == "boot-inventory":
                 run_boot_inventory(args.profiles, args.timeout, args.strict, args.write_baseline)
+                return 0
+            if args.command == "boot-perf":
+                run_boot_perf(args.profiles, args.timeout, args.strict, args.write_baseline)
                 return 0
             raise ToolError(f"Unsupported command: {args.command}")
     except (ToolError, subprocess.CalledProcessError, FileNotFoundError) as exc:
