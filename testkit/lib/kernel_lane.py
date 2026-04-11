@@ -3,11 +3,14 @@ from __future__ import annotations
 import subprocess
 import time
 
+from lib.boot_log import parse_boot_log_file, write_boot_summary
 from lib.common import (
+    BUILD_DIR,
     DEFAULT_QEMU_TIMEOUT,
     REPO_ROOT,
     SERIAL_LOG,
     ToolError,
+    ensure_dir,
     host_name,
     print_step,
     run,
@@ -74,6 +77,27 @@ def required_smoke_patterns(smoke_profile: str) -> list[str]:
     return required
 
 
+def collect_smoke_summary(smoke_profile: str) -> dict[str, object]:
+    if not SERIAL_LOG.exists():
+        raise ToolError("Smoke test did not produce a serial log.")
+    if SERIAL_LOG.stat().st_size == 0:
+        raise ToolError("Smoke test produced an empty serial log.")
+
+    summary = parse_boot_log_file(SERIAL_LOG, smoke_profile)
+    log_text = SERIAL_LOG.read_text(encoding="utf-8", errors="replace")
+    required_patterns = required_smoke_patterns(smoke_profile)
+    missing = [pattern for pattern in required_patterns if pattern not in log_text]
+    if missing:
+        tail = "\n".join(log_text.splitlines()[-40:])
+        raise ToolError(
+            "Kernel smoke test did not reach expected state. "
+            f"Missing={missing}\nLast log lines:\n{tail}"
+        )
+    summary["required_patterns"] = required_patterns
+    summary["missing_patterns"] = missing
+    return summary
+
+
 def run_kernel_make(target: str) -> None:
     make = which_any("make")
     if not make:
@@ -81,7 +105,7 @@ def run_kernel_make(target: str) -> None:
     run([make, target])
 
 
-def run_windows_kernel(target: str, smoke_profile: str = DEFAULT_SMOKE_PROFILE) -> None:
+def run_windows_kernel(target: str, smoke_profile: str = DEFAULT_SMOKE_PROFILE) -> dict[str, object] | None:
     powershell = which_any("pwsh", "powershell")
     if not powershell:
         raise ToolError("PowerShell (`pwsh` or `powershell`) not found.")
@@ -100,19 +124,27 @@ def run_windows_kernel(target: str, smoke_profile: str = DEFAULT_SMOKE_PROFILE) 
             "-SkipLock",
         ]
     )
+    if target == "test":
+        return collect_smoke_summary(smoke_profile)
+    return None
 
 
 def run_qemu_smoke_test(
     timeout_sec: int = DEFAULT_QEMU_TIMEOUT,
     strict: bool = False,
     smoke_profile: str = DEFAULT_SMOKE_PROFILE,
-) -> None:
+) -> dict[str, object]:
     qemu = which_any("qemu-system-x86_64")
     if not qemu:
         if strict:
             raise ToolError("`qemu-system-x86_64` is required for kernel smoke testing.")
         print_step("SKIP kernel smoke: qemu-system-x86_64 not found")
-        return
+        return {
+            "smoke_profile": smoke_profile,
+            "serial_log": str(SERIAL_LOG),
+            "skipped": True,
+            "reason": "qemu-system-x86_64 not found",
+        }
 
     iso = REPO_ROOT / "build" / "aios-kernel.iso"
     if not iso.exists():
@@ -134,22 +166,9 @@ def run_qemu_smoke_test(
         proc.kill()
         proc.wait()
 
-    if not SERIAL_LOG.exists():
-        raise ToolError("Smoke test did not produce a serial log.")
-    if SERIAL_LOG.stat().st_size == 0:
-        raise ToolError("Smoke test produced an empty serial log.")
-
-    log_text = SERIAL_LOG.read_text(encoding="utf-8", errors="replace")
-    required_patterns = required_smoke_patterns(smoke_profile)
-    missing = [pattern for pattern in required_patterns if pattern not in log_text]
-    if missing:
-        tail = "\n".join(log_text.splitlines()[-40:])
-        raise ToolError(
-            "Kernel smoke test did not reach expected state. "
-            f"Missing={missing}\nLast log lines:\n{tail}"
-        )
-
+    summary = collect_smoke_summary(smoke_profile)
     print_step("Kernel smoke test PASSED")
+    return summary
 
 
 def run_kernel_suite(
@@ -157,29 +176,41 @@ def run_kernel_suite(
     timeout_sec: int,
     strict: bool,
     smoke_profile: str = DEFAULT_SMOKE_PROFILE,
-) -> None:
+    export_boot_summary: bool = False,
+) -> dict[str, object] | None:
+    if export_boot_summary and target != "test":
+        raise ToolError("`--export-boot-summary` requires `--target test` (or `--kernel-target test`).")
+
     host = host_name()
     if host == "windows":
-        run_windows_kernel(target, smoke_profile)
-        return
+        summary = run_windows_kernel(target, smoke_profile)
+        if export_boot_summary and summary is not None:
+            ensure_dir(BUILD_DIR / "boot-summary")
+            output_path = write_boot_summary(summary, target, smoke_profile)
+            print_step(f"Boot summary exported -> {output_path}")
+        return summary
 
     if target == "clean":
         run_kernel_make("clean")
-        return
+        return None
     if target == "info":
         run_kernel_make("info")
-        return
+        return None
     if target == "all":
         run_kernel_make("all")
-        return
+        return None
     if target == "iso":
         run_kernel_make("all")
         run_kernel_make("iso")
-        return
+        return None
     if target == "test":
         run_kernel_make("all")
         run_kernel_make("iso")
-        run_qemu_smoke_test(timeout_sec, strict, smoke_profile)
-        return
+        summary = run_qemu_smoke_test(timeout_sec, strict, smoke_profile)
+        if export_boot_summary:
+            ensure_dir(BUILD_DIR / "boot-summary")
+            output_path = write_boot_summary(summary, target, smoke_profile)
+            print_step(f"Boot summary exported -> {output_path}")
+        return summary
 
     raise ToolError(f"Unsupported kernel target: {target}")

@@ -10,6 +10,8 @@
   - 호스트 탐지, 공통 실행 함수, build lock
 - `lib/kernel_lane.py`
   - 커널 빌드/ISO/QEMU smoke
+- `lib/boot_log.py`
+  - serial log를 checkpoint / health / inventory / microbench 요약 JSON으로 파싱
 - `lib/os_lane.py`
   - OS 계층 도구 smoke
 - `kernel/build-windows.ps1`
@@ -32,14 +34,27 @@
   - 하드웨어가 비어 있는 환경에서도 부팅 기준선을 유지하는지 확인할 때 쓴다
   - 로그에서는 `No Intel E1000-compatible controller found`, `No USB host controller found`를 기대한다
 
+부팅 요약 내보내기:
+
+- `--export-boot-summary`
+  - smoke 성공 후 `build/boot-summary/test-<profile>.json` 생성
+  - checkpoint, selftest, perf profile, device summary, health, controller state, SLM seed 결과를 저장
+
 권장 사용:
 
 ```powershell
 python .\testkit\aios-testkit.py info
 python .\testkit\aios-testkit.py kernel --target test --strict
+python .\testkit\aios-testkit.py kernel --target test --strict --export-boot-summary
 python .\testkit\aios-testkit.py kernel --target test --strict --smoke-profile minimal
+python .\testkit\aios-testkit.py kernel --target test --strict --smoke-profile minimal --export-boot-summary
 python .\testkit\aios-testkit.py os
 python .\testkit\aios-testkit.py all --strict
+python .\testkit\aios-testkit.py all --strict --smoke-profile minimal --export-boot-summary
 pwsh -File .\testkit\kernel\build-windows.ps1 -Target test
 pwsh -File .\testkit\kernel\build-windows.ps1 -Target test -SmokeProfile minimal
 ```
+
+추가 구상:
+
+- 부팅 커널 테스트 확장안은 `docs/boot_kernel_testkit_expansion_plan_ko.md`에 정리한다

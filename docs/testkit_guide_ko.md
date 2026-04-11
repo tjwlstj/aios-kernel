@@ -23,6 +23,8 @@
   - 공통 경로, 실행 함수, host 판별, run lock
 - `testkit/lib/kernel_lane.py`
   - 커널 빌드/ISO/QEMU smoke
+- `testkit/lib/boot_log.py`
+  - serial log를 checkpoint / health / inventory / selftest 요약 JSON으로 파싱
 - `testkit/lib/os_lane.py`
   - `os/tools` smoke와 샘플 기반 검증
 - `testkit/kernel/build-windows.ps1`
@@ -66,6 +68,7 @@
 ```powershell
 python .\testkit\aios-testkit.py all --strict
 python .\testkit\aios-testkit.py all --strict --smoke-profile minimal
+python .\testkit\aios-testkit.py all --strict --smoke-profile minimal --export-boot-summary
 ```
 
 ### 커널만
@@ -73,7 +76,9 @@ python .\testkit\aios-testkit.py all --strict --smoke-profile minimal
 ```powershell
 python .\testkit\aios-testkit.py kernel --target all --strict
 python .\testkit\aios-testkit.py kernel --target test --strict
+python .\testkit\aios-testkit.py kernel --target test --strict --export-boot-summary
 python .\testkit\aios-testkit.py kernel --target test --strict --smoke-profile minimal
+python .\testkit\aios-testkit.py kernel --target test --strict --smoke-profile minimal --export-boot-summary
 ```
 
 ### OS 도구만
@@ -114,6 +119,29 @@ optional 하드웨어 구성을 나눌 수 있다.
   - `[NET] No Intel E1000-compatible controller found`
   - `[USB] No USB host controller found`
 
+## 부팅 요약 export
+
+`kernel` lane과 `all` lane은 `--export-boot-summary`를 지원한다.
+이 옵션은 현재 `test` 부팅 smoke에서만 유효하다.
+
+출력 위치:
+
+- `build/boot-summary/test-full.json`
+- `build/boot-summary/test-minimal.json`
+
+현재 JSON에는 다음 정보가 들어간다.
+
+- checkpoint별 line/text/seen
+- selftest 결과와 `memset` / `memcpy` / `memmove`
+- profile 요약과 cache/latency 정보
+- device summary
+- health summary
+- network / usb / storage controller 상태
+- SLM MainAI 설정과 seeded plan 목록
+
+즉, 지금 단계의 export는 "부팅 이벤트 파서 + 단일 실행 기록"까지 구현된 상태다.
+아직 여러 프로파일을 한 번에 돌리는 matrix orchestration은 구현되지 않았다.
+
 ## 확장 규칙
 
 앞으로 테스트가 늘어날 때는 다음 규칙을 권장한다.
@@ -142,3 +170,14 @@ optional 하드웨어 구성을 나눌 수 있다.
 - per-lane config file
 
 즉, 이번 단계는 "확장 가능한 뼈대 + 병렬 충돌 방지"까지를 목표로 한다.
+
+## 추가 구상 문서
+
+부팅 커널 테스트를 더 세분화하는 다음 구상은 아래 문서에 정리한다.
+
+- `docs/boot_kernel_testkit_expansion_plan_ko.md`
+  - boot-matrix
+  - boot-checkpoint parser
+  - boot-inventory baseline
+  - boot-perf snapshot
+  - boot-fault lane
