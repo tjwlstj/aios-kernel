@@ -130,6 +130,14 @@
 상태:
 - 계획
 
+MVP 메모:
+- `boot-fault`의 첫 구현은 QEMU 옵션 확장보다 test-only fault hook이 더 현실적이다
+- 대상은 우선 `e1000`, `usb_host`, `storage_host` 세 controller bootstrap 지점으로 제한한다
+- 목적은 "hard fault injection framework"가 아니라 "degraded / failed 경로를 summary와 baseline에 남기는 것"이다
+- 구체적인 병행 계획은
+  [gemini_driver_userspace_checkpoint_ko.md](./gemini_driver_userspace_checkpoint_ko.md)
+  를 참고한다
+
 ### 3. `boot-inventory` lane
 
 목적:

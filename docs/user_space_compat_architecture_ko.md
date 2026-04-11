@@ -8,6 +8,24 @@ AIOS는 부팅 가능한 AI 전용 커널로 빠르게 진전했지만, 메인 A
 
 이 문서는 `커널 부팅 이후 유저 공간에서 동작하는 AIOS`를 목표로, 기반기술 조사와 호환성 중심 설계를 정리한다.
 
+## 현재 구현 기준 현실 체크
+
+이 문서는 목표 아키텍처를 설명하는 문서다. 현재 저장소 구현은 아직 그 단계에 도달하지 않았다.
+
+2026-04-12 기준으로 실제 코드에서 확인되는 현실은 다음과 같다.
+
+- `kernel/main.c`는 모든 초기화 후 `hlt` idle loop로 들어간다
+- `runtime/ai_syscall.c`는 syscall surface와 ring 상태 통계를 제공하지만,
+  아직 ring3 caller가 실제로 진입하는 경로는 없다
+- `runtime/autonomy.c`와 `runtime/slm_orchestrator.c`는 커널 내부 control plane으로는 의미가 있지만,
+  아직 `aios-init`나 userspace supervisor가 이를 호출하는 단계는 아니다
+- 따라서 이 문서의 `aios-init`, `aios-osd`, `aios-agentd` 등은 현재 구현이 아니라
+  "ring3 handoff 이후에 올릴 대상"이다
+
+구현 기준 체크포인트와 병행 추진안은
+[gemini_driver_userspace_checkpoint_ko.md](./gemini_driver_userspace_checkpoint_ko.md)
+를 참고한다.
+
 ## 왜 유저 공간인가
 
 커널은 다음에 집중해야 한다.

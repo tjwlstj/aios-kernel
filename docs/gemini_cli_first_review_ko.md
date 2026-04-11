@@ -122,6 +122,25 @@ Gemini의 1차 평가는 크게 두 가지 점에서 유용했다.
 3. 큰 리팩터링 전후로 우선순위 재평가
 4. 커널 / OS / runtime / tooling 을 나눠 별도 검토
 
+## 2차 추가 점검 메모
+
+2026-04-12에는 같은 흐름으로 범위를 더 좁혀 다시 검토했다.
+
+- 드라이버 / boot bring-up
+- `boot -> userspace` 전이
+
+이번 추가 기록은 별도 문서
+[gemini_driver_userspace_checkpoint_ko.md](./gemini_driver_userspace_checkpoint_ko.md)
+에 정리했다.
+
+핵심 결론만 요약하면 다음과 같다.
+
+- 드라이버는 `e1000` 기준으로 smoke 가능한 bootstrap까지는 올라와 있음
+- `storage` / `usb`는 host probe 중심으로 아직 얕음
+- `ai_syscall` / `autonomy` / `SLM`은 커널 내부 control plane으로는 유효하지만
+  실제 userspace ABI로 넘어가려면 `ring3 + TSS + init handoff`가 먼저 필요함
+- 따라서 다음 병행 축은 `boot-fault`와 `ring3 scaffold`가 됨
+
 ## 한 줄 결론
 
 이번 1차 검토 기준으로, `Gemini CLI`는 현재 `AIOS`에서 충분히 활용 가능하며, 특히 "설계 리뷰와 문서 감리 중심의 보조 검토자"로 붙이는 것이 가장 효과적이다.
