@@ -12,6 +12,8 @@
   - 커널 빌드/ISO/QEMU smoke
 - `lib/boot_matrix_lane.py`
   - `full/minimal` 부팅 smoke를 순차 실행하고 matrix 요약을 생성
+- `lib/boot_inventory.py`
+  - compact inventory를 baseline과 비교하고 baseline fixture를 갱신
 - `lib/boot_log.py`
   - serial log를 checkpoint / health / inventory / microbench 요약 JSON으로 파싱
 - `lib/os_lane.py`
@@ -49,6 +51,14 @@
   - 각 프로파일의 full summary를 `build/boot-matrix/<profile>.json`에 저장
   - aggregate summary를 `build/boot-matrix/summary.json`에 저장
 
+부팅 인벤토리:
+
+- `boot-inventory`
+  - `build/boot-matrix/summary.json`을 재사용해 compact inventory를 비교
+  - 현재 inventory는 `ready`, `stability`, `device_summary`, `health_summary`, `controller_states`, `slm_seeded_plan_count`
+  - current 결과는 `build/boot-inventory/current/<profile>.json`
+  - baseline fixture는 `testkit/fixtures/boot-baseline/<profile>.json`
+
 권장 사용:
 
 ```powershell
@@ -58,6 +68,8 @@ python .\testkit\aios-testkit.py kernel --target test --strict --export-boot-sum
 python .\testkit\aios-testkit.py kernel --target test --strict --smoke-profile minimal
 python .\testkit\aios-testkit.py kernel --target test --strict --smoke-profile minimal --export-boot-summary
 python .\testkit\aios-testkit.py boot-matrix --profiles full minimal --strict
+python .\testkit\aios-testkit.py boot-inventory --profiles full minimal --strict
+python .\testkit\aios-testkit.py boot-inventory --profiles full minimal --strict --write-baseline
 python .\testkit\aios-testkit.py os
 python .\testkit\aios-testkit.py all --strict
 python .\testkit\aios-testkit.py all --strict --smoke-profile minimal --export-boot-summary

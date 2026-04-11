@@ -28,6 +28,7 @@ from lib.common import (
     host_name,
     which_any,
 )
+from lib.boot_inventory import run_boot_inventory
 from lib.boot_matrix_lane import run_boot_matrix
 from lib.kernel_lane import run_kernel_suite
 from lib.os_lane import run_os_tool_suite
@@ -112,6 +113,25 @@ def parse_args() -> argparse.Namespace:
     matrix_cmd.add_argument("--timeout", type=int, default=DEFAULT_QEMU_TIMEOUT)
     matrix_cmd.add_argument("--strict", action="store_true")
 
+    inventory_cmd = sub.add_parser(
+        "boot-inventory",
+        help="Refresh boot summaries and compare compact inventory records against checked-in baselines.",
+    )
+    inventory_cmd.add_argument(
+        "--profiles",
+        nargs="+",
+        choices=["full", "minimal"],
+        default=["full", "minimal"],
+        help="Ordered smoke profiles to verify against inventory baselines.",
+    )
+    inventory_cmd.add_argument(
+        "--write-baseline",
+        action="store_true",
+        help="Write or refresh testkit/fixtures/boot-baseline/<profile>.json from the current run.",
+    )
+    inventory_cmd.add_argument("--timeout", type=int, default=DEFAULT_QEMU_TIMEOUT)
+    inventory_cmd.add_argument("--strict", action="store_true")
+
     sub.add_parser("os", help="Run OS-layer tool smoke tests.")
     sub.add_parser("info", help="Print environment/toolkit info.")
     return parser.parse_args()
@@ -125,6 +145,10 @@ def lock_label(args: argparse.Namespace) -> str:
     if args.command == "boot-matrix":
         profiles = ",".join(getattr(args, "profiles", []))
         return f"boot-matrix:{profiles}"
+    if args.command == "boot-inventory":
+        profiles = ",".join(getattr(args, "profiles", []))
+        mode = "write" if getattr(args, "write_baseline", False) else "check"
+        return f"boot-inventory:{mode}:{profiles}"
     return args.command
 
 
@@ -160,6 +184,9 @@ def main() -> int:
                 return 0
             if args.command == "boot-matrix":
                 run_boot_matrix(args.profiles, args.timeout, args.strict)
+                return 0
+            if args.command == "boot-inventory":
+                run_boot_inventory(args.profiles, args.timeout, args.strict, args.write_baseline)
                 return 0
             raise ToolError(f"Unsupported command: {args.command}")
     except (ToolError, subprocess.CalledProcessError, FileNotFoundError) as exc:

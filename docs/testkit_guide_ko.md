@@ -25,6 +25,8 @@
   - 커널 빌드/ISO/QEMU smoke
 - `testkit/lib/boot_matrix_lane.py`
   - `full/minimal` 프로파일을 순차 실행하고 matrix 요약 생성
+- `testkit/lib/boot_inventory.py`
+  - compact inventory를 baseline fixture와 비교
 - `testkit/lib/boot_log.py`
   - serial log를 checkpoint / health / inventory / selftest 요약 JSON으로 파싱
 - `testkit/lib/os_lane.py`
@@ -87,6 +89,13 @@ python .\testkit\aios-testkit.py kernel --target test --strict --smoke-profile m
 
 ```powershell
 python .\testkit\aios-testkit.py boot-matrix --profiles full minimal --strict
+```
+
+### 부팅 인벤토리
+
+```powershell
+python .\testkit\aios-testkit.py boot-inventory --profiles full minimal --strict
+python .\testkit\aios-testkit.py boot-inventory --profiles full minimal --strict --write-baseline
 ```
 
 ### OS 도구만
@@ -168,6 +177,37 @@ optional 하드웨어 구성을 나눌 수 있다.
 - baseline 대비 device delta
 - baseline 대비 controller state delta
 - baseline 대비 seeded plan 수 차이
+
+## boot-inventory
+
+`boot-inventory`는 `boot-matrix` 실행 결과를 compact inventory로 다시 정리해서,
+repo 안의 baseline fixture와 비교하는 lane이다.
+
+현재 inventory 필드:
+
+- `ready`
+- `stability`
+- `device_summary`
+- `health_summary`
+- `controller_states`
+- `slm_seeded_plan_count`
+
+출력 위치:
+
+- `build/boot-inventory/current/<profile>.json`
+- `build/boot-inventory/summary.json`
+- baseline fixture: `testkit/fixtures/boot-baseline/<profile>.json`
+
+동작:
+
+- 기본 실행
+  - baseline과 비교만 수행
+- `--write-baseline`
+  - 현재 inventory를 fixture로 저장 또는 갱신
+
+현재 단계의 baseline은 QEMU `full/minimal` 프로파일용 정적 fixture다.
+즉, 성능 수치가 아니라 장치 수, health 요약, controller state, seeded plan 수 같은
+비교적 안정적인 항목만 포함한다.
 
 ## 확장 규칙
 

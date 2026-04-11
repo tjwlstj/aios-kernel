@@ -60,6 +60,11 @@ def _compact_result(profile: str, summary: dict[str, object], matrix_summary_pat
         "profile": profile,
         "ready": bool(checkpoints.get("ready", {}).get("seen")),
         "stability": health.get("stability"),
+        "health_summary": {
+            key: health.get(key)
+            for key in ("ok", "degraded", "failed", "unknown", "io_degraded", "req_fail", "autonomy", "risky_io")
+            if key in health
+        },
         "device_summary": {
             key: device_summary.get(key)
             for key in ("pci", "matched", "eth", "wifi", "bt", "usb", "storage")

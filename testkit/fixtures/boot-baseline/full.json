@@ -1,0 +1,27 @@
+{
+  "profile": "full",
+  "ready": true,
+  "stability": "stable",
+  "device_summary": {
+    "pci": 7,
+    "matched": 3,
+    "eth": 1,
+    "wifi": 0,
+    "bt": 0,
+    "usb": 1,
+    "storage": 1
+  },
+  "health_summary": {
+    "ok": 16,
+    "degraded": 0,
+    "failed": 0,
+    "unknown": 0,
+    "io_degraded": 0
+  },
+  "controller_states": {
+    "network": "ready",
+    "usb": "ready",
+    "storage": "ready"
+  },
+  "slm_seeded_plan_count": 8
+}
