@@ -180,7 +180,7 @@ optional 하드웨어 구성을 나눌 수 있다.
 - health summary
 - `user_mode` scaffold 상태
 - network / usb / storage controller 상태
-- USB / storage bootstrap candidate 선택 정보와 점수
+- network / USB / storage bootstrap candidate 선택 정보와 점수
 - SLM MainAI 설정과 seeded plan 목록
 
 즉, 지금 단계의 export는 "부팅 이벤트 파서 + 단일 실행 기록"까지 구현된 상태다.

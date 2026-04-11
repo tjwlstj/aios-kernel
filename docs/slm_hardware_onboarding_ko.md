@@ -81,7 +81,7 @@ AIOS의 SLM 계층은 커널 안에서 직접 "모든 드라이버를 생성"하
 
 현재 구현은 "bootstrap/dump + 기초 capability smoke" 중심이다.
 즉, 장치 레지스터 접근과 준비 상태 확인은 가능하고,
-- `e1000`는 QEMU 기준 `link up + RX ring bootstrap + bounded RX poll/rearm + TX smoke PASS`
+- `e1000`는 지원되는 Intel NIC 후보 중 부트스트랩 호환성 점수가 높은 장치를 고른 뒤, QEMU 기준 `link up + RX ring bootstrap + bounded RX poll/rearm + TX smoke PASS`
 - USB는 발견된 host controller를 호환성 점수로 고른 뒤 `xHCI`면 capability probe까지 수행
 - storage는 발견된 controller를 호환성 점수로 고른 뒤 IDE면 channel status probe까지 수행
 까지는 올라왔다.
@@ -130,7 +130,7 @@ SLM은 raw MMIO write를 직접 수행하지 않는다.
 ### 현재 한계
 
 - user-space SLM 런타임은 아직 없음
-- `e1000`는 QEMU 기준 RX descriptor ring bootstrap과 bounded RX poll/rearm, TX smoke까지 성공하고 SLM action으로도 호출 가능하지만 일반 RX path는 아직 없음
+- `e1000`는 지원되는 Intel NIC 후보 중 부트스트랩에 더 유리한 장치를 고른 뒤, QEMU 기준 RX descriptor ring bootstrap과 bounded RX poll/rearm, TX smoke까지 성공하고 SLM action으로도 호출 가능하지만 일반 RX path는 아직 없음
 - USB는 controller별 data path 없이, 후보군 중 부트스트랩에 더 유리한 host를 골라 `xHCI` capability probe까지만 수행
 - storage는 후보군 중 부트스트랩에 더 유리한 controller를 고르고, IDE channel probe와 AHCI/NVMe 분류까지만 있음
 - wireless, bluetooth는 아직 분류와 plan 템플릿만 있음

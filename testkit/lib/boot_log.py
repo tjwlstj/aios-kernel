@@ -53,6 +53,9 @@ HEALTH_RE = re.compile(
 NETWORK_READY_RE = re.compile(
     r"\[NET\] E1000 ready mmio=(?P<mmio>\S+) io=(?P<io>\S+) status=(?P<status>\S+) link=(?P<link>\w+) eeprom=(?P<eeprom>\d+)"
 )
+NETWORK_SELECTION_RE = re.compile(
+    r"\[NET\] Selected e1000 candidate score=(?P<score>-?\d+) candidates=(?P<candidates>\d+) pci=(?P<pci>\S+) device=(?P<device>\S+) mmio_bars=(?P<mmio_bars>\d+) io_bars=(?P<io_bars>\d+) pcie=(?P<pcie>\d+)"
+)
 USB_SELECTION_RE = re.compile(
     r"\[USB\] Selected bootstrap candidate=(?P<controller>\w+) score=(?P<score>-?\d+) candidates=(?P<candidates>\d+) pci=(?P<pci>\S+) mmio_bars=(?P<mmio_bars>\d+) io_bars=(?P<io_bars>\d+) pcie=(?P<pcie>\d+)"
 )
@@ -126,6 +129,7 @@ def _parse_controller_states(lines: list[str]) -> dict[str, object]:
         "storage": {"state": "unknown"},
     }
 
+    selection_index, selection_line, selection_match = _search_match(lines, NETWORK_SELECTION_RE)
     index, line, match = _search_match(lines, NETWORK_READY_RE)
     if match:
         controllers["network"] = {
@@ -142,6 +146,18 @@ def _parse_controller_states(lines: list[str]) -> dict[str, object]:
         info = _line_info(lines, lambda candidate: "[NET] No Intel E1000-compatible controller found" in candidate)
         if info["seen"]:
             controllers["network"] = {"state": "absent", **info}
+    if selection_match:
+        controllers["network"]["selection"] = {
+            "line": selection_index,
+            "text": selection_line,
+            "score": int(selection_match.group("score")),
+            "candidates": int(selection_match.group("candidates")),
+            "pci": selection_match.group("pci"),
+            "device": selection_match.group("device"),
+            "mmio_bars": int(selection_match.group("mmio_bars")),
+            "io_bars": int(selection_match.group("io_bars")),
+            "pcie": int(selection_match.group("pcie")),
+        }
 
     selection_index, selection_line, selection_match = _search_match(lines, USB_SELECTION_RE)
     index, line, match = _search_match(lines, USB_READY_RE)

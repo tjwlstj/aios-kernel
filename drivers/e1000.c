@@ -139,6 +139,70 @@ static bool e1000_is_supported(uint16_t vendor_id, uint16_t device_id) {
     }
 }
 
+static int32_t e1000_candidate_score(const platform_device_t *dev) {
+    int32_t score = 0;
+
+    switch (dev->device_id) {
+        case E1000_DEV_82574L: score += 120; break;
+        case E1000_DEV_82545EM: score += 110; break;
+        case E1000_DEV_82540EM: score += 100; break;
+        default: score += 60; break;
+    }
+
+    score += (int32_t)dev->mmio_bar_count * 8;
+    score += (int32_t)dev->io_bar_count * 5;
+    score += (int32_t)dev->bar_count * 2;
+
+    if (dev->pcie_capable) {
+        score += 8;
+    }
+    if (dev->msix_capable) {
+        score += 4;
+    } else if (dev->msi_capable) {
+        score += 2;
+    }
+    if (dev->has_64bit_bar) {
+        score += 2;
+    }
+
+    if (dev->mmio_bar_count == 0 && dev->io_bar_count == 0) {
+        score -= 40;
+    }
+    if (dev->bar_count == 0) {
+        score -= 24;
+    }
+
+    return score;
+}
+
+static bool e1000_candidate_better(const platform_device_t *dev,
+                                   int32_t score,
+                                   const platform_device_t *best,
+                                   int32_t best_score) {
+    if (!best) {
+        return true;
+    }
+    if (score != best_score) {
+        return score > best_score;
+    }
+    if (dev->pcie_capable != best->pcie_capable) {
+        return dev->pcie_capable;
+    }
+    if (dev->mmio_bar_count != best->mmio_bar_count) {
+        return dev->mmio_bar_count > best->mmio_bar_count;
+    }
+    if (dev->io_bar_count != best->io_bar_count) {
+        return dev->io_bar_count > best->io_bar_count;
+    }
+    if (dev->bus != best->bus) {
+        return dev->bus < best->bus;
+    }
+    if (dev->slot != best->slot) {
+        return dev->slot < best->slot;
+    }
+    return dev->function < best->function;
+}
+
 static bool e1000_use_mmio(void) {
     return g_e1000.mmio_base != 0;
 }
@@ -418,14 +482,20 @@ aios_status_t e1000_driver_init(void) {
     memset(&g_e1000, 0, sizeof(g_e1000));
 
     const platform_device_t *candidate = NULL;
+    int32_t candidate_score = 0;
+    uint32_t candidate_count = 0;
     for (uint32_t i = 0; i < platform_probe_count(); i++) {
         const platform_device_t *dev = platform_probe_get(i);
         if (!dev || dev->kind != PLATFORM_DEVICE_ETHERNET) {
             continue;
         }
         if (e1000_is_supported(dev->vendor_id, dev->device_id)) {
-            candidate = dev;
-            break;
+            int32_t score = e1000_candidate_score(dev);
+            candidate_count++;
+            if (e1000_candidate_better(dev, score, candidate, candidate_score)) {
+                candidate = dev;
+                candidate_score = score;
+            }
         }
     }
 
@@ -441,6 +511,24 @@ aios_status_t e1000_driver_init(void) {
     g_e1000.function = candidate->function;
     g_e1000.vendor_id = candidate->vendor_id;
     g_e1000.device_id = candidate->device_id;
+
+    kprintf("    E1000 bootstrap select: score=%d choices=%u pci=%u:%u.%u device=%x\n",
+        (int64_t)candidate_score,
+        (uint64_t)candidate_count,
+        (uint64_t)candidate->bus,
+        (uint64_t)candidate->slot,
+        (uint64_t)candidate->function,
+        (uint64_t)candidate->device_id);
+    serial_printf("[NET] Selected e1000 candidate score=%d candidates=%u pci=%u:%u.%u device=%x mmio_bars=%u io_bars=%u pcie=%u\n",
+        (int64_t)candidate_score,
+        (uint64_t)candidate_count,
+        (uint64_t)candidate->bus,
+        (uint64_t)candidate->slot,
+        (uint64_t)candidate->function,
+        (uint64_t)candidate->device_id,
+        (uint64_t)candidate->mmio_bar_count,
+        (uint64_t)candidate->io_bar_count,
+        candidate->pcie_capable ? 1ULL : 0ULL);
 
     (void)pci_enable_device(g_e1000.bus, g_e1000.slot, g_e1000.function,
         true, true, true);
