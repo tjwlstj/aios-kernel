@@ -69,6 +69,88 @@ static storage_host_controller_kind_t classify_controller(uint8_t subclass,
     }
 }
 
+static int32_t storage_host_candidate_score(const platform_device_t *dev,
+                                            storage_host_controller_kind_t kind) {
+    int32_t score = 0;
+
+    switch (kind) {
+        case STORAGE_HOST_CONTROLLER_AHCI: score += 140; break;
+        case STORAGE_HOST_CONTROLLER_NVME: score += 130; break;
+        case STORAGE_HOST_CONTROLLER_IDE: score += 110; break;
+        case STORAGE_HOST_CONTROLLER_SCSI: score += 80; break;
+        case STORAGE_HOST_CONTROLLER_OTHER: score += 40; break;
+        default: break;
+    }
+
+    score += (int32_t)dev->mmio_bar_count * 8;
+    score += (int32_t)dev->io_bar_count * 6;
+    score += (int32_t)dev->bar_count * 2;
+
+    if (dev->pcie_capable) {
+        score += 8;
+    }
+    if (dev->msix_capable) {
+        score += 4;
+    } else if (dev->msi_capable) {
+        score += 2;
+    }
+    if (dev->has_64bit_bar) {
+        score += 2;
+    }
+
+    if ((kind == STORAGE_HOST_CONTROLLER_AHCI ||
+         kind == STORAGE_HOST_CONTROLLER_NVME) &&
+        dev->mmio_bar_count == 0) {
+        score -= 40;
+    }
+
+    if (kind == STORAGE_HOST_CONTROLLER_IDE) {
+        bool primary_legacy = (dev->prog_if & BIT(0)) == 0;
+        bool secondary_legacy = (dev->prog_if & BIT(2)) == 0;
+        if (primary_legacy) {
+            score += 8;
+        }
+        if (secondary_legacy) {
+            score += 8;
+        }
+        if (dev->io_bar_count > 0) {
+            score += 6;
+        }
+    } else if (dev->bar_count == 0) {
+        score -= 24;
+    }
+
+    return score;
+}
+
+static bool storage_host_candidate_better(const platform_device_t *dev,
+                                          int32_t score,
+                                          const platform_device_t *best,
+                                          int32_t best_score) {
+    if (!best) {
+        return true;
+    }
+    if (score != best_score) {
+        return score > best_score;
+    }
+    if (dev->pcie_capable != best->pcie_capable) {
+        return dev->pcie_capable;
+    }
+    if (dev->mmio_bar_count != best->mmio_bar_count) {
+        return dev->mmio_bar_count > best->mmio_bar_count;
+    }
+    if (dev->io_bar_count != best->io_bar_count) {
+        return dev->io_bar_count > best->io_bar_count;
+    }
+    if (dev->bus != best->bus) {
+        return dev->bus < best->bus;
+    }
+    if (dev->slot != best->slot) {
+        return dev->slot < best->slot;
+    }
+    return dev->function < best->function;
+}
+
 static uint16_t pci_bar_io_base(uint8_t bus, uint8_t slot, uint8_t function,
                                 uint8_t offset) {
     pci_bar_t bar;
@@ -124,13 +206,24 @@ aios_status_t storage_host_init(void) {
     memset(&g_storage_host, 0, sizeof(g_storage_host));
 
     const platform_device_t *candidate = NULL;
+    int32_t candidate_score = 0;
+    uint32_t candidate_count = 0;
     for (uint32_t i = 0; i < platform_probe_count(); i++) {
         const platform_device_t *dev = platform_probe_get(i);
         if (!dev || dev->kind != PLATFORM_DEVICE_STORAGE) {
             continue;
         }
-        candidate = dev;
-        break;
+
+        const char *controller_label = NULL;
+        storage_host_controller_kind_t controller_kind = classify_controller(dev->subclass,
+            dev->prog_if, &controller_label);
+        int32_t score = storage_host_candidate_score(dev, controller_kind);
+
+        candidate_count++;
+        if (storage_host_candidate_better(dev, score, candidate, candidate_score)) {
+            candidate = dev;
+            candidate_score = score;
+        }
     }
 
     if (!candidate) {
@@ -153,6 +246,24 @@ aios_status_t storage_host_init(void) {
     g_storage_host.controller_kind = classify_controller(candidate->subclass,
                                                          candidate->prog_if,
                                                          &label);
+
+    kprintf("    Storage bootstrap select: %s score=%d choices=%u pci=%u:%u.%u\n",
+        (uint64_t)(uintptr_t)label,
+        (int64_t)candidate_score,
+        (uint64_t)candidate_count,
+        (uint64_t)candidate->bus,
+        (uint64_t)candidate->slot,
+        (uint64_t)candidate->function);
+    serial_printf("[STO] Selected bootstrap candidate=%s score=%d candidates=%u pci=%u:%u.%u mmio_bars=%u io_bars=%u pcie=%u\n",
+        (uint64_t)(uintptr_t)label,
+        (int64_t)candidate_score,
+        (uint64_t)candidate_count,
+        (uint64_t)candidate->bus,
+        (uint64_t)candidate->slot,
+        (uint64_t)candidate->function,
+        (uint64_t)candidate->mmio_bar_count,
+        (uint64_t)candidate->io_bar_count,
+        candidate->pcie_capable ? 1ULL : 0ULL);
 
     g_storage_host.pci_command = pci_enable_device(g_storage_host.bus, g_storage_host.slot,
         g_storage_host.function, true, true, true);

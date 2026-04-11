@@ -53,8 +53,14 @@ HEALTH_RE = re.compile(
 NETWORK_READY_RE = re.compile(
     r"\[NET\] E1000 ready mmio=(?P<mmio>\S+) io=(?P<io>\S+) status=(?P<status>\S+) link=(?P<link>\w+) eeprom=(?P<eeprom>\d+)"
 )
+USB_SELECTION_RE = re.compile(
+    r"\[USB\] Selected bootstrap candidate=(?P<controller>\w+) score=(?P<score>-?\d+) candidates=(?P<candidates>\d+) pci=(?P<pci>\S+) mmio_bars=(?P<mmio_bars>\d+) io_bars=(?P<io_bars>\d+) pcie=(?P<pcie>\d+)"
+)
 USB_READY_RE = re.compile(
-    r"\[USB\] XHCI ready=(?P<ready>\d+) vendor=(?P<vendor>\S+) device=(?P<device>\S+) pci=(?P<pci>\S+) cmd=(?P<cmd>\S+) mmio=(?P<mmio>\S+) io=(?P<io>\S+)"
+    r"\[USB\] (?P<controller>\w+) ready=(?P<ready>\d+) vendor=(?P<vendor>\S+) device=(?P<device>\S+) pci=(?P<pci>\S+) cmd=(?P<cmd>\S+) mmio=(?P<mmio>\S+) io=(?P<io>\S+)"
+)
+STORAGE_SELECTION_RE = re.compile(
+    r"\[STO\] Selected bootstrap candidate=(?P<controller>\w+) score=(?P<score>-?\d+) candidates=(?P<candidates>\d+) pci=(?P<pci>\S+) mmio_bars=(?P<mmio_bars>\d+) io_bars=(?P<io_bars>\d+) pcie=(?P<pcie>\d+)"
 )
 STORAGE_READY_RE = re.compile(
     r"\[STO\] (?P<controller>\w+) ready=(?P<ready>\d+) vendor=(?P<vendor>\S+) device=(?P<device>\S+) pci=(?P<pci>\S+) cmd=(?P<cmd>\S+) mmio=(?P<mmio>\S+) io=(?P<io>\S+)"
@@ -137,12 +143,14 @@ def _parse_controller_states(lines: list[str]) -> dict[str, object]:
         if info["seen"]:
             controllers["network"] = {"state": "absent", **info}
 
+    selection_index, selection_line, selection_match = _search_match(lines, USB_SELECTION_RE)
     index, line, match = _search_match(lines, USB_READY_RE)
     if match:
         controllers["usb"] = {
             "state": "ready",
             "line": index,
             "text": line,
+            "controller": match.group("controller"),
             "ready": int(match.group("ready")),
             "vendor": match.group("vendor"),
             "device": match.group("device"),
@@ -155,7 +163,20 @@ def _parse_controller_states(lines: list[str]) -> dict[str, object]:
         info = _line_info(lines, lambda candidate: "[USB] No USB host controller found" in candidate)
         if info["seen"]:
             controllers["usb"] = {"state": "absent", **info}
+    if selection_match:
+        controllers["usb"]["selection"] = {
+            "line": selection_index,
+            "text": selection_line,
+            "controller": selection_match.group("controller"),
+            "score": int(selection_match.group("score")),
+            "candidates": int(selection_match.group("candidates")),
+            "pci": selection_match.group("pci"),
+            "mmio_bars": int(selection_match.group("mmio_bars")),
+            "io_bars": int(selection_match.group("io_bars")),
+            "pcie": int(selection_match.group("pcie")),
+        }
 
+    selection_index, selection_line, selection_match = _search_match(lines, STORAGE_SELECTION_RE)
     index, line, match = _search_match(lines, STORAGE_READY_RE)
     if match:
         storage = {
@@ -194,6 +215,18 @@ def _parse_controller_states(lines: list[str]) -> dict[str, object]:
         info = _line_info(lines, lambda candidate: "[STO] No storage controller found" in candidate)
         if info["seen"]:
             controllers["storage"] = {"state": "absent", **info}
+    if selection_match:
+        controllers["storage"]["selection"] = {
+            "line": selection_index,
+            "text": selection_line,
+            "controller": selection_match.group("controller"),
+            "score": int(selection_match.group("score")),
+            "candidates": int(selection_match.group("candidates")),
+            "pci": selection_match.group("pci"),
+            "mmio_bars": int(selection_match.group("mmio_bars")),
+            "io_bars": int(selection_match.group("io_bars")),
+            "pcie": int(selection_match.group("pcie")),
+        }
 
     return controllers
 
