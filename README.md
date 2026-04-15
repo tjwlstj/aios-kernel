@@ -187,6 +187,7 @@ make debug          # GDB 디버깅 모드로 실행
 ## Planning Documents
 
 - [자율 OS 실행 로드맵 (2026-04-11)](docs/autonomous_os_execution_roadmap_ko.md)
+- [종합 점검 보고서 (2026-04-15)](docs/inspection_report_2026_04_15.md)
 - [SLM 자율 운영/최적화 구조 계획](docs/slm_autonomous_kernel_plan.md)
 - [Driver Model / Stack Foundation (2026-04-10)](docs/driver_model_foundation_ko.md)
 - [Enum 무결성 + 저레벨 SLM 정렬 기록 (2026-04-10)](docs/enum_and_lowlevel_slm_alignment_ko.md)
@@ -205,6 +206,7 @@ make debug          # GDB 디버깅 모드로 실행
 - [코드 경계 가이드와 변경 가능한 구조 트리 (2026-04-12)](docs/code_boundary_and_structure_tree_ko.md)
 - [유기적 커널 구조 정리 (2026-04-12)](docs/organic_kernel_structure_ko.md)
 - [메모리 병렬처리 최적화 정리 (2026-04-12)](docs/memory_parallel_optimization_ko.md)
+- [Kernel Room / Orbit / Cell / Node 구현 가능성 검토 (2026-04-12)](docs/kernel_room_orbit_cell_feasibility_ko.md)
 - [OS 계층 소개](os/README.md)
 
 ## License

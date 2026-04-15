@@ -16,6 +16,7 @@
 #include <drivers/pci_core.h>
 #include <kernel/acpi.h>
 #include <kernel/health.h>
+#include <kernel/spinlock.h>
 #include <kernel/time.h>
 #include <mm/memory_fabric.h>
 #include <runtime/autonomy.h>
@@ -43,6 +44,8 @@ typedef struct {
 
 static infer_ring_state_t infer_ring_table[MAX_INFER_RINGS];
 static uint32_t infer_ring_count = 0;
+static spinlock_t model_registry_lock = SPINLOCK_INIT;
+static spinlock_t infer_ring_lock = SPINLOCK_INIT;
 
 /* Syscall statistics */
 static struct {
@@ -61,7 +64,7 @@ static struct {
  * Internal Helpers
  * ============================================================ */
 
-static model_info_t *find_model(model_id_t id) {
+static model_info_t *find_model_locked(model_id_t id) {
     for (uint32_t i = 0; i < model_count; i++) {
         if (model_registry[i].id == id) {
             return &model_registry[i];
@@ -70,7 +73,7 @@ static model_info_t *find_model(model_id_t id) {
     return NULL;
 }
 
-static infer_ring_state_t *find_infer_ring(uint32_t ring_id) {
+static infer_ring_state_t *find_infer_ring_locked(uint32_t ring_id) {
     for (uint32_t i = 0; i < infer_ring_count; i++) {
         if (infer_ring_table[i].registered && infer_ring_table[i].ring_id == ring_id) {
             return &infer_ring_table[i];
@@ -89,14 +92,32 @@ static void copy_str(char *dst, const char *src, uint32_t max_len) {
     dst[i] = '\0';
 }
 
+static uint32_t model_registry_snapshot(model_info_t *out, uint32_t cap) {
+    uint32_t count = 0;
+
+    spinlock_lock(&model_registry_lock);
+    count = model_count;
+    if (count > cap) {
+        count = cap;
+    }
+    for (uint32_t i = 0; i < count; i++) {
+        out[i] = model_registry[i];
+    }
+    spinlock_unlock(&model_registry_lock);
+
+    return count;
+}
+
 /* ============================================================
  * Public API Implementation
  * ============================================================ */
 
 aios_status_t ai_syscall_init(void) {
     /* Initialize model registry */
+    spinlock_lock(&model_registry_lock);
     model_count = 0;
     next_model_id = 1;
+    spinlock_unlock(&model_registry_lock);
 
     /* Clear statistics */
     syscall_stats.total_calls = 0;
@@ -108,6 +129,7 @@ aios_status_t ai_syscall_init(void) {
     syscall_stats.pipe_calls = 0;
     syscall_stats.info_calls = 0;
     syscall_stats.invalid_calls = 0;
+    spinlock_lock(&infer_ring_lock);
     infer_ring_count = 0;
     for (uint32_t i = 0; i < MAX_INFER_RINGS; i++) {
         infer_ring_table[i].registered = false;
@@ -116,6 +138,7 @@ aios_status_t ai_syscall_init(void) {
         infer_ring_table[i].last_submit_tail = 0;
         infer_ring_table[i].last_notify_ns = 0;
     }
+    spinlock_unlock(&infer_ring_lock);
 
     kprintf("\n");
     kprintf("    AI System Call Interface initialized:\n");
@@ -136,10 +159,15 @@ aios_status_t ai_syscall_init(void) {
 int64_t ai_syscall_dispatch(uint64_t syscall_num, uint64_t arg1,
                             uint64_t arg2, uint64_t arg3,
                             uint64_t arg4, uint64_t arg5) {
+    uint32_t observed_model_count = 0;
+
     syscall_stats.total_calls++;
 
     /* Continuous telemetry feed for autonomous control loop */
-    autonomy_collect_telemetry(model_count, accel_get_count());
+    spinlock_lock(&model_registry_lock);
+    observed_model_count = model_count;
+    spinlock_unlock(&model_registry_lock);
+    autonomy_collect_telemetry(observed_model_count, accel_get_count());
 
     /* Route based on syscall number range */
     uint32_t category = (syscall_num >> 8) & 0xFF;
@@ -286,60 +314,106 @@ int64_t ai_syscall_dispatch(uint64_t syscall_num, uint64_t arg1,
  * ============================================================ */
 
 aios_status_t sys_model_load(syscall_model_load_t *req) {
-    if (!req || !req->path || !req->model_id_out) return AIOS_ERR_INVAL;
-    if (model_count >= MAX_MODELS_REGISTRY) return AIOS_ERR_NOMEM;
+    model_id_t model_id = 0;
+    tensor_alloc_t alloc;
+    aios_status_t status;
+    model_info_t *model = NULL;
+    model_info_t snapshot;
 
-    model_info_t *model = &model_registry[model_count];
-    model->id = next_model_id++;
+    if (!req || !req->path || !req->model_id_out) return AIOS_ERR_INVAL;
+
+    spinlock_lock(&model_registry_lock);
+    if (model_count >= MAX_MODELS_REGISTRY) {
+        spinlock_unlock(&model_registry_lock);
+        return AIOS_ERR_NOMEM;
+    }
+    model_id = next_model_id++;
+    spinlock_unlock(&model_registry_lock);
+
+    /* Allocate memory for model weights before publishing the registry entry. */
+    status = model_alloc(model_id, MB(64), &alloc);
+    if (status != AIOS_OK) {
+        return status;
+    }
+
+    spinlock_lock(&model_registry_lock);
+    if (model_count >= MAX_MODELS_REGISTRY) {
+        spinlock_unlock(&model_registry_lock);
+        (void)model_free(model_id);
+        return AIOS_ERR_NOMEM;
+    }
+
+    model = &model_registry[model_count];
+    model->id = model_id;
     copy_str(model->name, req->path, 64);
     copy_str(model->arch, "transformer", 32); /* Default architecture */
     model->param_count = 0;
-    model->memory_usage = 0;
+    model->memory_usage = alloc.size;
     model->dtype = req->dtype;
     model->accel_id = req->target_accel;
     model->loaded = true;
     model->inference_count = 0;
     model->avg_latency_ns = 0;
-
-    /* Allocate memory for model weights */
-    tensor_alloc_t alloc;
-    aios_status_t status = model_alloc(model->id, MB(64), &alloc);
-    if (status != AIOS_OK) {
-        return status;
-    }
-    model->memory_usage = alloc.size;
-
+    snapshot = *model;
     *req->model_id_out = model->id;
     model_count++;
+    spinlock_unlock(&model_registry_lock);
 
     kprintf("[SYSCALL] Model loaded: '%s' (ID=%u, mem=%u MB)\n",
-        model->name, (uint64_t)model->id,
-        model->memory_usage / MB(1));
+        snapshot.name, (uint64_t)snapshot.id,
+        snapshot.memory_usage / MB(1));
 
     return AIOS_OK;
 }
 
 aios_status_t sys_model_unload(model_id_t id) {
-    model_info_t *model = find_model(id);
-    if (!model || !model->loaded) return AIOS_ERR_INVAL;
+    model_info_t snapshot;
+    model_info_t *model = NULL;
+    aios_status_t status;
 
-    model_free(id);
+    spinlock_lock(&model_registry_lock);
+    model = find_model_locked(id);
+    if (!model || !model->loaded) {
+        spinlock_unlock(&model_registry_lock);
+        return AIOS_ERR_INVAL;
+    }
+    snapshot = *model;
     model->loaded = false;
     model->memory_usage = 0;
+    spinlock_unlock(&model_registry_lock);
+
+    status = model_free(id);
+    if (status != AIOS_OK) {
+        spinlock_lock(&model_registry_lock);
+        model = find_model_locked(id);
+        if (model && model->id == snapshot.id) {
+            model->loaded = snapshot.loaded;
+            model->memory_usage = snapshot.memory_usage;
+        }
+        spinlock_unlock(&model_registry_lock);
+        return status;
+    }
 
     kprintf("[SYSCALL] Model unloaded: '%s' (ID=%u)\n",
-        model->name, (uint64_t)model->id);
+        snapshot.name, (uint64_t)snapshot.id);
 
     return AIOS_OK;
 }
 
 aios_status_t sys_model_info(model_id_t id, model_info_t *info) {
+    model_info_t *model = NULL;
+
     if (!info) return AIOS_ERR_INVAL;
 
-    model_info_t *model = find_model(id);
-    if (!model) return AIOS_ERR_INVAL;
+    spinlock_lock(&model_registry_lock);
+    model = find_model_locked(id);
+    if (!model) {
+        spinlock_unlock(&model_registry_lock);
+        return AIOS_ERR_INVAL;
+    }
 
     *info = *model;
+    spinlock_unlock(&model_registry_lock);
     return AIOS_OK;
 }
 
@@ -348,15 +422,24 @@ aios_status_t sys_model_info(model_id_t id, model_info_t *info) {
  * ============================================================ */
 
 aios_status_t sys_infer_submit(syscall_infer_t *req) {
+    model_info_t model_snapshot;
+    model_info_t *model = NULL;
+
     if (!req) return AIOS_ERR_INVAL;
 
-    model_info_t *model = find_model(req->model_id);
-    if (!model || !model->loaded) return AIOS_ERR_INVAL;
+    spinlock_lock(&model_registry_lock);
+    model = find_model_locked(req->model_id);
+    if (!model || !model->loaded) {
+        spinlock_unlock(&model_registry_lock);
+        return AIOS_ERR_INVAL;
+    }
+    model_snapshot = *model;
+    spinlock_unlock(&model_registry_lock);
 
     /* Create an AI task for this inference */
     sched_params_t params;
     ai_sched_default_params(SCHED_POLICY_INFERENCE, &params);
-    params.affinity.preferred_accel = model->accel_id;
+    params.affinity.preferred_accel = model_snapshot.accel_id;
 
     ai_task_t *task;
     aios_status_t status = ai_task_create("inference",
@@ -369,7 +452,12 @@ aios_status_t sys_infer_submit(syscall_infer_t *req) {
     status = ai_task_submit(task->id);
     if (status != AIOS_OK) return status;
 
-    model->inference_count++;
+    spinlock_lock(&model_registry_lock);
+    model = find_model_locked(req->model_id);
+    if (model && model->loaded) {
+        model->inference_count++;
+    }
+    spinlock_unlock(&model_registry_lock);
 
     kprintf("[SYSCALL] Inference submitted: model=%u task=%u\n",
         (uint64_t)req->model_id, (uint64_t)task->id);
@@ -394,7 +482,11 @@ aios_status_t sys_infer_ring_setup(syscall_infer_ring_setup_t *req) {
     if (req->registration.abi_version != AI_RING_ABI_VERSION) return AIOS_ERR_INVAL;
     if (!ai_ring_valid_entries(req->registration.submit_entries)) return AIOS_ERR_INVAL;
     if (!ai_ring_valid_entries(req->registration.completion_entries)) return AIOS_ERR_INVAL;
-    if (infer_ring_count >= MAX_INFER_RINGS) return AIOS_ERR_NOMEM;
+    spinlock_lock(&infer_ring_lock);
+    if (infer_ring_count >= MAX_INFER_RINGS) {
+        spinlock_unlock(&infer_ring_lock);
+        return AIOS_ERR_NOMEM;
+    }
 
     ring = &infer_ring_table[infer_ring_count];
     ring->registered = true;
@@ -404,6 +496,7 @@ aios_status_t sys_infer_ring_setup(syscall_infer_ring_setup_t *req) {
     ring->last_notify_ns = 0;
     ring->registration = req->registration;
     infer_ring_count++;
+    spinlock_unlock(&infer_ring_lock);
 
     *req->ring_id_out = ring->ring_id;
 
@@ -421,12 +514,17 @@ aios_status_t sys_infer_ring_notify(syscall_infer_ring_notify_t *req) {
 
     if (!req) return AIOS_ERR_INVAL;
 
-    ring = find_infer_ring(req->ring_id);
-    if (!ring) return AIOS_ERR_INVAL;
+    spinlock_lock(&infer_ring_lock);
+    ring = find_infer_ring_locked(req->ring_id);
+    if (!ring) {
+        spinlock_unlock(&infer_ring_lock);
+        return AIOS_ERR_INVAL;
+    }
 
     ring->notify_count++;
     ring->last_submit_tail = req->submit_tail;
     ring->last_notify_ns = kernel_time_monotonic_ns();
+    spinlock_unlock(&infer_ring_lock);
 
     kprintf("[SYSCALL] Inference ring notify: id=%u tail=%u flags=%u\n",
         (uint64_t)req->ring_id,
@@ -438,7 +536,10 @@ aios_status_t sys_infer_ring_notify(syscall_infer_ring_notify_t *req) {
 
 aios_status_t sys_infer_ring_wait_cq(syscall_infer_ring_wait_t *req) {
     if (!req) return AIOS_ERR_INVAL;
-    if (!find_infer_ring(req->ring_id)) return AIOS_ERR_INVAL;
+    spinlock_lock(&infer_ring_lock);
+    bool registered = (find_infer_ring_locked(req->ring_id) != NULL);
+    spinlock_unlock(&infer_ring_lock);
+    if (!registered) return AIOS_ERR_INVAL;
 
     kprintf("[SYSCALL] Inference ring wait pending implementation: id=%u timeout=%u ns\n",
         (uint64_t)req->ring_id,
@@ -452,13 +553,18 @@ aios_status_t sys_infer_ring_status(uint32_t ring_id, syscall_infer_ring_status_
 
     if (!out) return AIOS_ERR_INVAL;
 
-    ring = find_infer_ring(ring_id);
-    if (!ring) return AIOS_ERR_INVAL;
+    spinlock_lock(&infer_ring_lock);
+    ring = find_infer_ring_locked(ring_id);
+    if (!ring) {
+        spinlock_unlock(&infer_ring_lock);
+        return AIOS_ERR_INVAL;
+    }
 
     out->ring_id = ring->ring_id;
     out->registered = ring->registered;
     out->notify_count = ring->notify_count;
     out->registration = ring->registration;
+    spinlock_unlock(&infer_ring_lock);
 
     return AIOS_OK;
 }
@@ -485,6 +591,7 @@ void ai_infer_ring_runtime(ai_ring_runtime_snapshot_t *out) {
     out->any_event_notify = false;
     out->any_shared_kv = false;
 
+    spinlock_lock(&infer_ring_lock);
     for (uint32_t i = 0; i < infer_ring_count; i++) {
         infer_ring_state_t *ring = &infer_ring_table[i];
         if (!ring->registered) {
@@ -510,6 +617,7 @@ void ai_infer_ring_runtime(ai_ring_runtime_snapshot_t *out) {
             any_shared_kv = true;
         }
     }
+    spinlock_unlock(&infer_ring_lock);
 
     out->active_rings = active;
     out->total_notifies = total_notifies;
@@ -525,10 +633,16 @@ void ai_infer_ring_runtime(ai_ring_runtime_snapshot_t *out) {
  * ============================================================ */
 
 aios_status_t sys_train_forward(syscall_train_t *req) {
+    model_info_t *model = NULL;
+    bool loaded = false;
+
     if (!req) return AIOS_ERR_INVAL;
 
-    model_info_t *model = find_model(req->model_id);
-    if (!model || !model->loaded) return AIOS_ERR_INVAL;
+    spinlock_lock(&model_registry_lock);
+    model = find_model_locked(req->model_id);
+    loaded = model && model->loaded;
+    spinlock_unlock(&model_registry_lock);
+    if (!loaded) return AIOS_ERR_INVAL;
 
     /* Create training task */
     sched_params_t params;
@@ -550,8 +664,14 @@ aios_status_t sys_train_forward(syscall_train_t *req) {
 }
 
 aios_status_t sys_train_backward(model_id_t model_id) {
-    model_info_t *model = find_model(model_id);
-    if (!model || !model->loaded) return AIOS_ERR_INVAL;
+    model_info_t *model = NULL;
+    bool loaded = false;
+
+    spinlock_lock(&model_registry_lock);
+    model = find_model_locked(model_id);
+    loaded = model && model->loaded;
+    spinlock_unlock(&model_registry_lock);
+    if (!loaded) return AIOS_ERR_INVAL;
 
     sched_params_t params;
     ai_sched_default_params(SCHED_POLICY_TRAINING, &params);
@@ -637,6 +757,15 @@ aios_status_t sys_slm_plan_list(slm_plan_list_t *out) {
  * ============================================================ */
 
 void sys_info_dump(void) {
+    model_info_t model_snapshot[MAX_MODELS_REGISTRY];
+    uint32_t model_snapshot_count = 0;
+    uint32_t registered_rings = 0;
+
+    model_snapshot_count = model_registry_snapshot(model_snapshot, MAX_MODELS_REGISTRY);
+    spinlock_lock(&infer_ring_lock);
+    registered_rings = infer_ring_count;
+    spinlock_unlock(&infer_ring_lock);
+
     kprintf("\n=== AIOS System Information ===\n");
     kprintf("Syscall Statistics:\n");
     kprintf("  Total calls:    %u\n", syscall_stats.total_calls);
@@ -648,7 +777,7 @@ void sys_info_dump(void) {
     kprintf("  Pipeline calls: %u\n", syscall_stats.pipe_calls);
     kprintf("  Info calls:     %u\n", syscall_stats.info_calls);
     kprintf("  Invalid calls:  %u\n", syscall_stats.invalid_calls);
-    kprintf("  Registered rings: %u\n", (uint64_t)infer_ring_count);
+    kprintf("  Registered rings: %u\n", (uint64_t)registered_rings);
     {
         ai_ring_runtime_snapshot_t ring_runtime;
         ai_infer_ring_runtime(&ring_runtime);
@@ -662,15 +791,15 @@ void sys_info_dump(void) {
             (uint64_t)ring_runtime.any_shared_kv);
     }
 
-    kprintf("\nLoaded Models: %u\n", (uint64_t)model_count);
-    for (uint32_t i = 0; i < model_count; i++) {
-        if (model_registry[i].loaded) {
+    kprintf("\nLoaded Models: %u\n", (uint64_t)model_snapshot_count);
+    for (uint32_t i = 0; i < model_snapshot_count; i++) {
+        if (model_snapshot[i].loaded) {
             kprintf("  [%u] %s (%s) - %u MB, %u inferences\n",
-                (uint64_t)model_registry[i].id,
-                model_registry[i].name,
-                model_registry[i].arch,
-                model_registry[i].memory_usage / MB(1),
-                model_registry[i].inference_count);
+                (uint64_t)model_snapshot[i].id,
+                model_snapshot[i].name,
+                model_snapshot[i].arch,
+                model_snapshot[i].memory_usage / MB(1),
+                model_snapshot[i].inference_count);
         }
     }
     kprintf("================================\n");

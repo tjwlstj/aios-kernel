@@ -5,6 +5,7 @@
 
 #include <mm/memory_fabric.h>
 #include <kernel/acpi.h>
+#include <kernel/spinlock.h>
 #include <kernel/selftest.h>
 #include <kernel/time.h>
 #include <drivers/pci_core.h>
@@ -20,6 +21,7 @@ static uint32_t g_domain_count = 0;
 static uint32_t g_window_count = 0;
 static uint32_t g_next_domain_id = 1;
 static uint32_t g_next_window_id = 1;
+static spinlock_t g_fabric_lock = SPINLOCK_INIT;
 
 static uint8_t clamp_u8_value(int32_t value, uint8_t min_value, uint8_t max_value) {
     if (value < (int32_t)min_value) {
@@ -58,7 +60,7 @@ static uint32_t domain_bit(uint32_t domain_id) {
     return (uint32_t)BIT(domain_id - 1);
 }
 
-static memory_domain_t *find_domain(uint32_t domain_id) {
+static memory_domain_t *find_domain_locked(uint32_t domain_id) {
     for (uint32_t i = 0; i < g_domain_count; i++) {
         if (g_domains[i].active && g_domains[i].domain_id == domain_id) {
             return &g_domains[i];
@@ -67,7 +69,7 @@ static memory_domain_t *find_domain(uint32_t domain_id) {
     return NULL;
 }
 
-static memory_shared_window_t *find_window(uint32_t window_id) {
+static memory_shared_window_t *find_window_locked(uint32_t window_id) {
     for (uint32_t i = 0; i < g_window_count; i++) {
         if (g_windows[i].active && g_windows[i].window_id == window_id) {
             return &g_windows[i];
@@ -76,7 +78,7 @@ static memory_shared_window_t *find_window(uint32_t window_id) {
     return NULL;
 }
 
-static memory_shared_window_t *alloc_window_slot(void) {
+static memory_shared_window_t *alloc_window_slot_locked(void) {
     for (uint32_t i = 0; i < g_window_count; i++) {
         if (!g_windows[i].active) {
             return &g_windows[i];
@@ -267,7 +269,7 @@ static void seed_default_domains(void) {
     }
 }
 
-static void update_window_accounting(uint32_t domain_mask, int32_t delta) {
+static void update_window_accounting_locked(uint32_t domain_mask, int32_t delta) {
     for (uint32_t i = 0; i < g_domain_count; i++) {
         uint32_t bit = domain_bit(g_domains[i].domain_id);
         if ((domain_mask & bit) == 0) {
@@ -283,6 +285,7 @@ static void update_window_accounting(uint32_t domain_mask, int32_t delta) {
 }
 
 aios_status_t memory_fabric_init(void) {
+    spinlock_lock(&g_fabric_lock);
     memset(g_domains, 0, sizeof(g_domains));
     memset(g_windows, 0, sizeof(g_windows));
     g_window_count = 0;
@@ -290,6 +293,7 @@ aios_status_t memory_fabric_init(void) {
 
     compute_profile();
     seed_default_domains();
+    spinlock_unlock(&g_fabric_lock);
 
     kprintf("\n");
     kprintf("    Memory Fabric initialized:\n");
@@ -318,32 +322,50 @@ const memory_fabric_profile_t *memory_fabric_profile(void) {
 }
 
 uint32_t memory_fabric_domain_count(void) {
-    return g_domain_count;
+    uint32_t count = 0;
+    spinlock_lock(&g_fabric_lock);
+    count = g_domain_count;
+    spinlock_unlock(&g_fabric_lock);
+    return count;
 }
 
 uint32_t memory_fabric_window_count(void) {
     uint32_t count = 0;
+    spinlock_lock(&g_fabric_lock);
     for (uint32_t i = 0; i < g_window_count; i++) {
         if (g_windows[i].active) {
             count++;
         }
     }
+    spinlock_unlock(&g_fabric_lock);
     return count;
 }
 
 aios_status_t memory_fabric_domain_open(memory_domain_role_t role, uint8_t priority,
                                         bool realtime, bool zero_copy_preferred,
                                         uint32_t budget_kib, uint32_t *domain_id_out) {
-    return domain_open_internal(role, priority, realtime, zero_copy_preferred,
+    aios_status_t status;
+    spinlock_lock(&g_fabric_lock);
+    status = domain_open_internal(role, priority, realtime, zero_copy_preferred,
         budget_kib, domain_id_out);
+    spinlock_unlock(&g_fabric_lock);
+    return status;
 }
 
 aios_status_t memory_fabric_domain_get(uint32_t domain_id, memory_domain_t *out) {
-    memory_domain_t *domain = find_domain(domain_id);
-    if (!domain || !out) {
+    memory_domain_t *domain = NULL;
+    if (!out) {
+        return AIOS_ERR_INVAL;
+    }
+
+    spinlock_lock(&g_fabric_lock);
+    domain = find_domain_locked(domain_id);
+    if (!domain) {
+        spinlock_unlock(&g_fabric_lock);
         return AIOS_ERR_INVAL;
     }
     *out = *domain;
+    spinlock_unlock(&g_fabric_lock);
     return AIOS_OK;
 }
 
@@ -353,12 +375,12 @@ aios_status_t memory_fabric_window_share(uint32_t owner_domain_id, tensor_id_t t
                                          uint32_t *window_id_out) {
     tensor_alloc_t tensor;
     memory_shared_window_t *window;
-    memory_domain_t *owner = find_domain(owner_domain_id);
+    memory_domain_t *owner = NULL;
     uint32_t owner_bit = domain_bit(owner_domain_id);
     uint32_t share_mask;
     aios_status_t status;
 
-    if (!owner || tensor_id == 0) {
+    if (tensor_id == 0) {
         return AIOS_ERR_INVAL;
     }
     status = tensor_info(tensor_id, &tensor);
@@ -370,8 +392,17 @@ aios_status_t memory_fabric_window_share(uint32_t owner_domain_id, tensor_id_t t
         return status;
     }
 
-    window = alloc_window_slot();
+    spinlock_lock(&g_fabric_lock);
+    owner = find_domain_locked(owner_domain_id);
+    if (!owner) {
+        spinlock_unlock(&g_fabric_lock);
+        (void)tensor_unref(tensor_id);
+        return AIOS_ERR_INVAL;
+    }
+
+    window = alloc_window_slot_locked();
     if (!window) {
+        spinlock_unlock(&g_fabric_lock);
         (void)tensor_unref(tensor_id);
         return AIOS_ERR_BUSY;
     }
@@ -391,8 +422,9 @@ aios_status_t memory_fabric_window_share(uint32_t owner_domain_id, tensor_id_t t
     window->last_access_ns = kernel_time_monotonic_ns();
 
     share_mask = window->reader_mask | window->writer_mask;
-    update_window_accounting(share_mask, 1);
+    update_window_accounting_locked(share_mask, 1);
     owner->last_activity_ns = window->last_access_ns;
+    spinlock_unlock(&g_fabric_lock);
 
     if (window_id_out) {
         *window_id_out = window->window_id;
@@ -403,52 +435,77 @@ aios_status_t memory_fabric_window_share(uint32_t owner_domain_id, tensor_id_t t
 
 aios_status_t memory_fabric_window_attach(uint32_t window_id, uint32_t domain_id,
                                           bool write_access) {
-    memory_shared_window_t *window = find_window(window_id);
-    memory_domain_t *domain = find_domain(domain_id);
+    memory_shared_window_t *window = NULL;
+    memory_domain_t *domain = NULL;
     uint32_t mask = domain_bit(domain_id);
 
-    if (!window || !domain || mask == 0) {
+    if (mask == 0) {
+        return AIOS_ERR_INVAL;
+    }
+
+    spinlock_lock(&g_fabric_lock);
+    window = find_window_locked(window_id);
+    domain = find_domain_locked(domain_id);
+    if (!window || !domain) {
+        spinlock_unlock(&g_fabric_lock);
         return AIOS_ERR_INVAL;
     }
     if ((window->reader_mask & mask) == 0) {
+        spinlock_unlock(&g_fabric_lock);
         return AIOS_ERR_PERM;
     }
     if (write_access && (window->writer_mask & mask) == 0) {
+        spinlock_unlock(&g_fabric_lock);
         return AIOS_ERR_PERM;
     }
 
     window->map_count = clamp_u16_value((int32_t)window->map_count + 1, 1, 0xFFFF);
     window->last_access_ns = kernel_time_monotonic_ns();
     domain->last_activity_ns = window->last_access_ns;
+    spinlock_unlock(&g_fabric_lock);
     return AIOS_OK;
 }
 
 aios_status_t memory_fabric_window_get(uint32_t window_id, memory_shared_window_t *out) {
-    memory_shared_window_t *window = find_window(window_id);
-    if (!window || !out) {
+    memory_shared_window_t *window = NULL;
+    if (!out) {
+        return AIOS_ERR_INVAL;
+    }
+
+    spinlock_lock(&g_fabric_lock);
+    window = find_window_locked(window_id);
+    if (!window) {
+        spinlock_unlock(&g_fabric_lock);
         return AIOS_ERR_INVAL;
     }
     *out = *window;
+    spinlock_unlock(&g_fabric_lock);
     return AIOS_OK;
 }
 
 aios_status_t memory_fabric_window_release(uint32_t window_id) {
-    memory_shared_window_t *window = find_window(window_id);
+    memory_shared_window_t *window = NULL;
     uint32_t share_mask;
+    tensor_id_t tensor_id = 0;
     aios_status_t status;
 
+    spinlock_lock(&g_fabric_lock);
+    window = find_window_locked(window_id);
     if (!window) {
+        spinlock_unlock(&g_fabric_lock);
         return AIOS_ERR_INVAL;
     }
 
     share_mask = window->reader_mask | window->writer_mask;
-    update_window_accounting(share_mask, -1);
-
-    status = tensor_unref(window->tensor_id);
+    tensor_id = window->tensor_id;
+    update_window_accounting_locked(share_mask, -1);
     window->active = false;
     window->reader_mask = 0;
     window->writer_mask = 0;
     window->map_count = 0;
+    spinlock_unlock(&g_fabric_lock);
+
+    status = tensor_unref(tensor_id);
     return status;
 }
 
@@ -484,24 +541,42 @@ const char *memory_fabric_access_name(memory_fabric_access_t access) {
 }
 
 void memory_fabric_dump(void) {
+    memory_fabric_profile_t profile;
+    memory_domain_t domains[MEMORY_FABRIC_MAX_DOMAINS];
+    memory_shared_window_t windows[MEMORY_FABRIC_MAX_WINDOWS];
+    uint32_t domain_count = 0;
+    uint32_t window_count = 0;
+
+    spinlock_lock(&g_fabric_lock);
+    profile = g_profile;
+    domain_count = g_domain_count;
+    window_count = g_window_count;
+    for (uint32_t i = 0; i < domain_count; i++) {
+        domains[i] = g_domains[i];
+    }
+    for (uint32_t i = 0; i < window_count; i++) {
+        windows[i] = g_windows[i];
+    }
+    spinlock_unlock(&g_fabric_lock);
+
     kprintf("\n=== Memory Fabric ===\n");
     kprintf("Topology=%s compat=%u locality=%u acpi=%u ecam=%u pcie=%u invariant_tsc=%u\n",
-        (uint64_t)(uintptr_t)memory_fabric_topology_name(g_profile.topology),
-        (uint64_t)g_profile.compatibility_score,
-        (uint64_t)g_profile.locality_score,
-        (uint64_t)g_profile.acpi_ready,
-        (uint64_t)g_profile.ecam_available,
-        (uint64_t)g_profile.pcie_present,
-        (uint64_t)g_profile.invariant_tsc);
+        (uint64_t)(uintptr_t)memory_fabric_topology_name(profile.topology),
+        (uint64_t)profile.compatibility_score,
+        (uint64_t)profile.locality_score,
+        (uint64_t)profile.acpi_ready,
+        (uint64_t)profile.ecam_available,
+        (uint64_t)profile.pcie_present,
+        (uint64_t)profile.invariant_tsc);
     kprintf("Plan: slots=%u worker_qd=%u hotset=%uKiB staging=%uKiB zero_copy_window=%uKiB zero_copy=%u\n",
-        (uint64_t)g_profile.recommended_agent_slots,
-        (uint64_t)g_profile.recommended_worker_queue_depth,
-        (uint64_t)g_profile.recommended_hotset_kib,
-        (uint64_t)g_profile.recommended_staging_kib,
-        (uint64_t)g_profile.recommended_zero_copy_window_kib,
-        (uint64_t)g_profile.zero_copy_preferred);
-    for (uint32_t i = 0; i < g_domain_count; i++) {
-        const memory_domain_t *domain = &g_domains[i];
+        (uint64_t)profile.recommended_agent_slots,
+        (uint64_t)profile.recommended_worker_queue_depth,
+        (uint64_t)profile.recommended_hotset_kib,
+        (uint64_t)profile.recommended_staging_kib,
+        (uint64_t)profile.recommended_zero_copy_window_kib,
+        (uint64_t)profile.zero_copy_preferred);
+    for (uint32_t i = 0; i < domain_count; i++) {
+        const memory_domain_t *domain = &domains[i];
         if (!domain->active) {
             continue;
         }
@@ -515,8 +590,8 @@ void memory_fabric_dump(void) {
             (uint64_t)domain->max_inflight_ops,
             (uint64_t)domain->attached_windows);
     }
-    for (uint32_t i = 0; i < g_window_count; i++) {
-        const memory_shared_window_t *window = &g_windows[i];
+    for (uint32_t i = 0; i < window_count; i++) {
+        const memory_shared_window_t *window = &windows[i];
         if (!window->active) {
             continue;
         }
