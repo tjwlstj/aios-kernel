@@ -130,6 +130,7 @@ function Get-SmokeRequiredPatterns {
         '\[SELFTEST\] Memory microbench PASS',
         '\[DEV\] Peripheral probe ready',
         '\[USER\] Ring3 scaffold ready=1',
+        '\[ROOM\] snapshot stability=',
         '\[HEALTH\] stability='
     )
 

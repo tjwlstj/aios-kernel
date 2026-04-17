@@ -146,6 +146,7 @@ optional 하드웨어 구성을 나눌 수 있다.
 - `공통`
   - `[DEV] Peripheral probe ready`
   - `[USER] Ring3 scaffold ready=1`
+  - `[ROOM] snapshot stability=...`
   - `[HEALTH] stability=...`
 - `full`
   - `[NET] E1000 ready`
@@ -179,6 +180,7 @@ optional 하드웨어 구성을 나눌 수 있다.
 - device summary
 - health summary
 - `user_mode` scaffold 상태
+- `kernel_room` snapshot / gate 요약
 - network / usb / storage controller 상태
 - network / USB / storage bootstrap candidate 선택 정보와 점수
 - SLM MainAI 설정과 seeded plan 목록

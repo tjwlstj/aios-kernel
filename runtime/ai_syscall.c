@@ -16,6 +16,7 @@
 #include <drivers/pci_core.h>
 #include <kernel/acpi.h>
 #include <kernel/health.h>
+#include <kernel/kernel_room.h>
 #include <kernel/spinlock.h>
 #include <kernel/time.h>
 #include <mm/memory_fabric.h>
@@ -271,6 +272,8 @@ int64_t ai_syscall_dispatch(uint64_t syscall_num, uint64_t arg1,
                     return AIOS_OK;
                 case SYS_INFO_HEALTH:
                     return (int64_t)sys_info_health((kernel_health_summary_t *)arg1);
+                case SYS_INFO_ROOM:
+                    return (int64_t)sys_info_room((kernel_room_snapshot_t *)arg1);
                 case SYS_AUTONOMY_ACTION_PROPOSE:
                     return (int64_t)sys_autonomy_action_propose((autonomy_action_req_t *)arg1);
                 case SYS_AUTONOMY_ACTION_COMMIT:
@@ -805,6 +808,7 @@ void sys_info_dump(void) {
     kprintf("================================\n");
 
     /* Also dump subsystem info */
+    kernel_room_dump();
     tensor_mm_dump();
     memory_fabric_dump();
     ai_sched_dump();
@@ -823,6 +827,10 @@ aios_status_t sys_info_health(kernel_health_summary_t *out) {
 
     kernel_health_get_summary(out);
     return AIOS_OK;
+}
+
+aios_status_t sys_info_room(kernel_room_snapshot_t *out) {
+    return kernel_room_snapshot_read(out);
 }
 
 __asm__(".section .note.GNU-stack,\"\",@progbits\n\t.previous");

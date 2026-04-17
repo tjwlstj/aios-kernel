@@ -84,7 +84,7 @@ AIOS(AI-Native Operating System)는 인공지능 워크로드를 **1급 시민(F
 | `0x400-0x4FF` | 학습 | `SYS_TRAIN_FORWARD`, `SYS_TRAIN_BACKWARD` |
 | `0x500-0x5FF` | 가속기 | `SYS_ACCEL_LIST`, `SYS_ACCEL_SELECT` |
 | `0x600-0x6FF` | 파이프라인 | `SYS_PIPE_CREATE`, `SYS_PIPE_EXECUTE` |
-| `0x700-0x7FF` | 시스템 정보 | `SYS_INFO_MEMORY`, `SYS_INFO_SYSTEM` |
+| `0x700-0x7FF` | 시스템 정보 | `SYS_INFO_MEMORY`, `SYS_INFO_SYSTEM`, `SYS_INFO_ROOM` |
 | `0x710-0x715` | 자율 제어 | `SYS_AUTONOMY_PROPOSE`, `SYS_AUTONOMY_ROLLBACK` |
 
 ## Project Structure
@@ -96,6 +96,7 @@ aios-kernel/
 │   └── boot.asm        # x86_64 엔트리포인트, GDT, 페이징, SSE/AVX, BSS 초기화
 ├── kernel/             # 커널 코어
 │   ├── main.c          # kernel_main 엔트리포인트
+│   ├── kernel_room.c   # Kernel Room snapshot / gate foundation
 │   └── linker.ld       # 링커 스크립트
 ├── interrupt/          # 인터럽트 처리
 │   ├── idt.c           # IDT 설정, 예외 핸들러, kernel_panic
@@ -206,7 +207,10 @@ make debug          # GDB 디버깅 모드로 실행
 - [코드 경계 가이드와 변경 가능한 구조 트리 (2026-04-12)](docs/code_boundary_and_structure_tree_ko.md)
 - [유기적 커널 구조 정리 (2026-04-12)](docs/organic_kernel_structure_ko.md)
 - [메모리 병렬처리 최적화 정리 (2026-04-12)](docs/memory_parallel_optimization_ko.md)
-- [Kernel Room / Orbit / Cell / Node 구현 가능성 검토 (2026-04-12)](docs/kernel_room_orbit_cell_feasibility_ko.md)
+- [Kernel Room Topology 문서 모음](docs/kernel-room/README.md)
+- [Kernel Room Topology 정리 (2026-04-18)](docs/kernel-room/kernel_room_topology_ko.md)
+- [Kernel Room Topology 개발 가이드 (2026-04-18)](docs/kernel-room/development_guide_ko.md)
+- [Orbit-Cell Node Model 구현 가능성 검토 (2026-04-12)](docs/kernel-room/orbit_cell_node_feasibility_ko.md)
 - [OS 계층 소개](os/README.md)
 
 ## License

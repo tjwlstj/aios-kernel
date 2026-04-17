@@ -9,6 +9,7 @@
 #include <kernel/types.h>
 #include <kernel/acpi.h>
 #include <kernel/health.h>
+#include <kernel/kernel_room.h>
 #include <kernel/selftest.h>
 #include <kernel/time.h>
 #include <kernel/user_mode.h>
@@ -77,6 +78,7 @@ void kernel_main(uint64_t multiboot_magic, uint64_t multiboot_info) {
     /* Initialize all kernel subsystems */
     init_subsystems(multiboot_magic, multiboot_info);
     user_mode_scaffold_init();
+    kernel_room_dump();
     print_health_summary();
     enforce_stability_policy();
     

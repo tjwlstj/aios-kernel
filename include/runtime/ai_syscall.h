@@ -17,6 +17,7 @@
 #define _AIOS_AI_SYSCALL_H
 
 #include <kernel/types.h>
+#include <kernel/kernel_room.h>
 #include <mm/tensor_mm.h>
 #include <sched/ai_sched.h>
 #include <hal/accel_hal.h>
@@ -81,6 +82,7 @@
 #define SYS_INFO_SCHEDULER      0x701   /* Get scheduler statistics */
 #define SYS_INFO_SYSTEM         0x702   /* Get system information */
 #define SYS_INFO_HEALTH         0x703   /* Get kernel health summary */
+#define SYS_INFO_ROOM           0x704   /* Get Kernel Room snapshot */
 
 /* Autonomy control syscalls (0x710 - 0x71F) */
 #define SYS_AUTONOMY_ACTION_PROPOSE 0x710  /* Propose policy action */
@@ -222,6 +224,7 @@ aios_status_t sys_train_step(model_id_t model_id, float learning_rate);
 /* System info */
 void sys_info_dump(void);
 aios_status_t sys_info_health(kernel_health_summary_t *out);
+aios_status_t sys_info_room(kernel_room_snapshot_t *out);
 
 /* Autonomy control */
 aios_status_t sys_autonomy_action_propose(autonomy_action_req_t *req);

@@ -28,6 +28,7 @@ CHECKPOINT_PATTERNS = {
     "autonomy": "[INIT] Autonomy Control Plane... OK",
     "slm_orchestrator": "[INIT] SLM Hardware Orchestrator... OK",
     "ring3_scaffold": "[USER] Ring3 scaffold ready=1",
+    "kernel_room": "[ROOM] snapshot stability=",
     "health": "[HEALTH] stability=",
     "ready": "AIOS Kernel Ready",
 }
@@ -77,6 +78,12 @@ SLM_MAIN_RE = re.compile(
 SLM_SEEDED_RE = re.compile(r"\[SLM\] Seeded plan (?P<plan_id>\d+) label=(?P<label>[a-z0-9\-]+)")
 USER_SCAFFOLD_RE = re.compile(
     r"\[USER\] Ring3 scaffold ready=(?P<ready>\d+) tr=(?P<tr>\S+) user_cs=(?P<user_cs>\S+) user_ds=(?P<user_ds>\S+) rsp0=(?P<rsp0>\S+) gdt_base=(?P<gdt_base>\S+) gdt_limit=(?P<gdt_limit>\d+)"
+)
+ROOM_SNAPSHOT_RE = re.compile(
+    r"\[ROOM\] snapshot stability=(?P<stability>\w+) ok=(?P<ok>\d+) degraded=(?P<degraded>\d+) failed=(?P<failed>\d+) unknown=(?P<unknown>\d+) topology=(?P<topology>[\w\-]+) domains=(?P<domains>\d+) windows=(?P<windows>\d+) drivers=(?P<drivers_ready>\d+)/(?P<drivers>\d+) plans=(?P<plans>\d+) nodes=(?P<nodes>\d+) rings=(?P<rings>\d+) active=(?P<active>\d+) user=(?P<user>\d+)"
+)
+ROOM_GATES_RE = re.compile(
+    r"\[ROOM\] gates total=(?P<total>\d+) stable_only=(?P<stable_only>\d+) completion=(?P<completion>\d+) shared=(?P<shared>\d+) risky_io=(?P<risky_io>\d+) observe=(?P<observe>\d+) control=(?P<control>\d+) data=(?P<data>\d+)"
 )
 
 
@@ -358,6 +365,51 @@ def parse_boot_log_text(log_text: str, smoke_profile: str, serial_log_path: str 
             }
         )
 
+    kernel_room: dict[str, object] = {"ready": checkpoints["kernel_room"]["seen"]}
+    index, line, match = _search_match(lines, ROOM_SNAPSHOT_RE)
+    if match:
+        kernel_room.update(
+            {
+                "line": index,
+                "text": line,
+                "stability": match.group("stability"),
+                "topology": match.group("topology"),
+                **_int_groupdict(
+                    match,
+                    "ok",
+                    "degraded",
+                    "failed",
+                    "unknown",
+                    "domains",
+                    "windows",
+                    "drivers_ready",
+                    "drivers",
+                    "plans",
+                    "nodes",
+                    "rings",
+                    "active",
+                    "user",
+                ),
+            }
+        )
+    gate_index, gate_line, gate_match = _search_match(lines, ROOM_GATES_RE)
+    if gate_match:
+        kernel_room["gates"] = {
+            "line": gate_index,
+            "text": gate_line,
+            **_int_groupdict(
+                gate_match,
+                "total",
+                "stable_only",
+                "completion",
+                "shared",
+                "risky_io",
+                "observe",
+                "control",
+                "data",
+            ),
+        }
+
     summary = {
         "smoke_profile": smoke_profile,
         "serial_log": serial_log_path,
@@ -370,6 +422,7 @@ def parse_boot_log_text(log_text: str, smoke_profile: str, serial_log_path: str 
         "controllers": _parse_controller_states(lines),
         "slm": slm,
         "user_mode": user_mode,
+        "kernel_room": kernel_room,
     }
     return summary
 

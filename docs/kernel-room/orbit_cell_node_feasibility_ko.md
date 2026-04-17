@@ -1,10 +1,12 @@
-# AIOS Kernel Room / Orbit / Cell / Node 구현 가능성 검토
+# AIOS Orbit-Cell Node Model 구현 가능성 검토
 
 작성일: 2026-04-12
+갱신: 2026-04-18
 
 ## 목적
 
-이 문서는 지금까지 논의한 아래 개념을 현재 AIOS 저장소 기준으로 다시 정리한다.
+이 문서는 `Kernel Room Topology` 아래에서 다루는
+`Orbit-Cell Node Model`을 현재 AIOS 저장소 기준으로 다시 정리한다.
 
 - Kernel Room
 - Axis Gate
@@ -22,8 +24,9 @@
 ## 한 줄 결론
 
 `Kernel Room / Gate / Orbit / Cell / Node`는 AIOS에 맞는 운영 모델로는 유효하다.
-하지만 2026-04-12 현재 저장소에서 바로 코드로 옮길 수 있는 범위는
-`Kernel Room registry`, `Gate metadata`, `Cell metadata`, `Node-to-Cell binding` 정도까지다.
+그리고 2026-04-18 기준 현재 저장소에는
+read-only `Kernel Room registry`와 `Gate metadata`가 foundation으로 들어갔다.
+하지만 아직 다음 단계인 `Cell metadata`, `Node-to-Cell binding`은 남아 있다.
 
 즉, 지금은 "입체적인 운영 메타모델"로 쓰기 좋고,
 실제 구현은 단일 머신 안에서의 상태/격리/정책 단위부터 시작하는 편이 맞다.
@@ -172,6 +175,7 @@ Orbit는 스케줄뿐 아니라 권한, 위험도, 자원 거리까지 포함해
    - fabric profile
    - driver stack summary
    - active plan summary
+   - 2026-04-18 기준 read-only foundation 반영 완료
 
 2. `Axis Gate descriptor`
    - gate id
@@ -179,6 +183,7 @@ Orbit는 스케줄뿐 아니라 권한, 위험도, 자원 거리까지 포함해
    - risk class
    - health precondition
    - completion / wait policy
+   - 2026-04-18 기준 정적 descriptor foundation 반영 완료
 
 3. `Cell metadata`
    - cell id
