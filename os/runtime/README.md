@@ -53,6 +53,15 @@
 - 형식: OCI-like bundle
 - 용도: 배포/패키징/재현 가능한 실행
 
+## 세분화 구조
+
+- `bootstrap/`
+  ring3 handoff, ELF loader, `aios-init` 같은 첫 userspace 진입 조각
+- `services/`
+  `aios-osd`, `aios-agentd`, `aios-modeld`, `aios-memd`, `aios-kvcached`, `aios-compatd`
+- `policy/`
+  seed SLM, candidate registry, observer/builder, promotion policy
+
 ## 커널 연결점
 
 - `SYS_SLM_HW_SNAPSHOT`
@@ -80,3 +89,13 @@
 3. WASI component host
 4. OCI bundle import
 5. ONNX import pipeline
+
+## 현재 방향 문서
+
+- `../../docs/user_space_os_direction_ko.md`
+  현재 커널 구현 상태를 기준으로, 어떤 userspace OS를 먼저 올릴지와
+  `seed SLM -> candidate registry -> promotion policy` 방향을 정리한 문서
+- `../../docs/user_space_os_build_slices_ko.md`
+  `ring3 -> loader -> init -> service -> policy` 순서로 더 잘게 자른 구현 계획 문서
+- `../../docs/user_space_compat_architecture_ko.md`
+  호환성, 실행 레인, ABI 선택지를 더 넓게 다루는 상위 설계 문서

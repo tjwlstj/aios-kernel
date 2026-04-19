@@ -40,6 +40,10 @@
 
 - `../docs/user_space_compat_architecture_ko.md`
   커널 이후 유저 공간 OS 구조와 호환성 중심 설계
+- `../docs/user_space_os_direction_ko.md`
+  현재 커널 기준으로 어떤 userspace OS를 어떤 순서로 올릴지 정리한 방향 문서
+- `../docs/user_space_os_build_slices_ko.md`
+  `ring3 -> loader -> init -> service -> policy` 순서의 세분화 빌드 문서
 - `../docs/code_boundary_and_structure_tree_ko.md`
   현재 C 커널을 유지하면서도 이후 구조 변경과 유저 공간 분리를 쉽게 하기 위한 코드 경계/구조 트리 가이드
 - `runtime/README.md`
