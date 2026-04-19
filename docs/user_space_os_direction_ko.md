@@ -23,6 +23,7 @@
 - `kernel/kernel_room.c`는 read-only `Kernel Room snapshot`과 `Axis Gate` 메타데이터를 노출한다
 - `mm/memory_fabric.c`는 멀티 에이전트용 domain/window 기반 공유 메모리 기초를 제공한다
 - `runtime/ai_syscall.c`는 AI syscall surface와 일부 ring runtime 통계를 제공한다
+- `SYS_INFO_BOOTSTRAP`은 health / room / user scaffold / SLM snapshot을 첫 userspace용 묶음으로 읽게 해준다
 - `runtime/slm_orchestrator.c`는 boot-time hardware-aware seed plan을 만든다
 - `kernel/user_mode.c` 기준 ring3 scaffold marker는 있으나, 실제 userspace handoff와 ELF loader는 아직 없다
 
@@ -197,6 +198,7 @@ bundle은 배포 보조층으로 뒤따라오는 편이 맞다.
 - `Kernel Room snapshot`
 - `Axis Gate` 메타데이터
 - health / stability summary
+- `SYS_INFO_BOOTSTRAP` read-only snapshot
 - memory fabric domain / window
 - AI syscall surface
 - driver bootstrap / boot inventory / boot matrix testkit

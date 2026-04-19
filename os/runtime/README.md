@@ -66,6 +66,8 @@
 
 - `SYS_SLM_HW_SNAPSHOT`
   hardware, health, main AI mode, pipeline hints, agent tree 읽기
+- `SYS_INFO_BOOTSTRAP`
+  health / room / user scaffold / SLM snapshot을 early userspace가 한 번에 읽는 bootstrap surface
 - `SYS_MODEL_*`
   모델 lifecycle
 - `SYS_TENSOR_*`

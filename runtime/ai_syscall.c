@@ -19,6 +19,8 @@
 #include <kernel/kernel_room.h>
 #include <kernel/spinlock.h>
 #include <kernel/time.h>
+#include <kernel/user_mode.h>
+#include <lib/string.h>
 #include <mm/memory_fabric.h>
 #include <runtime/autonomy.h>
 #include <runtime/slm_orchestrator.h>
@@ -274,6 +276,8 @@ int64_t ai_syscall_dispatch(uint64_t syscall_num, uint64_t arg1,
                     return (int64_t)sys_info_health((kernel_health_summary_t *)arg1);
                 case SYS_INFO_ROOM:
                     return (int64_t)sys_info_room((kernel_room_snapshot_t *)arg1);
+                case SYS_INFO_BOOTSTRAP:
+                    return (int64_t)sys_info_bootstrap((aios_bootstrap_info_t *)arg1);
                 case SYS_AUTONOMY_ACTION_PROPOSE:
                     return (int64_t)sys_autonomy_action_propose((autonomy_action_req_t *)arg1);
                 case SYS_AUTONOMY_ACTION_COMMIT:
@@ -763,6 +767,7 @@ void sys_info_dump(void) {
     model_info_t model_snapshot[MAX_MODELS_REGISTRY];
     uint32_t model_snapshot_count = 0;
     uint32_t registered_rings = 0;
+    aios_bootstrap_info_t bootstrap;
 
     model_snapshot_count = model_registry_snapshot(model_snapshot, MAX_MODELS_REGISTRY);
     spinlock_lock(&infer_ring_lock);
@@ -792,6 +797,15 @@ void sys_info_dump(void) {
             (uint64_t)ring_runtime.last_ring_id,
             (uint64_t)ring_runtime.any_event_notify,
             (uint64_t)ring_runtime.any_shared_kv);
+    }
+    if (sys_info_bootstrap(&bootstrap) == AIOS_OK) {
+        kprintf("  Bootstrap ABI: v%u size=%u features=%x user_ready=%u room=%s plans=%u\n",
+            (uint64_t)bootstrap.abi_version,
+            (uint64_t)bootstrap.struct_size,
+            (uint64_t)bootstrap.features,
+            (uint64_t)bootstrap.user_mode.ready,
+            (uint64_t)(uintptr_t)kernel_stability_name(bootstrap.health.level),
+            (uint64_t)bootstrap.room.seeded_plan_count);
     }
 
     kprintf("\nLoaded Models: %u\n", (uint64_t)model_snapshot_count);
@@ -831,6 +845,35 @@ aios_status_t sys_info_health(kernel_health_summary_t *out) {
 
 aios_status_t sys_info_room(kernel_room_snapshot_t *out) {
     return kernel_room_snapshot_read(out);
+}
+
+aios_status_t sys_info_bootstrap(aios_bootstrap_info_t *out) {
+    aios_status_t status = AIOS_OK;
+
+    if (!out) {
+        return AIOS_ERR_INVAL;
+    }
+
+    memset(out, 0, sizeof(*out));
+    out->abi_version = AIOS_BOOTSTRAP_INFO_ABI_VERSION;
+    out->struct_size = (uint32_t)sizeof(*out);
+    out->features = AIOS_BOOTSTRAP_FEATURE_ROOM |
+                    AIOS_BOOTSTRAP_FEATURE_USER_MODE |
+                    AIOS_BOOTSTRAP_FEATURE_SLM;
+
+    kernel_health_get_summary(&out->health);
+
+    status = kernel_room_snapshot_read(&out->room);
+    if (status != AIOS_OK) {
+        return status;
+    }
+
+    status = user_mode_scaffold_info(&out->user_mode);
+    if (status != AIOS_OK) {
+        return status;
+    }
+
+    return slm_snapshot_read(&out->slm);
 }
 
 __asm__(".section .note.GNU-stack,\"\",@progbits\n\t.previous");

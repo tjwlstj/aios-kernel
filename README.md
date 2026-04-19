@@ -84,7 +84,7 @@ AIOS(AI-Native Operating System)는 인공지능 워크로드를 **1급 시민(F
 | `0x400-0x4FF` | 학습 | `SYS_TRAIN_FORWARD`, `SYS_TRAIN_BACKWARD` |
 | `0x500-0x5FF` | 가속기 | `SYS_ACCEL_LIST`, `SYS_ACCEL_SELECT` |
 | `0x600-0x6FF` | 파이프라인 | `SYS_PIPE_CREATE`, `SYS_PIPE_EXECUTE` |
-| `0x700-0x7FF` | 시스템 정보 | `SYS_INFO_MEMORY`, `SYS_INFO_SYSTEM`, `SYS_INFO_ROOM` |
+| `0x700-0x7FF` | 시스템 정보 | `SYS_INFO_MEMORY`, `SYS_INFO_SYSTEM`, `SYS_INFO_ROOM`, `SYS_INFO_BOOTSTRAP` |
 | `0x710-0x715` | 자율 제어 | `SYS_AUTONOMY_PROPOSE`, `SYS_AUTONOMY_ROLLBACK` |
 
 ## Project Structure
