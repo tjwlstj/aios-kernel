@@ -319,6 +319,7 @@ bundle은 배포 보조층으로 뒤따라오는 편이 맞다.
 
 같이 보는 문서:
 
+- `docs/ai_native_os_github_landscape_ko.md`
 - `docs/user_space_compat_architecture_ko.md`
 - `docs/user_space_os_build_slices_ko.md`
 - `docs/autonomous_os_execution_roadmap_ko.md`
