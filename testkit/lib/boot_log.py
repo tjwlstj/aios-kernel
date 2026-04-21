@@ -24,6 +24,7 @@ CHECKPOINT_PATTERNS = {
     "network_bootstrap": "[INIT] Intel E1000 Ethernet... OK",
     "usb_bootstrap": "[INIT] USB Host Bootstrap... OK",
     "storage_bootstrap": "[INIT] Storage Host Bootstrap... OK",
+    "user_access": "[UACCESS] selftest PASS",
     "syscall": "[INIT] AI System Call Interface... OK",
     "autonomy": "[INIT] Autonomy Control Plane... OK",
     "slm_orchestrator": "[INIT] SLM Hardware Orchestrator... OK",
@@ -81,6 +82,9 @@ SLM_USER_AI_RE = re.compile(
 SLM_SEEDED_RE = re.compile(r"\[SLM\] Seeded plan (?P<plan_id>\d+) label=(?P<label>[a-z0-9\-]+)")
 USER_SCAFFOLD_RE = re.compile(
     r"\[USER\] Ring3 scaffold ready=(?P<ready>\d+) tr=(?P<tr>\S+) user_cs=(?P<user_cs>\S+) user_ds=(?P<user_ds>\S+) rsp0=(?P<rsp0>\S+) gdt_base=(?P<gdt_base>\S+) gdt_limit=(?P<gdt_limit>\d+)"
+)
+USER_ACCESS_RE = re.compile(
+    r"\[UACCESS\] selftest (?P<status>\w+) structural=(?P<structural>\d+) copy=(?P<copy>\d+) zero_copy=(?P<zero_copy>\d+)(?: string=(?P<string>\d+))?"
 )
 ROOM_SNAPSHOT_RE = re.compile(
     r"\[ROOM\] snapshot stability=(?P<stability>\w+) ok=(?P<ok>\d+) degraded=(?P<degraded>\d+) failed=(?P<failed>\d+) unknown=(?P<unknown>\d+) topology=(?P<topology>[\w\-]+) domains=(?P<domains>\d+) windows=(?P<windows>\d+) drivers=(?P<drivers_ready>\d+)/(?P<drivers>\d+) plans=(?P<plans>\d+) nodes=(?P<nodes>\d+) rings=(?P<rings>\d+) active=(?P<active>\d+) user=(?P<user>\d+)"
@@ -388,6 +392,21 @@ def parse_boot_log_text(log_text: str, smoke_profile: str, serial_log_path: str 
             }
         )
 
+    user_access: dict[str, object] = {"ready": checkpoints["user_access"]["seen"]}
+    index, line, match = _search_match(lines, USER_ACCESS_RE)
+    if match:
+        user_access.update(
+            {
+                "line": index,
+                "text": line,
+                "status": match.group("status"),
+                "structural": int(match.group("structural")),
+                "copy": int(match.group("copy")),
+                "zero_copy": int(match.group("zero_copy")),
+                "string": int(match.group("string") or 0),
+            }
+        )
+
     kernel_room: dict[str, object] = {"ready": checkpoints["kernel_room"]["seen"]}
     index, line, match = _search_match(lines, ROOM_SNAPSHOT_RE)
     if match:
@@ -445,6 +464,7 @@ def parse_boot_log_text(log_text: str, smoke_profile: str, serial_log_path: str 
         "controllers": _parse_controller_states(lines),
         "slm": slm,
         "user_mode": user_mode,
+        "user_access": user_access,
         "kernel_room": kernel_room,
     }
     return summary

@@ -26,7 +26,10 @@
 - `SYS_INFO_BOOTSTRAP`은 health / room / user scaffold / SLM snapshot을 첫 userspace용 묶음으로 읽게 해준다
 - `runtime/slm_orchestrator.c`는 boot-time hardware-aware seed plan을 만든다
 - `slm_hw_snapshot_t`는 userspace AI용 하드웨어 접근 힌트와 클럭 분배 힌트를 read-only로 포함한다
+- `include/kernel/user_access.h`와 `kernel/user_access.c`는 구조적 `access_ok`, `copy_from_user`, `copy_to_user`, 길이 제한 문자열 복사 및 실패 사유 매핑을 제공한다
+- `runtime/ai_syscall.c`의 일부 구조체 입력 syscall은 request를 커널 스택에 staging copy한 뒤 내부 API를 호출한다
 - `kernel/user_mode.c` 기준 ring3 scaffold marker는 있으나, 실제 userspace handoff와 ELF loader는 아직 없다
+- `user_access`는 아직 page table 기반 소유권 검사가 아니라 null / zero-size / overflow / flag 검증 중심의 초기 경계다
 
 즉, 현재 AIOS는
 `부팅 가능한 AI 커널 + read-only 관측 기반 + 제한된 control plane`
@@ -224,6 +227,10 @@ bundle은 배포 보조층으로 뒤따라오는 편이 맞다.
 #### `copy_from_user` / `copy_to_user` / `access_ok` 계열 검증
 
 - userspace 진입 후 가장 먼저 안정성을 좌우할 기초
+- 현재는 `kernel/user_access.c`에 구조적 검증과 copy helper가 들어갔다
+- tensor create, model load/info, inference ring, train forward, autonomy control, SLM plan status/list/submit 일부 경로는 이 helper 위에서 동작한다
+- 큰 bootstrap / SLM hardware snapshot은 아직 구조적 guard 후 직접 채우는 경로가 남아 있다
+- 다음 단계는 ring3 handoff / page table 정보와 연결해 실제 user range 및 권한 검사를 적용하는 것이다
 
 #### `Cell metadata`
 

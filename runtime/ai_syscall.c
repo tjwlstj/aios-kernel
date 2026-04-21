@@ -19,6 +19,7 @@
 #include <kernel/kernel_room.h>
 #include <kernel/spinlock.h>
 #include <kernel/time.h>
+#include <kernel/user_access.h>
 #include <kernel/user_mode.h>
 #include <lib/string.h>
 #include <mm/memory_fabric.h>
@@ -86,8 +87,23 @@ static infer_ring_state_t *find_infer_ring_locked(uint32_t ring_id) {
     return NULL;
 }
 
-static bool syscall_output_buffer_ready(const void *ptr, uint64_t size) {
-    return ptr != NULL && size > 0;
+static aios_status_t syscall_output_buffer_status(const void *ptr, uint64_t size) {
+    user_access_check_t check = user_access_probe(ptr, size, USER_ACCESS_F_WRITE);
+
+    if (!check.ok) {
+        return user_access_status(check.reason);
+    }
+
+    return AIOS_OK;
+}
+
+static aios_status_t syscall_optional_output_buffer_status(const void *ptr,
+                                                           uint64_t size) {
+    if (!ptr) {
+        return AIOS_OK;
+    }
+
+    return syscall_output_buffer_status(ptr, size);
 }
 
 static void copy_str(char *dst, const char *src, uint32_t max_len) {
@@ -116,6 +132,9 @@ static uint32_t model_registry_snapshot(model_info_t *out, uint32_t cap) {
 }
 
 static aios_status_t ai_syscall_contract_selftest(void);
+static aios_status_t sys_tensor_create(tensor_shape_t *shape,
+                                       mem_region_type_t region,
+                                       tensor_alloc_t *out);
 static aios_status_t sys_info_memory(mem_stats_t *out);
 static aios_status_t sys_info_scheduler(sched_stats_t *out);
 
@@ -163,11 +182,17 @@ aios_status_t ai_syscall_init(void) {
     kprintf("      System Info:       0x700 - 0x7FF\n");
     kprintf("    Max Models: %u\n", (uint64_t)MAX_MODELS_REGISTRY);
 
+    aios_status_t uaccess_status = user_access_selftest();
+    if (uaccess_status != AIOS_OK) {
+        return uaccess_status;
+    }
+    kprintf("    User access selftest: structural checks OK\n");
+
     aios_status_t contract_status = ai_syscall_contract_selftest();
     if (contract_status != AIOS_OK) {
         return contract_status;
     }
-    kprintf("    Contract selftest: output guards OK\n");
+    kprintf("    Contract selftest: input/output guards OK\n");
 
     return AIOS_OK;
 }
@@ -212,7 +237,7 @@ int64_t ai_syscall_dispatch(uint64_t syscall_num, uint64_t arg1,
                     tensor_shape_t *shape = (tensor_shape_t *)arg1;
                     mem_region_type_t region = (mem_region_type_t)arg2;
                     tensor_alloc_t *out = (tensor_alloc_t *)arg3;
-                    return (int64_t)tensor_alloc(shape, region, out);
+                    return (int64_t)sys_tensor_create(shape, region, out);
                 }
                 case SYS_TENSOR_DESTROY:
                     return (int64_t)tensor_free((tensor_id_t)arg1);
@@ -324,18 +349,58 @@ int64_t ai_syscall_dispatch(uint64_t syscall_num, uint64_t arg1,
     return (int64_t)AIOS_ERR_NOSYS;
 }
 
+static aios_status_t sys_tensor_create(tensor_shape_t *shape,
+                                       mem_region_type_t region,
+                                       tensor_alloc_t *out) {
+    tensor_shape_t local_shape;
+    tensor_alloc_t allocation;
+    aios_status_t status = copy_from_user(&local_shape, shape, sizeof(local_shape));
+
+    if (status != AIOS_OK) {
+        return status;
+    }
+
+    status = syscall_output_buffer_status(out, sizeof(*out));
+    if (status != AIOS_OK) {
+        return status;
+    }
+
+    status = tensor_alloc(&local_shape, region, &allocation);
+    if (status != AIOS_OK) {
+        return status;
+    }
+
+    return copy_to_user(out, &allocation, sizeof(allocation));
+}
+
 /* ============================================================
  * Model Management Implementation
  * ============================================================ */
 
 aios_status_t sys_model_load(syscall_model_load_t *req) {
+    syscall_model_load_t local_req;
+    char model_path[sizeof(model_registry[0].name)];
     model_id_t model_id = 0;
     tensor_alloc_t alloc;
-    aios_status_t status;
+    aios_status_t status = copy_from_user(&local_req, req, sizeof(local_req));
     model_info_t *model = NULL;
     model_info_t snapshot;
 
-    if (!req || !req->path || !req->model_id_out) return AIOS_ERR_INVAL;
+    if (status != AIOS_OK) {
+        return status;
+    }
+    if (!local_req.path || !local_req.model_id_out) return AIOS_ERR_INVAL;
+
+    status = syscall_output_buffer_status(local_req.model_id_out,
+        sizeof(*local_req.model_id_out));
+    if (status != AIOS_OK) {
+        return status;
+    }
+
+    status = copy_string_from_user(model_path, local_req.path, sizeof(model_path));
+    if (status != AIOS_OK) {
+        return status;
+    }
 
     spinlock_lock(&model_registry_lock);
     if (model_count >= MAX_MODELS_REGISTRY) {
@@ -360,19 +425,23 @@ aios_status_t sys_model_load(syscall_model_load_t *req) {
 
     model = &model_registry[model_count];
     model->id = model_id;
-    copy_str(model->name, req->path, 64);
+    copy_str(model->name, model_path, sizeof(model->name));
     copy_str(model->arch, "transformer", 32); /* Default architecture */
     model->param_count = 0;
     model->memory_usage = alloc.size;
-    model->dtype = req->dtype;
-    model->accel_id = req->target_accel;
+    model->dtype = local_req.dtype;
+    model->accel_id = local_req.target_accel;
     model->loaded = true;
     model->inference_count = 0;
     model->avg_latency_ns = 0;
     snapshot = *model;
-    *req->model_id_out = model->id;
     model_count++;
     spinlock_unlock(&model_registry_lock);
+
+    status = copy_to_user(local_req.model_id_out, &snapshot.id, sizeof(snapshot.id));
+    if (status != AIOS_OK) {
+        return status;
+    }
 
     kprintf("[SYSCALL] Model loaded: '%s' (ID=%u, mem=%u MB)\n",
         snapshot.name, (uint64_t)snapshot.id,
@@ -417,8 +486,12 @@ aios_status_t sys_model_unload(model_id_t id) {
 
 aios_status_t sys_model_info(model_id_t id, model_info_t *info) {
     model_info_t *model = NULL;
+    model_info_t snapshot;
+    aios_status_t status = syscall_output_buffer_status(info, sizeof(*info));
 
-    if (!info) return AIOS_ERR_INVAL;
+    if (status != AIOS_OK) {
+        return status;
+    }
 
     spinlock_lock(&model_registry_lock);
     model = find_model_locked(id);
@@ -427,9 +500,9 @@ aios_status_t sys_model_info(model_id_t id, model_info_t *info) {
         return AIOS_ERR_INVAL;
     }
 
-    *info = *model;
+    snapshot = *model;
     spinlock_unlock(&model_registry_lock);
-    return AIOS_OK;
+    return copy_to_user(info, &snapshot, sizeof(snapshot));
 }
 
 /* ============================================================
@@ -437,13 +510,15 @@ aios_status_t sys_model_info(model_id_t id, model_info_t *info) {
  * ============================================================ */
 
 aios_status_t sys_infer_submit(syscall_infer_t *req) {
+    syscall_infer_t local_req;
     model_info_t model_snapshot;
     model_info_t *model = NULL;
+    aios_status_t status = copy_from_user(&local_req, req, sizeof(local_req));
 
-    if (!req) return AIOS_ERR_INVAL;
+    if (status != AIOS_OK) return status;
 
     spinlock_lock(&model_registry_lock);
-    model = find_model_locked(req->model_id);
+    model = find_model_locked(local_req.model_id);
     if (!model || !model->loaded) {
         spinlock_unlock(&model_registry_lock);
         return AIOS_ERR_INVAL;
@@ -457,25 +532,25 @@ aios_status_t sys_infer_submit(syscall_infer_t *req) {
     params.affinity.preferred_accel = model_snapshot.accel_id;
 
     ai_task_t *task;
-    aios_status_t status = ai_task_create("inference",
+    status = ai_task_create("inference",
         WORKLOAD_INFERENCE, &params, &task);
     if (status != AIOS_OK) return status;
 
-    task->model_id = req->model_id;
+    task->model_id = local_req.model_id;
 
     /* Submit task to scheduler */
     status = ai_task_submit(task->id);
     if (status != AIOS_OK) return status;
 
     spinlock_lock(&model_registry_lock);
-    model = find_model_locked(req->model_id);
+    model = find_model_locked(local_req.model_id);
     if (model && model->loaded) {
         model->inference_count++;
     }
     spinlock_unlock(&model_registry_lock);
 
     kprintf("[SYSCALL] Inference submitted: model=%u task=%u\n",
-        (uint64_t)req->model_id, (uint64_t)task->id);
+        (uint64_t)local_req.model_id, (uint64_t)task->id);
 
     return AIOS_OK;
 }
@@ -491,12 +566,20 @@ aios_status_t sys_infer_cancel(task_id_t task_id) {
 }
 
 aios_status_t sys_infer_ring_setup(syscall_infer_ring_setup_t *req) {
+    syscall_infer_ring_setup_t local_req;
     infer_ring_state_t *ring;
+    ai_ring_registration_t registration;
+    uint32_t ring_id = 0;
+    aios_status_t status = copy_from_user(&local_req, req, sizeof(local_req));
 
-    if (!req || !req->ring_id_out) return AIOS_ERR_INVAL;
-    if (req->registration.abi_version != AI_RING_ABI_VERSION) return AIOS_ERR_INVAL;
-    if (!ai_ring_valid_entries(req->registration.submit_entries)) return AIOS_ERR_INVAL;
-    if (!ai_ring_valid_entries(req->registration.completion_entries)) return AIOS_ERR_INVAL;
+    if (status != AIOS_OK) return status;
+    if (!local_req.ring_id_out) return AIOS_ERR_INVAL;
+    status = syscall_output_buffer_status(local_req.ring_id_out,
+        sizeof(*local_req.ring_id_out));
+    if (status != AIOS_OK) return status;
+    if (local_req.registration.abi_version != AI_RING_ABI_VERSION) return AIOS_ERR_INVAL;
+    if (!ai_ring_valid_entries(local_req.registration.submit_entries)) return AIOS_ERR_INVAL;
+    if (!ai_ring_valid_entries(local_req.registration.completion_entries)) return AIOS_ERR_INVAL;
     spinlock_lock(&infer_ring_lock);
     if (infer_ring_count >= MAX_INFER_RINGS) {
         spinlock_unlock(&infer_ring_lock);
@@ -509,64 +592,76 @@ aios_status_t sys_infer_ring_setup(syscall_infer_ring_setup_t *req) {
     ring->notify_count = 0;
     ring->last_submit_tail = 0;
     ring->last_notify_ns = 0;
-    ring->registration = req->registration;
+    ring->registration = local_req.registration;
+    ring_id = ring->ring_id;
+    registration = ring->registration;
     infer_ring_count++;
     spinlock_unlock(&infer_ring_lock);
 
-    *req->ring_id_out = ring->ring_id;
+    status = copy_to_user(local_req.ring_id_out, &ring_id, sizeof(ring_id));
+    if (status != AIOS_OK) {
+        return status;
+    }
 
     kprintf("[SYSCALL] Inference ring registered: id=%u sq=%u cq=%u flags=%u\n",
-        (uint64_t)ring->ring_id,
-        (uint64_t)ring->registration.submit_entries,
-        (uint64_t)ring->registration.completion_entries,
-        (uint64_t)ring->registration.flags);
+        (uint64_t)ring_id,
+        (uint64_t)registration.submit_entries,
+        (uint64_t)registration.completion_entries,
+        (uint64_t)registration.flags);
 
     return AIOS_OK;
 }
 
 aios_status_t sys_infer_ring_notify(syscall_infer_ring_notify_t *req) {
+    syscall_infer_ring_notify_t local_req;
     infer_ring_state_t *ring;
+    aios_status_t status = copy_from_user(&local_req, req, sizeof(local_req));
 
-    if (!req) return AIOS_ERR_INVAL;
+    if (status != AIOS_OK) return status;
 
     spinlock_lock(&infer_ring_lock);
-    ring = find_infer_ring_locked(req->ring_id);
+    ring = find_infer_ring_locked(local_req.ring_id);
     if (!ring) {
         spinlock_unlock(&infer_ring_lock);
         return AIOS_ERR_INVAL;
     }
 
     ring->notify_count++;
-    ring->last_submit_tail = req->submit_tail;
+    ring->last_submit_tail = local_req.submit_tail;
     ring->last_notify_ns = kernel_time_monotonic_ns();
     spinlock_unlock(&infer_ring_lock);
 
     kprintf("[SYSCALL] Inference ring notify: id=%u tail=%u flags=%u\n",
-        (uint64_t)req->ring_id,
-        (uint64_t)req->submit_tail,
-        (uint64_t)req->flags);
+        (uint64_t)local_req.ring_id,
+        (uint64_t)local_req.submit_tail,
+        (uint64_t)local_req.flags);
 
     return AIOS_OK;
 }
 
 aios_status_t sys_infer_ring_wait_cq(syscall_infer_ring_wait_t *req) {
-    if (!req) return AIOS_ERR_INVAL;
+    syscall_infer_ring_wait_t local_req;
+    aios_status_t status = copy_from_user(&local_req, req, sizeof(local_req));
+
+    if (status != AIOS_OK) return status;
     spinlock_lock(&infer_ring_lock);
-    bool registered = (find_infer_ring_locked(req->ring_id) != NULL);
+    bool registered = (find_infer_ring_locked(local_req.ring_id) != NULL);
     spinlock_unlock(&infer_ring_lock);
     if (!registered) return AIOS_ERR_INVAL;
 
     kprintf("[SYSCALL] Inference ring wait pending implementation: id=%u timeout=%u ns\n",
-        (uint64_t)req->ring_id,
-        req->timeout_ns);
+        (uint64_t)local_req.ring_id,
+        local_req.timeout_ns);
 
     return AIOS_ERR_NOSYS;
 }
 
 aios_status_t sys_infer_ring_status(uint32_t ring_id, syscall_infer_ring_status_t *out) {
     infer_ring_state_t *ring;
+    syscall_infer_ring_status_t snapshot;
+    aios_status_t status = syscall_output_buffer_status(out, sizeof(*out));
 
-    if (!out) return AIOS_ERR_INVAL;
+    if (status != AIOS_OK) return status;
 
     spinlock_lock(&infer_ring_lock);
     ring = find_infer_ring_locked(ring_id);
@@ -575,13 +670,13 @@ aios_status_t sys_infer_ring_status(uint32_t ring_id, syscall_infer_ring_status_
         return AIOS_ERR_INVAL;
     }
 
-    out->ring_id = ring->ring_id;
-    out->registered = ring->registered;
-    out->notify_count = ring->notify_count;
-    out->registration = ring->registration;
+    snapshot.ring_id = ring->ring_id;
+    snapshot.registered = ring->registered;
+    snapshot.notify_count = ring->notify_count;
+    snapshot.registration = ring->registration;
     spinlock_unlock(&infer_ring_lock);
 
-    return AIOS_OK;
+    return copy_to_user(out, &snapshot, sizeof(snapshot));
 }
 
 void ai_infer_ring_runtime(ai_ring_runtime_snapshot_t *out) {
@@ -648,13 +743,15 @@ void ai_infer_ring_runtime(ai_ring_runtime_snapshot_t *out) {
  * ============================================================ */
 
 aios_status_t sys_train_forward(syscall_train_t *req) {
+    syscall_train_t local_req;
     model_info_t *model = NULL;
     bool loaded = false;
+    aios_status_t status = copy_from_user(&local_req, req, sizeof(local_req));
 
-    if (!req) return AIOS_ERR_INVAL;
+    if (status != AIOS_OK) return status;
 
     spinlock_lock(&model_registry_lock);
-    model = find_model_locked(req->model_id);
+    model = find_model_locked(local_req.model_id);
     loaded = model && model->loaded;
     spinlock_unlock(&model_registry_lock);
     if (!loaded) return AIOS_ERR_INVAL;
@@ -662,18 +759,18 @@ aios_status_t sys_train_forward(syscall_train_t *req) {
     /* Create training task */
     sched_params_t params;
     ai_sched_default_params(SCHED_POLICY_TRAINING, &params);
-    params.batch_size = req->batch_size;
+    params.batch_size = local_req.batch_size;
 
     ai_task_t *task;
-    aios_status_t status = ai_task_create("train_forward",
+    status = ai_task_create("train_forward",
         WORKLOAD_TRAINING, &params, &task);
     if (status != AIOS_OK) return status;
 
-    task->model_id = req->model_id;
+    task->model_id = local_req.model_id;
     status = ai_task_submit(task->id);
 
     kprintf("[SYSCALL] Training forward pass: model=%u batch=%u\n",
-        (uint64_t)req->model_id, (uint64_t)req->batch_size);
+        (uint64_t)local_req.model_id, (uint64_t)local_req.batch_size);
 
     return status;
 }
@@ -717,12 +814,24 @@ aios_status_t sys_train_step(model_id_t model_id, float learning_rate) {
  * ============================================================ */
 
 aios_status_t sys_autonomy_action_propose(autonomy_action_req_t *req) {
-    if (!req) return AIOS_ERR_INVAL;
-    return autonomy_action_propose_req(req);
+    autonomy_action_req_t local_req;
+    aios_status_t status = copy_from_user(&local_req, req, sizeof(local_req));
+
+    if (status != AIOS_OK) return status;
+    return autonomy_action_propose_req(&local_req);
 }
 
 aios_status_t sys_autonomy_action_commit(policy_eval_t *eval) {
-    return autonomy_action_commit_next(eval);
+    policy_eval_t local_eval;
+    aios_status_t status = syscall_optional_output_buffer_status(eval, sizeof(*eval));
+
+    if (status != AIOS_OK) return status;
+    status = autonomy_action_commit_next(eval ? &local_eval : NULL);
+    if (status != AIOS_OK || !eval) {
+        return status;
+    }
+
+    return copy_to_user(eval, &local_eval, sizeof(local_eval));
 }
 
 aios_status_t sys_autonomy_rollback_last(void) {
@@ -730,29 +839,62 @@ aios_status_t sys_autonomy_rollback_last(void) {
 }
 
 aios_status_t sys_autonomy_stats(autonomy_stats_t *out) {
-    if (!out) return AIOS_ERR_INVAL;
-    autonomy_stats(out);
-    return AIOS_OK;
+    autonomy_stats_t stats;
+    aios_status_t status = syscall_output_buffer_status(out, sizeof(*out));
+
+    if (status != AIOS_OK) return status;
+    autonomy_stats(&stats);
+    return copy_to_user(out, &stats, sizeof(stats));
 }
 
 aios_status_t sys_autonomy_mode_set(syscall_autonomy_mode_t *mode) {
-    if (!mode) return AIOS_ERR_INVAL;
-    autonomy_set_safe_mode(mode->safe_mode);
-    autonomy_set_observation_only(mode->observation_only);
+    syscall_autonomy_mode_t local_mode;
+    aios_status_t status = copy_from_user(&local_mode, mode, sizeof(local_mode));
+
+    if (status != AIOS_OK) return status;
+    autonomy_set_safe_mode(local_mode.safe_mode);
+    autonomy_set_observation_only(local_mode.observation_only);
     return AIOS_OK;
 }
 
 aios_status_t sys_autonomy_telemetry_last(telemetry_frame_t *out) {
-    return autonomy_get_latest_telemetry(out);
+    telemetry_frame_t frame;
+    aios_status_t status = syscall_output_buffer_status(out, sizeof(*out));
+
+    if (status != AIOS_OK) return status;
+    status = autonomy_get_latest_telemetry(&frame);
+    if (status != AIOS_OK) {
+        return status;
+    }
+
+    return copy_to_user(out, &frame, sizeof(frame));
 }
 
 aios_status_t sys_slm_hw_snapshot(slm_hw_snapshot_t *out) {
+    aios_status_t status = syscall_output_buffer_status(out, sizeof(*out));
+
+    if (status != AIOS_OK) return status;
     return slm_snapshot_read(out);
 }
 
 aios_status_t sys_slm_plan_submit(slm_plan_request_t *req, uint32_t *plan_id_out) {
-    if (!req) return AIOS_ERR_INVAL;
-    return slm_plan_submit(req, plan_id_out);
+    slm_plan_request_t local_req;
+    uint32_t plan_id = 0;
+    aios_status_t status = copy_from_user(&local_req, req, sizeof(local_req));
+
+    if (status != AIOS_OK) return status;
+    status = syscall_optional_output_buffer_status(plan_id_out, sizeof(*plan_id_out));
+    if (status != AIOS_OK) return status;
+
+    status = slm_plan_submit(&local_req, &plan_id);
+    if (plan_id_out && plan_id != 0) {
+        aios_status_t copy_status = copy_to_user(plan_id_out, &plan_id, sizeof(plan_id));
+        if (copy_status != AIOS_OK) {
+            return copy_status;
+        }
+    }
+
+    return status;
 }
 
 aios_status_t sys_slm_plan_apply(uint32_t plan_id) {
@@ -760,11 +902,29 @@ aios_status_t sys_slm_plan_apply(uint32_t plan_id) {
 }
 
 aios_status_t sys_slm_plan_status(uint32_t plan_id, slm_plan_t *out) {
-    return slm_plan_get(plan_id, out);
+    slm_plan_t plan;
+    aios_status_t status = syscall_output_buffer_status(out, sizeof(*out));
+
+    if (status != AIOS_OK) return status;
+    status = slm_plan_get(plan_id, &plan);
+    if (status != AIOS_OK) {
+        return status;
+    }
+
+    return copy_to_user(out, &plan, sizeof(plan));
 }
 
 aios_status_t sys_slm_plan_list(slm_plan_list_t *out) {
-    return slm_plan_list(out);
+    slm_plan_list_t plans;
+    aios_status_t status = syscall_output_buffer_status(out, sizeof(*out));
+
+    if (status != AIOS_OK) return status;
+    status = slm_plan_list(&plans);
+    if (status != AIOS_OK) {
+        return status;
+    }
+
+    return copy_to_user(out, &plans, sizeof(plans));
 }
 
 /* ============================================================
@@ -843,27 +1003,39 @@ void sys_info_dump(void) {
 }
 
 aios_status_t sys_info_health(kernel_health_summary_t *out) {
-    if (!syscall_output_buffer_ready(out, sizeof(*out))) {
-        return AIOS_ERR_INVAL;
+    kernel_health_summary_t summary;
+    aios_status_t status = syscall_output_buffer_status(out, sizeof(*out));
+
+    if (status != AIOS_OK) {
+        return status;
     }
 
-    kernel_health_get_summary(out);
-    return AIOS_OK;
+    kernel_health_get_summary(&summary);
+    return copy_to_user(out, &summary, sizeof(summary));
 }
 
 aios_status_t sys_info_room(kernel_room_snapshot_t *out) {
-    if (!syscall_output_buffer_ready(out, sizeof(*out))) {
-        return AIOS_ERR_INVAL;
+    kernel_room_snapshot_t snapshot;
+    aios_status_t status = syscall_output_buffer_status(out, sizeof(*out));
+
+    if (status != AIOS_OK) {
+        return status;
     }
 
-    return kernel_room_snapshot_read(out);
+    status = kernel_room_snapshot_read(&snapshot);
+    if (status != AIOS_OK) {
+        return status;
+    }
+
+    return copy_to_user(out, &snapshot, sizeof(snapshot));
 }
 
 aios_status_t sys_info_bootstrap(aios_bootstrap_info_t *out) {
     aios_status_t status = AIOS_OK;
 
-    if (!syscall_output_buffer_ready(out, sizeof(*out))) {
-        return AIOS_ERR_INVAL;
+    status = syscall_output_buffer_status(out, sizeof(*out));
+    if (status != AIOS_OK) {
+        return status;
     }
 
     memset(out, 0, sizeof(*out));
@@ -889,24 +1061,81 @@ aios_status_t sys_info_bootstrap(aios_bootstrap_info_t *out) {
 }
 
 static aios_status_t sys_info_memory(mem_stats_t *out) {
-    if (!syscall_output_buffer_ready(out, sizeof(*out))) {
-        return AIOS_ERR_INVAL;
+    mem_stats_t stats;
+    aios_status_t status = syscall_output_buffer_status(out, sizeof(*out));
+
+    if (status != AIOS_OK) {
+        return status;
     }
 
-    tensor_mm_stats(out);
-    return AIOS_OK;
+    tensor_mm_stats(&stats);
+    return copy_to_user(out, &stats, sizeof(stats));
 }
 
 static aios_status_t sys_info_scheduler(sched_stats_t *out) {
-    if (!syscall_output_buffer_ready(out, sizeof(*out))) {
-        return AIOS_ERR_INVAL;
+    sched_stats_t stats;
+    aios_status_t status = syscall_output_buffer_status(out, sizeof(*out));
+
+    if (status != AIOS_OK) {
+        return status;
     }
 
-    ai_sched_stats(out);
-    return AIOS_OK;
+    ai_sched_stats(&stats);
+    return copy_to_user(out, &stats, sizeof(stats));
 }
 
 static aios_status_t ai_syscall_contract_selftest(void) {
+    if (sys_tensor_create(NULL, MEM_REGION_TENSOR, NULL) != AIOS_ERR_INVAL) {
+        return AIOS_ERR_IO;
+    }
+    if (sys_model_load(NULL) != AIOS_ERR_INVAL) {
+        return AIOS_ERR_IO;
+    }
+    if (sys_model_info(0, NULL) != AIOS_ERR_INVAL) {
+        return AIOS_ERR_IO;
+    }
+    if (sys_infer_submit(NULL) != AIOS_ERR_INVAL) {
+        return AIOS_ERR_IO;
+    }
+    if (sys_infer_ring_setup(NULL) != AIOS_ERR_INVAL) {
+        return AIOS_ERR_IO;
+    }
+    if (sys_infer_ring_notify(NULL) != AIOS_ERR_INVAL) {
+        return AIOS_ERR_IO;
+    }
+    if (sys_infer_ring_wait_cq(NULL) != AIOS_ERR_INVAL) {
+        return AIOS_ERR_IO;
+    }
+    if (sys_infer_ring_status(0, NULL) != AIOS_ERR_INVAL) {
+        return AIOS_ERR_IO;
+    }
+    if (sys_train_forward(NULL) != AIOS_ERR_INVAL) {
+        return AIOS_ERR_IO;
+    }
+    if (sys_autonomy_action_propose(NULL) != AIOS_ERR_INVAL) {
+        return AIOS_ERR_IO;
+    }
+    if (sys_autonomy_stats(NULL) != AIOS_ERR_INVAL) {
+        return AIOS_ERR_IO;
+    }
+    if (sys_autonomy_mode_set(NULL) != AIOS_ERR_INVAL) {
+        return AIOS_ERR_IO;
+    }
+    if (sys_autonomy_telemetry_last(NULL) != AIOS_ERR_INVAL) {
+        return AIOS_ERR_IO;
+    }
+    if (sys_slm_hw_snapshot(NULL) != AIOS_ERR_INVAL) {
+        return AIOS_ERR_IO;
+    }
+    if (sys_slm_plan_submit(NULL, NULL) != AIOS_ERR_INVAL) {
+        return AIOS_ERR_IO;
+    }
+    if (sys_slm_plan_status(0, NULL) != AIOS_ERR_INVAL) {
+        return AIOS_ERR_IO;
+    }
+    if (sys_slm_plan_list(NULL) != AIOS_ERR_INVAL) {
+        return AIOS_ERR_IO;
+    }
     if (sys_info_memory(NULL) != AIOS_ERR_INVAL) {
         return AIOS_ERR_IO;
     }
@@ -920,6 +1149,10 @@ static aios_status_t ai_syscall_contract_selftest(void) {
         return AIOS_ERR_IO;
     }
     if (sys_info_bootstrap(NULL) != AIOS_ERR_INVAL) {
+        return AIOS_ERR_IO;
+    }
+    if (syscall_output_buffer_status((void *)((uintptr_t)~0ULL - 7ULL), 16) !=
+        AIOS_ERR_OVERFLOW) {
         return AIOS_ERR_IO;
     }
 
