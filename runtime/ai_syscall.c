@@ -871,10 +871,16 @@ aios_status_t sys_autonomy_telemetry_last(telemetry_frame_t *out) {
 }
 
 aios_status_t sys_slm_hw_snapshot(slm_hw_snapshot_t *out) {
+    slm_hw_snapshot_t snapshot;
     aios_status_t status = syscall_output_buffer_status(out, sizeof(*out));
 
     if (status != AIOS_OK) return status;
-    return slm_snapshot_read(out);
+    status = slm_snapshot_read(&snapshot);
+    if (status != AIOS_OK) {
+        return status;
+    }
+
+    return copy_to_user(out, &snapshot, sizeof(snapshot));
 }
 
 aios_status_t sys_slm_plan_submit(slm_plan_request_t *req, uint32_t *plan_id_out) {
@@ -1031,6 +1037,7 @@ aios_status_t sys_info_room(kernel_room_snapshot_t *out) {
 }
 
 aios_status_t sys_info_bootstrap(aios_bootstrap_info_t *out) {
+    aios_bootstrap_info_t info;
     aios_status_t status = AIOS_OK;
 
     status = syscall_output_buffer_status(out, sizeof(*out));
@@ -1038,26 +1045,36 @@ aios_status_t sys_info_bootstrap(aios_bootstrap_info_t *out) {
         return status;
     }
 
-    memset(out, 0, sizeof(*out));
-    out->abi_version = AIOS_BOOTSTRAP_INFO_ABI_VERSION;
-    out->struct_size = (uint32_t)sizeof(*out);
-    out->features = AIOS_BOOTSTRAP_FEATURE_ROOM |
+    memset(&info, 0, sizeof(info));
+    info.abi_version = AIOS_BOOTSTRAP_INFO_ABI_VERSION;
+    info.struct_size = (uint32_t)sizeof(info);
+    info.features = AIOS_BOOTSTRAP_FEATURE_ROOM |
                     AIOS_BOOTSTRAP_FEATURE_USER_MODE |
                     AIOS_BOOTSTRAP_FEATURE_SLM;
 
-    kernel_health_get_summary(&out->health);
+    kernel_health_get_summary(&info.health);
 
-    status = kernel_room_snapshot_read(&out->room);
+    status = kernel_room_snapshot_read(&info.room);
     if (status != AIOS_OK) {
         return status;
     }
 
-    status = user_mode_scaffold_info(&out->user_mode);
+    status = user_mode_scaffold_info(&info.user_mode);
     if (status != AIOS_OK) {
         return status;
     }
 
-    return slm_snapshot_read(&out->slm);
+    status = slm_snapshot_read(&info.slm);
+    if (status != AIOS_OK) {
+        info.features &= ~AIOS_BOOTSTRAP_FEATURE_SLM;
+        memset(&info.slm, 0, sizeof(info.slm));
+        info.slm.abi_version = SLM_HW_SNAPSHOT_ABI_VERSION;
+        info.slm.struct_size = (uint32_t)sizeof(info.slm);
+        info.slm.runtime_state = SLM_RUNTIME_ABSENT;
+        info.slm.runtime_status = status;
+    }
+
+    return copy_to_user(out, &info, sizeof(info));
 }
 
 static aios_status_t sys_info_memory(mem_stats_t *out) {

@@ -22,6 +22,184 @@
 static slm_plan_t plan_table[SLM_PLAN_CAP];
 static uint32_t next_plan_id = 1;
 static slm_learning_profile_t g_learning = {0};
+static slm_runtime_state_t g_slm_runtime_state = SLM_RUNTIME_ABSENT;
+static aios_status_t g_slm_runtime_status = AIOS_ERR_NODEV;
+static uint32_t g_policy_generation = 1;
+
+#define SLM_ACTION_NODEBIT(action) ((uint32_t)BIT(action))
+#define SLM_ACTION_DISCOVERY_BITS \
+    (SLM_ACTION_NODEBIT(SLM_ACTION_REPROBE_PCI) | \
+     SLM_ACTION_NODEBIT(SLM_ACTION_IO_AUDIT) | \
+     SLM_ACTION_NODEBIT(SLM_ACTION_CORE_AUDIT))
+#define SLM_ACTION_ETHERNET_BITS \
+    (SLM_ACTION_NODEBIT(SLM_ACTION_BOOTSTRAP_E1000) | \
+     SLM_ACTION_NODEBIT(SLM_ACTION_E1000_TX_SMOKE) | \
+     SLM_ACTION_NODEBIT(SLM_ACTION_E1000_DUMP) | \
+     SLM_ACTION_NODEBIT(SLM_ACTION_E1000_RX_POLL))
+#define SLM_ACTION_USB_BITS \
+    (SLM_ACTION_NODEBIT(SLM_ACTION_BOOTSTRAP_USB) | \
+     SLM_ACTION_NODEBIT(SLM_ACTION_USB_DUMP))
+#define SLM_ACTION_STORAGE_BITS \
+    (SLM_ACTION_NODEBIT(SLM_ACTION_BOOTSTRAP_STORAGE) | \
+     SLM_ACTION_NODEBIT(SLM_ACTION_STORAGE_DUMP))
+#define SLM_ACTION_KNOWN_BITS \
+    (SLM_ACTION_DISCOVERY_BITS | \
+     SLM_ACTION_ETHERNET_BITS | \
+     SLM_ACTION_USB_BITS | \
+     SLM_ACTION_STORAGE_BITS)
+
+static const slm_nodebit_t g_nodebit_catalog[] = {
+    {
+        .node_id = SLM_NODEBIT_ID_API_BOOTSTRAP,
+        .parent_id = SLM_NODEBIT_ID_NONE,
+        .kind = SLM_NODE_KIND_API,
+        .flags = SLM_NODEBIT_F_PRESENT | SLM_NODEBIT_F_USER_VISIBLE |
+                 SLM_NODEBIT_F_OBSERVE_ONLY | SLM_NODEBIT_F_RUNTIME_READY,
+        .required_capability_bits = SLM_USER_HW_ACCESS_F_BOOTSTRAP_SNAPSHOT,
+        .health_score = 100,
+        .access_score = 100,
+        .latency_class = 1,
+        .risk_level = 0,
+    },
+    {
+        .node_id = SLM_NODEBIT_ID_API_HW_SNAPSHOT,
+        .parent_id = SLM_NODEBIT_ID_API_BOOTSTRAP,
+        .kind = SLM_NODE_KIND_API,
+        .flags = SLM_NODEBIT_F_PRESENT | SLM_NODEBIT_F_USER_VISIBLE |
+                 SLM_NODEBIT_F_OBSERVE_ONLY | SLM_NODEBIT_F_RUNTIME_READY,
+        .required_capability_bits = SLM_USER_HW_ACCESS_F_BOOTSTRAP_SNAPSHOT,
+        .health_score = 100,
+        .access_score = 96,
+        .latency_class = 1,
+        .risk_level = 0,
+    },
+    {
+        .node_id = SLM_NODEBIT_ID_API_PLAN_SUBMIT,
+        .parent_id = SLM_NODEBIT_ID_POLICY_GATE,
+        .kind = SLM_NODE_KIND_API,
+        .flags = SLM_NODEBIT_F_PRESENT | SLM_NODEBIT_F_USER_VISIBLE |
+                 SLM_NODEBIT_F_REQUIRES_MEDIATION | SLM_NODEBIT_F_RUNTIME_READY,
+        .required_capability_bits = SLM_USER_HW_ACCESS_F_MEDIATED_IO,
+        .health_score = 90,
+        .access_score = 80,
+        .latency_class = 2,
+        .risk_level = 1,
+    },
+    {
+        .node_id = SLM_NODEBIT_ID_TOOL_DISCOVERY,
+        .parent_id = SLM_NODEBIT_ID_POLICY_GATE,
+        .kind = SLM_NODE_KIND_TOOL,
+        .flags = SLM_NODEBIT_F_PRESENT | SLM_NODEBIT_F_USER_VISIBLE |
+                 SLM_NODEBIT_F_OBSERVE_ONLY | SLM_NODEBIT_F_APPLY_ALLOWED |
+                 SLM_NODEBIT_F_REQUIRES_MEDIATION | SLM_NODEBIT_F_RUNTIME_READY,
+        .action_bits = SLM_ACTION_DISCOVERY_BITS,
+        .allow_bits = SLM_ACTION_DISCOVERY_BITS,
+        .observe_only_bits = SLM_ACTION_NODEBIT(SLM_ACTION_IO_AUDIT) |
+                             SLM_ACTION_NODEBIT(SLM_ACTION_CORE_AUDIT),
+        .required_capability_bits = SLM_USER_HW_ACCESS_F_MEDIATED_IO,
+        .health_score = 88,
+        .access_score = 82,
+        .latency_class = 3,
+        .risk_level = 0,
+    },
+    {
+        .node_id = SLM_NODEBIT_ID_DEVICE_ETHERNET,
+        .parent_id = SLM_NODEBIT_ID_POLICY_GATE,
+        .kind = SLM_NODE_KIND_DEVICE,
+        .flags = SLM_NODEBIT_F_PRESENT | SLM_NODEBIT_F_USER_VISIBLE |
+                 SLM_NODEBIT_F_APPLY_ALLOWED | SLM_NODEBIT_F_RISKY |
+                 SLM_NODEBIT_F_REQUIRES_MEDIATION,
+        .action_bits = SLM_ACTION_ETHERNET_BITS,
+        .allow_bits = SLM_ACTION_ETHERNET_BITS,
+        .observe_only_bits = SLM_ACTION_NODEBIT(SLM_ACTION_E1000_DUMP) |
+                             SLM_ACTION_NODEBIT(SLM_ACTION_E1000_RX_POLL),
+        .risky_bits = SLM_ACTION_NODEBIT(SLM_ACTION_BOOTSTRAP_E1000) |
+                      SLM_ACTION_NODEBIT(SLM_ACTION_E1000_TX_SMOKE),
+        .required_capability_bits = SLM_USER_HW_ACCESS_F_MEDIATED_IO,
+        .health_score = 70,
+        .access_score = 60,
+        .latency_class = 2,
+        .risk_level = 2,
+    },
+    {
+        .node_id = SLM_NODEBIT_ID_DEVICE_USB,
+        .parent_id = SLM_NODEBIT_ID_POLICY_GATE,
+        .kind = SLM_NODE_KIND_DEVICE,
+        .flags = SLM_NODEBIT_F_PRESENT | SLM_NODEBIT_F_USER_VISIBLE |
+                 SLM_NODEBIT_F_APPLY_ALLOWED | SLM_NODEBIT_F_RISKY |
+                 SLM_NODEBIT_F_REQUIRES_MEDIATION,
+        .action_bits = SLM_ACTION_USB_BITS,
+        .allow_bits = SLM_ACTION_USB_BITS,
+        .observe_only_bits = SLM_ACTION_NODEBIT(SLM_ACTION_USB_DUMP),
+        .risky_bits = SLM_ACTION_NODEBIT(SLM_ACTION_BOOTSTRAP_USB),
+        .required_capability_bits = SLM_USER_HW_ACCESS_F_MEDIATED_IO,
+        .health_score = 68,
+        .access_score = 56,
+        .latency_class = 3,
+        .risk_level = 2,
+    },
+    {
+        .node_id = SLM_NODEBIT_ID_DEVICE_STORAGE,
+        .parent_id = SLM_NODEBIT_ID_POLICY_GATE,
+        .kind = SLM_NODE_KIND_DEVICE,
+        .flags = SLM_NODEBIT_F_PRESENT | SLM_NODEBIT_F_USER_VISIBLE |
+                 SLM_NODEBIT_F_APPLY_ALLOWED | SLM_NODEBIT_F_RISKY |
+                 SLM_NODEBIT_F_REQUIRES_MEDIATION,
+        .action_bits = SLM_ACTION_STORAGE_BITS,
+        .allow_bits = SLM_ACTION_STORAGE_BITS,
+        .observe_only_bits = SLM_ACTION_NODEBIT(SLM_ACTION_STORAGE_DUMP),
+        .risky_bits = SLM_ACTION_NODEBIT(SLM_ACTION_BOOTSTRAP_STORAGE),
+        .required_capability_bits = SLM_USER_HW_ACCESS_F_MEDIATED_IO,
+        .health_score = 68,
+        .access_score = 58,
+        .latency_class = 3,
+        .risk_level = 2,
+    },
+    {
+        .node_id = SLM_NODEBIT_ID_MEMORY_FABRIC,
+        .parent_id = SLM_NODEBIT_ID_API_BOOTSTRAP,
+        .kind = SLM_NODE_KIND_MEMORY,
+        .flags = SLM_NODEBIT_F_PRESENT | SLM_NODEBIT_F_USER_VISIBLE |
+                 SLM_NODEBIT_F_OBSERVE_ONLY | SLM_NODEBIT_F_RUNTIME_READY,
+        .health_score = 92,
+        .access_score = 86,
+        .latency_class = 1,
+        .risk_level = 0,
+    },
+    {
+        .node_id = SLM_NODEBIT_ID_CLOCK_PROFILE,
+        .parent_id = SLM_NODEBIT_ID_API_BOOTSTRAP,
+        .kind = SLM_NODE_KIND_CLOCK,
+        .flags = SLM_NODEBIT_F_PRESENT | SLM_NODEBIT_F_USER_VISIBLE |
+                 SLM_NODEBIT_F_OBSERVE_ONLY | SLM_NODEBIT_F_RUNTIME_READY,
+        .health_score = 90,
+        .access_score = 84,
+        .latency_class = 1,
+        .risk_level = 0,
+    },
+    {
+        .node_id = SLM_NODEBIT_ID_POLICY_GATE,
+        .parent_id = SLM_NODEBIT_ID_NONE,
+        .kind = SLM_NODE_KIND_POLICY,
+        .flags = SLM_NODEBIT_F_PRESENT | SLM_NODEBIT_F_USER_VISIBLE |
+                 SLM_NODEBIT_F_OBSERVE_ONLY | SLM_NODEBIT_F_REQUIRES_MEDIATION |
+                 SLM_NODEBIT_F_RUNTIME_READY,
+        .action_bits = SLM_ACTION_KNOWN_BITS,
+        .observe_only_bits = SLM_ACTION_KNOWN_BITS,
+        .risky_bits = SLM_ACTION_NODEBIT(SLM_ACTION_BOOTSTRAP_E1000) |
+                      SLM_ACTION_NODEBIT(SLM_ACTION_E1000_TX_SMOKE) |
+                      SLM_ACTION_NODEBIT(SLM_ACTION_BOOTSTRAP_USB) |
+                      SLM_ACTION_NODEBIT(SLM_ACTION_BOOTSTRAP_STORAGE),
+        .required_capability_bits = SLM_USER_HW_ACCESS_F_MEDIATED_IO,
+        .health_score = 90,
+        .access_score = 78,
+        .latency_class = 1,
+        .risk_level = 1,
+    },
+};
+
+AIOS_STATIC_ASSERT(ARRAY_SIZE(g_nodebit_catalog) == SLM_NODEBIT_ID_COUNT - 1,
+    "SLM NodeBit catalog and ID enum must stay in sync");
 
 static void compute_fabric_profile(slm_fabric_profile_t *out);
 static void compute_agent_main_profile(agent_main_ai_profile_t *out,
@@ -45,6 +223,13 @@ static void compute_clock_profile(slm_clock_profile_t *out,
     const memory_selftest_result_t *profile,
     const agent_main_ai_profile_t *main_ai,
     const slm_io_profile_t *io_profile);
+static void compute_nodebits(slm_nodebit_t *nodes, uint32_t *count,
+    const kernel_health_summary_t *health,
+    const slm_user_hw_access_profile_t *user_hw_access,
+    const e1000_driver_info_t *nic,
+    const usb_host_info_t *usb,
+    const storage_host_info_t *storage,
+    slm_runtime_state_t runtime_state);
 
 static uint8_t clamp_u8(int32_t value) {
     if (value < 0) {
@@ -441,6 +626,101 @@ static const char *agent_role_name(agent_node_role_t role) {
     }
 }
 
+static const char *slm_runtime_state_name(slm_runtime_state_t state) {
+    switch (state) {
+        case SLM_RUNTIME_ABSENT:    return "absent";
+        case SLM_RUNTIME_BOOTSTRAP: return "bootstrap";
+        case SLM_RUNTIME_READY:     return "ready";
+        case SLM_RUNTIME_DEGRADED:  return "degraded";
+        case SLM_RUNTIME_FAILED:    return "failed";
+        default:                    return "unknown";
+    }
+}
+
+static const char *slm_node_kind_name(slm_node_kind_t kind) {
+    switch (kind) {
+        case SLM_NODE_KIND_API:    return "api";
+        case SLM_NODE_KIND_TOOL:   return "tool";
+        case SLM_NODE_KIND_DEVICE: return "device";
+        case SLM_NODE_KIND_MEMORY: return "memory";
+        case SLM_NODE_KIND_CLOCK:  return "clock";
+        case SLM_NODE_KIND_POLICY: return "policy";
+        case SLM_NODE_KIND_NONE:
+        default:                   return "none";
+    }
+}
+
+static slm_runtime_state_t snapshot_runtime_state(const kernel_health_summary_t *health) {
+    if (g_slm_runtime_state == SLM_RUNTIME_ABSENT ||
+        g_slm_runtime_state == SLM_RUNTIME_FAILED ||
+        g_slm_runtime_state == SLM_RUNTIME_BOOTSTRAP) {
+        return g_slm_runtime_state;
+    }
+
+    if (health && health->level == KERNEL_STABILITY_UNSAFE) {
+        return SLM_RUNTIME_DEGRADED;
+    }
+
+    return g_slm_runtime_state;
+}
+
+static aios_status_t runtime_status_for_state(slm_runtime_state_t state) {
+    switch (state) {
+        case SLM_RUNTIME_ABSENT:
+            return AIOS_ERR_NODEV;
+        case SLM_RUNTIME_FAILED:
+            return (g_slm_runtime_status != AIOS_OK) ? g_slm_runtime_status : AIOS_ERR_IO;
+        case SLM_RUNTIME_DEGRADED:
+            return AIOS_ERR_IO;
+        case SLM_RUNTIME_BOOTSTRAP:
+        case SLM_RUNTIME_READY:
+        default:
+            return g_slm_runtime_status;
+    }
+}
+
+static bool nodebit_policy_permits(const slm_plan_request_t *req,
+                                   const kernel_health_summary_t *health) {
+    uint32_t action_bit;
+    bool seen_action = false;
+    bool observe_allowed = false;
+    bool apply_allowed = false;
+    bool risky = false;
+
+    if (!req || !slm_action_valid((uint32_t)req->action) ||
+        req->action == SLM_ACTION_NONE) {
+        return false;
+    }
+    if (g_slm_runtime_state == SLM_RUNTIME_ABSENT ||
+        g_slm_runtime_state == SLM_RUNTIME_FAILED) {
+        return false;
+    }
+
+    action_bit = SLM_ACTION_NODEBIT(req->action);
+    for (uint32_t i = 0; i < ARRAY_SIZE(g_nodebit_catalog); i++) {
+        const slm_nodebit_t *node = &g_nodebit_catalog[i];
+        if ((node->action_bits & action_bit) == 0) {
+            continue;
+        }
+
+        seen_action = true;
+        risky = risky || ((node->risky_bits & action_bit) != 0);
+        observe_allowed = observe_allowed ||
+            (((node->observe_only_bits | node->allow_bits) & action_bit) != 0);
+        apply_allowed = apply_allowed || ((node->allow_bits & action_bit) != 0);
+    }
+
+    if (!seen_action) {
+        return false;
+    }
+    if (req->allow_apply && (risky || req->risk_level > 0) &&
+        health && !health->risky_io_allowed) {
+        return false;
+    }
+
+    return req->allow_apply ? apply_allowed : observe_allowed;
+}
+
 static void agent_tree_set_node(agent_tree_node_t *node, uint8_t node_id,
                                 agent_node_role_t role, agent_model_class_t model_class,
                                 uint8_t priority, uint8_t budget_share,
@@ -788,6 +1068,147 @@ static void compute_clock_profile(slm_clock_profile_t *out,
     }
 }
 
+static uint8_t nodebit_health_score(const kernel_health_summary_t *health) {
+    if (!health) {
+        return 50;
+    }
+
+    switch (health->level) {
+        case KERNEL_STABILITY_STABLE:
+            return 92;
+        case KERNEL_STABILITY_DEGRADED:
+            return 62;
+        case KERNEL_STABILITY_UNSAFE:
+            return 18;
+        default:
+            return 40;
+    }
+}
+
+static void nodebit_disable_apply(slm_nodebit_t *node) {
+    if (!node) {
+        return;
+    }
+
+    node->allow_bits = 0;
+    node->flags &= ~SLM_NODEBIT_F_APPLY_ALLOWED;
+}
+
+static void compute_nodebits(slm_nodebit_t *nodes, uint32_t *count,
+    const kernel_health_summary_t *health,
+    const slm_user_hw_access_profile_t *user_hw_access,
+    const e1000_driver_info_t *nic,
+    const usb_host_info_t *usb,
+    const storage_host_info_t *storage,
+    slm_runtime_state_t runtime_state) {
+    bool runtime_available;
+    uint8_t health_score;
+    uint16_t capability_flags;
+    uint32_t next = 0;
+
+    if (!nodes || !count) {
+        return;
+    }
+
+    memset(nodes, 0, sizeof(slm_nodebit_t) * SLM_NODEBIT_MAX_NODES);
+    *count = 0;
+    runtime_available = runtime_state != SLM_RUNTIME_ABSENT &&
+                        runtime_state != SLM_RUNTIME_FAILED;
+    health_score = nodebit_health_score(health);
+    capability_flags = user_hw_access ? user_hw_access->capability_flags : 0;
+
+    for (uint32_t i = 0; i < ARRAY_SIZE(g_nodebit_catalog) &&
+         next < SLM_NODEBIT_MAX_NODES; i++) {
+        slm_nodebit_t node = g_nodebit_catalog[i];
+        bool read_node = node.node_id == SLM_NODEBIT_ID_API_BOOTSTRAP ||
+                         node.node_id == SLM_NODEBIT_ID_API_HW_SNAPSHOT ||
+                         node.node_id == SLM_NODEBIT_ID_MEMORY_FABRIC ||
+                         node.node_id == SLM_NODEBIT_ID_CLOCK_PROFILE;
+
+        node.health_score = MIN(node.health_score, health_score);
+        if (user_hw_access) {
+            node.access_score = MIN(node.access_score, user_hw_access->access_score);
+        }
+
+        if (!runtime_available && !read_node) {
+            node.flags &= ~SLM_NODEBIT_F_RUNTIME_READY;
+            nodebit_disable_apply(&node);
+            node.access_score = MIN(node.access_score, 24);
+        }
+
+        if (node.required_capability_bits != 0 &&
+            (capability_flags & node.required_capability_bits) !=
+                node.required_capability_bits) {
+            nodebit_disable_apply(&node);
+            node.access_score = MIN(node.access_score, 30);
+        }
+
+        switch (node.node_id) {
+            case SLM_NODEBIT_ID_DEVICE_ETHERNET:
+                if (!nic || !nic->present) {
+                    node.flags &= ~SLM_NODEBIT_F_RUNTIME_READY;
+                    nodebit_disable_apply(&node);
+                    node.access_score = 8;
+                } else {
+                    node.access_score = nic->ready ? 78 : 48;
+                    if (nic->ready) {
+                        node.flags |= SLM_NODEBIT_F_RUNTIME_READY;
+                    } else {
+                        node.flags &= ~SLM_NODEBIT_F_RUNTIME_READY;
+                    }
+                    if (!nic->rx_ready) {
+                        node.allow_bits &= ~SLM_ACTION_NODEBIT(SLM_ACTION_E1000_RX_POLL);
+                    }
+                    if (!nic->tx_ready) {
+                        node.allow_bits &= ~SLM_ACTION_NODEBIT(SLM_ACTION_E1000_TX_SMOKE);
+                    }
+                }
+                break;
+            case SLM_NODEBIT_ID_DEVICE_USB:
+                if (!usb || !usb->present) {
+                    node.flags &= ~SLM_NODEBIT_F_RUNTIME_READY;
+                    nodebit_disable_apply(&node);
+                    node.access_score = 8;
+                } else {
+                    node.access_score = usb->ready ? 74 : 44;
+                    if (usb->ready) {
+                        node.flags |= SLM_NODEBIT_F_RUNTIME_READY;
+                    } else {
+                        node.flags &= ~SLM_NODEBIT_F_RUNTIME_READY;
+                    }
+                }
+                break;
+            case SLM_NODEBIT_ID_DEVICE_STORAGE:
+                if (!storage || !storage->present) {
+                    node.flags &= ~SLM_NODEBIT_F_RUNTIME_READY;
+                    nodebit_disable_apply(&node);
+                    node.access_score = 8;
+                } else {
+                    node.access_score = storage->ready ? 76 : 46;
+                    if (storage->ready) {
+                        node.flags |= SLM_NODEBIT_F_RUNTIME_READY;
+                    } else {
+                        node.flags &= ~SLM_NODEBIT_F_RUNTIME_READY;
+                    }
+                }
+                break;
+            default:
+                break;
+        }
+
+        if (health && !health->risky_io_allowed) {
+            node.allow_bits &= ~node.risky_bits;
+        }
+        if ((node.allow_bits & node.action_bits) == 0) {
+            node.flags &= ~SLM_NODEBIT_F_APPLY_ALLOWED;
+        }
+
+        nodes[next++] = node;
+    }
+
+    *count = next;
+}
+
 static void compute_io_profile(slm_io_profile_t *out) {
     if (!out) {
         return;
@@ -899,6 +1320,12 @@ static bool request_valid(const slm_plan_request_t *req) {
     if (!req) {
         return false;
     }
+    if (!slm_action_valid((uint32_t)req->action) ||
+        req->action == SLM_ACTION_NONE ||
+        g_slm_runtime_state == SLM_RUNTIME_ABSENT ||
+        g_slm_runtime_state == SLM_RUNTIME_FAILED) {
+        return false;
+    }
     if (req->risk_level > 3) {
         return false;
     }
@@ -911,6 +1338,9 @@ static bool request_valid(const slm_plan_request_t *req) {
     }
 
     kernel_health_get_summary(&health);
+    if (!nodebit_policy_permits(req, &health)) {
+        return false;
+    }
     if (health.level == KERNEL_STABILITY_UNSAFE &&
         req->action != SLM_ACTION_REPROBE_PCI &&
         req->action != SLM_ACTION_IO_AUDIT &&
@@ -1193,6 +1623,10 @@ static aios_status_t apply_request(const slm_plan_request_t *req) {
 aios_status_t slm_orchestrator_init(void) {
     slm_hw_snapshot_t snapshot;
 
+    g_slm_runtime_state = SLM_RUNTIME_BOOTSTRAP;
+    g_slm_runtime_status = AIOS_OK;
+    g_policy_generation = 1;
+
     for (uint32_t i = 0; i < SLM_PLAN_CAP; i++) {
         plan_table[i].plan_id = 0;
         plan_table[i].state = SLM_PLAN_EMPTY;
@@ -1207,6 +1641,7 @@ aios_status_t slm_orchestrator_init(void) {
     memset(&g_learning, 0, sizeof(g_learning));
     learning_init();
     learning_refresh_boot_observation();
+    g_slm_runtime_state = SLM_RUNTIME_READY;
 
     kprintf("\n");
     kprintf("    SLM Hardware Orchestrator initialized:\n");
@@ -1219,6 +1654,12 @@ aios_status_t slm_orchestrator_init(void) {
         (uint64_t)g_learning.tuned_dma_window_kib);
     serial_write("[SLM] Hardware orchestrator ready\n");
     if (slm_snapshot_read(&snapshot) == AIOS_OK) {
+        serial_printf("[SLM] Runtime state=%s status=%d snapshot_abi=%u nodebits=%u generation=%u\n",
+            slm_runtime_state_name(snapshot.runtime_state),
+            (int64_t)snapshot.runtime_status,
+            (uint64_t)snapshot.abi_version,
+            (uint64_t)snapshot.nodebit_count,
+            (uint64_t)snapshot.nodebit_generation);
         serial_printf("[SLM] MainAI mode=%s sco=%d workers=%u pipeline_qd=%u depth=%u ring=%u/%u\n",
             agent_mode_name(snapshot.main_ai_profile.mode),
             (int64_t)snapshot.main_ai_profile.sco_x100,
@@ -1250,6 +1691,8 @@ aios_status_t slm_snapshot_read(slm_hw_snapshot_t *out) {
         return AIOS_ERR_INVAL;
     }
 
+    memset(out, 0, sizeof(*out));
+
     const memory_selftest_result_t *profile = kernel_memory_selftest_last();
     const platform_probe_summary_t *summary = platform_probe_summary();
     kernel_health_summary_t health;
@@ -1261,6 +1704,12 @@ aios_status_t slm_snapshot_read(slm_hw_snapshot_t *out) {
     (void)storage_host_info(&storage);
     (void)usb_host_info(&usb);
 
+    out->abi_version = SLM_HW_SNAPSHOT_ABI_VERSION;
+    out->struct_size = (uint32_t)sizeof(*out);
+    out->runtime_state = snapshot_runtime_state(&health);
+    out->runtime_status = runtime_status_for_state(out->runtime_state);
+    out->policy_generation = g_policy_generation;
+    out->nodebit_generation = g_policy_generation;
     out->ts_ns = kernel_time_monotonic_ns();
     out->tsc_khz = kernel_time_tsc_khz();
     out->invariant_tsc = kernel_time_invariant_tsc();
@@ -1299,6 +1748,8 @@ aios_status_t slm_snapshot_read(slm_hw_snapshot_t *out) {
     out->agent_tree_nodes = 0;
     compute_agent_tree(out->agent_tree, &out->agent_tree_nodes,
         &out->main_ai_profile, &out->pipeline_profile, &out->io_profile);
+    compute_nodebits(out->nodebits, &out->nodebit_count, &health,
+        &out->user_hw_access, &nic, &usb, &storage, out->runtime_state);
 
     for (uint32_t i = 0; i < SLM_HW_MAX_DEVICES; i++) {
         out->devices[i].vendor_id = 0;
@@ -1444,6 +1895,14 @@ void slm_orchestrator_dump(void) {
     }
 
     kprintf("\n=== SLM Hardware Orchestrator ===\n");
+    kprintf("Runtime: abi=%u size=%u state=%s status=%d policy_gen=%u nodebits=%u gen=%u\n",
+        (uint64_t)snapshot.abi_version,
+        (uint64_t)snapshot.struct_size,
+        slm_runtime_state_name(snapshot.runtime_state),
+        (int64_t)snapshot.runtime_status,
+        (uint64_t)snapshot.policy_generation,
+        (uint64_t)snapshot.nodebit_count,
+        (uint64_t)snapshot.nodebit_generation);
     kprintf("TSC: %u kHz | tier=%u | memcpy=%u MiB/s\n",
         snapshot.tsc_khz,
         (uint64_t)snapshot.tier,
@@ -1568,6 +2027,23 @@ void slm_orchestrator_dump(void) {
             (uint64_t)snapshot.agent_tree[i].priority,
             (uint64_t)snapshot.agent_tree[i].budget_share,
             (uint64_t)snapshot.agent_tree[i].zero_copy_preferred);
+    }
+    for (uint32_t i = 0; i < snapshot.nodebit_count; i++) {
+        const slm_nodebit_t *node = &snapshot.nodebits[i];
+        kprintf("  nodebit[%u] id=%u parent=%u kind=%s flags=%x actions=%x allow=%x observe=%x risky=%x cap=%x health=%u access=%u risk=%u\n",
+            (uint64_t)i,
+            (uint64_t)node->node_id,
+            (uint64_t)node->parent_id,
+            slm_node_kind_name(node->kind),
+            (uint64_t)node->flags,
+            (uint64_t)node->action_bits,
+            (uint64_t)node->allow_bits,
+            (uint64_t)node->observe_only_bits,
+            (uint64_t)node->risky_bits,
+            (uint64_t)node->required_capability_bits,
+            (uint64_t)node->health_score,
+            (uint64_t)node->access_score,
+            (uint64_t)node->risk_level);
     }
     for (uint32_t i = 0; i < snapshot.listed_devices; i++) {
         kprintf("  [%u] kind=%u vendor=%x device=%x bus=%u slot=%u prio=%u\n",

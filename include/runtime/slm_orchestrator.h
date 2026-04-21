@@ -16,6 +16,8 @@
 #define SLM_HW_MAX_DEVICES 16
 #define SLM_PLAN_CAP       16
 #define AGENT_TREE_MAX_NODES 10
+#define SLM_NODEBIT_MAX_NODES 16
+#define SLM_HW_SNAPSHOT_ABI_VERSION 1u
 
 #define SLM_USER_HW_ACCESS_F_BOOTSTRAP_SNAPSHOT BIT(0)
 #define SLM_USER_HW_ACCESS_F_SHARED_RING        BIT(1)
@@ -23,6 +25,14 @@
 #define SLM_USER_HW_ACCESS_F_DEVICE_NODES       BIT(3)
 #define SLM_USER_HW_ACCESS_F_MEDIATED_IO        BIT(4)
 #define SLM_USER_HW_ACCESS_F_RISKY_IO_ALLOWED   BIT(5)
+
+#define SLM_NODEBIT_F_PRESENT            BIT(0)
+#define SLM_NODEBIT_F_USER_VISIBLE       BIT(1)
+#define SLM_NODEBIT_F_OBSERVE_ONLY       BIT(2)
+#define SLM_NODEBIT_F_APPLY_ALLOWED      BIT(3)
+#define SLM_NODEBIT_F_RISKY              BIT(4)
+#define SLM_NODEBIT_F_REQUIRES_MEDIATION BIT(5)
+#define SLM_NODEBIT_F_RUNTIME_READY      BIT(6)
 
 typedef enum {
     SLM_TEMPLATE_NONE = 0,
@@ -53,6 +63,22 @@ AIOS_STATIC_ASSERT(SLM_ACTION_COUNT == 12,
 
 static inline bool slm_action_valid(uint32_t action) {
     return action < SLM_ACTION_COUNT;
+}
+
+typedef enum {
+    SLM_RUNTIME_ABSENT = 0,
+    SLM_RUNTIME_BOOTSTRAP = 1,
+    SLM_RUNTIME_READY = 2,
+    SLM_RUNTIME_DEGRADED = 3,
+    SLM_RUNTIME_FAILED = 4,
+    SLM_RUNTIME_COUNT = 5
+} slm_runtime_state_t;
+
+AIOS_STATIC_ASSERT(SLM_RUNTIME_COUNT == 5,
+    "Update SLM runtime state users when enum changes");
+
+static inline bool slm_runtime_state_valid(uint32_t state) {
+    return state < SLM_RUNTIME_COUNT;
 }
 
 typedef enum {
@@ -96,6 +122,44 @@ typedef enum {
     AGENT_MODEL_CLASS_MEDIUM = 2,
     AGENT_MODEL_CLASS_MAIN = 3,
 } agent_model_class_t;
+
+typedef enum {
+    SLM_NODE_KIND_NONE = 0,
+    SLM_NODE_KIND_API = 1,
+    SLM_NODE_KIND_TOOL = 2,
+    SLM_NODE_KIND_DEVICE = 3,
+    SLM_NODE_KIND_MEMORY = 4,
+    SLM_NODE_KIND_CLOCK = 5,
+    SLM_NODE_KIND_POLICY = 6,
+    SLM_NODE_KIND_COUNT = 7
+} slm_node_kind_t;
+
+AIOS_STATIC_ASSERT(SLM_NODE_KIND_COUNT == 7,
+    "Update SLM node kind users when enum changes");
+
+static inline bool slm_node_kind_valid(uint32_t kind) {
+    return kind > SLM_NODE_KIND_NONE && kind < SLM_NODE_KIND_COUNT;
+}
+
+typedef enum {
+    SLM_NODEBIT_ID_NONE = 0,
+    SLM_NODEBIT_ID_API_BOOTSTRAP = 1,
+    SLM_NODEBIT_ID_API_HW_SNAPSHOT = 2,
+    SLM_NODEBIT_ID_API_PLAN_SUBMIT = 3,
+    SLM_NODEBIT_ID_TOOL_DISCOVERY = 4,
+    SLM_NODEBIT_ID_DEVICE_ETHERNET = 5,
+    SLM_NODEBIT_ID_DEVICE_USB = 6,
+    SLM_NODEBIT_ID_DEVICE_STORAGE = 7,
+    SLM_NODEBIT_ID_MEMORY_FABRIC = 8,
+    SLM_NODEBIT_ID_CLOCK_PROFILE = 9,
+    SLM_NODEBIT_ID_POLICY_GATE = 10,
+    SLM_NODEBIT_ID_COUNT = 11
+} slm_nodebit_id_t;
+
+AIOS_STATIC_ASSERT(SLM_NODEBIT_ID_COUNT == 11,
+    "Update SLM NodeBit catalog when enum changes");
+AIOS_STATIC_ASSERT(SLM_NODEBIT_ID_COUNT <= SLM_NODEBIT_MAX_NODES,
+    "SLM NodeBit catalog exceeds snapshot capacity");
 
 typedef struct {
     uint16_t vendor_id;
@@ -216,6 +280,22 @@ typedef struct {
 } agent_tree_node_t;
 
 typedef struct {
+    uint16_t node_id;
+    uint16_t parent_id;
+    slm_node_kind_t kind;
+    uint32_t flags;
+    uint32_t action_bits;
+    uint32_t allow_bits;
+    uint32_t observe_only_bits;
+    uint32_t risky_bits;
+    uint32_t required_capability_bits;
+    uint8_t health_score;
+    uint8_t access_score;
+    uint8_t latency_class;
+    uint8_t risk_level;
+} slm_nodebit_t;
+
+typedef struct {
     uint16_t capability_flags;
     uint8_t access_score;
     uint8_t ready_controller_count;
@@ -245,6 +325,14 @@ typedef struct {
 } slm_clock_profile_t;
 
 typedef struct {
+    uint32_t abi_version;
+    uint32_t struct_size;
+    slm_runtime_state_t runtime_state;
+    aios_status_t runtime_status;
+    uint32_t policy_generation;
+    uint32_t nodebit_generation;
+    uint32_t nodebit_count;
+    uint32_t reserved0;
     uint64_t ts_ns;
     uint64_t tsc_khz;
     bool invariant_tsc;
@@ -278,6 +366,7 @@ typedef struct {
     slm_clock_profile_t clock_profile;
     uint32_t agent_tree_nodes;
     agent_tree_node_t agent_tree[AGENT_TREE_MAX_NODES];
+    slm_nodebit_t nodebits[SLM_NODEBIT_MAX_NODES];
     slm_hw_device_t devices[SLM_HW_MAX_DEVICES];
 } slm_hw_snapshot_t;
 

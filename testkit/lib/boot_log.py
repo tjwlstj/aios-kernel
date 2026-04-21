@@ -76,6 +76,9 @@ STORAGE_CHANNEL_RE = re.compile(
 SLM_MAIN_RE = re.compile(
     r"\[SLM\] MainAI mode=(?P<mode>\w+) sco=(?P<sco>-?\d+) workers=(?P<workers>\d+) pipeline_qd=(?P<pipeline_qd>\d+) depth=(?P<depth>\d+) ring=(?P<ring_used>\d+)/(?P<ring_total>\d+)"
 )
+SLM_RUNTIME_RE = re.compile(
+    r"\[SLM\] Runtime state=(?P<state>[\w\-]+) status=(?P<status>-?\d+) snapshot_abi=(?P<snapshot_abi>\d+) nodebits=(?P<nodebits>\d+) generation=(?P<generation>\d+)"
+)
 SLM_USER_AI_RE = re.compile(
     r"\[SLM\] UserAI access score=(?P<score>\d+) flags=(?P<flags>\S+) direct_mmio=(?P<direct_mmio>\d+) mediated=(?P<mediated>\d+) clock=(?P<clock_main>\d+)/(?P<clock_worker>\d+)/(?P<clock_io>\d+)/(?P<clock_memory>\d+)/(?P<clock_guardian>\d+)/(?P<clock_reserve>\d+) slice=(?P<slice_us>\d+)us poll=(?P<poll_us>\d+)us"
 )
@@ -347,6 +350,17 @@ def parse_boot_log_text(log_text: str, smoke_profile: str, serial_log_path: str 
                 "ring_total": int(match.group("ring_total")),
             }
         )
+    index, line, match = _search_match(lines, SLM_RUNTIME_RE)
+    if match:
+        slm["runtime"] = {
+            "line": index,
+            "text": line,
+            "state": match.group("state"),
+            "status": int(match.group("status")),
+            "snapshot_abi": int(match.group("snapshot_abi")),
+            "nodebits": int(match.group("nodebits")),
+            "generation": int(match.group("generation")),
+        }
     index, line, match = _search_match(lines, SLM_USER_AI_RE)
     if match:
         slm["user_ai_access"] = {
