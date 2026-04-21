@@ -25,6 +25,7 @@
 - `runtime/ai_syscall.c`는 AI syscall surface와 일부 ring runtime 통계를 제공한다
 - `SYS_INFO_BOOTSTRAP`은 health / room / user scaffold / SLM snapshot을 첫 userspace용 묶음으로 읽게 해준다
 - `runtime/slm_orchestrator.c`는 boot-time hardware-aware seed plan을 만든다
+- `slm_hw_snapshot_t`는 userspace AI용 하드웨어 접근 힌트와 클럭 분배 힌트를 read-only로 포함한다
 - `kernel/user_mode.c` 기준 ring3 scaffold marker는 있으나, 실제 userspace handoff와 ELF loader는 아직 없다
 
 즉, 현재 AIOS는
@@ -153,6 +154,7 @@ bundle은 배포 보조층으로 뒤따라오는 편이 맞다.
 - 커널은 모델을 선택하지 않는다
 - 커널은 관측, 격리, 전달, 롤백 기반만 제공한다
 - 실제 후보 평가와 승급/강등은 유저공간 정책 서비스가 맡는다
+- 유저공간 AI의 하드웨어 접근은 현재 direct MMIO가 아니라 mediated I/O와 shared ring / zero-copy window 힌트 중심으로 제한한다
 
 ### 추천 구조
 
@@ -199,6 +201,7 @@ bundle은 배포 보조층으로 뒤따라오는 편이 맞다.
 - `Axis Gate` 메타데이터
 - health / stability summary
 - `SYS_INFO_BOOTSTRAP` read-only snapshot
+- `SYS_SLM_HW_SNAPSHOT` read-only hardware / userspace-access / clock distribution profile
 - memory fabric domain / window
 - AI syscall surface
 - driver bootstrap / boot inventory / boot matrix testkit

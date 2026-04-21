@@ -71,6 +71,7 @@ C_SOURCES   = $(KERNEL_DIR)/main.c \
 ASM_OBJECTS = $(patsubst %.asm,$(BUILD_DIR)/%.o,$(ASM_SOURCES))
 C_OBJECTS   = $(patsubst %.c,$(BUILD_DIR)/%.o,$(C_SOURCES))
 OBJECTS     = $(ASM_OBJECTS) $(C_OBJECTS)
+DEPFILES    = $(C_OBJECTS:.o=.d)
 
 # =============================================================================
 # Targets
@@ -107,7 +108,7 @@ $(BUILD_DIR)/%.o: %.asm
 $(BUILD_DIR)/%.o: %.c
 	@echo "[CC] $<"
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -MMD -MP -c $< -o $@
 
 # Create bootable ISO
 iso: $(KERNEL_BIN)
@@ -218,3 +219,5 @@ info:
 	@echo "Kernel:      $(KERNEL_BIN)"
 	@echo "ISO:         $(KERNEL_ISO)"
 	@echo "=============================="
+
+-include $(DEPFILES)

@@ -174,7 +174,7 @@ typedef struct {
 } syscall_autonomy_mode_t;
 
 /* Early userspace bootstrap snapshot */
-#define AIOS_BOOTSTRAP_INFO_ABI_VERSION  1u
+#define AIOS_BOOTSTRAP_INFO_ABI_VERSION  2u
 #define AIOS_BOOTSTRAP_FEATURE_ROOM      BIT(0)
 #define AIOS_BOOTSTRAP_FEATURE_USER_MODE BIT(1)
 #define AIOS_BOOTSTRAP_FEATURE_SLM       BIT(2)

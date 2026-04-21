@@ -26,7 +26,7 @@
 - `Kernel Room snapshot`
 - `memory_fabric` domain / window
 - AI syscall surface와 일부 shared ring 상태
-- SLM seed plan
+- SLM seed plan과 userspace AI용 hardware-access / clock-distribution snapshot 힌트
 - `ring3 scaffold ready=1` marker
 
 현재 저장소 기준으로 아직 없는 것:
@@ -234,6 +234,7 @@ userspace OS를 "실행 가능한 서비스 집합"으로 보이게 만든다.
 ### 현재 상태
 
 - SLM seed plan과 커널 snapshot은 있다
+- `slm_hw_snapshot_t`는 read-only로 userspace AI 접근성 점수, mediated I/O 여부, shared ring / zero-copy 권장 여부, 클럭 분배율을 제공한다
 - 모델 선택은 아직 정적/수동 해석이 강하다
 
 ### 목표
@@ -254,10 +255,12 @@ SLM 문제를 "정답 모델 하나 선택"이 아니라
 
 - 모델별 status가 `experimental / bounded / stable`처럼 구분됨
 - hardware snapshot과 health summary를 보고 승급 판단 기준이 문서화됨
+- 후보 운영 서비스가 direct MMIO가 아니라 mediated I/O와 클럭 분배 힌트를 읽어 초기 worker / I/O poll 예산을 잡음
 
 ### 검증 경로
 
 - 샘플 manifest / config / state 문서 검토
+- QEMU serial log의 `[SLM] UserAI access ... clock=...` marker 확인
 - runtime 디렉토리 내 policy 위치가 정리됨
 
 ## Slice 7. Observer / Builder 확장

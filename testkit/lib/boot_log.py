@@ -75,6 +75,9 @@ STORAGE_CHANNEL_RE = re.compile(
 SLM_MAIN_RE = re.compile(
     r"\[SLM\] MainAI mode=(?P<mode>\w+) sco=(?P<sco>-?\d+) workers=(?P<workers>\d+) pipeline_qd=(?P<pipeline_qd>\d+) depth=(?P<depth>\d+) ring=(?P<ring_used>\d+)/(?P<ring_total>\d+)"
 )
+SLM_USER_AI_RE = re.compile(
+    r"\[SLM\] UserAI access score=(?P<score>\d+) flags=(?P<flags>\S+) direct_mmio=(?P<direct_mmio>\d+) mediated=(?P<mediated>\d+) clock=(?P<clock_main>\d+)/(?P<clock_worker>\d+)/(?P<clock_io>\d+)/(?P<clock_memory>\d+)/(?P<clock_guardian>\d+)/(?P<clock_reserve>\d+) slice=(?P<slice_us>\d+)us poll=(?P<poll_us>\d+)us"
+)
 SLM_SEEDED_RE = re.compile(r"\[SLM\] Seeded plan (?P<plan_id>\d+) label=(?P<label>[a-z0-9\-]+)")
 USER_SCAFFOLD_RE = re.compile(
     r"\[USER\] Ring3 scaffold ready=(?P<ready>\d+) tr=(?P<tr>\S+) user_cs=(?P<user_cs>\S+) user_ds=(?P<user_ds>\S+) rsp0=(?P<rsp0>\S+) gdt_base=(?P<gdt_base>\S+) gdt_limit=(?P<gdt_limit>\d+)"
@@ -340,6 +343,26 @@ def parse_boot_log_text(log_text: str, smoke_profile: str, serial_log_path: str 
                 "ring_total": int(match.group("ring_total")),
             }
         )
+    index, line, match = _search_match(lines, SLM_USER_AI_RE)
+    if match:
+        slm["user_ai_access"] = {
+            "line": index,
+            "text": line,
+            "score": int(match.group("score")),
+            "flags": match.group("flags"),
+            "direct_mmio": int(match.group("direct_mmio")),
+            "mediated": int(match.group("mediated")),
+            "clock_pct": {
+                "main": int(match.group("clock_main")),
+                "worker": int(match.group("clock_worker")),
+                "io": int(match.group("clock_io")),
+                "memory": int(match.group("clock_memory")),
+                "guardian": int(match.group("clock_guardian")),
+                "reserve": int(match.group("clock_reserve")),
+            },
+            "slice_us": int(match.group("slice_us")),
+            "poll_us": int(match.group("poll_us")),
+        }
     seeded_labels: list[str] = []
     for line_text in lines:
         seeded_match = SLM_SEEDED_RE.search(line_text)

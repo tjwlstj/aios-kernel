@@ -17,6 +17,13 @@
 #define SLM_PLAN_CAP       16
 #define AGENT_TREE_MAX_NODES 10
 
+#define SLM_USER_HW_ACCESS_F_BOOTSTRAP_SNAPSHOT BIT(0)
+#define SLM_USER_HW_ACCESS_F_SHARED_RING        BIT(1)
+#define SLM_USER_HW_ACCESS_F_ZERO_COPY_WINDOW   BIT(2)
+#define SLM_USER_HW_ACCESS_F_DEVICE_NODES       BIT(3)
+#define SLM_USER_HW_ACCESS_F_MEDIATED_IO        BIT(4)
+#define SLM_USER_HW_ACCESS_F_RISKY_IO_ALLOWED   BIT(5)
+
 typedef enum {
     SLM_TEMPLATE_NONE = 0,
     SLM_TEMPLATE_PCI_ETHERNET = 1,
@@ -209,6 +216,35 @@ typedef struct {
 } agent_tree_node_t;
 
 typedef struct {
+    uint16_t capability_flags;
+    uint8_t access_score;
+    uint8_t ready_controller_count;
+    uint8_t degraded_controller_count;
+    uint8_t pcie_io_device_count;
+    bool user_mode_ready;
+    bool direct_mmio_allowed;
+    bool mediated_io_required;
+    bool memory_only_recommended;
+    bool shared_ring_recommended;
+    bool zero_copy_recommended;
+    bool device_nodes_recommended;
+} slm_user_hw_access_profile_t;
+
+typedef struct {
+    uint64_t source_tsc_khz;
+    bool invariant_tsc;
+    boot_perf_tier_t tier;
+    uint8_t main_ai_pct;
+    uint8_t worker_pct;
+    uint8_t io_poll_pct;
+    uint8_t memory_pct;
+    uint8_t guardian_pct;
+    uint8_t reserve_pct;
+    uint16_t suggested_timeslice_us;
+    uint16_t suggested_io_poll_interval_us;
+} slm_clock_profile_t;
+
+typedef struct {
     uint64_t ts_ns;
     uint64_t tsc_khz;
     bool invariant_tsc;
@@ -238,6 +274,8 @@ typedef struct {
     ai_ring_runtime_snapshot_t ring_runtime;
     agent_main_ai_profile_t main_ai_profile;
     agent_pipeline_profile_t pipeline_profile;
+    slm_user_hw_access_profile_t user_hw_access;
+    slm_clock_profile_t clock_profile;
     uint32_t agent_tree_nodes;
     agent_tree_node_t agent_tree[AGENT_TREE_MAX_NODES];
     slm_hw_device_t devices[SLM_HW_MAX_DEVICES];

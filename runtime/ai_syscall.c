@@ -86,6 +86,10 @@ static infer_ring_state_t *find_infer_ring_locked(uint32_t ring_id) {
     return NULL;
 }
 
+static bool syscall_output_buffer_ready(const void *ptr, uint64_t size) {
+    return ptr != NULL && size > 0;
+}
+
 static void copy_str(char *dst, const char *src, uint32_t max_len) {
     uint32_t i = 0;
     while (src[i] && i < max_len - 1) {
@@ -110,6 +114,10 @@ static uint32_t model_registry_snapshot(model_info_t *out, uint32_t cap) {
 
     return count;
 }
+
+static aios_status_t ai_syscall_contract_selftest(void);
+static aios_status_t sys_info_memory(mem_stats_t *out);
+static aios_status_t sys_info_scheduler(sched_stats_t *out);
 
 /* ============================================================
  * Public API Implementation
@@ -154,6 +162,12 @@ aios_status_t ai_syscall_init(void) {
     kprintf("      Pipeline:          0x600 - 0x6FF\n");
     kprintf("      System Info:       0x700 - 0x7FF\n");
     kprintf("    Max Models: %u\n", (uint64_t)MAX_MODELS_REGISTRY);
+
+    aios_status_t contract_status = ai_syscall_contract_selftest();
+    if (contract_status != AIOS_OK) {
+        return contract_status;
+    }
+    kprintf("    Contract selftest: output guards OK\n");
 
     return AIOS_OK;
 }
@@ -259,16 +273,10 @@ int64_t ai_syscall_dispatch(uint64_t syscall_num, uint64_t arg1,
         case 0x07: /* System info */
             syscall_stats.info_calls++;
             switch (syscall_num) {
-                case SYS_INFO_MEMORY: {
-                    mem_stats_t *stats = (mem_stats_t *)arg1;
-                    tensor_mm_stats(stats);
-                    return AIOS_OK;
-                }
-                case SYS_INFO_SCHEDULER: {
-                    sched_stats_t *stats = (sched_stats_t *)arg1;
-                    ai_sched_stats(stats);
-                    return AIOS_OK;
-                }
+                case SYS_INFO_MEMORY:
+                    return (int64_t)sys_info_memory((mem_stats_t *)arg1);
+                case SYS_INFO_SCHEDULER:
+                    return (int64_t)sys_info_scheduler((sched_stats_t *)arg1);
                 case SYS_INFO_SYSTEM:
                     sys_info_dump();
                     return AIOS_OK;
@@ -805,7 +813,7 @@ void sys_info_dump(void) {
             (uint64_t)bootstrap.features,
             (uint64_t)bootstrap.user_mode.ready,
             (uint64_t)(uintptr_t)kernel_stability_name(bootstrap.health.level),
-            (uint64_t)bootstrap.room.seeded_plan_count);
+            (uint64_t)bootstrap.room.slm_plan_count);
     }
 
     kprintf("\nLoaded Models: %u\n", (uint64_t)model_snapshot_count);
@@ -835,7 +843,7 @@ void sys_info_dump(void) {
 }
 
 aios_status_t sys_info_health(kernel_health_summary_t *out) {
-    if (!out) {
+    if (!syscall_output_buffer_ready(out, sizeof(*out))) {
         return AIOS_ERR_INVAL;
     }
 
@@ -844,13 +852,17 @@ aios_status_t sys_info_health(kernel_health_summary_t *out) {
 }
 
 aios_status_t sys_info_room(kernel_room_snapshot_t *out) {
+    if (!syscall_output_buffer_ready(out, sizeof(*out))) {
+        return AIOS_ERR_INVAL;
+    }
+
     return kernel_room_snapshot_read(out);
 }
 
 aios_status_t sys_info_bootstrap(aios_bootstrap_info_t *out) {
     aios_status_t status = AIOS_OK;
 
-    if (!out) {
+    if (!syscall_output_buffer_ready(out, sizeof(*out))) {
         return AIOS_ERR_INVAL;
     }
 
@@ -874,6 +886,44 @@ aios_status_t sys_info_bootstrap(aios_bootstrap_info_t *out) {
     }
 
     return slm_snapshot_read(&out->slm);
+}
+
+static aios_status_t sys_info_memory(mem_stats_t *out) {
+    if (!syscall_output_buffer_ready(out, sizeof(*out))) {
+        return AIOS_ERR_INVAL;
+    }
+
+    tensor_mm_stats(out);
+    return AIOS_OK;
+}
+
+static aios_status_t sys_info_scheduler(sched_stats_t *out) {
+    if (!syscall_output_buffer_ready(out, sizeof(*out))) {
+        return AIOS_ERR_INVAL;
+    }
+
+    ai_sched_stats(out);
+    return AIOS_OK;
+}
+
+static aios_status_t ai_syscall_contract_selftest(void) {
+    if (sys_info_memory(NULL) != AIOS_ERR_INVAL) {
+        return AIOS_ERR_IO;
+    }
+    if (sys_info_scheduler(NULL) != AIOS_ERR_INVAL) {
+        return AIOS_ERR_IO;
+    }
+    if (sys_info_health(NULL) != AIOS_ERR_INVAL) {
+        return AIOS_ERR_IO;
+    }
+    if (sys_info_room(NULL) != AIOS_ERR_INVAL) {
+        return AIOS_ERR_IO;
+    }
+    if (sys_info_bootstrap(NULL) != AIOS_ERR_INVAL) {
+        return AIOS_ERR_IO;
+    }
+
+    return AIOS_OK;
 }
 
 __asm__(".section .note.GNU-stack,\"\",@progbits\n\t.previous");

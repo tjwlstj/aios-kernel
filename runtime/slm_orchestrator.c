@@ -14,6 +14,7 @@
 #include <drivers/usb_host.h>
 #include <drivers/serial.h>
 #include <drivers/vga.h>
+#include <kernel/user_mode.h>
 #include <mm/memory_fabric.h>
 #include <runtime/ai_syscall.h>
 #include <lib/string.h>
@@ -34,6 +35,15 @@ static void compute_agent_pipeline_profile(agent_pipeline_profile_t *out,
 static void compute_agent_tree(agent_tree_node_t *nodes, uint32_t *count,
     const agent_main_ai_profile_t *main_ai,
     const agent_pipeline_profile_t *pipeline,
+    const slm_io_profile_t *io_profile);
+static void compute_user_hw_access_profile(slm_user_hw_access_profile_t *out,
+    const kernel_health_summary_t *health,
+    const slm_io_profile_t *io_profile,
+    const agent_main_ai_profile_t *main_ai,
+    const agent_pipeline_profile_t *pipeline);
+static void compute_clock_profile(slm_clock_profile_t *out,
+    const memory_selftest_result_t *profile,
+    const agent_main_ai_profile_t *main_ai,
     const slm_io_profile_t *io_profile);
 
 static uint8_t clamp_u8(int32_t value) {
@@ -636,6 +646,148 @@ static void compute_agent_tree(agent_tree_node_t *nodes, uint32_t *count,
     *count = next;
 }
 
+static void compute_user_hw_access_profile(slm_user_hw_access_profile_t *out,
+    const kernel_health_summary_t *health,
+    const slm_io_profile_t *io_profile,
+    const agent_main_ai_profile_t *main_ai,
+    const agent_pipeline_profile_t *pipeline) {
+    uint16_t flags = SLM_USER_HW_ACCESS_F_BOOTSTRAP_SNAPSHOT |
+                     SLM_USER_HW_ACCESS_F_MEDIATED_IO;
+    int32_t score = 30;
+
+    if (!out || !health || !io_profile || !main_ai || !pipeline) {
+        return;
+    }
+
+    memset(out, 0, sizeof(*out));
+
+    out->user_mode_ready = user_mode_scaffold_ready();
+    out->direct_mmio_allowed = false;
+    out->mediated_io_required = true;
+    out->ready_controller_count = io_profile->ready_controllers;
+    out->degraded_controller_count = io_profile->degraded_controllers;
+    out->pcie_io_device_count = io_profile->pcie_io_devices;
+    out->shared_ring_recommended = pipeline->shared_infer_ring_preferred;
+    out->zero_copy_recommended = pipeline->zero_copy_preferred;
+    out->device_nodes_recommended = pipeline->device_nodes_preferred;
+    out->memory_only_recommended = main_ai->memory_only_bias ||
+        io_profile->ready_controllers == 0 ||
+        health->level != KERNEL_STABILITY_STABLE;
+
+    if (out->user_mode_ready) {
+        score += 20;
+    }
+    score += (int32_t)io_profile->ready_controllers * 10;
+    score -= (int32_t)io_profile->degraded_controllers * 12;
+    if (pipeline->shared_infer_ring_preferred) {
+        flags |= SLM_USER_HW_ACCESS_F_SHARED_RING;
+        score += 10;
+    }
+    if (pipeline->zero_copy_preferred) {
+        flags |= SLM_USER_HW_ACCESS_F_ZERO_COPY_WINDOW;
+        score += 8;
+    }
+    if (pipeline->device_nodes_preferred) {
+        flags |= SLM_USER_HW_ACCESS_F_DEVICE_NODES;
+        score += 6;
+    }
+    if (health->risky_io_allowed) {
+        flags |= SLM_USER_HW_ACCESS_F_RISKY_IO_ALLOWED;
+        score += 6;
+    }
+    if (health->level == KERNEL_STABILITY_STABLE) {
+        score += 10;
+    } else if (health->level == KERNEL_STABILITY_UNSAFE) {
+        score -= 25;
+    }
+    if (out->memory_only_recommended) {
+        score -= 8;
+    }
+
+    out->capability_flags = flags;
+    out->access_score = clamp_u8(score);
+}
+
+static void clock_move_share(uint8_t *from, uint8_t *to, uint8_t amount) {
+    if (!from || !to || *from < amount) {
+        return;
+    }
+    *from = (uint8_t)(*from - amount);
+    *to = (uint8_t)(*to + amount);
+}
+
+static void compute_clock_profile(slm_clock_profile_t *out,
+    const memory_selftest_result_t *profile,
+    const agent_main_ai_profile_t *main_ai,
+    const slm_io_profile_t *io_profile) {
+    if (!out || !profile || !main_ai || !io_profile) {
+        return;
+    }
+
+    memset(out, 0, sizeof(*out));
+    out->source_tsc_khz = profile->tsc_khz;
+    out->invariant_tsc = profile->invariant_tsc;
+    out->tier = profile->tier;
+
+    switch (main_ai->mode) {
+        case AGENT_OPERATOR_MODE_STABILIZE:
+            out->main_ai_pct = 30;
+            out->worker_pct = 20;
+            out->io_poll_pct = 10;
+            out->memory_pct = 20;
+            out->guardian_pct = 15;
+            out->reserve_pct = 5;
+            out->suggested_timeslice_us = 2000;
+            break;
+        case AGENT_OPERATOR_MODE_EXPLORE:
+            out->main_ai_pct = 30;
+            out->worker_pct = 34;
+            out->io_poll_pct = 16;
+            out->memory_pct = 8;
+            out->guardian_pct = 6;
+            out->reserve_pct = 6;
+            out->suggested_timeslice_us = 750;
+            break;
+        case AGENT_OPERATOR_MODE_BALANCE:
+        default:
+            out->main_ai_pct = 34;
+            out->worker_pct = 28;
+            out->io_poll_pct = 12;
+            out->memory_pct = 12;
+            out->guardian_pct = 8;
+            out->reserve_pct = 6;
+            out->suggested_timeslice_us = 1000;
+            break;
+    }
+
+    if (profile->tier == BOOT_PERF_TIER_LOW) {
+        clock_move_share(&out->worker_pct, &out->reserve_pct, 4);
+        clock_move_share(&out->io_poll_pct, &out->guardian_pct, 2);
+    } else if (profile->tier == BOOT_PERF_TIER_HIGH &&
+               io_profile->ready_controllers >= 2 &&
+               main_ai->mode != AGENT_OPERATOR_MODE_STABILIZE) {
+        clock_move_share(&out->reserve_pct, &out->worker_pct, 2);
+        clock_move_share(&out->guardian_pct, &out->io_poll_pct, 2);
+    }
+
+    if (io_profile->ready_controllers == 0) {
+        clock_move_share(&out->io_poll_pct, &out->reserve_pct, 4);
+    }
+
+    switch (io_profile->mode) {
+        case SLM_IO_MODE_AGGRESSIVE:
+            out->suggested_io_poll_interval_us = 250;
+            break;
+        case SLM_IO_MODE_BALANCED:
+            out->suggested_io_poll_interval_us = 500;
+            break;
+        case SLM_IO_MODE_CONSERVATIVE:
+        default:
+            out->suggested_io_poll_interval_us = 1000;
+            break;
+    }
+}
+
 static void compute_io_profile(slm_io_profile_t *out) {
     if (!out) {
         return;
@@ -1075,6 +1227,19 @@ aios_status_t slm_orchestrator_init(void) {
             (uint64_t)snapshot.pipeline_profile.recommended_token_pipeline_depth,
             (uint64_t)snapshot.pipeline_profile.recommended_submit_ring_entries,
             (uint64_t)snapshot.pipeline_profile.recommended_completion_ring_entries);
+        serial_printf("[SLM] UserAI access score=%u flags=%x direct_mmio=%u mediated=%u clock=%u/%u/%u/%u/%u/%u slice=%uus poll=%uus\n",
+            (uint64_t)snapshot.user_hw_access.access_score,
+            (uint64_t)snapshot.user_hw_access.capability_flags,
+            (uint64_t)snapshot.user_hw_access.direct_mmio_allowed,
+            (uint64_t)snapshot.user_hw_access.mediated_io_required,
+            (uint64_t)snapshot.clock_profile.main_ai_pct,
+            (uint64_t)snapshot.clock_profile.worker_pct,
+            (uint64_t)snapshot.clock_profile.io_poll_pct,
+            (uint64_t)snapshot.clock_profile.memory_pct,
+            (uint64_t)snapshot.clock_profile.guardian_pct,
+            (uint64_t)snapshot.clock_profile.reserve_pct,
+            (uint64_t)snapshot.clock_profile.suggested_timeslice_us,
+            (uint64_t)snapshot.clock_profile.suggested_io_poll_interval_us);
     }
     seed_boot_plans();
     return AIOS_OK;
@@ -1127,6 +1292,10 @@ aios_status_t slm_snapshot_read(slm_hw_snapshot_t *out) {
         &out->fabric_profile, &out->io_profile);
     compute_agent_pipeline_profile(&out->pipeline_profile, &out->main_ai_profile,
         &out->io_profile);
+    compute_user_hw_access_profile(&out->user_hw_access, &health,
+        &out->io_profile, &out->main_ai_profile, &out->pipeline_profile);
+    compute_clock_profile(&out->clock_profile, profile,
+        &out->main_ai_profile, &out->io_profile);
     out->agent_tree_nodes = 0;
     compute_agent_tree(out->agent_tree, &out->agent_tree_nodes,
         &out->main_ai_profile, &out->pipeline_profile, &out->io_profile);
@@ -1368,6 +1537,27 @@ void slm_orchestrator_dump(void) {
         (uint64_t)snapshot.pipeline_profile.shared_kv_preferred,
         (uint64_t)snapshot.pipeline_profile.device_nodes_preferred,
         (uint64_t)snapshot.pipeline_profile.shared_infer_ring_preferred);
+    kprintf("User AI access: score=%u flags=%x user_ready=%u direct_mmio=%u mediated=%u memory_only=%u ready=%u degraded=%u pcie=%u\n",
+        (uint64_t)snapshot.user_hw_access.access_score,
+        (uint64_t)snapshot.user_hw_access.capability_flags,
+        (uint64_t)snapshot.user_hw_access.user_mode_ready,
+        (uint64_t)snapshot.user_hw_access.direct_mmio_allowed,
+        (uint64_t)snapshot.user_hw_access.mediated_io_required,
+        (uint64_t)snapshot.user_hw_access.memory_only_recommended,
+        (uint64_t)snapshot.user_hw_access.ready_controller_count,
+        (uint64_t)snapshot.user_hw_access.degraded_controller_count,
+        (uint64_t)snapshot.user_hw_access.pcie_io_device_count);
+    kprintf("Clock profile: tsc=%u invariant=%u pct main/worker/io/mem/guard/reserve=%u/%u/%u/%u/%u/%u slice=%uus poll=%uus\n",
+        snapshot.clock_profile.source_tsc_khz,
+        (uint64_t)snapshot.clock_profile.invariant_tsc,
+        (uint64_t)snapshot.clock_profile.main_ai_pct,
+        (uint64_t)snapshot.clock_profile.worker_pct,
+        (uint64_t)snapshot.clock_profile.io_poll_pct,
+        (uint64_t)snapshot.clock_profile.memory_pct,
+        (uint64_t)snapshot.clock_profile.guardian_pct,
+        (uint64_t)snapshot.clock_profile.reserve_pct,
+        (uint64_t)snapshot.clock_profile.suggested_timeslice_us,
+        (uint64_t)snapshot.clock_profile.suggested_io_poll_interval_us);
     for (uint32_t i = 0; i < snapshot.agent_tree_nodes; i++) {
         kprintf("  node[%u] role=%s class=%u active=%u persist=%u prio=%u budget=%u zero_copy=%u\n",
             (uint64_t)snapshot.agent_tree[i].node_id,
