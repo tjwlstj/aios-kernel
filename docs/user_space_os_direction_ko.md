@@ -26,6 +26,7 @@
 - `SYS_INFO_BOOTSTRAP`은 health / room / user scaffold / SLM snapshot을 첫 userspace용 묶음으로 읽게 해준다
 - `runtime/slm_orchestrator.c`는 boot-time hardware-aware seed plan을 만든다
 - `slm_hw_snapshot_t`는 userspace AI용 하드웨어 접근 힌트, 클럭 분배 힌트, SLM runtime state/status, read-only NodeBit 카탈로그를 포함한다
+- `SYS_SLM_NODEBIT_LOOKUP`은 특정 API/tool/device/policy NodeBit를 단건 조회하며, SLM plan submit은 NodeBit runtime overlay를 1차 gate로 사용한다
 - `include/kernel/user_access.h`와 `kernel/user_access.c`는 구조적 `access_ok`, `copy_from_user`, `copy_to_user`, 길이 제한 문자열 복사 및 실패 사유 매핑을 제공한다
 - `runtime/ai_syscall.c`의 일부 구조체 입력 syscall은 request를 커널 스택에 staging copy한 뒤 내부 API를 호출한다
 - `SYS_INFO_BOOTSTRAP`과 `SYS_SLM_HW_SNAPSHOT`은 큰 snapshot을 커널 staging copy로 만든 뒤 userspace로 복사한다
@@ -205,7 +206,8 @@ bundle은 배포 보조층으로 뒤따라오는 편이 맞다.
 - `Axis Gate` 메타데이터
 - health / stability summary
 - `SYS_INFO_BOOTSTRAP` read-only snapshot
-- `SYS_SLM_HW_SNAPSHOT` read-only hardware / userspace-access / clock distribution profile
+- `SYS_SLM_HW_SNAPSHOT` read-only hardware / userspace-access / clock distribution / NodeBit catalog profile
+- `SYS_SLM_NODEBIT_LOOKUP` effective NodeBit single-node lookup
 - memory fabric domain / window
 - AI syscall surface
 - driver bootstrap / boot inventory / boot matrix testkit

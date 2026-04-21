@@ -30,7 +30,9 @@
 현재 커널 연결점:
 
 - `SYS_SLM_HW_SNAPSHOT`
-  하드웨어 상태와 함께 메인 AI operator, agent tree, pipeline optimization 힌트를 함께 노출
+  하드웨어 상태와 함께 메인 AI operator, agent tree, pipeline optimization, NodeBit catalog 힌트를 함께 노출
+- `SYS_SLM_NODEBIT_LOOKUP`
+  userspace policy broker가 특정 API/tool/device/policy 노드를 단건 조회하는 빠른 경로
 - `runtime/slm_orchestrator.c`
   커널 텔레메트리에서 메인 AI 모드, worker 수, queue depth, token pipeline depth를 계산
 - `include/runtime/ai_ring.h`

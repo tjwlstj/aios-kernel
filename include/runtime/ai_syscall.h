@@ -100,6 +100,7 @@
 #define SYS_SLM_PLAN_APPLY          0x722  /* Apply validated hardware plan */
 #define SYS_SLM_PLAN_STATUS         0x723  /* Query plan state */
 #define SYS_SLM_PLAN_LIST           0x724  /* Enumerate queued plans */
+#define SYS_SLM_NODEBIT_LOOKUP      0x725  /* Read one effective policy NodeBit */
 
 /* ============================================================
  * Syscall Argument Structures
@@ -260,5 +261,6 @@ aios_status_t sys_slm_plan_submit(slm_plan_request_t *req, uint32_t *plan_id_out
 aios_status_t sys_slm_plan_apply(uint32_t plan_id);
 aios_status_t sys_slm_plan_status(uint32_t plan_id, slm_plan_t *out);
 aios_status_t sys_slm_plan_list(slm_plan_list_t *out);
+aios_status_t sys_slm_nodebit_lookup(uint16_t node_id, slm_nodebit_t *out);
 
 #endif /* _AIOS_AI_SYSCALL_H */

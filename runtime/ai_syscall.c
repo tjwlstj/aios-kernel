@@ -335,6 +335,9 @@ int64_t ai_syscall_dispatch(uint64_t syscall_num, uint64_t arg1,
                                                         (slm_plan_t *)arg2);
                 case SYS_SLM_PLAN_LIST:
                     return (int64_t)sys_slm_plan_list((slm_plan_list_t *)arg1);
+                case SYS_SLM_NODEBIT_LOOKUP:
+                    return (int64_t)sys_slm_nodebit_lookup((uint16_t)arg1,
+                                                           (slm_nodebit_t *)arg2);
                 default:
                     break;
             }
@@ -933,6 +936,19 @@ aios_status_t sys_slm_plan_list(slm_plan_list_t *out) {
     return copy_to_user(out, &plans, sizeof(plans));
 }
 
+aios_status_t sys_slm_nodebit_lookup(uint16_t node_id, slm_nodebit_t *out) {
+    slm_nodebit_t node;
+    aios_status_t status = syscall_output_buffer_status(out, sizeof(*out));
+
+    if (status != AIOS_OK) return status;
+    status = slm_nodebit_lookup(node_id, &node);
+    if (status != AIOS_OK) {
+        return status;
+    }
+
+    return copy_to_user(out, &node, sizeof(node));
+}
+
 /* ============================================================
  * System Info
  * ============================================================ */
@@ -1102,6 +1118,8 @@ static aios_status_t sys_info_scheduler(sched_stats_t *out) {
 }
 
 static aios_status_t ai_syscall_contract_selftest(void) {
+    slm_nodebit_t nodebit;
+
     if (sys_tensor_create(NULL, MEM_REGION_TENSOR, NULL) != AIOS_ERR_INVAL) {
         return AIOS_ERR_IO;
     }
@@ -1151,6 +1169,14 @@ static aios_status_t ai_syscall_contract_selftest(void) {
         return AIOS_ERR_IO;
     }
     if (sys_slm_plan_list(NULL) != AIOS_ERR_INVAL) {
+        return AIOS_ERR_IO;
+    }
+    if (sys_slm_nodebit_lookup(SLM_NODEBIT_ID_API_BOOTSTRAP, NULL) !=
+        AIOS_ERR_INVAL) {
+        return AIOS_ERR_IO;
+    }
+    if (sys_slm_nodebit_lookup(SLM_NODEBIT_ID_COUNT, &nodebit) !=
+        AIOS_ERR_INVAL) {
         return AIOS_ERR_IO;
     }
     if (sys_info_memory(NULL) != AIOS_ERR_INVAL) {

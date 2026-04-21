@@ -223,6 +223,7 @@ static void compute_clock_profile(slm_clock_profile_t *out,
     const memory_selftest_result_t *profile,
     const agent_main_ai_profile_t *main_ai,
     const slm_io_profile_t *io_profile);
+static void compute_io_profile(slm_io_profile_t *out);
 static void compute_nodebits(slm_nodebit_t *nodes, uint32_t *count,
     const kernel_health_summary_t *health,
     const slm_user_hw_access_profile_t *user_hw_access,
@@ -230,6 +231,8 @@ static void compute_nodebits(slm_nodebit_t *nodes, uint32_t *count,
     const usb_host_info_t *usb,
     const storage_host_info_t *storage,
     slm_runtime_state_t runtime_state);
+static uint16_t request_nodebit_id(const slm_plan_request_t *req);
+static aios_status_t read_effective_nodebit(uint16_t node_id, slm_nodebit_t *out);
 
 static uint8_t clamp_u8(int32_t value) {
     if (value < 0) {
@@ -682,10 +685,12 @@ static aios_status_t runtime_status_for_state(slm_runtime_state_t state) {
 static bool nodebit_policy_permits(const slm_plan_request_t *req,
                                    const kernel_health_summary_t *health) {
     uint32_t action_bit;
-    bool seen_action = false;
-    bool observe_allowed = false;
-    bool apply_allowed = false;
-    bool risky = false;
+    uint16_t node_id;
+    slm_nodebit_t node;
+    bool action_known;
+    bool observe_allowed;
+    bool apply_allowed;
+    bool risky;
 
     if (!req || !slm_action_valid((uint32_t)req->action) ||
         req->action == SLM_ACTION_NONE) {
@@ -696,21 +701,21 @@ static bool nodebit_policy_permits(const slm_plan_request_t *req,
         return false;
     }
 
-    action_bit = SLM_ACTION_NODEBIT(req->action);
-    for (uint32_t i = 0; i < ARRAY_SIZE(g_nodebit_catalog); i++) {
-        const slm_nodebit_t *node = &g_nodebit_catalog[i];
-        if ((node->action_bits & action_bit) == 0) {
-            continue;
-        }
-
-        seen_action = true;
-        risky = risky || ((node->risky_bits & action_bit) != 0);
-        observe_allowed = observe_allowed ||
-            (((node->observe_only_bits | node->allow_bits) & action_bit) != 0);
-        apply_allowed = apply_allowed || ((node->allow_bits & action_bit) != 0);
+    node_id = request_nodebit_id(req);
+    if (node_id == SLM_NODEBIT_ID_NONE ||
+        read_effective_nodebit(node_id, &node) != AIOS_OK) {
+        return false;
     }
 
-    if (!seen_action) {
+    action_bit = SLM_ACTION_NODEBIT(req->action);
+    action_known = (node.action_bits & action_bit) != 0;
+    observe_allowed = ((node.observe_only_bits | node.allow_bits) & action_bit) != 0;
+    apply_allowed = ((node.flags & SLM_NODEBIT_F_APPLY_ALLOWED) != 0) &&
+                    ((node.allow_bits & action_bit) != 0);
+    risky = ((node.risky_bits & action_bit) != 0) ||
+            ((node.flags & SLM_NODEBIT_F_RISKY) != 0);
+
+    if (!action_known) {
         return false;
     }
     if (req->allow_apply && (risky || req->risk_level > 0) &&
@@ -1207,6 +1212,75 @@ static void compute_nodebits(slm_nodebit_t *nodes, uint32_t *count,
     }
 
     *count = next;
+}
+
+static uint16_t request_nodebit_id(const slm_plan_request_t *req) {
+    if (!req) {
+        return SLM_NODEBIT_ID_NONE;
+    }
+
+    switch (req->template_id) {
+        case SLM_TEMPLATE_DISCOVERY:
+            return SLM_NODEBIT_ID_TOOL_DISCOVERY;
+        case SLM_TEMPLATE_PCI_ETHERNET:
+            return SLM_NODEBIT_ID_DEVICE_ETHERNET;
+        case SLM_TEMPLATE_PCI_USB:
+            return SLM_NODEBIT_ID_DEVICE_USB;
+        case SLM_TEMPLATE_PCI_STORAGE:
+            return SLM_NODEBIT_ID_DEVICE_STORAGE;
+        case SLM_TEMPLATE_NONE:
+        default:
+            break;
+    }
+
+    return SLM_NODEBIT_ID_NONE;
+}
+
+static aios_status_t read_effective_nodebit(uint16_t node_id, slm_nodebit_t *out) {
+    slm_nodebit_t nodes[SLM_NODEBIT_MAX_NODES];
+    uint32_t count = 0;
+    kernel_health_summary_t health;
+    e1000_driver_info_t nic;
+    storage_host_info_t storage;
+    usb_host_info_t usb;
+    slm_fabric_profile_t fabric;
+    slm_io_profile_t io_profile;
+    agent_main_ai_profile_t main_ai;
+    agent_pipeline_profile_t pipeline;
+    slm_user_hw_access_profile_t user_hw_access;
+
+    if (!out || node_id == SLM_NODEBIT_ID_NONE || node_id >= SLM_NODEBIT_ID_COUNT) {
+        return AIOS_ERR_INVAL;
+    }
+
+    kernel_health_get_summary(&health);
+    (void)e1000_driver_info(&nic);
+    (void)storage_host_info(&storage);
+    (void)usb_host_info(&usb);
+
+    compute_fabric_profile(&fabric);
+    compute_io_profile(&io_profile);
+    compute_agent_main_profile(&main_ai, kernel_memory_selftest_last(), &health,
+        &fabric, &io_profile);
+    compute_agent_pipeline_profile(&pipeline, &main_ai, &io_profile);
+    compute_user_hw_access_profile(&user_hw_access, &health, &io_profile,
+        &main_ai, &pipeline);
+
+    compute_nodebits(nodes, &count, &health, &user_hw_access,
+        &nic, &usb, &storage, snapshot_runtime_state(&health));
+
+    for (uint32_t i = 0; i < count; i++) {
+        if (nodes[i].node_id == node_id) {
+            *out = nodes[i];
+            return AIOS_OK;
+        }
+    }
+
+    return AIOS_ERR_NODEV;
+}
+
+aios_status_t slm_nodebit_lookup(uint16_t node_id, slm_nodebit_t *out) {
+    return read_effective_nodebit(node_id, out);
 }
 
 static void compute_io_profile(slm_io_profile_t *out) {
@@ -1814,10 +1888,11 @@ aios_status_t slm_plan_submit(const slm_plan_request_t *req, uint32_t *plan_id_o
     slot->state = request_valid(req) ? SLM_PLAN_VALIDATED : SLM_PLAN_REJECTED;
     learning_record_submission(req->action, slot->state == SLM_PLAN_VALIDATED);
 
-    serial_printf("[SLM] Plan %u submitted template=%u action=%u state=%u conf=%u score=%u qd=%u poll=%u dma=%uKiB\n",
+    serial_printf("[SLM] Plan %u submitted template=%u action=%u node=%u state=%u conf=%u score=%u qd=%u poll=%u dma=%uKiB\n",
         (uint64_t)slot->plan_id,
         (uint64_t)slot->request.template_id,
         (uint64_t)slot->request.action,
+        (uint64_t)request_nodebit_id(&slot->request),
         (uint64_t)slot->state,
         (uint64_t)slot->expected_confidence,
         (uint64_t)slot->validation_score,

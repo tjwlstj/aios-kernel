@@ -405,6 +405,7 @@ aios_status_t slm_plan_submit(const slm_plan_request_t *req, uint32_t *plan_id_o
 aios_status_t slm_plan_apply(uint32_t plan_id);
 aios_status_t slm_plan_get(uint32_t plan_id, slm_plan_t *out);
 aios_status_t slm_plan_list(slm_plan_list_t *out);
+aios_status_t slm_nodebit_lookup(uint16_t node_id, slm_nodebit_t *out);
 void slm_orchestrator_dump(void);
 
 #endif /* _AIOS_SLM_ORCHESTRATOR_H */
