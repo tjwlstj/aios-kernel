@@ -244,6 +244,7 @@ userspace OS를 "실행 가능한 서비스 집합"으로 보이게 만든다.
 - `slm_hw_snapshot_t`는 read-only로 userspace AI 접근성 점수, mediated I/O 여부, shared ring / zero-copy 권장 여부, 클럭 분배율을 제공한다
 - 같은 snapshot에 SLM runtime state/status와 작은 API/tool/device NodeBit 카탈로그가 들어간다
 - `SYS_SLM_NODEBIT_LOOKUP`은 특정 NodeBit를 단건 조회하며, plan submit은 template/action을 NodeBit 대상 노드로 해석해 현재 runtime overlay 기준 1차 action gate를 수행한다
+- `os/tools/evaluate_nodebit_policy.py`와 `os/examples/nodebit_catalog.sample.json`은 userspace policy broker의 runtime overlay NodeBit 판정 규칙과 risky gate를 host-side smoke로 고정한다
 - 모델 선택은 아직 정적/수동 해석이 강하다
 
 ### 목표
@@ -257,6 +258,7 @@ SLM 문제를 "정답 모델 하나 선택"이 아니라
 - `candidate registry`
 - `observer service`
 - `promotion policy`
+- NodeBit 기반 policy broker manifest / smoke
 
 문서와 config sample부터 시작
 

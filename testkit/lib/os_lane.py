@@ -12,14 +12,17 @@ def run_os_tool_suite() -> dict[str, object]:
     score_json = TOOL_SMOKE_DIR / "static-chaos-score.json"
     memory_out = TOOL_SMOKE_DIR / "memory_journal.jsonl"
     adapter_out = TOOL_SMOKE_DIR / "adapter_candidates.jsonl"
+    nodebit_out = TOOL_SMOKE_DIR / "nodebit-policy.json"
 
     score_script = REPO_ROOT / "os" / "tools" / "score_static_chaos.py"
     dataset_script = REPO_ROOT / "os" / "tools" / "build_learning_dataset.py"
     summary_script = REPO_ROOT / "os" / "tools" / "summarize_learning_corpus.py"
+    nodebit_script = REPO_ROOT / "os" / "tools" / "evaluate_nodebit_policy.py"
 
     metrics = REPO_ROOT / "os" / "examples" / "static_chaos_metrics.sample.json"
     profile = REPO_ROOT / "os" / "main_ai" / "config" / "main_ai_profile.example.json"
     trace = REPO_ROOT / "os" / "examples" / "learning_trace.sample.jsonl"
+    nodebit_catalog = REPO_ROOT / "os" / "examples" / "nodebit_catalog.sample.json"
     wit = REPO_ROOT / "os" / "compat" / "wit" / "aios-agent-host.wit"
 
     run(
@@ -68,6 +71,28 @@ def run_os_tool_suite() -> dict[str, object]:
     if "total_records" not in summary_payload:
         raise ToolError("learning corpus summary missing `total_records`.")
 
+    run(
+        [
+            sys.executable,
+            str(nodebit_script),
+            "--catalog",
+            str(nodebit_catalog),
+            "--node-id",
+            "4",
+            "--action",
+            "SLM_ACTION_REPROBE_PCI",
+            "--mode",
+            "observe",
+            "--output",
+            str(nodebit_out),
+        ]
+    )
+    nodebit_payload = json.loads(nodebit_out.read_text(encoding="utf-8"))
+    if nodebit_payload.get("decision") != "allow":
+        raise ToolError("NodeBit policy sample did not allow discovery observe action.")
+    if nodebit_payload.get("node_id") != 4:
+        raise ToolError("NodeBit policy sample resolved an unexpected node.")
+
     wit_text = wit.read_text(encoding="utf-8")
     if "package aios:agent-host@0.1.0;" not in wit_text or "world main-ai" not in wit_text:
         raise ToolError("WIT compatibility scaffold is missing expected declarations.")
@@ -79,6 +104,8 @@ def run_os_tool_suite() -> dict[str, object]:
         "memory_rows": sum(1 for _ in memory_out.open("r", encoding="utf-8")),
         "adapter_rows": sum(1 for _ in adapter_out.open("r", encoding="utf-8")),
         "total_records": summary_payload["total_records"],
+        "nodebit_decision": nodebit_payload["decision"],
+        "nodebit_node": nodebit_payload["node_name"],
         "wit_scaffold": True,
     }
 
