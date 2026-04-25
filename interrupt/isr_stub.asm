@@ -65,6 +65,26 @@ ISR_NOERR 30   ; Reserved
 ISR_NOERR 31   ; Reserved
 
 ; =============================================================================
+; Legacy PIC IRQ ISRs (32-47)
+; =============================================================================
+ISR_NOERR 32   ; IRQ0  - PIT timer
+ISR_NOERR 33   ; IRQ1  - Keyboard
+ISR_NOERR 34   ; IRQ2  - PIC cascade
+ISR_NOERR 35   ; IRQ3  - COM2
+ISR_NOERR 36   ; IRQ4  - COM1
+ISR_NOERR 37   ; IRQ5  - LPT2 / sound
+ISR_NOERR 38   ; IRQ6  - Floppy
+ISR_NOERR 39   ; IRQ7  - LPT1 / spurious
+ISR_NOERR 40   ; IRQ8  - RTC
+ISR_NOERR 41   ; IRQ9  - ACPI / redirected IRQ2
+ISR_NOERR 42   ; IRQ10 - PCI
+ISR_NOERR 43   ; IRQ11 - PCI
+ISR_NOERR 44   ; IRQ12 - PS/2 mouse
+ISR_NOERR 45   ; IRQ13 - FPU
+ISR_NOERR 46   ; IRQ14 - Primary ATA
+ISR_NOERR 47   ; IRQ15 - Secondary ATA
+
+; =============================================================================
 ; Common ISR Stub - Save state, call C handler, restore state
 ; =============================================================================
 isr_common_stub:

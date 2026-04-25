@@ -13,6 +13,7 @@ CHECKPOINT_PATTERNS = {
     "multiboot": "[BOOT] Multiboot2 verified.",
     "idt": "[INIT] Interrupt Descriptor Table (IDT)... OK",
     "time_source": "[INIT] Kernel Time Source... OK",
+    "timer_irq": "[TIMER] PIT IRQ ready",
     "acpi": "[INIT] ACPI Fabric Parser... OK",
     "pci_core": "[INIT] PCI Core... OK",
     "tensor_mm": "[INIT] Tensor Memory Manager... OK",
@@ -24,6 +25,7 @@ CHECKPOINT_PATTERNS = {
     "network_bootstrap": "[INIT] Intel E1000 Ethernet... OK",
     "usb_bootstrap": "[INIT] USB Host Bootstrap... OK",
     "storage_bootstrap": "[INIT] Storage Host Bootstrap... OK",
+    "user_access": "[UACCESS] selftest PASS",
     "syscall": "[INIT] AI System Call Interface... OK",
     "autonomy": "[INIT] Autonomy Control Plane... OK",
     "slm_orchestrator": "[INIT] SLM Hardware Orchestrator... OK",
@@ -75,9 +77,18 @@ STORAGE_CHANNEL_RE = re.compile(
 SLM_MAIN_RE = re.compile(
     r"\[SLM\] MainAI mode=(?P<mode>\w+) sco=(?P<sco>-?\d+) workers=(?P<workers>\d+) pipeline_qd=(?P<pipeline_qd>\d+) depth=(?P<depth>\d+) ring=(?P<ring_used>\d+)/(?P<ring_total>\d+)"
 )
+SLM_RUNTIME_RE = re.compile(
+    r"\[SLM\] Runtime state=(?P<state>[\w\-]+) status=(?P<status>-?\d+) snapshot_abi=(?P<snapshot_abi>\d+) nodebits=(?P<nodebits>\d+) generation=(?P<generation>\d+)"
+)
+SLM_USER_AI_RE = re.compile(
+    r"\[SLM\] UserAI access score=(?P<score>\d+) flags=(?P<flags>\S+) direct_mmio=(?P<direct_mmio>\d+) mediated=(?P<mediated>\d+) clock=(?P<clock_main>\d+)/(?P<clock_worker>\d+)/(?P<clock_io>\d+)/(?P<clock_memory>\d+)/(?P<clock_guardian>\d+)/(?P<clock_reserve>\d+) slice=(?P<slice_us>\d+)us poll=(?P<poll_us>\d+)us"
+)
 SLM_SEEDED_RE = re.compile(r"\[SLM\] Seeded plan (?P<plan_id>\d+) label=(?P<label>[a-z0-9\-]+)")
 USER_SCAFFOLD_RE = re.compile(
     r"\[USER\] Ring3 scaffold ready=(?P<ready>\d+) tr=(?P<tr>\S+) user_cs=(?P<user_cs>\S+) user_ds=(?P<user_ds>\S+) rsp0=(?P<rsp0>\S+) gdt_base=(?P<gdt_base>\S+) gdt_limit=(?P<gdt_limit>\d+)"
+)
+USER_ACCESS_RE = re.compile(
+    r"\[UACCESS\] selftest (?P<status>\w+) structural=(?P<structural>\d+) copy=(?P<copy>\d+) zero_copy=(?P<zero_copy>\d+)(?: string=(?P<string>\d+))?"
 )
 ROOM_SNAPSHOT_RE = re.compile(
     r"\[ROOM\] snapshot stability=(?P<stability>\w+) ok=(?P<ok>\d+) degraded=(?P<degraded>\d+) failed=(?P<failed>\d+) unknown=(?P<unknown>\d+) topology=(?P<topology>[\w\-]+) domains=(?P<domains>\d+) windows=(?P<windows>\d+) drivers=(?P<drivers_ready>\d+)/(?P<drivers>\d+) plans=(?P<plans>\d+) nodes=(?P<nodes>\d+) rings=(?P<rings>\d+) active=(?P<active>\d+) user=(?P<user>\d+)"
@@ -340,6 +351,37 @@ def parse_boot_log_text(log_text: str, smoke_profile: str, serial_log_path: str 
                 "ring_total": int(match.group("ring_total")),
             }
         )
+    index, line, match = _search_match(lines, SLM_RUNTIME_RE)
+    if match:
+        slm["runtime"] = {
+            "line": index,
+            "text": line,
+            "state": match.group("state"),
+            "status": int(match.group("status")),
+            "snapshot_abi": int(match.group("snapshot_abi")),
+            "nodebits": int(match.group("nodebits")),
+            "generation": int(match.group("generation")),
+        }
+    index, line, match = _search_match(lines, SLM_USER_AI_RE)
+    if match:
+        slm["user_ai_access"] = {
+            "line": index,
+            "text": line,
+            "score": int(match.group("score")),
+            "flags": match.group("flags"),
+            "direct_mmio": int(match.group("direct_mmio")),
+            "mediated": int(match.group("mediated")),
+            "clock_pct": {
+                "main": int(match.group("clock_main")),
+                "worker": int(match.group("clock_worker")),
+                "io": int(match.group("clock_io")),
+                "memory": int(match.group("clock_memory")),
+                "guardian": int(match.group("clock_guardian")),
+                "reserve": int(match.group("clock_reserve")),
+            },
+            "slice_us": int(match.group("slice_us")),
+            "poll_us": int(match.group("poll_us")),
+        }
     seeded_labels: list[str] = []
     for line_text in lines:
         seeded_match = SLM_SEEDED_RE.search(line_text)
@@ -362,6 +404,21 @@ def parse_boot_log_text(log_text: str, smoke_profile: str, serial_log_path: str 
                 "rsp0": match.group("rsp0"),
                 "gdt_base": match.group("gdt_base"),
                 "gdt_limit": int(match.group("gdt_limit")),
+            }
+        )
+
+    user_access: dict[str, object] = {"ready": checkpoints["user_access"]["seen"]}
+    index, line, match = _search_match(lines, USER_ACCESS_RE)
+    if match:
+        user_access.update(
+            {
+                "line": index,
+                "text": line,
+                "status": match.group("status"),
+                "structural": int(match.group("structural")),
+                "copy": int(match.group("copy")),
+                "zero_copy": int(match.group("zero_copy")),
+                "string": int(match.group("string") or 0),
             }
         )
 
@@ -422,6 +479,7 @@ def parse_boot_log_text(log_text: str, smoke_profile: str, serial_log_path: str 
         "controllers": _parse_controller_states(lines),
         "slm": slm,
         "user_mode": user_mode,
+        "user_access": user_access,
         "kernel_room": kernel_room,
     }
     return summary

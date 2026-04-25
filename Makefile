@@ -49,6 +49,7 @@ C_SOURCES   = $(KERNEL_DIR)/main.c \
               $(KERNEL_DIR)/time.c \
               $(KERNEL_DIR)/selftest.c \
               $(KERNEL_DIR)/user_mode.c \
+              $(KERNEL_DIR)/user_access.c \
               $(LIB_DIR)/string.c \
               $(INTERRUPT_DIR)/idt.c \
               $(MM_DIR)/tensor_mm.c \
@@ -71,6 +72,7 @@ C_SOURCES   = $(KERNEL_DIR)/main.c \
 ASM_OBJECTS = $(patsubst %.asm,$(BUILD_DIR)/%.o,$(ASM_SOURCES))
 C_OBJECTS   = $(patsubst %.c,$(BUILD_DIR)/%.o,$(C_SOURCES))
 OBJECTS     = $(ASM_OBJECTS) $(C_OBJECTS)
+DEPFILES    = $(C_OBJECTS:.o=.d)
 
 # =============================================================================
 # Targets
@@ -107,7 +109,7 @@ $(BUILD_DIR)/%.o: %.asm
 $(BUILD_DIR)/%.o: %.c
 	@echo "[CC] $<"
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -MMD -MP -c $< -o $@
 
 # Create bootable ISO
 iso: $(KERNEL_BIN)
@@ -218,3 +220,5 @@ info:
 	@echo "Kernel:      $(KERNEL_BIN)"
 	@echo "ISO:         $(KERNEL_ISO)"
 	@echo "=============================="
+
+-include $(DEPFILES)

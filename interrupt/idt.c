@@ -4,12 +4,19 @@
  */
 
 #include <interrupt/idt.h>
+#include <kernel/time.h>
 #include <drivers/vga.h>
 #include <drivers/serial.h>
 
 /* IDT array and pointer */
 static idt_entry_t idt[IDT_ENTRIES];
 static idt_ptr_t   idt_ptr;
+
+#define PIC1_COMMAND 0x20
+#define PIC2_COMMAND 0xA0
+#define PIC_EOI      0x20
+#define IRQ_BASE     32
+#define IRQ_COUNT    16
 
 /* Exception names for debugging */
 static const char *exception_names[32] = {
@@ -73,10 +80,37 @@ extern void isr28(void);
 extern void isr29(void);
 extern void isr30(void);
 extern void isr31(void);
+extern void isr32(void);
+extern void isr33(void);
+extern void isr34(void);
+extern void isr35(void);
+extern void isr36(void);
+extern void isr37(void);
+extern void isr38(void);
+extern void isr39(void);
+extern void isr40(void);
+extern void isr41(void);
+extern void isr42(void);
+extern void isr43(void);
+extern void isr44(void);
+extern void isr45(void);
+extern void isr46(void);
+extern void isr47(void);
 
 /* Load IDT using LIDT instruction */
 static inline void idt_load(idt_ptr_t *ptr) {
     __asm__ volatile ("lidt (%0)" : : "r"(ptr));
+}
+
+static inline void outb(uint16_t port, uint8_t val) {
+    __asm__ volatile ("outb %0, %1" : : "a"(val), "Nd"(port));
+}
+
+static void pic_send_eoi(uint64_t int_no) {
+    if (int_no >= 40) {
+        outb(PIC2_COMMAND, PIC_EOI);
+    }
+    outb(PIC1_COMMAND, PIC_EOI);
 }
 
 void idt_set_gate(uint8_t num, uint64_t handler, uint16_t selector, uint8_t type_attr) {
@@ -128,6 +162,28 @@ static void idt_register_exceptions(void) {
     idt_set_gate(31, (uint64_t)isr31, cs, IDT_GATE_INT);
 }
 
+/* Register remapped legacy PIC IRQ handlers. */
+static void idt_register_irqs(void) {
+    uint16_t cs = 0x08;
+
+    idt_set_gate(32, (uint64_t)isr32, cs, IDT_GATE_INT);
+    idt_set_gate(33, (uint64_t)isr33, cs, IDT_GATE_INT);
+    idt_set_gate(34, (uint64_t)isr34, cs, IDT_GATE_INT);
+    idt_set_gate(35, (uint64_t)isr35, cs, IDT_GATE_INT);
+    idt_set_gate(36, (uint64_t)isr36, cs, IDT_GATE_INT);
+    idt_set_gate(37, (uint64_t)isr37, cs, IDT_GATE_INT);
+    idt_set_gate(38, (uint64_t)isr38, cs, IDT_GATE_INT);
+    idt_set_gate(39, (uint64_t)isr39, cs, IDT_GATE_INT);
+    idt_set_gate(40, (uint64_t)isr40, cs, IDT_GATE_INT);
+    idt_set_gate(41, (uint64_t)isr41, cs, IDT_GATE_INT);
+    idt_set_gate(42, (uint64_t)isr42, cs, IDT_GATE_INT);
+    idt_set_gate(43, (uint64_t)isr43, cs, IDT_GATE_INT);
+    idt_set_gate(44, (uint64_t)isr44, cs, IDT_GATE_INT);
+    idt_set_gate(45, (uint64_t)isr45, cs, IDT_GATE_INT);
+    idt_set_gate(46, (uint64_t)isr46, cs, IDT_GATE_INT);
+    idt_set_gate(47, (uint64_t)isr47, cs, IDT_GATE_INT);
+}
+
 aios_status_t idt_init(void) {
     /* Zero out entire IDT */
     for (int i = 0; i < IDT_ENTRIES; i++) {
@@ -142,6 +198,7 @@ aios_status_t idt_init(void) {
 
     /* Register exception handlers */
     idt_register_exceptions();
+    idt_register_irqs();
 
     /* Set up IDT pointer */
     idt_ptr.limit = (uint16_t)(sizeof(idt) - 1);
@@ -155,6 +212,14 @@ aios_status_t idt_init(void) {
 
 void exception_handler(interrupt_frame_t *frame) {
     uint64_t int_no = frame->int_no;
+
+    if (int_no >= IRQ_BASE && int_no < (IRQ_BASE + IRQ_COUNT)) {
+        if (int_no == KERNEL_TIMER_IRQ_VECTOR) {
+            kernel_timer_irq_handler();
+        }
+        pic_send_eoi(int_no);
+        return;
+    }
 
     /* Print exception info to VGA */
     console_write_color("\n!!! EXCEPTION: ", VGA_LIGHT_RED, VGA_BLUE);

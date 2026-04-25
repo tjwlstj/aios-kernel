@@ -65,7 +65,9 @@
 ## 커널 연결점
 
 - `SYS_SLM_HW_SNAPSHOT`
-  hardware, health, main AI mode, pipeline hints, agent tree 읽기
+  hardware, health, main AI mode, pipeline hints, agent tree, NodeBit catalog 읽기
+- `SYS_SLM_NODEBIT_LOOKUP`
+  특정 API/tool/device/policy NodeBit를 단건 조회해 userspace policy broker가 빠르게 gate 판단
 - `SYS_INFO_BOOTSTRAP`
   health / room / user scaffold / SLM snapshot을 early userspace가 한 번에 읽는 bootstrap surface
 - `SYS_MODEL_*`

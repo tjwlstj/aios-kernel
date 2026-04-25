@@ -10,6 +10,8 @@
   trace JSONL을 memory journal용 JSONL과 adapter 후보 JSONL로 분리
 - `summarize_learning_corpus.py`
   trace JSONL의 outcome, memory_type, 중요도 분포를 요약
+- `evaluate_nodebit_policy.py`
+  SLM NodeBit catalog JSON을 읽어 userspace policy broker가 observe/apply 가능 여부를 빠르게 판정
 
 예시:
 
@@ -27,6 +29,12 @@ python .\os\tools\build_learning_dataset.py `
 
 python .\os\tools\summarize_learning_corpus.py `
   --input .\os\examples\learning_trace.sample.jsonl
+
+python .\os\tools\evaluate_nodebit_policy.py `
+  --catalog .\os\examples\nodebit_catalog.sample.json `
+  --node-id 4 `
+  --action SLM_ACTION_REPROBE_PCI `
+  --mode observe
 ```
 
 통합 smoke:
