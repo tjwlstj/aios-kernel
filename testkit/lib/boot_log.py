@@ -13,6 +13,7 @@ CHECKPOINT_PATTERNS = {
     "multiboot": "[BOOT] Multiboot2 verified.",
     "idt": "[INIT] Interrupt Descriptor Table (IDT)... OK",
     "time_source": "[INIT] Kernel Time Source... OK",
+    "timer_irq": "[TIMER] PIT IRQ ready",
     "acpi": "[INIT] ACPI Fabric Parser... OK",
     "pci_core": "[INIT] PCI Core... OK",
     "tensor_mm": "[INIT] Tensor Memory Manager... OK",

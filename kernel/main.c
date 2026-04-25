@@ -34,6 +34,7 @@
 #define AIOS_VERSION_MAJOR  0
 #define AIOS_VERSION_MINOR  2
 #define AIOS_VERSION_PATCH  0
+#define AIOS_VERSION_PRERELEASE "beta.6"
 #define AIOS_CODENAME       "Genesis"
 
 /* Forward declarations */
@@ -181,9 +182,9 @@ static void print_banner(void) {
         "|    AI-Native Operating System Kernel                 |\n",
         VGA_YELLOW, VGA_BLUE);
 
-    kprintf("|    Version %d.%d.%d \"%s\"",
+    kprintf("|    Version %d.%d.%d-%s \"%s\"",
         AIOS_VERSION_MAJOR, AIOS_VERSION_MINOR, 
-        AIOS_VERSION_PATCH, AIOS_CODENAME);
+        AIOS_VERSION_PATCH, AIOS_VERSION_PRERELEASE, AIOS_CODENAME);
     console_write("                        |\n");
 
     console_write_color(
@@ -196,9 +197,11 @@ static void print_banner(void) {
     /* Serial banner */
     serial_write("\n========================================\n");
     serial_write("  AIOS - AI-Native Operating System\n");
-    serial_printf("  Version %u.%u.%u \"%s\"\n",
+    serial_printf("  Version %u.%u.%u-%s \"%s\"\n",
         (uint64_t)AIOS_VERSION_MAJOR, (uint64_t)AIOS_VERSION_MINOR,
-        (uint64_t)AIOS_VERSION_PATCH, (uint64_t)(uintptr_t)AIOS_CODENAME);
+        (uint64_t)AIOS_VERSION_PATCH,
+        AIOS_VERSION_PRERELEASE,
+        AIOS_CODENAME);
     serial_write("========================================\n\n");
 }
 
@@ -254,43 +257,47 @@ static void init_subsystems(uint64_t multiboot_magic, uint64_t multiboot_info) {
     INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_SCHED,
         "AI Workload Scheduler", ai_sched_init());
 
-    /* 7. Boot-time diagnostics and performance profiling */
+    /* 7. PIT IRQ0 tick source for scheduler accounting */
+    INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_TIME,
+        "Kernel Timer IRQ", kernel_timer_irq_init(KERNEL_TIMER_DEFAULT_HZ));
+
+    /* 8. Boot-time diagnostics and performance profiling */
     run_selftests();
     
-    /* 8. Accelerator HAL */
+    /* 9. Accelerator HAL */
     INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_ACCEL, "Accelerator HAL", accel_hal_init());
 
-    /* 9. Minimal peripheral discovery */
+    /* 10. Minimal peripheral discovery */
     INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_PCI_PROBE,
         "Peripheral Probe Layer", platform_probe_init());
 
-    /* 10. Multi-agent shared memory / zero-copy planning baseline */
+    /* 11. Multi-agent shared memory / zero-copy planning baseline */
     INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_MEMORY_FABRIC,
         "Memory Fabric Foundation", memory_fabric_init());
 
-    /* 11. Intel E1000 network bootstrap */
+    /* 12. Intel E1000 network bootstrap */
     INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_NETWORK,
         "Intel E1000 Ethernet", e1000_driver_init());
 
-    /* 12. Minimal USB host bootstrap */
+    /* 13. Minimal USB host bootstrap */
     INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_USB, "USB Host Bootstrap", usb_host_init());
 
-    /* 13. Minimal storage host bootstrap */
+    /* 14. Minimal storage host bootstrap */
     INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_STORAGE,
         "Storage Host Bootstrap", storage_host_init());
 
     /* Finalize runtime subsystem health before control planes use it */
     finalize_runtime_health();
 
-    /* 14. AI System Call Interface */
+    /* 15. AI System Call Interface */
     INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_SYSCALL,
         "AI System Call Interface", ai_syscall_init());
 
-    /* 15. Autonomy Control Plane */
+    /* 16. Autonomy Control Plane */
     INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_AUTONOMY,
         "Autonomy Control Plane", autonomy_init());
 
-    /* 16. SLM Hardware Orchestrator */
+    /* 17. SLM Hardware Orchestrator */
     INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_SLM,
         "SLM Hardware Orchestrator", slm_orchestrator_init());
 }

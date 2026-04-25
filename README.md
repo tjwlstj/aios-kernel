@@ -20,9 +20,10 @@ Suggested repository description:
 
 > Kernel-first AI-native OS experiment for embodied LLM/SLM runtime: memory fabric, continuity roadmap, NodeBit policy gates, and mediated hardware access.
 
-## Current Status (2026-04-21)
+## Current Status (2026-04-25)
 
-- **Boot path:** x86_64 Multiboot2 커널, GDT/IDT/TSS, 페이징, LAPIC/PIT, QEMU 스모크 테스트 기반.
+- **Current beta:** `v0.2.0-beta.6` (`0.2.0-beta.6 "Genesis"` boot banner).
+- **Boot path:** x86_64 Multiboot2 커널, GDT/IDT/TSS, 페이징, PIT IRQ0 scheduler tick bootstrap, QEMU 스모크 테스트 기반.
 - **Memory:** 물리/가상 할당 기반, 텐서 메모리 메타데이터, 수명 프로파일링, 메모리 패브릭 노드, 공유 영역 스캐폴딩.
 - **Autonomy and policy:** 헬스 스냅샷, 제한된 자율 제안/롤백 경로, SLM 하드웨어 스냅샷, NodeBit 정책 조회.
 - **Userspace:** ring3 경계와 user access helper는 존재하지만, 전체 유저스페이스 handoff와 ELF 로더는 아직 없음.
@@ -85,6 +86,7 @@ AIOS의 방향은 커널을 AI 시스템의 결정론적 body로 두고, 학습 
 - 다단계 피드백 큐와 virtual runtime 추적 기반
 - 데드라인 인식 추론 작업 메타데이터
 - 가속기 친화도(Affinity)와 우선순위 조정용 스캐폴딩
+- PIT IRQ0 100Hz tick/accounting bootstrap (`[TIMER] PIT IRQ ready` smoke checkpoint)
 - 실제 production-grade 선점/멀티코어 스케줄링은 후속 단계
 
 ### Accelerator HAL Scaffold
@@ -102,6 +104,7 @@ AIOS의 방향은 커널을 AI 시스템의 결정론적 body로 두고, 학습 
 ### Interrupt & Exception Handling
 - x86_64 IDT (Interrupt Descriptor Table) 완전 구현
 - 32개 CPU 예외 핸들러 (Divide Error, Page Fault, GPF 등)
+- legacy PIC IRQ 32~47 스텁과 PIT IRQ0 timer handler bootstrap
 - kernel_panic() 안전 정지 메커니즘
 - 시리얼 + VGA 이중 출력 디버깅
 
@@ -139,7 +142,7 @@ aios-kernel/
 │   └── linker.ld       # 링커 스크립트
 ├── interrupt/          # 인터럽트 처리
 │   ├── idt.c           # IDT 설정, 예외 핸들러, kernel_panic
-│   └── isr_stub.asm    # ISR 어셈블리 스텁 (32개 예외)
+│   └── isr_stub.asm    # ISR 어셈블리 스텁 (32개 예외 + legacy PIC IRQ)
 ├── lib/                # 커널 라이브러리
 │   └── string.c        # memset, memcpy, strlen 등 기본 유틸리티
 ├── mm/                 # 텐서 메모리 관리자

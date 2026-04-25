@@ -30,16 +30,16 @@
 3. 메모리 관리자 테스트: 경계값(정렬, 풀 한계, coalesce) 케이스 추가.
 
 ### B. 스케줄러 시간모델 단순화
-- `ai_sched_tick()`은 1 tick = 1ms 가정으로 계산하며, 실제 하드웨어 타이머/인터럽트 기반 시간 동기화가 아직 없습니다.
-- `update_vruntime()`와 `elapsed` 계산이 실시간 시계와 결합되지 않아 장기 실행 시 정확성/재현성이 떨어질 수 있습니다.
+- `ai_sched_tick()`은 PIT IRQ0 100Hz 경로에서 호출되며, `kernel_time_monotonic_ns()` 기반 elapsed 값을 사용합니다.
+- 다만 현재 연결은 tick/accounting bootstrap입니다. 실제 task context switch, deadline miss 집계, 장기 실행 분포 검증은 아직 없습니다.
 
 **영향**
 - 데드라인 기반 정책의 신뢰도가 제한됩니다.
 - p95 latency 같은 KPI를 현실적으로 검증하기 어렵습니다.
 
 **우선 조치**
-1. PIT/APIC 타이머 인터럽트 연동.
-2. 단조 증가 나노초 기준 시간원 통일.
+1. PIT IRQ0 bootstrap을 APIC/HPET 경로와 선택 가능한 tick source로 확장.
+2. tick/accounting 이후 실제 runnable task 선택과 context switch 연결.
 3. 스케줄러 통계(대기시간 분포, deadline miss rate) 확장.
 
 ### C. HAL 기능이 "탐색+추상화" 중심, 실 디바이스 실행 경로 부족
