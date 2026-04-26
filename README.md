@@ -252,6 +252,7 @@ make debug          # GDB 디버깅 모드로 실행
 - [유저 공간 OS 구조 및 호환성 설계 (2026-03-29)](docs/user_space_compat_architecture_ko.md)
 - [유저공간 OS 구현 방향 정리 (2026-04-19)](docs/user_space_os_direction_ko.md)
 - [유저공간 OS 세분화 빌드 계획 (2026-04-19)](docs/user_space_os_build_slices_ko.md)
+- [AI 친화 리소스 관리 개발 계획 (2026-04-27)](docs/ai_resource_management_development_plan_ko.md)
 - [테스트 툴링 구조와 올인원 도구 (2026-03-29)](docs/test_tooling_ko.md)
 - [Testkit 분리/세분화 가이드 (2026-04-10)](docs/testkit_guide_ko.md)
 - [Gemini CLI 활용 방향 정리 (2026-03-30)](docs/gemini_cli_usage_strategy_ko.md)
