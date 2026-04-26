@@ -3,6 +3,8 @@ param(
     [string]$Target = 'all',
     [ValidateSet('full', 'minimal', 'storage-only')]
     [string]$SmokeProfile = 'full',
+    [ValidateRange(1, 600)]
+    [int]$TestTimeoutSec = 60,
     [switch]$SkipLock
 )
 
@@ -131,7 +133,8 @@ function Get-SmokeRequiredPatterns {
         '\[DEV\] Peripheral probe ready',
         '\[USER\] Ring3 scaffold ready=1',
         '\[ROOM\] snapshot stability=',
-        '\[HEALTH\] stability='
+        '\[HEALTH\] stability=',
+        '\[SHELL\] Interactive shell started'
     )
 
     if ($script:SmokeProfile -eq 'storage-only') {
@@ -364,6 +367,7 @@ Write-Host "[INFO] Toolchain root: $ToolchainRoot"
 Write-Host "[INFO] make: $Make"
 Write-Host "[INFO] nasm: $Nasm"
 Write-Host "[INFO] smoke profile: $SmokeProfile"
+Write-Host "[INFO] test timeout: ${TestTimeoutSec}s"
 if ($Qemu) {
     Write-Host "[INFO] qemu: $Qemu"
 }
@@ -400,7 +404,7 @@ try {
             $serialLog = Join-Path $RepoRoot 'build\serial_output.log'
             Remove-Item $serialLog -Force -ErrorAction SilentlyContinue
             $proc = Start-Process -FilePath $Qemu -ArgumentList (Get-QemuBootArguments -IsoPath $iso -SerialMode "file:$serialLog" -DisplayMode 'none' -Memory '256M') -PassThru
-            if (-not $proc.WaitForExit(20000)) {
+            if (-not $proc.WaitForExit($TestTimeoutSec * 1000)) {
                 Stop-Process -Id $proc.Id -Force
             }
             if (-not (Test-Path $serialLog)) {

@@ -50,10 +50,12 @@ C_SOURCES   = $(KERNEL_DIR)/main.c \
               $(KERNEL_DIR)/selftest.c \
               $(KERNEL_DIR)/user_mode.c \
               $(KERNEL_DIR)/user_access.c \
+              $(KERNEL_DIR)/shell.c \
               $(LIB_DIR)/string.c \
               $(INTERRUPT_DIR)/idt.c \
               $(MM_DIR)/tensor_mm.c \
               $(MM_DIR)/memory_fabric.c \
+              $(MM_DIR)/heap.c \
               $(SCHED_DIR)/ai_sched.c \
               $(HAL_DIR)/accel_hal.c \
               $(RUNTIME_DIR)/ai_syscall.c \
@@ -61,6 +63,7 @@ C_SOURCES   = $(KERNEL_DIR)/main.c \
               $(RUNTIME_DIR)/slm_orchestrator.c \
               $(DRIVERS_DIR)/vga.c \
               $(DRIVERS_DIR)/serial.c \
+              $(DRIVERS_DIR)/keyboard.c \
               $(DRIVERS_DIR)/driver_model.c \
               $(DRIVERS_DIR)/pci_core.c \
               $(DRIVERS_DIR)/platform_probe.c \
@@ -196,10 +199,11 @@ test: iso
 	if grep -q "AIOS Kernel Ready" $(TEST_LOG) && \
 	   grep -q "\\[SELFTEST\\] Memory microbench PASS" $(TEST_LOG) && \
 	   grep -q "\\[DEV\\] Peripheral probe ready" $(TEST_LOG) && \
-	   grep -q "\\[HEALTH\\] stability=" $(TEST_LOG); then \
-		echo "[OK] Smoke test PASSED - kernel booted successfully"; \
+	   grep -q "\\[HEALTH\\] stability=" $(TEST_LOG) && \
+	   grep -q "\\[SHELL\\] Interactive shell started" $(TEST_LOG); then \
+		echo "[OK] Smoke test PASSED - kernel booted and shell started"; \
 	else \
-		echo "[ERR] Smoke test did not reach expected ready/selftest/probe state"; \
+		echo "[ERR] Smoke test did not reach expected ready/selftest/probe/shell state"; \
 		echo "[INFO] Last serial log lines:"; \
 		tail -n 40 $(TEST_LOG) || true; \
 		exit 1; \

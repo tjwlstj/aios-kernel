@@ -17,7 +17,7 @@ SERIAL_LOG = BUILD_DIR / "serial_output.log"
 TOOL_SMOKE_DIR = BUILD_DIR / "tool-smoke"
 LOCK_DIR = BUILD_DIR / ".testkit-lock"
 LOCK_OWNER = LOCK_DIR / "owner.json"
-DEFAULT_QEMU_TIMEOUT = 20
+DEFAULT_QEMU_TIMEOUT = 60
 
 
 class ToolError(RuntimeError):
@@ -114,4 +114,3 @@ class BuildLock:
         finally:
             if LOCK_DIR.exists():
                 LOCK_DIR.rmdir()
-

@@ -56,9 +56,11 @@ def _compact_result(profile: str, summary: dict[str, object], matrix_summary_pat
         if isinstance(payload, dict):
             controller_states[name] = payload.get("state", "unknown")
 
+    shell = summary.get("shell") or {}
     return {
         "profile": profile,
         "ready": bool(checkpoints.get("ready", {}).get("seen")),
+        "shell_started": bool(shell.get("started")),
         "stability": health.get("stability"),
         "health_summary": {
             key: health.get(key)
@@ -125,7 +127,10 @@ def run_boot_matrix(profiles: list[str], timeout_sec: int, strict: bool) -> dict
         "profiles_requested": normalized_profiles,
         "profile_count": len(normalized_profiles),
         "baseline_profile": baseline["profile"],
-        "passed": all(result.get("ready") and not result.get("missing_patterns") for result in compact_results),
+        "passed": all(
+            result.get("ready") and result.get("shell_started") and not result.get("missing_patterns")
+            for result in compact_results
+        ),
         "results": compact_results,
         "comparisons_to_baseline": comparisons,
     }

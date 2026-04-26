@@ -7,6 +7,7 @@
 #include <kernel/time.h>
 #include <drivers/vga.h>
 #include <drivers/serial.h>
+#include <drivers/keyboard.h>
 
 /* IDT array and pointer */
 static idt_entry_t idt[IDT_ENTRIES];
@@ -216,6 +217,8 @@ void exception_handler(interrupt_frame_t *frame) {
     if (int_no >= IRQ_BASE && int_no < (IRQ_BASE + IRQ_COUNT)) {
         if (int_no == KERNEL_TIMER_IRQ_VECTOR) {
             kernel_timer_irq_handler();
+        } else if (int_no == KEYBOARD_IRQ_VECTOR) {
+            keyboard_irq_handler();
         }
         pic_send_eoi(int_no);
         return;

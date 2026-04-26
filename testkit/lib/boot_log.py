@@ -11,6 +11,7 @@ ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 
 CHECKPOINT_PATTERNS = {
     "multiboot": "[BOOT] Multiboot2 verified.",
+    "heap": "[INIT] Kernel Heap (kmalloc/kfree)... OK",
     "idt": "[INIT] Interrupt Descriptor Table (IDT)... OK",
     "time_source": "[INIT] Kernel Time Source... OK",
     "timer_irq": "[TIMER] PIT IRQ ready",
@@ -29,10 +30,13 @@ CHECKPOINT_PATTERNS = {
     "syscall": "[INIT] AI System Call Interface... OK",
     "autonomy": "[INIT] Autonomy Control Plane... OK",
     "slm_orchestrator": "[INIT] SLM Hardware Orchestrator... OK",
+    "keyboard": "[INIT] PS/2 Keyboard... OK",
     "ring3_scaffold": "[USER] Ring3 scaffold ready=1",
     "kernel_room": "[ROOM] snapshot stability=",
     "health": "[HEALTH] stability=",
     "ready": "AIOS Kernel Ready",
+    "boot_complete": "[KERNEL] Boot complete. Launching interactive shell...",
+    "shell": "[SHELL] Interactive shell started",
 }
 
 SELFTEST_RESULT_RE = re.compile(
@@ -467,6 +471,11 @@ def parse_boot_log_text(log_text: str, smoke_profile: str, serial_log_path: str 
             ),
         }
 
+    shell_info: dict[str, object] = {
+        "started": checkpoints["shell"]["seen"],
+        "boot_complete": checkpoints["boot_complete"]["seen"],
+    }
+
     summary = {
         "smoke_profile": smoke_profile,
         "serial_log": serial_log_path,
@@ -481,6 +490,7 @@ def parse_boot_log_text(log_text: str, smoke_profile: str, serial_log_path: str 
         "user_mode": user_mode,
         "user_access": user_access,
         "kernel_room": kernel_room,
+        "shell": shell_info,
     }
     return summary
 

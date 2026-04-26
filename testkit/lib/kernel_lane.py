@@ -66,6 +66,7 @@ def required_smoke_patterns(smoke_profile: str) -> list[str]:
         "[USER] Ring3 scaffold ready=1",
         "[ROOM] snapshot stability=",
         "[HEALTH] stability=",
+        "[SHELL] Interactive shell started",
     ]
     if smoke_profile == "storage-only":
         required += [
@@ -116,7 +117,11 @@ def run_kernel_make(target: str) -> None:
     run([make, target])
 
 
-def run_windows_kernel(target: str, smoke_profile: str = DEFAULT_SMOKE_PROFILE) -> dict[str, object] | None:
+def run_windows_kernel(
+    target: str,
+    smoke_profile: str = DEFAULT_SMOKE_PROFILE,
+    timeout_sec: int = DEFAULT_QEMU_TIMEOUT,
+) -> dict[str, object] | None:
     powershell = which_any("pwsh", "powershell")
     if not powershell:
         raise ToolError("PowerShell (`pwsh` or `powershell`) not found.")
@@ -132,6 +137,8 @@ def run_windows_kernel(target: str, smoke_profile: str = DEFAULT_SMOKE_PROFILE) 
             target,
             "-SmokeProfile",
             ensure_smoke_profile(smoke_profile),
+            "-TestTimeoutSec",
+            str(timeout_sec),
             "-SkipLock",
         ]
     )
@@ -194,7 +201,7 @@ def run_kernel_suite(
 
     host = host_name()
     if host == "windows":
-        summary = run_windows_kernel(target, smoke_profile)
+        summary = run_windows_kernel(target, smoke_profile, timeout_sec)
         if export_boot_summary and summary is not None:
             ensure_dir(BUILD_DIR / "boot-summary")
             output_path = write_boot_summary(summary, target, smoke_profile)

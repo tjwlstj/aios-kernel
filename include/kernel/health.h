@@ -25,10 +25,12 @@ typedef enum {
     KERNEL_SUBSYSTEM_SYSCALL = 13,
     KERNEL_SUBSYSTEM_AUTONOMY = 14,
     KERNEL_SUBSYSTEM_SLM = 15,
-    KERNEL_SUBSYSTEM_COUNT = 16
+    KERNEL_SUBSYSTEM_HEAP = 16,
+    KERNEL_SUBSYSTEM_KEYBOARD = 17,
+    KERNEL_SUBSYSTEM_COUNT = 18
 } kernel_subsystem_id_t;
 
-AIOS_STATIC_ASSERT(KERNEL_SUBSYSTEM_COUNT == 16,
+AIOS_STATIC_ASSERT(KERNEL_SUBSYSTEM_COUNT == 18,
     "Update health registry when kernel subsystem enum changes");
 
 typedef enum {

@@ -105,6 +105,18 @@ static kernel_subsystem_health_t g_health[KERNEL_SUBSYSTEM_COUNT] = {
         .required = true,
         .io_path = false,
     },
+    [KERNEL_SUBSYSTEM_HEAP] = {
+        .id = KERNEL_SUBSYSTEM_HEAP,
+        .name = "Kernel Heap (kmalloc)",
+        .required = true,
+        .io_path = false,
+    },
+    [KERNEL_SUBSYSTEM_KEYBOARD] = {
+        .id = KERNEL_SUBSYSTEM_KEYBOARD,
+        .name = "PS/2 Keyboard",
+        .required = false,
+        .io_path = false,
+    },
 };
 
 AIOS_STATIC_ASSERT(ARRAY_SIZE(g_health) == KERNEL_SUBSYSTEM_COUNT,

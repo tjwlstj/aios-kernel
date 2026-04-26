@@ -29,6 +29,9 @@
 #include <runtime/ai_syscall.h>
 #include <runtime/autonomy.h>
 #include <runtime/slm_orchestrator.h>
+#include <mm/heap.h>
+#include <drivers/keyboard.h>
+#include <kernel/shell.h>
 
 /* Kernel version info */
 #define AIOS_VERSION_MAJOR  0
@@ -86,11 +89,14 @@ void kernel_main(uint64_t multiboot_magic, uint64_t multiboot_info) {
     /* Kernel ready */
     print_boot_ready_banner();
 
-    /* Enter kernel idle loop */
-    kprintf("\n[KERNEL] Entering idle loop. System awaiting AI workloads...\n");
-    serial_write("[KERNEL] Entering idle loop. System awaiting AI workloads...\n");
-    
-    /* Halt - in a real OS this would be the scheduler idle task */
+    /* Launch interactive shell */
+    kprintf("\n[KERNEL] Boot complete. Launching interactive shell...\n");
+    serial_write("[KERNEL] Boot complete. Launching interactive shell...\n");
+
+    shell_init();
+    shell_run(); /* never returns */
+
+    /* Unreachable — safety net */
     while (1) {
         __asm__ volatile ("hlt");
     }
@@ -233,6 +239,10 @@ static void print_system_info(void) {
 }
 
 static void init_subsystems(uint64_t multiboot_magic, uint64_t multiboot_info) {
+    /* 0. Kernel heap — available to all subsequent subsystems */
+    INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_HEAP,
+        "Kernel Heap (kmalloc/kfree)", heap_init());
+
     /* 1. IDT - must be first to catch any exceptions during init */
     INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_IDT,
         "Interrupt Descriptor Table (IDT)", idt_init());
@@ -300,6 +310,10 @@ static void init_subsystems(uint64_t multiboot_magic, uint64_t multiboot_info) {
     /* 17. SLM Hardware Orchestrator */
     INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_SLM,
         "SLM Hardware Orchestrator", slm_orchestrator_init());
+
+    /* 18. PS/2 Keyboard (unmasks PIC IRQ1 — requires IDT + timer ready) */
+    INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_KEYBOARD,
+        "PS/2 Keyboard", keyboard_init());
 }
 
 static void run_selftests(void) {
