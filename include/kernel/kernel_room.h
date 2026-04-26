@@ -78,6 +78,8 @@ typedef struct {
     uint32_t active_rings;
     uint64_t ring_notifies;
     uint32_t gate_count;
+    uint32_t nodebit_active;    /* Registered NodeBit policy entries */
+    uint32_t nodebit_risky;     /* NodeBit entries with risky capabilities */
 } kernel_room_snapshot_t;
 
 static inline bool kernel_room_gate_valid(uint32_t gate_id) {

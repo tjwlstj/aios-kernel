@@ -24,6 +24,7 @@
 #include <lib/string.h>
 #include <mm/memory_fabric.h>
 #include <runtime/autonomy.h>
+#include <runtime/nodebit.h>
 #include <runtime/slm_orchestrator.h>
 
 /* ============================================================
@@ -338,6 +339,12 @@ int64_t ai_syscall_dispatch(uint64_t syscall_num, uint64_t arg1,
                 case SYS_SLM_NODEBIT_LOOKUP:
                     return (int64_t)sys_slm_nodebit_lookup((uint16_t)arg1,
                                                            (slm_nodebit_t *)arg2);
+                case SYS_NODEBIT_REGISTER:
+                    return (int64_t)sys_nodebit_register(
+                        (syscall_nodebit_register_t *)arg1);
+                case SYS_NODEBIT_UPDATE:
+                    return (int64_t)sys_nodebit_update(
+                        (syscall_nodebit_update_t *)arg1);
                 default:
                     break;
             }
@@ -949,6 +956,23 @@ aios_status_t sys_slm_nodebit_lookup(uint16_t node_id, slm_nodebit_t *out) {
     return copy_to_user(out, &node, sizeof(node));
 }
 
+aios_status_t sys_nodebit_register(syscall_nodebit_register_t *req) {
+    syscall_nodebit_register_t local_req;
+    aios_status_t status = copy_from_user(&local_req, req, sizeof(local_req));
+
+    if (status != AIOS_OK) return status;
+    return nodebit_register(local_req.node_id, local_req.label,
+                            local_req.caps_allowed, local_req.health_gate);
+}
+
+aios_status_t sys_nodebit_update(syscall_nodebit_update_t *req) {
+    syscall_nodebit_update_t local_req;
+    aios_status_t status = copy_from_user(&local_req, req, sizeof(local_req));
+
+    if (status != AIOS_OK) return status;
+    return nodebit_update_caps(local_req.node_id, local_req.caps_allowed);
+}
+
 /* ============================================================
  * System Info
  * ============================================================ */
@@ -1177,6 +1201,12 @@ static aios_status_t ai_syscall_contract_selftest(void) {
     }
     if (sys_slm_nodebit_lookup(SLM_NODEBIT_ID_COUNT, &nodebit) !=
         AIOS_ERR_INVAL) {
+        return AIOS_ERR_IO;
+    }
+    if (sys_nodebit_register(NULL) != AIOS_ERR_INVAL) {
+        return AIOS_ERR_IO;
+    }
+    if (sys_nodebit_update(NULL) != AIOS_ERR_INVAL) {
         return AIOS_ERR_IO;
     }
     if (sys_info_memory(NULL) != AIOS_ERR_INVAL) {

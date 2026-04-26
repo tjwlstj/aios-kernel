@@ -57,10 +57,12 @@ def _compact_result(profile: str, summary: dict[str, object], matrix_summary_pat
             controller_states[name] = payload.get("state", "unknown")
 
     shell = summary.get("shell") or {}
+    nodebit = summary.get("nodebit") or {}
     return {
         "profile": profile,
         "ready": bool(checkpoints.get("ready", {}).get("seen")),
         "shell_started": bool(shell.get("started")),
+        "nodebit_ready": bool(nodebit.get("ready")),
         "stability": health.get("stability"),
         "health_summary": {
             key: health.get(key)

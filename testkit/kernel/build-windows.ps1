@@ -134,6 +134,7 @@ function Get-SmokeRequiredPatterns {
         '\[USER\] Ring3 scaffold ready=1',
         '\[ROOM\] snapshot stability=',
         '\[HEALTH\] stability=',
+        '\[NODEBIT\] Policy gate ready entries=0',
         '\[SHELL\] Interactive shell started'
     )
 

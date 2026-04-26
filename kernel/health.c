@@ -117,6 +117,12 @@ static kernel_subsystem_health_t g_health[KERNEL_SUBSYSTEM_COUNT] = {
         .required = false,
         .io_path = false,
     },
+    [KERNEL_SUBSYSTEM_NODEBIT] = {
+        .id = KERNEL_SUBSYSTEM_NODEBIT,
+        .name = "NodeBit Policy Gate",
+        .required = false,
+        .io_path = false,
+    },
 };
 
 AIOS_STATIC_ASSERT(ARRAY_SIZE(g_health) == KERNEL_SUBSYSTEM_COUNT,

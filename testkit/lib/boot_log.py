@@ -30,6 +30,7 @@ CHECKPOINT_PATTERNS = {
     "syscall": "[INIT] AI System Call Interface... OK",
     "autonomy": "[INIT] Autonomy Control Plane... OK",
     "slm_orchestrator": "[INIT] SLM Hardware Orchestrator... OK",
+    "nodebit": "[INIT] NodeBit Policy Gate... OK",
     "keyboard": "[INIT] PS/2 Keyboard... OK",
     "ring3_scaffold": "[USER] Ring3 scaffold ready=1",
     "kernel_room": "[ROOM] snapshot stability=",
@@ -96,6 +97,7 @@ USER_ACCESS_RE = re.compile(
 )
 ROOM_SNAPSHOT_RE = re.compile(
     r"\[ROOM\] snapshot stability=(?P<stability>\w+) ok=(?P<ok>\d+) degraded=(?P<degraded>\d+) failed=(?P<failed>\d+) unknown=(?P<unknown>\d+) topology=(?P<topology>[\w\-]+) domains=(?P<domains>\d+) windows=(?P<windows>\d+) drivers=(?P<drivers_ready>\d+)/(?P<drivers>\d+) plans=(?P<plans>\d+) nodes=(?P<nodes>\d+) rings=(?P<rings>\d+) active=(?P<active>\d+) user=(?P<user>\d+)"
+    r"(?: nodebit_active=(?P<nodebit_active>\d+) nodebit_risky=(?P<nodebit_risky>\d+))?"
 )
 ROOM_GATES_RE = re.compile(
     r"\[ROOM\] gates total=(?P<total>\d+) stable_only=(?P<stable_only>\d+) completion=(?P<completion>\d+) shared=(?P<shared>\d+) risky_io=(?P<risky_io>\d+) observe=(?P<observe>\d+) control=(?P<control>\d+) data=(?P<data>\d+)"
@@ -450,6 +452,8 @@ def parse_boot_log_text(log_text: str, smoke_profile: str, serial_log_path: str 
                     "rings",
                     "active",
                     "user",
+                    "nodebit_active",
+                    "nodebit_risky",
                 ),
             }
         )
@@ -476,6 +480,10 @@ def parse_boot_log_text(log_text: str, smoke_profile: str, serial_log_path: str 
         "boot_complete": checkpoints["boot_complete"]["seen"],
     }
 
+    nodebit_info: dict[str, object] = {
+        "ready": checkpoints["nodebit"]["seen"],
+    }
+
     summary = {
         "smoke_profile": smoke_profile,
         "serial_log": serial_log_path,
@@ -491,6 +499,7 @@ def parse_boot_log_text(log_text: str, smoke_profile: str, serial_log_path: str 
         "user_access": user_access,
         "kernel_room": kernel_room,
         "shell": shell_info,
+        "nodebit": nodebit_info,
     }
     return summary
 

@@ -60,6 +60,7 @@ C_SOURCES   = $(KERNEL_DIR)/main.c \
               $(HAL_DIR)/accel_hal.c \
               $(RUNTIME_DIR)/ai_syscall.c \
               $(RUNTIME_DIR)/autonomy.c \
+              $(RUNTIME_DIR)/nodebit.c \
               $(RUNTIME_DIR)/slm_orchestrator.c \
               $(DRIVERS_DIR)/vga.c \
               $(DRIVERS_DIR)/serial.c \

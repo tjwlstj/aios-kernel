@@ -66,6 +66,7 @@ def required_smoke_patterns(smoke_profile: str) -> list[str]:
         "[USER] Ring3 scaffold ready=1",
         "[ROOM] snapshot stability=",
         "[HEALTH] stability=",
+        "[NODEBIT] Policy gate ready entries=0",
         "[SHELL] Interactive shell started",
     ]
     if smoke_profile == "storage-only":

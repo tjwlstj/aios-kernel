@@ -12,6 +12,7 @@
 #include <lib/string.h>
 #include <mm/memory_fabric.h>
 #include <runtime/ai_syscall.h>
+#include <runtime/nodebit.h>
 #include <runtime/slm_orchestrator.h>
 
 static const kernel_room_gate_descriptor_t g_gate_table[KERNEL_ROOM_GATE_COUNT] = {
@@ -200,6 +201,8 @@ aios_status_t kernel_room_snapshot_read(kernel_room_snapshot_t *out) {
 
     out->slm_plan_count = count_slm_plans();
     out->gate_count = KERNEL_ROOM_GATE_COUNT;
+    out->nodebit_active = nodebit_active_count();
+    out->nodebit_risky  = nodebit_risky_entry_count();
     return AIOS_OK;
 }
 
@@ -277,7 +280,7 @@ void kernel_room_dump(void) {
         (uint64_t)data);
     kprintf("===================\n");
 
-    serial_printf("[ROOM] snapshot stability=%s ok=%u degraded=%u failed=%u unknown=%u topology=%s domains=%u windows=%u drivers=%u/%u plans=%u nodes=%u rings=%u active=%u user=%u\n",
+    serial_printf("[ROOM] snapshot stability=%s ok=%u degraded=%u failed=%u unknown=%u topology=%s domains=%u windows=%u drivers=%u/%u plans=%u nodes=%u rings=%u active=%u user=%u nodebit_active=%u nodebit_risky=%u\n",
         (uint64_t)(uintptr_t)kernel_stability_name(snapshot.stability),
         (uint64_t)snapshot.ok_subsystems,
         (uint64_t)snapshot.degraded_subsystems,
@@ -292,7 +295,9 @@ void kernel_room_dump(void) {
         (uint64_t)snapshot.agent_nodes,
         (uint64_t)snapshot.registered_rings,
         (uint64_t)snapshot.active_rings,
-        (uint64_t)snapshot.user_mode_ready);
+        (uint64_t)snapshot.user_mode_ready,
+        (uint64_t)snapshot.nodebit_active,
+        (uint64_t)snapshot.nodebit_risky);
     serial_printf("[ROOM] gates total=%u stable_only=%u completion=%u shared=%u risky_io=%u observe=%u control=%u data=%u\n",
         (uint64_t)gate_count,
         (uint64_t)stable_only,
