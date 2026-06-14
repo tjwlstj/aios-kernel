@@ -201,15 +201,15 @@ function Exit-TestkitLock {
 }
 
 function New-WindowsBiosIso {
-    $isoRoot = Join-Path $RepoRoot 'build\winiso'
+    $isoRoot = Join-Path $BuildDir 'winiso'
     $bootDir = Join-Path $isoRoot 'boot'
     $grubDir = Join-Path $bootDir 'grub'
     $grubCfg = Join-Path $grubDir 'grub.cfg'
     $coreImg = Join-Path $isoRoot 'core.img'
     $biosImg = Join-Path $grubDir 'bios.img'
     $kernelIsoPath = Join-Path $bootDir 'kernel.bin'
-    $kernelBin = Join-Path $RepoRoot 'build\aios-kernel.bin'
-    $outputIso = Join-Path $RepoRoot 'build\aios-kernel.iso'
+    $kernelBin = Join-Path $BuildDir 'aios-kernel.bin'
+    $outputIso = Join-Path $BuildDir 'aios-kernel.iso'
 
     if (-not (Test-Path $kernelBin)) {
         throw "Kernel binary not found: $kernelBin"
@@ -256,8 +256,10 @@ function New-WindowsBiosIso {
     return $outputIso
 }
 
-$RepoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-$BuildDir = Join-Path $RepoRoot 'build'
+# Script lives at <repo>/tools/testkit/kernel/, so the repo root is three levels up.
+$RepoRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))
+# Kernel build artifacts live under the kernel/ domain (kernel/build/).
+$BuildDir = Join-Path $RepoRoot 'kernel\build'
 $LockDir = Join-Path $BuildDir '.testkit-lock'
 $LockHeld = $false
 $ResolvedPaths = @()
@@ -402,7 +404,7 @@ try {
         'test' {
             Invoke-MakeTarget 'all'
             $iso = New-WindowsBiosIso
-            $serialLog = Join-Path $RepoRoot 'build\serial_output.log'
+            $serialLog = Join-Path $BuildDir 'serial_output.log'
             Remove-Item $serialLog -Force -ErrorAction SilentlyContinue
             $proc = Start-Process -FilePath $Qemu -ArgumentList (Get-QemuBootArguments -IsoPath $iso -SerialMode "file:$serialLog" -DisplayMode 'none' -Memory '256M') -PassThru
             if (-not $proc.WaitForExit($TestTimeoutSec * 1000)) {

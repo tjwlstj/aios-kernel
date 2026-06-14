@@ -46,10 +46,9 @@ def print_info() -> None:
         "build_dir": str(BUILD_DIR),
         "lock_dir": str(LOCK_DIR),
         "entrypoints": {
-            "python": str(REPO_ROOT / "testkit" / "aios-testkit.py"),
-            "windows_kernel": str(REPO_ROOT / "testkit" / "kernel" / "build-windows.ps1"),
-            "compat_python": str(REPO_ROOT / "scripts" / "aios-allinone.py"),
-            "compat_windows": str(REPO_ROOT / "scripts" / "build-windows.ps1"),
+            "python": str(REPO_ROOT / "tools" / "testkit" / "aios-testkit.py"),
+            "windows_kernel": str(REPO_ROOT / "tools" / "testkit" / "kernel" / "build-windows.ps1"),
+            "make_root": str(REPO_ROOT / "Makefile"),
         },
     }
     print(json.dumps(info, indent=2))

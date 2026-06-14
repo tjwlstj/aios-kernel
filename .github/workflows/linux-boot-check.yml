@@ -24,7 +24,7 @@ jobs:
           python-version: '3.11'
 
       - name: Run OS tool smoke
-        run: python scripts/aios-allinone.py os
+        run: python tools/testkit/aios-testkit.py os
 
       - name: Upload OS tool artifacts
         if: always()
@@ -32,10 +32,10 @@ jobs:
         with:
           name: os-tool-artifacts-${{ matrix.os }}
           path: |
-            build/tool-smoke/summary.json
-            build/tool-smoke/static-chaos-score.json
-            build/tool-smoke/memory_journal.jsonl
-            build/tool-smoke/adapter_candidates.jsonl
+            kernel/build/tool-smoke/summary.json
+            kernel/build/tool-smoke/static-chaos-score.json
+            kernel/build/tool-smoke/memory_journal.jsonl
+            kernel/build/tool-smoke/adapter_candidates.jsonl
           if-no-files-found: warn
 
   build-and-boot:
@@ -63,7 +63,7 @@ jobs:
             mtools
 
       - name: Run all-in-one kernel + OS smoke
-        run: python scripts/aios-allinone.py all --strict
+        run: python tools/testkit/aios-testkit.py all --strict
 
       - name: Upload boot artifacts
         if: always()
@@ -71,11 +71,11 @@ jobs:
         with:
           name: linux-boot-artifacts
           path: |
-            build/aios-kernel.bin
-            build/aios-kernel.iso
-            build/serial_output.log
-            build/tool-smoke/summary.json
-            build/tool-smoke/static-chaos-score.json
-            build/tool-smoke/memory_journal.jsonl
-            build/tool-smoke/adapter_candidates.jsonl
+            kernel/build/aios-kernel.bin
+            kernel/build/aios-kernel.iso
+            kernel/build/serial_output.log
+            kernel/build/tool-smoke/summary.json
+            kernel/build/tool-smoke/static-chaos-score.json
+            kernel/build/tool-smoke/memory_journal.jsonl
+            kernel/build/tool-smoke/adapter_candidates.jsonl
           if-no-files-found: warn

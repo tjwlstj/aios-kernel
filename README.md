@@ -130,45 +130,33 @@ AIOS의 방향은 커널을 AI 시스템의 결정론적 body로 두고, 학습 
 
 ## Project Structure
 
+저장소는 6개 도메인으로 구성된 모노레포다. 도메인 경계·의존 규칙·"어디에 두나" 결정 가이드는
+**[PROJECT.md](PROJECT.md)** 에 정리되어 있다.
+
 ```
 aios-kernel/
-├── os/                 # 상위 OS 계층 (메인 AI, 학습 도구, 노드 트리)
-├── boot/               # Multiboot2 부트 어셈블리
-│   └── boot.asm        # x86_64 엔트리포인트, GDT, 페이징, SSE/AVX, BSS 초기화
-├── kernel/             # 커널 코어
-│   ├── main.c          # kernel_main 엔트리포인트
-│   ├── kernel_room.c   # Kernel Room snapshot / gate foundation
-│   ├── user_access.c   # 유저 포인터 검증/copy helper
-│   └── linker.ld       # 링커 스크립트
-├── interrupt/          # 인터럽트 처리
-│   ├── idt.c           # IDT 설정, 예외 핸들러, kernel_panic
-│   └── isr_stub.asm    # ISR 어셈블리 스텁 (32개 예외 + legacy PIC IRQ)
-├── lib/                # 커널 라이브러리
-│   └── string.c        # memset, memcpy, strlen 등 기본 유틸리티
-├── mm/                 # 텐서 메모리 관리자
-│   ├── tensor_mm.c     # Best-fit 할당, 풀 관리, 수명 프로파일링
-│   └── memory_fabric.c # 멀티 에이전트 공유/zero-copy 메모리 기반
-├── sched/              # AI 워크로드 스케줄러
-│   └── ai_sched.c      # MLFQ, CFS, 데드라인 스케줄링
-├── hal/                # 가속기 HAL
-│   └── accel_hal.c     # PCI 스캔, 디바이스 추상화
-├── runtime/            # AI 런타임
-│   ├── ai_syscall.c    # 시스콜 디스패처, 모델 레지스트리
-│   ├── autonomy.c      # 자율 제어 평면, 정책 엔진
-│   └── slm_orchestrator.c # SLM snapshot, plan gate, NodeBit policy
-├── drivers/            # 디바이스 드라이버
-│   ├── vga.c           # VGA 텍스트 모드 콘솔
-│   ├── serial.c        # COM1 시리얼 콘솔 (115200 8N1)
-│   ├── e1000.c         # e1000 bring-up / smoke path
-│   ├── storage_host.c  # storage probe scaffold
-│   └── usb_host.c      # USB/xHCI probe scaffold
-├── include/            # 헤더 파일
-├── docs/               # 설계 문서
-├── scripts/            # 정적 점검/검증 스크립트
-├── testkit/            # 호스트/부트/QEMU 검증 도구
-├── .github/workflows/  # CI/CD 파이프라인
-├── build/              # 빌드 출력 (자동 생성)
-└── Makefile            # 빌드 시스템
+├── PROJECT.md          # 도메인 맵 / 경계 규칙 (먼저 읽기)
+├── Makefile            # 루트 위임 빌드 (→ kernel/)
+│
+├── kernel/             # ① 베어메탈 커널 (boot, core, mm, sched, hal, runtime, drivers, include)
+│   ├── Makefile        #    커널 빌드 시스템
+│   ├── boot/           #    Multiboot2 엔트리, GDT, 페이징, long mode
+│   ├── core/           #    main, health, acpi, time, shell, kernel_room, user_*, linker.ld
+│   ├── interrupt/  mm/  sched/  hal/  runtime/  drivers/  lib/
+│   └── include/        #    커널 공개 헤더
+│
+├── os/                 # ② 유저스페이스 런타임 + 전용 프로그램
+│   ├── runtime/  main_ai/  compat/  examples/  tools/
+│   └── apps/           #    전용 프로그램 (스캐폴드)
+│
+├── models/             # ③ AI/SLM 모델 매니페스트 (가중치는 비추적)
+│   └── manifests/
+├── store/              # ④ 부팅 후 온라인 드라이버/프로그램 다운로드 카탈로그
+│   └── catalog/
+├── tools/              # ⑤ 테스트툴 + 빌드 오케스트레이션
+│   └── testkit/
+├── docs/               # ⑥ 설계 문서 (kernel/ autonomy/ os/ models/ tools/ meta/ kernel-room/)
+└── .github/workflows/  # CI (linux-boot-check)
 ```
 
 ## Build & Run
@@ -201,12 +189,12 @@ Windows에서도 빌드 점검이 가능합니다. 현재 저장소에는 PowerS
 가장 쉬운 실행 방법:
 
 ```powershell
-pwsh -File .\testkit\kernel\build-windows.ps1 -Target all
-pwsh -File .\testkit\kernel\build-windows.ps1 -Target test
-python .\testkit\aios-testkit.py all --strict
+pwsh -File .\tools\testkit\kernel\build-windows.ps1 -Target all
+pwsh -File .\tools\testkit\kernel\build-windows.ps1 -Target test
+python .\tools\testkit\aios-testkit.py all --strict
 ```
 
-Windows용 자세한 설치 및 경로 설정 방법은 [docs/windows_build.md](docs/windows_build.md)를 참고하세요.
+Windows용 자세한 설치 및 경로 설정 방법은 [docs/tools/windows_build.md](docs/tools/windows_build.md)를 참고하세요.
 
 ### Run in QEMU
 ```bash
@@ -235,38 +223,15 @@ make debug          # GDB 디버깅 모드로 실행
 
 ## Planning Documents
 
-- [자율 OS 실행 로드맵 (2026-04-11)](docs/autonomous_os_execution_roadmap_ko.md)
-- [종합 점검 보고서 (2026-04-15)](docs/inspection_report_2026_04_15.md)
-- [AI 네이티브 OS GitHub/공개 사례 정리 (2026-04-21)](docs/ai_native_os_github_landscape_ko.md)
-- [AI 에이전트 자율 OS 요건 정리](docs/ai_agent_autonomous_os_requirements_ko.md)
-- [상용 OS 안정성 기준선](docs/commercial_stability_baseline_ko.md)
-- [SLM 자율 운영/최적화 구조 계획](docs/slm_autonomous_kernel_plan.md)
-- [SLM 하드웨어 온보딩 방향](docs/slm_hardware_onboarding_ko.md)
-- [SLM 학습/최적화 방향](docs/slm_learning_optimization_ko.md)
-- [Driver Model / Stack Foundation (2026-04-10)](docs/driver_model_foundation_ko.md)
-- [Enum 무결성 + 저레벨 SLM 정렬 기록 (2026-04-10)](docs/enum_and_lowlevel_slm_alignment_ko.md)
-- [점검 및 부족한 점 리포트 (2026-03-22)](docs/inspection_and_gaps_ko.md)
-- [현재 커널 부족점과 외부 기준 정리 (2026-03-29)](docs/current_kernel_gap_report_ko.md)
-- [AI 에이전트 OS용 모델 스택 추천 (2026-03-28)](docs/agent_model_stack_recommendations_ko.md)
-- [정적-혼돈 연산자 기반 메인 AI/트리 아키텍처 (2026-03-28)](docs/static_chaos_agent_architecture_ko.md)
-- [유저 공간 OS 구조 및 호환성 설계 (2026-03-29)](docs/user_space_compat_architecture_ko.md)
-- [유저공간 OS 구현 방향 정리 (2026-04-19)](docs/user_space_os_direction_ko.md)
-- [유저공간 OS 세분화 빌드 계획 (2026-04-19)](docs/user_space_os_build_slices_ko.md)
-- [AI 친화 리소스 관리 개발 계획 (2026-04-27)](docs/ai_resource_management_development_plan_ko.md)
-- [테스트 툴링 구조와 올인원 도구 (2026-03-29)](docs/test_tooling_ko.md)
-- [Testkit 분리/세분화 가이드 (2026-04-10)](docs/testkit_guide_ko.md)
-- [Gemini CLI 활용 방향 정리 (2026-03-30)](docs/gemini_cli_usage_strategy_ko.md)
-- [Gemini CLI 1차 검토 기록 (2026-03-30)](docs/gemini_cli_first_review_ko.md)
-- [멀티 AI 에이전트용 Memory Fabric 기초안 (2026-03-30)](docs/multi_agent_memory_fabric_foundation_ko.md)
-- [커널 엔트로피용 노이즈 소스 정리 (2026-03-30)](docs/kernel_entropy_noise_sources_ko.md)
-- [커널-유저 경계 최적화 우선순위 정리 (2026-03-31)](docs/kernel_user_boundary_optimization_ko.md)
-- [코드 경계 가이드와 변경 가능한 구조 트리 (2026-04-12)](docs/code_boundary_and_structure_tree_ko.md)
-- [유기적 커널 구조 정리 (2026-04-12)](docs/organic_kernel_structure_ko.md)
-- [메모리 병렬처리 최적화 정리 (2026-04-12)](docs/memory_parallel_optimization_ko.md)
+전체 설계 문서 색인은 **[docs/README.md](docs/README.md)**, 저장소 도메인 구조는
+**[PROJECT.md](PROJECT.md)** 를 참고하세요. 주요 문서:
+
+- [자율 OS 실행 로드맵](docs/autonomy/autonomous_os_execution_roadmap_ko.md)
+- [AI 친화 리소스 관리 개발 계획 (2026-04-27)](docs/autonomy/ai_resource_management_development_plan_ko.md)
+- [유저공간 OS 구현 방향](docs/os/user_space_os_direction_ko.md)
+- [AI 에이전트 OS용 모델 스택 추천](docs/models/agent_model_stack_recommendations_ko.md)
+- [종합 점검 보고서 (2026-04-15)](docs/meta/inspection_report_2026_04_15.md)
 - [Kernel Room Topology 문서 모음](docs/kernel-room/README.md)
-- [Kernel Room Topology 정리 (2026-04-18)](docs/kernel-room/kernel_room_topology_ko.md)
-- [Kernel Room Topology 개발 가이드 (2026-04-18)](docs/kernel-room/development_guide_ko.md)
-- [Orbit-Cell Node Model 구현 가능성 검토 (2026-04-12)](docs/kernel-room/orbit_cell_node_feasibility_ko.md)
 - [OS 계층 소개](os/README.md)
 
 ## License

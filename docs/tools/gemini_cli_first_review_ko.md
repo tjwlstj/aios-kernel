@@ -79,7 +79,7 @@ Gemini는 다음 5개를 가장 핵심적인 공백으로 봤다.
 4. `kernel/user` 격리를 포함한 VMM 부재
 5. 드라이버의 실 I/O 데이터 경로 부재
 
-이는 이미 내부 점검 문서 [current_kernel_gap_report_ko.md](./current_kernel_gap_report_ko.md) 에서 정리한 우선순위와도 거의 일치한다.
+이는 이미 내부 점검 문서 [current_kernel_gap_report_ko.md](../meta/current_kernel_gap_report_ko.md) 에서 정리한 우선순위와도 거의 일치한다.
 
 ### 4. 다음 우선순위에 대한 시사점
 

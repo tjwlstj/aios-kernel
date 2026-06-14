@@ -1,0 +1,6 @@
+# 실제 모델 가중치는 repo에 커밋하지 않는다 (store/ 카탈로그로 배포).
+weights/
+*.gguf
+*.safetensors
+*.bin
+*.onnx

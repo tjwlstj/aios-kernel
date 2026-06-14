@@ -11,8 +11,10 @@ from pathlib import Path
 from typing import Iterable
 
 
-REPO_ROOT = Path(os.path.abspath(__file__)).parents[2]
-BUILD_DIR = REPO_ROOT / "build"
+# common.py lives at <repo>/tools/testkit/lib/, so the repo root is four levels up.
+REPO_ROOT = Path(os.path.abspath(__file__)).parents[3]
+# Kernel build artifacts (and testkit reports tied to a boot) live under kernel/build/.
+BUILD_DIR = REPO_ROOT / "kernel" / "build"
 SERIAL_LOG = BUILD_DIR / "serial_output.log"
 TOOL_SMOKE_DIR = BUILD_DIR / "tool-smoke"
 LOCK_DIR = BUILD_DIR / ".testkit-lock"

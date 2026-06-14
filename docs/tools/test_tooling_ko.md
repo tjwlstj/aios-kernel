@@ -110,7 +110,7 @@ AIOS 저장소의 테스트 구조는 크게 두 갈래다.
 - Windows에서는 같은 object/ISO를 동시에 만질 때 lock 충돌이 나기 쉬움
 - 지금 단계에서는 병렬 처리보다 산출물 무결성과 재현성이 더 중요함
 
-자세한 구조와 확장 규칙은 [docs/testkit_guide_ko.md](docs/testkit_guide_ko.md)를 참고한다.
+자세한 구조와 확장 규칙은 [testkit_guide_ko.md](./testkit_guide_ko.md)를 참고한다.
 
 ## 이유
 

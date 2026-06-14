@@ -9,7 +9,7 @@ from lib.boot_matrix_lane import run_boot_matrix
 from lib.kernel_lane import ensure_smoke_profile
 
 
-BOOT_BASELINE_DIR = REPO_ROOT / "testkit" / "fixtures" / "boot-baseline"
+BOOT_BASELINE_DIR = REPO_ROOT / "tools" / "testkit" / "fixtures" / "boot-baseline"
 BOOT_INVENTORY_DIR = BUILD_DIR / "boot-inventory"
 
 

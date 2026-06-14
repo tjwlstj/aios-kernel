@@ -1,0 +1,18 @@
+{
+  "schema": "aios.store.catalog/v0",
+  "id": "example-driver",
+  "kind": "driver",
+  "title": "Example NIC driver",
+  "version": "0.1.0",
+  "artifact": {
+    "url": "https://example.invalid/aios/example-driver-0.1.0.bin",
+    "bytes": 0,
+    "sha256": ""
+  },
+  "install": {
+    "target": "os/apps",
+    "risk": "risky",
+    "requires_gate": ["nodebit", "kernel_room"]
+  },
+  "notes": "Scaffold placeholder. The download client is not implemented yet; this file documents the catalog format only."
+}

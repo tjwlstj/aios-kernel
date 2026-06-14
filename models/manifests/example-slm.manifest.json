@@ -1,0 +1,23 @@
+{
+  "schema": "aios.model.manifest/v0",
+  "id": "example-slm",
+  "family": "slm",
+  "quantization": "q4_k_m",
+  "params": "0.5B",
+  "context_window": 4096,
+  "artifact": {
+    "file": "weights/example-slm.q4_k_m.gguf",
+    "bytes": 0,
+    "sha256": "",
+    "source": "store://catalog/example-slm"
+  },
+  "runtime": {
+    "tensor_pool": "Model",
+    "alignment": 64,
+    "lifetime": "LONG_TERM"
+  },
+  "policy": {
+    "nodebit": "observe"
+  },
+  "notes": "Scaffold placeholder. bytes/sha256 are filled in when the artifact is published through store/."
+}

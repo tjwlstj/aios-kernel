@@ -126,7 +126,7 @@ def run_windows_kernel(
     powershell = which_any("pwsh", "powershell")
     if not powershell:
         raise ToolError("PowerShell (`pwsh` or `powershell`) not found.")
-    script = REPO_ROOT / "testkit" / "kernel" / "build-windows.ps1"
+    script = REPO_ROOT / "tools" / "testkit" / "kernel" / "build-windows.ps1"
     run(
         [
             powershell,
@@ -165,7 +165,7 @@ def run_qemu_smoke_test(
             "reason": "qemu-system-x86_64 not found",
         }
 
-    iso = REPO_ROOT / "build" / "aios-kernel.iso"
+    iso = BUILD_DIR / "aios-kernel.iso"
     if not iso.exists():
         raise ToolError(f"Kernel ISO not found: {iso}")
 

@@ -25,7 +25,7 @@ AIOS는 부팅 가능한 AI 전용 커널로 빠르게 진전했지만, 메인 A
   "ring3 handoff 이후에 올릴 대상"이다
 
 구현 기준 체크포인트와 병행 추진안은
-[gemini_driver_userspace_checkpoint_ko.md](./gemini_driver_userspace_checkpoint_ko.md)
+[gemini_driver_userspace_checkpoint_ko.md](../tools/gemini_driver_userspace_checkpoint_ko.md)
 를 참고한다.
 
 ## 왜 유저 공간인가

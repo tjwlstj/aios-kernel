@@ -20,6 +20,8 @@
   정적-혼돈 점수 계산, 학습 데이터셋 정리, 코퍼스 통계 도구
 - `examples/`
   메트릭/학습 trace 예제
+- `apps/`
+  AIOS 전용 프로그램(에이전트 앱) 배치 영역 (스캐폴드, `apps/README.md` 참고)
 
 설계 원칙:
 
@@ -33,22 +35,22 @@
   하드웨어 상태와 함께 메인 AI operator, agent tree, pipeline optimization, NodeBit catalog 힌트를 함께 노출
 - `SYS_SLM_NODEBIT_LOOKUP`
   userspace policy broker가 특정 API/tool/device/policy 노드를 단건 조회하는 빠른 경로
-- `runtime/slm_orchestrator.c`
+- `kernel/runtime/slm_orchestrator.c`
   커널 텔레메트리에서 메인 AI 모드, worker 수, queue depth, token pipeline depth를 계산
-- `include/runtime/ai_ring.h`
+- `kernel/include/runtime/ai_ring.h`
   커널-유저 공간이 함께 쓰는 shared submit/completion ring ABI 초안
 
 추가 문서:
 
-- `../docs/user_space_compat_architecture_ko.md`
+- `../docs/os/user_space_compat_architecture_ko.md`
   커널 이후 유저 공간 OS 구조와 호환성 중심 설계
-- `../docs/user_space_os_direction_ko.md`
+- `../docs/os/user_space_os_direction_ko.md`
   현재 커널 기준으로 어떤 userspace OS를 어떤 순서로 올릴지 정리한 방향 문서
-- `../docs/user_space_os_build_slices_ko.md`
+- `../docs/os/user_space_os_build_slices_ko.md`
   `ring3 -> loader -> init -> service -> policy` 순서의 세분화 빌드 문서
-- `../docs/ai_resource_management_development_plan_ko.md`
+- `../docs/autonomy/ai_resource_management_development_plan_ko.md`
   부팅 기준선을 유지하면서 AI resource ledger, bounded policy schema, `aios-resourced`로 확장하는 개발 계획
-- `../docs/code_boundary_and_structure_tree_ko.md`
+- `../docs/kernel/code_boundary_and_structure_tree_ko.md`
   현재 C 커널을 유지하면서도 이후 구조 변경과 유저 공간 분리를 쉽게 하기 위한 코드 경계/구조 트리 가이드
 - `runtime/README.md`
   AIOS user-space runtime 역할과 코어 서비스
