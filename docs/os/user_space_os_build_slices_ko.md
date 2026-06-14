@@ -80,7 +80,7 @@ userspace 작업을 시작해도 기존 커널 부팅 기준선이 흔들리지 
 
 ### 검증 경로
 
-- `python .\\testkit\\aios-testkit.py boot-matrix --profiles full minimal storage-only --strict`
+- `python .\tools\testkit\aios-testkit.py boot-matrix --profiles full minimal storage-only --strict`
 
 ## Slice 1. Ring3 진입 문 열기
 

@@ -10,7 +10,7 @@ AIOS 저장소의 테스트 구조는 크게 두 갈래다.
 
 - 커널 빌드/부팅 테스트
   - Linux: `Makefile`
-  - Windows: `scripts/build-windows.ps1`
+  - Windows: `tools/testkit/kernel/build-windows.ps1`
 - OS 레이어 도구 테스트
   - `os/tools/*.py`
   - 샘플 입력 기반 smoke test
@@ -28,33 +28,28 @@ AIOS 저장소의 테스트 구조는 크게 두 갈래다.
 
 전용 디렉토리:
 
-- `testkit/`
+- `tools/testkit/`
   - `aios-testkit.py`
   - `lib/common.py`
   - `lib/kernel_lane.py`
   - `lib/os_lane.py`
   - `kernel/build-windows.ps1`
 
-호환 래퍼:
-
-- `scripts/aios-allinone.py`
-- `scripts/build-windows.ps1`
-
 지원 명령:
 
-- `python testkit/aios-testkit.py info`
-- `python testkit/aios-testkit.py os`
-- `python testkit/aios-testkit.py kernel --target all`
-- `python testkit/aios-testkit.py kernel --target test --strict`
-- `python testkit/aios-testkit.py all --strict`
-- `pwsh -File .\testkit\kernel\build-windows.ps1 -Target test`
+- `python tools/testkit/aios-testkit.py info`
+- `python tools/testkit/aios-testkit.py os`
+- `python tools/testkit/aios-testkit.py kernel --target all`
+- `python tools/testkit/aios-testkit.py kernel --target test --strict`
+- `python tools/testkit/aios-testkit.py all --strict`
+- `pwsh -File .\tools\testkit\kernel\build-windows.ps1 -Target test`
 
 ## 동작 원리
 
 ### Kernel lane
 
 - Windows
-  - `testkit/kernel/build-windows.ps1`를 호출
+  - `tools/testkit/kernel/build-windows.ps1`를 호출
 - Linux / macOS
   - `make all`, `make iso`를 호출
   - `test`는 Python이 직접 QEMU timeout/log 검증 수행
@@ -70,10 +65,10 @@ AIOS 저장소의 테스트 구조는 크게 두 갈래다.
 
 출력:
 
-- `build/tool-smoke/summary.json`
-- `build/tool-smoke/static-chaos-score.json`
-- `build/tool-smoke/memory_journal.jsonl`
-- `build/tool-smoke/adapter_candidates.jsonl`
+- `kernel/build/tool-smoke/summary.json`
+- `kernel/build/tool-smoke/static-chaos-score.json`
+- `kernel/build/tool-smoke/memory_journal.jsonl`
+- `kernel/build/tool-smoke/adapter_candidates.jsonl`
 
 ## 호스트 호환성 정책
 
@@ -102,11 +97,11 @@ AIOS 저장소의 테스트 구조는 크게 두 갈래다.
 
 ## 병렬 실행 정책
 
-현재 `testkit`은 `build/.testkit-lock/` 디렉토리 락으로 동시 실행을 막는다.
+현재 `testkit`은 `kernel/build/.testkit-lock/` 디렉토리 락으로 동시 실행을 막는다.
 
 이유:
 
-- kernel build/test와 os smoke가 모두 `build/`를 공유
+- kernel build/test와 os smoke가 모두 `kernel/build/`를 공유
 - Windows에서는 같은 object/ISO를 동시에 만질 때 lock 충돌이 나기 쉬움
 - 지금 단계에서는 병렬 처리보다 산출물 무결성과 재현성이 더 중요함
 

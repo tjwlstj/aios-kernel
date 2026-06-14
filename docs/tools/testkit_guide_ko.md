@@ -5,58 +5,56 @@
 ## 목적
 
 기존 테스트 도구는 `scripts/` 아래에 커널/OS smoke 엔트리포인트가 섞여 있었고,
-같은 `build/` 산출물을 병렬로 건드릴 때 Windows에서 object file lock 충돌이
+같은 `kernel/build/` 산출물을 병렬로 건드릴 때 Windows에서 object file lock 충돌이
 나기 쉬웠다.
 
 이번 정리는 다음을 목표로 한다.
 
 - 테스트 도구를 전용 디렉토리로 분리
 - kernel lane / os lane / 공통 헬퍼를 세분화
-- 기존 경로는 호환 래퍼로 유지
-- 같은 `build/`를 동시에 쓰는 실행을 명시적으로 차단
+- 호환 래퍼였던 `scripts/`는 제거하고 `tools/testkit/`로 일원화
+- 같은 `kernel/build/`를 동시에 쓰는 실행을 명시적으로 차단
 
 ## 새 디렉토리
 
-- `testkit/aios-testkit.py`
+- `tools/testkit/aios-testkit.py`
   - 메인 엔트리포인트
-- `testkit/lib/common.py`
+- `tools/testkit/lib/common.py`
   - 공통 경로, 실행 함수, host 판별, run lock
-- `testkit/lib/kernel_lane.py`
+- `tools/testkit/lib/kernel_lane.py`
   - 커널 빌드/ISO/QEMU smoke
-- `testkit/lib/boot_matrix_lane.py`
+- `tools/testkit/lib/boot_matrix_lane.py`
   - `full/minimal/storage-only` 프로파일을 순차 실행하고 matrix 요약 생성
-- `testkit/lib/boot_inventory.py`
+- `tools/testkit/lib/boot_inventory.py`
   - compact inventory를 baseline fixture와 비교
-- `testkit/lib/boot_perf.py`
+- `tools/testkit/lib/boot_perf.py`
   - host-local perf baseline과 threshold 기반 비교
-- `testkit/lib/boot_log.py`
+- `tools/testkit/lib/boot_log.py`
   - serial log를 checkpoint / health / inventory / selftest 요약 JSON으로 파싱
-- `testkit/lib/os_lane.py`
+- `tools/testkit/lib/os_lane.py`
   - `os/tools` smoke와 샘플 기반 검증
-- `testkit/kernel/build-windows.ps1`
+- `tools/testkit/kernel/build-windows.ps1`
   - Windows 전용 커널 빌드/부팅 엔트리포인트
 
-## 호환 엔트리
+## 엔트리포인트
 
-기존 엔트리는 바로 제거하지 않았다.
+과거 `scripts/` 아래에 있던 호환 래퍼(`aios-allinone.py`, `build-windows.ps1`)는
+모노레포 정리 과정에서 제거했고, 모든 엔트리포인트를 `tools/testkit/` 아래로 일원화했다.
 
-- `scripts/aios-allinone.py`
-- `scripts/build-windows.ps1`
-
-이 파일들은 앞으로는 `testkit/` 아래 구현을 호출하는 호환 래퍼다.
-즉, 문서와 자동화는 새 경로를 기준으로 옮기되, 기존 사용자 습관은 당장 깨지지 않게 했다.
+- `tools/testkit/aios-testkit.py`
+- `tools/testkit/kernel/build-windows.ps1`
 
 ## 병렬 실행 방지
 
 공유 경로:
 
-- `build/aios-kernel.bin`
-- `build/aios-kernel.iso`
-- `build/tool-smoke/*`
-- `build/serial_output.log`
+- `kernel/build/aios-kernel.bin`
+- `kernel/build/aios-kernel.iso`
+- `kernel/build/tool-smoke/*`
+- `kernel/build/serial_output.log`
 
 이 파일들은 서로 다른 lane이 동시에 건드리면 충돌 가능성이 있다.
-그래서 `testkit`은 `build/.testkit-lock/` 디렉토리 락을 사용한다.
+그래서 `testkit`은 `kernel/build/.testkit-lock/` 디렉토리 락을 사용한다.
 
 동작:
 
@@ -72,54 +70,54 @@
 ### 전체
 
 ```powershell
-python .\testkit\aios-testkit.py all --strict
-python .\testkit\aios-testkit.py all --strict --smoke-profile minimal
-python .\testkit\aios-testkit.py all --strict --smoke-profile minimal --export-boot-summary
+python .\tools\testkit\aios-testkit.py all --strict
+python .\tools\testkit\aios-testkit.py all --strict --smoke-profile minimal
+python .\tools\testkit\aios-testkit.py all --strict --smoke-profile minimal --export-boot-summary
 ```
 
 ### 커널만
 
 ```powershell
-python .\testkit\aios-testkit.py kernel --target all --strict
-python .\testkit\aios-testkit.py kernel --target test --strict
-python .\testkit\aios-testkit.py kernel --target test --strict --export-boot-summary
-python .\testkit\aios-testkit.py kernel --target test --strict --smoke-profile minimal
-python .\testkit\aios-testkit.py kernel --target test --strict --smoke-profile minimal --export-boot-summary
-python .\testkit\aios-testkit.py kernel --target test --strict --smoke-profile storage-only --export-boot-summary
+python .\tools\testkit\aios-testkit.py kernel --target all --strict
+python .\tools\testkit\aios-testkit.py kernel --target test --strict
+python .\tools\testkit\aios-testkit.py kernel --target test --strict --export-boot-summary
+python .\tools\testkit\aios-testkit.py kernel --target test --strict --smoke-profile minimal
+python .\tools\testkit\aios-testkit.py kernel --target test --strict --smoke-profile minimal --export-boot-summary
+python .\tools\testkit\aios-testkit.py kernel --target test --strict --smoke-profile storage-only --export-boot-summary
 ```
 
 ### 부팅 매트릭스
 
 ```powershell
-python .\testkit\aios-testkit.py boot-matrix --profiles full minimal storage-only --strict
+python .\tools\testkit\aios-testkit.py boot-matrix --profiles full minimal storage-only --strict
 ```
 
 ### 부팅 인벤토리
 
 ```powershell
-python .\testkit\aios-testkit.py boot-inventory --profiles full minimal storage-only --strict
-python .\testkit\aios-testkit.py boot-inventory --profiles full minimal storage-only --strict --write-baseline
+python .\tools\testkit\aios-testkit.py boot-inventory --profiles full minimal storage-only --strict
+python .\tools\testkit\aios-testkit.py boot-inventory --profiles full minimal storage-only --strict --write-baseline
 ```
 
 ### 부팅 성능
 
 ```powershell
-python .\testkit\aios-testkit.py boot-perf --profiles full minimal storage-only --strict --write-baseline
-python .\testkit\aios-testkit.py boot-perf --profiles full minimal storage-only --strict
+python .\tools\testkit\aios-testkit.py boot-perf --profiles full minimal storage-only --strict --write-baseline
+python .\tools\testkit\aios-testkit.py boot-perf --profiles full minimal storage-only --strict
 ```
 
 ### OS 도구만
 
 ```powershell
-python .\testkit\aios-testkit.py os
+python .\tools\testkit\aios-testkit.py os
 ```
 
 ### Windows 커널 전용
 
 ```powershell
-pwsh -File .\testkit\kernel\build-windows.ps1 -Target all
-pwsh -File .\testkit\kernel\build-windows.ps1 -Target test
-pwsh -File .\testkit\kernel\build-windows.ps1 -Target test -SmokeProfile minimal
+pwsh -File .\tools\testkit\kernel\build-windows.ps1 -Target all
+pwsh -File .\tools\testkit\kernel\build-windows.ps1 -Target test
+pwsh -File .\tools\testkit\kernel\build-windows.ps1 -Target test -SmokeProfile minimal
 ```
 
 ## 스모크 프로파일
@@ -168,9 +166,9 @@ optional 하드웨어 구성을 나눌 수 있다.
 
 출력 위치:
 
-- `build/boot-summary/test-full.json`
-- `build/boot-summary/test-minimal.json`
-- `build/boot-summary/test-storage-only.json`
+- `kernel/build/boot-summary/test-full.json`
+- `kernel/build/boot-summary/test-minimal.json`
+- `kernel/build/boot-summary/test-storage-only.json`
 
 현재 JSON에는 다음 정보가 들어간다.
 
@@ -194,10 +192,10 @@ optional 하드웨어 구성을 나눌 수 있다.
 
 산출물:
 
-- `build/boot-matrix/full.json`
-- `build/boot-matrix/minimal.json`
-- `build/boot-matrix/storage-only.json`
-- `build/boot-matrix/summary.json`
+- `kernel/build/boot-matrix/full.json`
+- `kernel/build/boot-matrix/minimal.json`
+- `kernel/build/boot-matrix/storage-only.json`
+- `kernel/build/boot-matrix/summary.json`
 
 `summary.json`에는 다음이 들어간다.
 
@@ -224,9 +222,9 @@ repo 안의 baseline fixture와 비교하는 lane이다.
 
 출력 위치:
 
-- `build/boot-inventory/current/<profile>.json`
-- `build/boot-inventory/summary.json`
-- baseline fixture: `testkit/fixtures/boot-baseline/<profile>.json`
+- `kernel/build/boot-inventory/current/<profile>.json`
+- `kernel/build/boot-inventory/summary.json`
+- baseline fixture: `tools/testkit/fixtures/boot-baseline/<profile>.json`
 
 동작:
 
@@ -246,12 +244,12 @@ repo 안의 baseline fixture와 비교하는 lane이다.
 
 현재 baseline 위치:
 
-- `build/boot-perf/baseline/<profile>.json`
+- `kernel/build/boot-perf/baseline/<profile>.json`
 
 현재 결과 위치:
 
-- `build/boot-perf/current/<profile>.json`
-- `build/boot-perf/summary.json`
+- `kernel/build/boot-perf/current/<profile>.json`
+- `kernel/build/boot-perf/summary.json`
 
 현재 비교 대상:
 
@@ -268,7 +266,7 @@ repo 안의 baseline fixture와 비교하는 lane이다.
 
 중요:
 
-- `boot-perf` baseline은 기본적으로 로컬 `build/` 아래에만 둔다
+- `boot-perf` baseline은 기본적으로 로컬 `kernel/build/` 아래에만 둔다
 - 즉, inventory처럼 팀 공용 fixture를 기본값으로 삼지 않는다
 - 이유는 QEMU와 호스트 환경 차이로 성능 수치가 장치/OS마다 크게 흔들릴 수 있기 때문이다
 
@@ -276,11 +274,11 @@ repo 안의 baseline fixture와 비교하는 lane이다.
 
 앞으로 테스트가 늘어날 때는 다음 규칙을 권장한다.
 
-1. 새 lane은 `testkit/lib/`에 모듈로 추가
+1. 새 lane은 `tools/testkit/lib/`에 모듈로 추가
 2. shared state를 쓰면 반드시 기존 lock 정책을 그대로 사용
 3. 샘플/fixture는 lane 밖에서 재사용 가능한 위치에 두고, lane은 orchestration만 담당
-4. host-specific 스크립트는 `testkit/kernel/`, `testkit/os/`처럼 하위 디렉토리로 분리
-5. `scripts/`는 새 구현을 넣지 말고 wrapper만 유지
+4. host-specific 스크립트는 `tools/testkit/kernel/`, `tools/testkit/os/`처럼 하위 디렉토리로 분리
+5. 모든 구현·엔트리포인트는 `tools/testkit/` 아래에만 둔다 (별도 `scripts/` 래퍼는 두지 않는다)
 
 ## 현재 범위
 

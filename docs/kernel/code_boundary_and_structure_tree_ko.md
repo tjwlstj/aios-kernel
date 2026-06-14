@@ -149,7 +149,7 @@ hal/         = 가속기/장치 추상화
 drivers/     = NIC/USB/storage/VGA/serial/PCI bootstrap
 runtime/     = syscall surface, autonomy, SLM orchestrator
 include/     = 커널/드라이버/UAPI 계약
-testkit/     = 빌드/부팅/요약/회귀 검증
+tools/testkit/     = 빌드/부팅/요약/회귀 검증
 os/          = 미래 유저 공간 OS 계층 설계/도구
 ```
 
@@ -188,7 +188,7 @@ aios-kernel/
 │   ├── main_ai/             # 메인 AI profile/node tree
 │   ├── tools/               # 학습/정리/변환 도구
 │   └── examples/            # 샘플 config/trace
-└── testkit/                 # build, smoke, inventory, perf, fault
+└── tools/testkit/                 # build, smoke, inventory, perf, fault
 ```
 
 ## 지금은 "가상 트리"로 운영하는 편이 좋다

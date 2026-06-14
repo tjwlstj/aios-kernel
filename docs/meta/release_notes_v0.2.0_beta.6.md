@@ -34,10 +34,10 @@
 다음 명령을 Windows 환경에서 통과했다.
 
 ```powershell
-python .\testkit\aios-testkit.py kernel --target all --strict
-python .\testkit\aios-testkit.py kernel --target test --strict --export-boot-summary --timeout 12
-python .\testkit\aios-testkit.py boot-matrix --profiles full minimal storage-only --strict --timeout 12
-python .\testkit\aios-testkit.py os
+python .\tools\testkit\aios-testkit.py kernel --target all --strict
+python .\tools\testkit\aios-testkit.py kernel --target test --strict --export-boot-summary --timeout 12
+python .\tools\testkit\aios-testkit.py boot-matrix --profiles full minimal storage-only --strict --timeout 12
+python .\tools\testkit\aios-testkit.py os
 git diff --check
 ```
 

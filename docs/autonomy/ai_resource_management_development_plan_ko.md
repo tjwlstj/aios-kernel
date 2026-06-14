@@ -258,16 +258,16 @@ AIOS의 첫 AI resource model은 아래 단위로 시작한다.
 
 커널 구조 변경:
 
-- `python .\testkit\aios-testkit.py kernel --target all --strict`
-- `python .\testkit\aios-testkit.py kernel --target test --strict --export-boot-summary --timeout 60`
+- `python .\tools\testkit\aios-testkit.py kernel --target all --strict`
+- `python .\tools\testkit\aios-testkit.py kernel --target test --strict --export-boot-summary --timeout 60`
 
 부트 프로필 변경:
 
-- `python .\testkit\aios-testkit.py boot-matrix --profiles full minimal storage-only --strict --timeout 60`
+- `python .\tools\testkit\aios-testkit.py boot-matrix --profiles full minimal storage-only --strict --timeout 60`
 
 OS/tooling 변경:
 
-- `python .\testkit\aios-testkit.py os`
+- `python .\tools\testkit\aios-testkit.py os`
 
 필수 negative test:
 

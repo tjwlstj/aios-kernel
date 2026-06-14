@@ -7,28 +7,28 @@
 지금 구현된 테스트 도구는 다음 범위까지 동작한다.
 
 - 구현됨
-  - `testkit/aios-testkit.py`
+  - `tools/testkit/aios-testkit.py`
     - `info`, `kernel`, `os`, `all`
     - `--export-boot-summary`
-  - `testkit/lib/kernel_lane.py`
+  - `tools/testkit/lib/kernel_lane.py`
     - 커널 `all` / `iso` / `test` / `clean` / `info`
     - QEMU smoke profile `full`, `minimal`, `storage-only`
     - serial log 기반 ready/selftest/probe/health 확인
-    - smoke 성공 시 `build/boot-summary/test-<profile>.json` export 가능
-  - `testkit/lib/boot_matrix_lane.py`
+    - smoke 성공 시 `kernel/build/boot-summary/test-<profile>.json` export 가능
+  - `tools/testkit/lib/boot_matrix_lane.py`
     - `full`, `minimal`, `storage-only` 프로파일을 순차 실행
-    - `build/boot-matrix/<profile>.json`, `build/boot-matrix/summary.json` 생성
-  - `testkit/lib/boot_inventory.py`
-    - compact inventory를 `testkit/fixtures/boot-baseline/<profile>.json`과 비교
-    - `build/boot-inventory/current/<profile>.json`, `build/boot-inventory/summary.json` 생성
-  - `testkit/lib/boot_perf.py`
-    - host-local `build/boot-perf/baseline/<profile>.json`과 threshold 비교
-    - `build/boot-perf/current/<profile>.json`, `build/boot-perf/summary.json` 생성
-  - `testkit/lib/boot_log.py`
+    - `kernel/build/boot-matrix/<profile>.json`, `kernel/build/boot-matrix/summary.json` 생성
+  - `tools/testkit/lib/boot_inventory.py`
+    - compact inventory를 `tools/testkit/fixtures/boot-baseline/<profile>.json`과 비교
+    - `kernel/build/boot-inventory/current/<profile>.json`, `kernel/build/boot-inventory/summary.json` 생성
+  - `tools/testkit/lib/boot_perf.py`
+    - host-local `kernel/build/boot-perf/baseline/<profile>.json`과 threshold 비교
+    - `kernel/build/boot-perf/current/<profile>.json`, `kernel/build/boot-perf/summary.json` 생성
+  - `tools/testkit/lib/boot_log.py`
     - serial log를 checkpoint / selftest / profile / inventory / health / controller / SLM 요약으로 파싱
-  - `testkit/kernel/build-windows.ps1`
+  - `tools/testkit/kernel/build-windows.ps1`
     - Windows에서 ISO 생성과 QEMU 부팅 smoke
-  - `testkit/lib/os_lane.py`
+  - `tools/testkit/lib/os_lane.py`
     - OS 사용자 공간 도구 smoke
 
 - 부분 구현
@@ -36,7 +36,7 @@
   - boot summary는 단일 실행 export와 `full/minimal/storage-only` matrix까지 가능하다
   - `boot_log.py`는 현재 `ring3 scaffold` marker도 checkpoint와 `user_mode` 요약으로 파싱한다
   - boot inventory baseline은 `full/minimal/storage-only` QEMU fixture 비교까지 가능하다
-  - boot perf baseline은 로컬 `build/` 기준선과 `full/minimal/storage-only` threshold 비교까지 가능하다
+  - boot perf baseline은 로컬 `kernel/build/` 기준선과 `full/minimal/storage-only` threshold 비교까지 가능하다
   - `boot-matrix`는 아직 `debug-wait` 같은 추가 프로파일을 지원하지 않는다
   - `full` / `minimal` 프로파일은 있으나, 세부 실패 상황을 분리해 재현하지는 못한다
 
@@ -59,7 +59,7 @@
    - 앞으로는 `boot -> acpi -> pci -> probe -> drivers -> slm -> health -> ready`를 분리해 봐야 한다.
 
 2. 산출물 정규화
-   - 현재는 `build/serial_output.log` 하나가 핵심이다.
+   - 현재는 `kernel/build/serial_output.log` 하나가 핵심이다.
    - 다음 단계에서는 manifest, summary, perf snapshot 같은 정형 결과물이 필요하다.
 
 3. 실패 재현 경로
@@ -88,8 +88,8 @@
   - 수동 GDB 연결 전 상태 확인용
 
 권장 산출물:
-- `build/boot-matrix/summary.json`
-- `build/boot-matrix/<profile>.json`
+- `kernel/build/boot-matrix/summary.json`
+- `kernel/build/boot-matrix/<profile>.json`
 
 최소 검증:
 - profile별 ready 도달 여부
@@ -97,8 +97,8 @@
 - driver bootstrap 존재/부재 패턴
 
 구현 위치:
-- 새 모듈 `testkit/lib/boot_matrix_lane.py`
-- 엔트리포인트 `python .\testkit\aios-testkit.py boot-matrix`
+- 새 모듈 `tools/testkit/lib/boot_matrix_lane.py`
+- 엔트리포인트 `python .\tools\testkit\aios-testkit.py boot-matrix`
 
 상태:
 - 부분 구현
@@ -122,11 +122,11 @@
 - kernel ready
 
 권장 산출물:
-- `build/boot-checkpoint/boot-events.json`
-- `build/boot-checkpoint/boot-summary.json`
+- `kernel/build/boot-checkpoint/boot-events.json`
+- `kernel/build/boot-checkpoint/boot-summary.json`
 
 구현 위치:
-- `testkit/lib/boot_log.py`
+- `tools/testkit/lib/boot_log.py`
 
 상태:
 - 계획
@@ -151,8 +151,8 @@ MVP 메모:
 - health의 `ok/degraded/failed/unknown`
 
 권장 산출물:
-- `build/boot-inventory/current/<profile>.json`
-- `testkit/fixtures/boot-baseline/<profile>.json`
+- `kernel/build/boot-inventory/current/<profile>.json`
+- `tools/testkit/fixtures/boot-baseline/<profile>.json`
 
 비교 방식:
 - strict
@@ -161,7 +161,7 @@ MVP 메모:
   - 차이를 출력만 하고 통과
 
 구현 위치:
-- `testkit/lib/boot_inventory.py`
+- `tools/testkit/lib/boot_inventory.py`
 
 상태:
 - 부분 구현
@@ -182,21 +182,21 @@ MVP 메모:
 - `[PROFILE] Cache KiB ...`
 
 권장 산출물:
-- `build/boot-perf/current/<profile>.json`
-- `build/boot-perf/baseline/<profile>.json`
-- `build/boot-perf/summary.json`
+- `kernel/build/boot-perf/current/<profile>.json`
+- `kernel/build/boot-perf/baseline/<profile>.json`
+- `kernel/build/boot-perf/summary.json`
 
 검증 방식:
 - 절대 수치 고정이 아니라 허용 편차 기반
 - 예: 이전 기준선 대비 `memcpy MiB/s`가 30% 이상 하락하면 경고
 
 구현 위치:
-- `testkit/lib/boot_perf.py`
+- `tools/testkit/lib/boot_perf.py`
 
 상태:
 - 부분 구현
   - 현재 `full`, `minimal`, `storage-only` 프로파일 지원
-  - baseline은 로컬 `build/boot-perf/baseline/`에 저장
+  - baseline은 로컬 `kernel/build/boot-perf/baseline/`에 저장
   - 공용 fixture 비교는 아직 하지 않는다
 
 ### 5. `boot-fault` lane
@@ -220,7 +220,7 @@ MVP 메모:
 - production path와 분리된 compile-time flag가 좋다
 
 구현 위치:
-- `testkit/lib/boot_fault_lane.py`
+- `tools/testkit/lib/boot_fault_lane.py`
 - 추후 `include/aios/test_fault.h` 같은 test-only header 가능
 
 상태:
@@ -234,7 +234,7 @@ MVP 메모:
    - 현재 serial log에서 checkpoint와 summary를 JSON으로 뽑는다
 
 2. 완료: `kernel` lane에 `--export-boot-summary` 추가
-   - smoke 성공 시 `build/boot-summary/test-<profile>.json` 생성
+   - smoke 성공 시 `kernel/build/boot-summary/test-<profile>.json` 생성
 
 3. 완료: `boot-matrix` 엔트리 추가
    - 현재 `full` + `minimal` + `storage-only` 프로파일 순차 실행 가능
@@ -247,10 +247,10 @@ MVP 메모:
 아래 명령은 현재 구현되어 있다.
 
 ```powershell
-python .\testkit\aios-testkit.py boot-matrix --profiles full minimal
-python .\testkit\aios-testkit.py kernel --target test --strict --smoke-profile full --export-boot-summary
-python .\testkit\aios-testkit.py kernel --target test --strict --smoke-profile minimal --export-boot-summary
-python .\testkit\aios-testkit.py kernel --target test --strict --smoke-profile storage-only --export-boot-summary
+python .\tools\testkit\aios-testkit.py boot-matrix --profiles full minimal
+python .\tools\testkit\aios-testkit.py kernel --target test --strict --smoke-profile full --export-boot-summary
+python .\tools\testkit\aios-testkit.py kernel --target test --strict --smoke-profile minimal --export-boot-summary
+python .\tools\testkit\aios-testkit.py kernel --target test --strict --smoke-profile storage-only --export-boot-summary
 ```
 
 ## 검증 경로
@@ -258,13 +258,13 @@ python .\testkit\aios-testkit.py kernel --target test --strict --smoke-profile s
 각 lane은 QEMU를 다시 발명하지 말고 기존 흐름을 재사용해야 한다.
 
 - 부팅 실행
-  - `testkit/lib/kernel_lane.py`
+  - `tools/testkit/lib/kernel_lane.py`
 - Windows 실행
-  - `testkit/kernel/build-windows.ps1`
+  - `tools/testkit/kernel/build-windows.ps1`
 - 공통 결과물 위치
-  - `build/`
+  - `kernel/build/`
 - 공통 실행 락
-  - `testkit/lib/common.py`
+  - `tools/testkit/lib/common.py`
 
 즉, 새 lane은 가능하면 "새 부팅기"가 아니라 "기존 부팅기 위의 parser / orchestrator"여야 한다.
 

@@ -189,7 +189,7 @@
 그리고 구현 변화가 있으면 최소한 아래 중 하나는 같이 갱신한다.
 
 - 루트 `README.md`
-- `testkit/README.md`
+- `tools/testkit/README.md`
 - `docs/testkit_guide_ko.md`
 
 ## 결론
