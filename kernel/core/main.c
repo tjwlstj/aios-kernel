@@ -8,7 +8,9 @@
 
 #include <kernel/types.h>
 #include <kernel/acpi.h>
+#include <kernel/cpu_sec.h>
 #include <kernel/health.h>
+#include <kernel/stack_guard.h>
 #include <kernel/kernel_room.h>
 #include <kernel/selftest.h>
 #include <kernel/time.h>
@@ -71,7 +73,14 @@ void kernel_main(uint64_t multiboot_magic, uint64_t multiboot_info) {
     /* Initialize serial console for headless debugging */
     serial_init();
     kernel_health_init();
-    
+
+    /* Arm CPU/compiler-level mitigations before any deeper init runs.
+     * Safe here: kernel_main never returns, so re-seeding the stack
+     * canary cannot break a live instrumented frame. */
+    stack_guard_init();
+    cpu_security_init();
+
+
     /* Display boot banner */
     print_banner();
 

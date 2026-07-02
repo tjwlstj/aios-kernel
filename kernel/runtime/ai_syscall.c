@@ -981,7 +981,7 @@ void sys_info_dump(void) {
     model_info_t model_snapshot[MAX_MODELS_REGISTRY];
     uint32_t model_snapshot_count = 0;
     uint32_t registered_rings = 0;
-    aios_bootstrap_info_t bootstrap;
+    aios_bootstrap_info_t bootstrap = {0};
 
     model_snapshot_count = model_registry_snapshot(model_snapshot, MAX_MODELS_REGISTRY);
     spinlock_lock(&infer_ring_lock);
@@ -1142,7 +1142,7 @@ static aios_status_t sys_info_scheduler(sched_stats_t *out) {
 }
 
 static aios_status_t ai_syscall_contract_selftest(void) {
-    slm_nodebit_t nodebit;
+    slm_nodebit_t nodebit = {0};
 
     if (sys_tensor_create(NULL, MEM_REGION_TENSOR, NULL) != AIOS_ERR_INVAL) {
         return AIOS_ERR_IO;

@@ -114,6 +114,12 @@ static void pic_send_eoi(uint64_t int_no) {
     outb(PIC1_COMMAND, PIC_EOI);
 }
 
+static inline uint64_t read_cr2(void) {
+    uint64_t value = 0;
+    __asm__ volatile ("mov %%cr2, %0" : "=r"(value));
+    return value;
+}
+
 void idt_set_gate(uint8_t num, uint64_t handler, uint16_t selector, uint8_t type_attr) {
     idt[num].offset_low  = (uint16_t)(handler & 0xFFFF);
     idt[num].selector    = selector;
@@ -201,6 +207,10 @@ aios_status_t idt_init(void) {
     idt_register_exceptions();
     idt_register_irqs();
 
+    /* Double fault runs on its own known-good stack (TSS IST1) so a
+     * corrupted kernel stack cannot escalate #DF into a triple fault. */
+    idt[8].ist = 1;
+
     /* Set up IDT pointer */
     idt_ptr.limit = (uint16_t)(sizeof(idt) - 1);
     idt_ptr.base  = (uint64_t)&idt;
@@ -224,6 +234,8 @@ void exception_handler(interrupt_frame_t *frame) {
         return;
     }
 
+    uint64_t fault_addr = (int_no == 14) ? read_cr2() : 0;
+
     /* Print exception info to VGA */
     console_write_color("\n!!! EXCEPTION: ", VGA_LIGHT_RED, VGA_BLUE);
     if (int_no < 32) {
@@ -232,6 +244,12 @@ void exception_handler(interrupt_frame_t *frame) {
         kprintf("Unknown (%u)", int_no);
     }
     console_newline();
+
+    if (int_no == 14) {
+        kprintf("  CR2 (fault address): ");
+        console_write_hex(fault_addr);
+        console_newline();
+    }
 
     kprintf("  Error Code: ");
     console_write_hex(frame->err_code);
@@ -253,6 +271,9 @@ void exception_handler(interrupt_frame_t *frame) {
     /* Also output to serial for headless debugging */
     serial_printf("\n!!! EXCEPTION %u: %s\n", int_no,
                   (int_no < 32) ? exception_names[int_no] : "Unknown");
+    if (int_no == 14) {
+        serial_printf("  CR2 (fault address): %x\n", fault_addr);
+    }
     serial_printf("  Error Code: %x\n", frame->err_code);
     serial_printf("  RIP: %x  CS: %x  RFLAGS: %x\n",
                   frame->rip, frame->cs, frame->rflags);
@@ -260,10 +281,15 @@ void exception_handler(interrupt_frame_t *frame) {
     serial_printf("  RAX: %x  RBX: %x  RCX: %x  RDX: %x\n",
                   frame->rax, frame->rbx, frame->rcx, frame->rdx);
 
-    /* Fatal exceptions: halt */
-    if (int_no == 8 || int_no == 13 || int_no == 14 || int_no == 18) {
-        kernel_panic("Fatal CPU exception - system halted");
+    /* Breakpoint (#BP) is the only survivable exception: log and resume.
+     * Every other CPU exception has no recovery path yet (no signal
+     * delivery, no fixup tables), and returning would re-execute the
+     * faulting instruction in an infinite exception loop. */
+    if (int_no == 3) {
+        return;
     }
+
+    kernel_panic("Unhandled CPU exception - system halted");
 }
 
 NORETURN void kernel_panic(const char *msg) {

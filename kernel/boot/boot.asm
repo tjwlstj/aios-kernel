@@ -68,11 +68,22 @@ p2_table_2:
 p2_table_3:
     resb 4096
 
+; NX (execute-disable) support flag, set during CPU feature checks
+alignb 4
+nx_supported:
+    resb 4
+
 ; Stack for the kernel
-align 16
+alignb 16
 stack_bottom:
     resb 16384 * 4  ; 64KB stack
 stack_top:
+
+; Dedicated double-fault stack (TSS IST1) so #DF has a known-good stack
+alignb 16
+df_stack_bottom:
+    resb 16384      ; 16KB
+df_stack_top:
 
 ; Boot-time TSS scaffold for later ring3 handoff work
 align 16
@@ -91,6 +102,7 @@ extern kernel_main
 extern _init_sse
 extern __bss_start
 extern __bss_end
+extern __text_end
 
 debug_port equ 0xe9
 
@@ -200,6 +212,11 @@ check_long_mode:
     cpuid
     test edx, 1 << 29           ; Long mode bit
     jz .no_long_mode
+
+    test edx, 1 << 20           ; NX (execute-disable) bit
+    jz .no_nx
+    mov dword [nx_supported], 1
+.no_nx:
     ret
 .no_long_mode:
     mov dword [0xb8000], 0x4f524f45
@@ -251,12 +268,20 @@ setup_page_tables:
     ret
 
 map_p2_table:
-    ; Map 512 * 2MB = 1GB identity mapped
+    ; Map 512 * 2MB = 1GB identity mapped.
+    ; W^X: every 2MB page past the kernel .text region is marked NX
+    ; (bit 63, high dword bit 31) when the CPU supports execute-disable.
     mov ecx, 0
 .map_p2:
     mov edx, eax
     or edx, 0b10000011         ; Present + Writable + Huge Page
     mov [edi + ecx * 8], edx
+    cmp dword [nx_supported], 0
+    je .no_nx_bit
+    cmp eax, __text_end        ; Pages overlapping .text stay executable
+    jb .no_nx_bit
+    mov dword [edi + ecx * 8 + 4], 0x80000000
+.no_nx_bit:
     add eax, 0x200000          ; 2MB
     inc ecx
     cmp ecx, 512
@@ -276,10 +301,14 @@ enable_paging:
     or eax, 1 << 5
     mov cr4, eax
 
-    ; Set Long Mode Enable bit in EFER MSR
+    ; Set Long Mode Enable bit in EFER MSR (+ NXE when NX is supported)
     mov ecx, 0xC0000080
     rdmsr
     or eax, 1 << 8
+    cmp dword [nx_supported], 0
+    je .no_nxe
+    or eax, 1 << 11            ; EFER.NXE: honor NX bit in page entries
+.no_nxe:
     wrmsr
 
     ; Enable paging
@@ -356,6 +385,8 @@ long_mode_start:
 setup_ring3_scaffold:
     lea rax, [rel stack_top]
     mov [rel aios_boot_tss64 + 4], rax
+    lea rax, [rel df_stack_top]
+    mov [rel aios_boot_tss64 + 36], rax  ; IST1: double-fault stack
     mov word [rel aios_boot_tss64 + 102], 104
 
     lea rax, [rel aios_boot_tss64]

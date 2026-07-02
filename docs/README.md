@@ -52,6 +52,7 @@
 - [gemini_driver_userspace_checkpoint_ko.md](tools/gemini_driver_userspace_checkpoint_ko.md)
 
 ## meta/ — 점검 보고서 · 로드맵 · 외부 사례 · 릴리스
+- [hardening_baseline_2026_07_02_ko.md](meta/hardening_baseline_2026_07_02_ko.md)
 - [inspection_report_2026_04_15.md](meta/inspection_report_2026_04_15.md)
 - [inspection_report_2026_03_30.md](meta/inspection_report_2026_03_30.md)
 - [inspection_and_gaps_ko.md](meta/inspection_and_gaps_ko.md)

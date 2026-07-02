@@ -48,7 +48,7 @@ static inline uint32_t inl(uint16_t port) {
 
 static uint32_t pci_config_read(uint32_t bus, uint32_t device,
                                  uint32_t function, uint32_t offset) {
-    uint32_t address = (1 << 31) | (bus << 16) | (device << 11) |
+    uint32_t address = (1U << 31) | (bus << 16) | (device << 11) |
                        (function << 8) | (offset & 0xFC);
     outl(PCI_CONFIG_ADDR, address);
     return inl(PCI_CONFIG_DATA);

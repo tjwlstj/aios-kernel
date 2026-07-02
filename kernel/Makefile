@@ -32,7 +32,8 @@ TEST_TIMEOUT ?= 12
 
 # Flags
 ASMFLAGS    = -f elf64
-CFLAGS      = -ffreestanding -nostdlib -nostdinc -fno-builtin -fno-stack-protector \
+CFLAGS      = -ffreestanding -nostdlib -nostdinc -fno-builtin \
+              -fstack-protector-strong -mstack-protector-guard=global \
               -mno-red-zone -mno-mmx -mno-sse -mno-sse2 \
               -Wall -Wextra -Wno-unused-parameter -O2 \
               -I$(INCLUDE_DIR) \
@@ -50,6 +51,8 @@ C_SOURCES   = $(KERNEL_DIR)/main.c \
               $(KERNEL_DIR)/selftest.c \
               $(KERNEL_DIR)/user_mode.c \
               $(KERNEL_DIR)/user_access.c \
+              $(KERNEL_DIR)/stack_guard.c \
+              $(KERNEL_DIR)/cpu_sec.c \
               $(KERNEL_DIR)/shell.c \
               $(LIB_DIR)/string.c \
               $(INTERRUPT_DIR)/idt.c \
