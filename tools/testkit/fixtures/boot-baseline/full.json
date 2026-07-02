@@ -12,7 +12,7 @@
     "storage": 1
   },
   "health_summary": {
-    "ok": 16,
+    "ok": 20,
     "degraded": 0,
     "failed": 0,
     "unknown": 0,

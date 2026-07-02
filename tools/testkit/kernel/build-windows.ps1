@@ -135,6 +135,8 @@ function Get-SmokeRequiredPatterns {
         '\[ROOM\] snapshot stability=',
         '\[HEALTH\] stability=',
         '\[NODEBIT\] Policy gate ready entries=0',
+        '\[PIPE\] Node pipeline ready',
+        '\[PIPE\] selftest PASS',
         '\[SHELL\] Interactive shell started'
     )
 

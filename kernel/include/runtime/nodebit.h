@@ -40,7 +40,8 @@
 #define NODEBIT_CAP_RISKY_IO      BIT(8)   /* Risky I/O (net tx, storage write) */
 #define NODEBIT_CAP_DRIVER_RESET  BIT(9)   /* Driver-level reset (risky) */
 #define NODEBIT_CAP_SYSCALL_ADMIN BIT(10)  /* Administrative syscall operations */
-#define NODEBIT_CAP_ALL           ((BIT(11)) - 1)
+#define NODEBIT_CAP_PIPELINE      BIT(11)  /* Create/execute node pipelines */
+#define NODEBIT_CAP_ALL           ((BIT(12)) - 1)
 
 /* Mask of capabilities that require STABLE kernel health and risky_io_allowed */
 #define NODEBIT_CAP_RISKY_MASK \

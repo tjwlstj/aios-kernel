@@ -31,6 +31,7 @@
 #include <runtime/ai_syscall.h>
 #include <runtime/autonomy.h>
 #include <runtime/nodebit.h>
+#include <runtime/node_pipeline.h>
 #include <runtime/slm_orchestrator.h>
 #include <mm/heap.h>
 #include <drivers/keyboard.h>
@@ -325,7 +326,16 @@ static void init_subsystems(uint64_t multiboot_magic, uint64_t multiboot_info) {
     INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_NODEBIT,
         "NodeBit Policy Gate", nodebit_init());
 
-    /* 19. PS/2 Keyboard (unmasks PIC IRQ1 — requires IDT + timer ready) */
+    /* 19. Node Pipeline Orchestrator (SYS_PIPE_*, gated by NodeBit) */
+    INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_NODE_PIPELINE,
+        "Node Pipeline Orchestrator", node_pipeline_init());
+    if (node_pipeline_selftest() != AIOS_OK) {
+        kernel_health_mark(KERNEL_SUBSYSTEM_NODE_PIPELINE,
+            KERNEL_HEALTH_DEGRADED, AIOS_ERR_IO);
+        serial_write("[PIPE] selftest FAIL\n");
+    }
+
+    /* 20. PS/2 Keyboard (unmasks PIC IRQ1 — requires IDT + timer ready) */
     INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_KEYBOARD,
         "PS/2 Keyboard", keyboard_init());
 }

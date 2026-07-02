@@ -123,6 +123,12 @@ static kernel_subsystem_health_t g_health[KERNEL_SUBSYSTEM_COUNT] = {
         .required = false,
         .io_path = false,
     },
+    [KERNEL_SUBSYSTEM_NODE_PIPELINE] = {
+        .id = KERNEL_SUBSYSTEM_NODE_PIPELINE,
+        .name = "Node Pipeline Orchestrator",
+        .required = false,
+        .io_path = false,
+    },
 };
 
 AIOS_STATIC_ASSERT(ARRAY_SIZE(g_health) == KERNEL_SUBSYSTEM_COUNT,

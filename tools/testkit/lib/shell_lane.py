@@ -65,6 +65,7 @@ DEFAULT_EXCHANGES: list[dict[str, object]] = [
     {"command": "state list", "expect": ["[STATE] topics list="]},
     {"command": "state health", "expect": ["[STATE] health stability=", "autonomy="]},
     {"command": "state mem", "expect": ["[STATE] mem heap_total=", "heap_free="]},
+    {"command": "state pipeline", "expect": ["[STATE] pipeline active=", "executions="]},
     {"command": "state sec", "expect": ["[STATE] sec nx=", "canary=1"]},
     {"command": "state time", "expect": ["[STATE] time ticks=", "hz="]},
     {"command": "state version", "expect": ["[STATE] version release="]},
@@ -113,8 +114,13 @@ class SerialSession:
             time.sleep(0.05)
 
     def send_line(self, line: str) -> None:
-        self.proc.stdin.write((line + "\n").encode("ascii"))
-        self.proc.stdin.flush()
+        # Pace bytes out one at a time: the guest drains its 16-byte UART
+        # FIFO on a 100 Hz polling loop, so a long burst can overflow the
+        # FIFO and silently drop the trailing newline.
+        for byte in (line + "\n").encode("ascii"):
+            self.proc.stdin.write(bytes([byte]))
+            self.proc.stdin.flush()
+            time.sleep(0.002)
 
 
 def build_kernel_iso(timeout_sec: int) -> None:

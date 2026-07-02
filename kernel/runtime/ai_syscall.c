@@ -296,6 +296,22 @@ int64_t ai_syscall_dispatch(uint64_t syscall_num, uint64_t arg1,
             }
             break;
 
+        case 0x06: /* Pipeline orchestration */
+            syscall_stats.pipe_calls++;
+            switch (syscall_num) {
+                case SYS_PIPE_CREATE:
+                    return (int64_t)sys_pipe_create((syscall_pipe_create_t *)arg1);
+                case SYS_PIPE_ADD_STAGE:
+                    return (int64_t)sys_pipe_add_stage((syscall_pipe_add_stage_t *)arg1);
+                case SYS_PIPE_EXECUTE:
+                    return (int64_t)sys_pipe_execute((syscall_pipe_execute_t *)arg1);
+                case SYS_PIPE_DESTROY:
+                    return (int64_t)sys_pipe_destroy((syscall_pipe_destroy_t *)arg1);
+                default:
+                    break;
+            }
+            break;
+
         case 0x07: /* System info */
             syscall_stats.info_calls++;
             switch (syscall_num) {
@@ -973,6 +989,59 @@ aios_status_t sys_nodebit_update(syscall_nodebit_update_t *req) {
     return nodebit_update_caps(local_req.node_id, local_req.caps_allowed);
 }
 
+aios_status_t sys_pipe_create(syscall_pipe_create_t *req) {
+    syscall_pipe_create_t local_req;
+    uint32_t pipeline_id = 0;
+    aios_status_t status = copy_from_user(&local_req, req, sizeof(local_req));
+
+    if (status != AIOS_OK) return status;
+    local_req.label[NODE_PIPELINE_LABEL_MAX - 1] = '\0';
+
+    status = node_pipeline_create(local_req.node_id, local_req.label,
+                                  &pipeline_id);
+    if (status != AIOS_OK) return status;
+    return copy_to_user(local_req.pipeline_id_out, &pipeline_id,
+                        sizeof(pipeline_id));
+}
+
+aios_status_t sys_pipe_add_stage(syscall_pipe_add_stage_t *req) {
+    syscall_pipe_add_stage_t local_req;
+    aios_status_t status = copy_from_user(&local_req, req, sizeof(local_req));
+
+    if (status != AIOS_OK) return status;
+    return node_pipeline_add_stage(local_req.node_id, local_req.pipeline_id,
+                                   &local_req.stage);
+}
+
+aios_status_t sys_pipe_execute(syscall_pipe_execute_t *req) {
+    syscall_pipe_execute_t local_req;
+    node_pipeline_exec_result_t result = {0};
+    aios_status_t status = copy_from_user(&local_req, req, sizeof(local_req));
+
+    if (status != AIOS_OK) return status;
+
+    status = node_pipeline_execute(local_req.node_id, local_req.pipeline_id,
+                                   &result);
+
+    /* Result carries per-run detail even for a failed stage walk. */
+    if (local_req.result_out) {
+        aios_status_t copy_status = copy_to_user(local_req.result_out,
+                                                 &result, sizeof(result));
+        if (status == AIOS_OK && copy_status != AIOS_OK) {
+            status = copy_status;
+        }
+    }
+    return status;
+}
+
+aios_status_t sys_pipe_destroy(syscall_pipe_destroy_t *req) {
+    syscall_pipe_destroy_t local_req;
+    aios_status_t status = copy_from_user(&local_req, req, sizeof(local_req));
+
+    if (status != AIOS_OK) return status;
+    return node_pipeline_destroy(local_req.node_id, local_req.pipeline_id);
+}
+
 /* ============================================================
  * System Info
  * ============================================================ */
@@ -1207,6 +1276,12 @@ static aios_status_t ai_syscall_contract_selftest(void) {
         return AIOS_ERR_IO;
     }
     if (sys_nodebit_update(NULL) != AIOS_ERR_INVAL) {
+        return AIOS_ERR_IO;
+    }
+    if (sys_pipe_create(NULL) != AIOS_ERR_INVAL ||
+        sys_pipe_add_stage(NULL) != AIOS_ERR_INVAL ||
+        sys_pipe_execute(NULL) != AIOS_ERR_INVAL ||
+        sys_pipe_destroy(NULL) != AIOS_ERR_INVAL) {
         return AIOS_ERR_IO;
     }
     if (sys_info_memory(NULL) != AIOS_ERR_INVAL) {

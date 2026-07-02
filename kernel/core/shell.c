@@ -25,6 +25,7 @@
  *   state list       — enumerate available topics
  *   state health     — kernel health summary
  *   state mem        — heap statistics
+ *   state pipeline   — node pipeline registry statistics
  *   state sec        — hardening status (nx/smep/umip/smap/canary)
  *   state time       — timer/TSC status
  *   state version    — kernel release
@@ -35,6 +36,7 @@
 #include <kernel/health.h>
 #include <kernel/cpu_sec.h>
 #include <kernel/stack_guard.h>
+#include <runtime/node_pipeline.h>
 #include <drivers/keyboard.h>
 #include <drivers/vga.h>
 #include <drivers/serial.h>
@@ -93,7 +95,19 @@ static void cmd_ping(void) {
 }
 
 static void state_list(void) {
-    STATE_EMIT("[STATE] topics list=health,mem,sec,time,version\n");
+    STATE_EMIT("[STATE] topics list=health,mem,pipeline,sec,time,version\n");
+}
+
+static void state_pipeline(void) {
+    node_pipeline_snapshot_t s;
+    node_pipeline_get_snapshot(&s);
+    STATE_EMIT("[STATE] pipeline active=%u max=%u executions=%u stage_runs=%u denied=%u last_status=%d\n",
+        (uint64_t)s.active_count,
+        (uint64_t)s.max_pipelines,
+        s.total_executions,
+        s.total_stage_runs,
+        (uint64_t)s.denied_count,
+        (int64_t)s.last_status);
 }
 
 static void state_health(void) {
@@ -154,6 +168,7 @@ static void cmd_state(const char *arg, uint32_t arg_len) {
     if (arg_len == 0 || topic_is(arg, arg_len, "list")) { state_list();    return; }
     if (topic_is(arg, arg_len, "health"))               { state_health();  return; }
     if (topic_is(arg, arg_len, "mem"))                  { state_mem();     return; }
+    if (topic_is(arg, arg_len, "pipeline"))             { state_pipeline(); return; }
     if (topic_is(arg, arg_len, "sec"))                  { state_sec();     return; }
     if (topic_is(arg, arg_len, "time"))                 { state_time();    return; }
     if (topic_is(arg, arg_len, "version"))              { state_version(); return; }

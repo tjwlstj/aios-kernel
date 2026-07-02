@@ -26,6 +26,7 @@
 #include <runtime/ai_ring.h>
 #include <runtime/autonomy.h>
 #include <runtime/nodebit.h>
+#include <runtime/node_pipeline.h>
 #include <runtime/slm_orchestrator.h>
 
 /* ============================================================
@@ -165,13 +166,8 @@ typedef struct {
     uint32_t        batch_size;     /* Batch size */
 } syscall_train_t;
 
-/* Pipeline stage */
-typedef struct {
-    model_id_t      model_id;       /* Model for this stage */
-    tensor_id_t     input_tensor;   /* Input tensor */
-    tensor_id_t     output_tensor;  /* Output tensor */
-    accel_id_t      accel_id;       /* Accelerator for this stage */
-} pipeline_stage_t;
+/* Pipeline stage: pipeline_stage_t and the SYS_PIPE_* argument structs
+ * live in <runtime/node_pipeline.h> together with the pipeline registry. */
 
 /* Autonomy mode control */
 typedef struct {
@@ -271,5 +267,11 @@ aios_status_t sys_slm_nodebit_lookup(uint16_t node_id, slm_nodebit_t *out);
 /* NodeBit capability policy gate */
 aios_status_t sys_nodebit_register(syscall_nodebit_register_t *req);
 aios_status_t sys_nodebit_update(syscall_nodebit_update_t *req);
+
+/* Node pipeline orchestration (SYS_PIPE_*) */
+aios_status_t sys_pipe_create(syscall_pipe_create_t *req);
+aios_status_t sys_pipe_add_stage(syscall_pipe_add_stage_t *req);
+aios_status_t sys_pipe_execute(syscall_pipe_execute_t *req);
+aios_status_t sys_pipe_destroy(syscall_pipe_destroy_t *req);
 
 #endif /* _AIOS_AI_SYSCALL_H */

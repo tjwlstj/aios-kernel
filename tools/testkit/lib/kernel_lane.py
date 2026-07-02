@@ -67,6 +67,8 @@ def required_smoke_patterns(smoke_profile: str) -> list[str]:
         "[ROOM] snapshot stability=",
         "[HEALTH] stability=",
         "[NODEBIT] Policy gate ready entries=0",
+        "[PIPE] Node pipeline ready",
+        "[PIPE] selftest PASS",
         "[SHELL] Interactive shell started",
     ]
     if smoke_profile == "storage-only":
