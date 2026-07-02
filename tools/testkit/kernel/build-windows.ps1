@@ -137,6 +137,7 @@ function Get-SmokeRequiredPatterns {
         '\[NODEBIT\] Policy gate ready entries=0',
         '\[PIPE\] Node pipeline ready',
         '\[PIPE\] selftest PASS',
+        '\[SLM\] plan apply selftest PASS',
         '\[SHELL\] Interactive shell started'
     )
 

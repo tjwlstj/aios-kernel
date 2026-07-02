@@ -399,6 +399,22 @@ typedef struct {
     slm_plan_t plans[SLM_PLAN_CAP];
 } slm_plan_list_t;
 
+/* High-precision observation of the plan *apply* path. Every apply is
+ * timed with the TSC-backed monotonic clock; this rolls the timings up
+ * so the apply plane is observable through the shell / a syscall without
+ * walking the whole snapshot. Distinct from the per-action learning
+ * profile, which tracks confidence rather than latency distribution. */
+typedef struct {
+    uint32_t apply_ok;        /* applies that returned AIOS_OK */
+    uint32_t apply_failed;    /* applies that ran but failed */
+    uint32_t apply_rejected;  /* refused before running (gate/state) */
+    uint64_t last_latency_ns;
+    uint64_t min_latency_ns;  /* 0 until the first successful timing */
+    uint64_t max_latency_ns;
+    uint64_t total_latency_ns;
+    uint64_t tsc_khz;         /* clock source backing the ns timings */
+} slm_plan_observation_t;
+
 aios_status_t slm_orchestrator_init(void);
 aios_status_t slm_snapshot_read(slm_hw_snapshot_t *out);
 aios_status_t slm_plan_submit(const slm_plan_request_t *req, uint32_t *plan_id_out);
@@ -406,6 +422,8 @@ aios_status_t slm_plan_apply(uint32_t plan_id);
 aios_status_t slm_plan_get(uint32_t plan_id, slm_plan_t *out);
 aios_status_t slm_plan_list(slm_plan_list_t *out);
 aios_status_t slm_nodebit_lookup(uint16_t node_id, slm_nodebit_t *out);
+void slm_plan_observation_read(slm_plan_observation_t *out);
+aios_status_t slm_plan_apply_selftest(void);
 void slm_orchestrator_dump(void);
 
 #endif /* _AIOS_SLM_ORCHESTRATOR_H */

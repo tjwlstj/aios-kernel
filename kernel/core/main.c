@@ -321,6 +321,11 @@ static void init_subsystems(uint64_t multiboot_magic, uint64_t multiboot_info) {
     /* 17. SLM Hardware Orchestrator */
     INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_SLM,
         "SLM Hardware Orchestrator", slm_orchestrator_init());
+    if (slm_plan_apply_selftest() != AIOS_OK) {
+        kernel_health_mark(KERNEL_SUBSYSTEM_SLM,
+            KERNEL_HEALTH_DEGRADED, AIOS_ERR_IO);
+        serial_write("[SLM] plan apply selftest FAIL\n");
+    }
 
     /* 18. NodeBit Capability Policy Gate */
     INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_NODEBIT,

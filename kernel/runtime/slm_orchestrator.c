@@ -26,6 +26,25 @@ static slm_runtime_state_t g_slm_runtime_state = SLM_RUNTIME_ABSENT;
 static aios_status_t g_slm_runtime_status = AIOS_ERR_NODEV;
 static uint32_t g_policy_generation = 1;
 
+/* High-precision observation of the plan apply path (see header). */
+static slm_plan_observation_t g_plan_obs = {0};
+
+static void plan_obs_record_apply(aios_status_t status, uint64_t latency_ns) {
+    if (status == AIOS_OK) {
+        g_plan_obs.apply_ok++;
+    } else {
+        g_plan_obs.apply_failed++;
+    }
+    g_plan_obs.last_latency_ns = latency_ns;
+    g_plan_obs.total_latency_ns += latency_ns;
+    if (g_plan_obs.min_latency_ns == 0 || latency_ns < g_plan_obs.min_latency_ns) {
+        g_plan_obs.min_latency_ns = latency_ns;
+    }
+    if (latency_ns > g_plan_obs.max_latency_ns) {
+        g_plan_obs.max_latency_ns = latency_ns;
+    }
+}
+
 #define SLM_ACTION_NODEBIT(action) ((uint32_t)BIT(action))
 #define SLM_ACTION_DISCOVERY_BITS \
     (SLM_ACTION_NODEBIT(SLM_ACTION_REPROBE_PCI) | \
@@ -1918,6 +1937,7 @@ aios_status_t slm_plan_apply(uint32_t plan_id) {
         plan->state = SLM_PLAN_REJECTED;
         plan->last_status = AIOS_ERR_PERM;
         learning_record_submission(plan->request.action, false);
+        g_plan_obs.apply_rejected++;
         return AIOS_ERR_PERM;
     }
 
@@ -1927,6 +1947,7 @@ aios_status_t slm_plan_apply(uint32_t plan_id) {
     plan->state = (plan->last_status == AIOS_OK) ? SLM_PLAN_APPLIED : SLM_PLAN_FAILED;
     learning_record_result(plan->request.action, plan->last_status,
         plan->applied_ts_ns - start_ns);
+    plan_obs_record_apply(plan->last_status, plan->applied_ts_ns - start_ns);
 
     serial_printf("[SLM] Plan %u apply status=%d state=%u conf=%u latency=%u ns\n",
         (uint64_t)plan->plan_id,
@@ -1944,6 +1965,64 @@ aios_status_t slm_plan_get(uint32_t plan_id, slm_plan_t *out) {
         return AIOS_ERR_INVAL;
     }
     *out = *plan;
+    return AIOS_OK;
+}
+
+void slm_plan_observation_read(slm_plan_observation_t *out) {
+    if (!out) {
+        return;
+    }
+    *out = g_plan_obs;
+    out->tsc_khz = kernel_time_tsc_khz();
+}
+
+/*
+ * Exercise the plan apply path end to end with the safest action there
+ * is — CORE_AUDIT only reads ACPI/PCI/probe state and dumps it, with no
+ * device mutation. This is the first automated coverage of slm_plan_apply
+ * and proves the high-precision apply timer is wired: on success the
+ * observation must show one applied plan with a non-zero latency.
+ */
+aios_status_t slm_plan_apply_selftest(void) {
+    slm_plan_request_t req = {
+        .template_id = SLM_TEMPLATE_DISCOVERY,
+        .action = SLM_ACTION_CORE_AUDIT,
+        .target_vendor_id = 0,
+        .target_device_id = 0,
+        .target_kind = PLATFORM_DEVICE_UNKNOWN,
+        .risk_level = 0,
+        .queue_depth_hint = 0,
+        .poll_budget_hint = 0,
+        .dma_window_kib_hint = 0,
+        .allow_apply = true,
+    };
+    uint32_t plan_id = 0;
+    uint32_t ok_before = g_plan_obs.apply_ok;
+
+    if (slm_plan_submit(&req, &plan_id) != AIOS_OK || plan_id == 0) {
+        return AIOS_ERR_IO;
+    }
+    if (slm_plan_apply(plan_id) != AIOS_OK) {
+        return AIOS_ERR_IO;
+    }
+    if (g_plan_obs.apply_ok != ok_before + 1 ||
+        g_plan_obs.last_latency_ns == 0 ||
+        g_plan_obs.min_latency_ns == 0 ||
+        g_plan_obs.max_latency_ns < g_plan_obs.min_latency_ns) {
+        return AIOS_ERR_IO;
+    }
+
+    /* A second apply of the same plan must be rejected (already applied). */
+    if (slm_plan_apply(plan_id) != AIOS_ERR_PERM ||
+        g_plan_obs.apply_rejected == 0) {
+        return AIOS_ERR_IO;
+    }
+
+    serial_printf("[SLM] plan apply selftest PASS applies=%u last_ns=%u min_ns=%u max_ns=%u\n",
+        (uint64_t)g_plan_obs.apply_ok,
+        g_plan_obs.last_latency_ns,
+        g_plan_obs.min_latency_ns,
+        g_plan_obs.max_latency_ns);
     return AIOS_OK;
 }
 

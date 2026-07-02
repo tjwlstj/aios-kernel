@@ -81,7 +81,7 @@
 
 - `shell`
   - QEMU 시리얼을 stdio에 붙여 "실행 중 커널"과 명령/응답으로 대화하는 레인
-  - `[SHELL] Interactive shell started` 대기 → `ping`, `state list/health/mem/nodes/pipeline/sec/time/version`,
+  - `[SHELL] Interactive shell started` 대기 → `ping`, `state list/health/mem/nodes/pipeline/slm/sec/time/version`,
     미지 토픽 오류 응답까지 순차 검증 → `reboot`로 클린 종료 (`-no-reboot` 덕에 QEMU exit)
   - 응답 프로토콜: 한 줄 `[STATE] <topic> key=value ...` (값에 공백 없음).
     리스트형 토픽(`state nodes`)은 요약 한 줄 + 항목당 `[STATE] node id=...` 한 줄

@@ -28,6 +28,7 @@
  *   state nodes      — per-node gate/work observation (summary line +
  *                      one `[STATE] node id=...` line per active node)
  *   state pipeline   — node pipeline registry statistics
+ *   state slm        — SLM plan apply observation (high-precision timing)
  *   state sec        — hardening status (nx/smep/umip/smap/canary)
  *   state time       — timer/TSC status
  *   state version    — kernel release
@@ -40,6 +41,7 @@
 #include <kernel/stack_guard.h>
 #include <runtime/node_pipeline.h>
 #include <runtime/nodebit.h>
+#include <runtime/slm_orchestrator.h>
 #include <drivers/keyboard.h>
 #include <drivers/vga.h>
 #include <drivers/serial.h>
@@ -98,7 +100,22 @@ static void cmd_ping(void) {
 }
 
 static void state_list(void) {
-    STATE_EMIT("[STATE] topics list=health,mem,nodes,pipeline,sec,time,version\n");
+    STATE_EMIT("[STATE] topics list=health,mem,nodes,pipeline,slm,sec,time,version\n");
+}
+
+static void state_slm(void) {
+    slm_plan_observation_t o;
+    slm_plan_observation_read(&o);
+    uint64_t avg_ns = o.apply_ok ? o.total_latency_ns / o.apply_ok : 0;
+    STATE_EMIT("[STATE] slm apply_ok=%u apply_failed=%u apply_rejected=%u last_ns=%u min_ns=%u avg_ns=%u max_ns=%u tsc_khz=%u\n",
+        (uint64_t)o.apply_ok,
+        (uint64_t)o.apply_failed,
+        (uint64_t)o.apply_rejected,
+        o.last_latency_ns,
+        o.min_latency_ns,
+        avg_ns,
+        o.max_latency_ns,
+        o.tsc_khz);
 }
 
 static void state_nodes(void) {
@@ -207,6 +224,7 @@ static void cmd_state(const char *arg, uint32_t arg_len) {
     if (topic_is(arg, arg_len, "mem"))                  { state_mem();     return; }
     if (topic_is(arg, arg_len, "nodes"))                { state_nodes();   return; }
     if (topic_is(arg, arg_len, "pipeline"))             { state_pipeline(); return; }
+    if (topic_is(arg, arg_len, "slm"))                  { state_slm();     return; }
     if (topic_is(arg, arg_len, "sec"))                  { state_sec();     return; }
     if (topic_is(arg, arg_len, "time"))                 { state_time();    return; }
     if (topic_is(arg, arg_len, "version"))              { state_version(); return; }
