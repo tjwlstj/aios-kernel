@@ -79,6 +79,7 @@
 #define SYS_PIPE_ADD_STAGE      0x601   /* Add stage to pipeline */
 #define SYS_PIPE_EXECUTE        0x602   /* Execute pipeline */
 #define SYS_PIPE_DESTROY        0x603   /* Destroy pipeline */
+#define SYS_PIPE_STATS          0x604   /* Read pipeline registry snapshot */
 
 /* System info syscalls (0x700 - 0x7FF) */
 #define SYS_INFO_MEMORY         0x700   /* Get memory statistics */
@@ -108,6 +109,7 @@
 #define SYS_NODEBIT_REGISTER        0x726  /* Register capability node entry */
 #define SYS_NODEBIT_UPDATE          0x727  /* Update node capability bitmask */
 #define SYS_NODEBIT_STATS           0x728  /* Read per-node observation stats */
+#define SYS_SLM_PLAN_OBSERVE        0x729  /* Read plan apply timing rollup */
 
 /* ============================================================
  * Syscall Argument Structures
@@ -275,5 +277,9 @@ aios_status_t sys_pipe_create(syscall_pipe_create_t *req);
 aios_status_t sys_pipe_add_stage(syscall_pipe_add_stage_t *req);
 aios_status_t sys_pipe_execute(syscall_pipe_execute_t *req);
 aios_status_t sys_pipe_destroy(syscall_pipe_destroy_t *req);
+aios_status_t sys_pipe_stats(node_pipeline_snapshot_t *out);
+
+/* SLM plan apply observation */
+aios_status_t sys_slm_plan_observe(slm_plan_observation_t *out);
 
 #endif /* _AIOS_AI_SYSCALL_H */

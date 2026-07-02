@@ -50,6 +50,7 @@ static void print_boot_protocol(uint64_t multiboot_magic, uint64_t multiboot_inf
 static void print_system_info(void);
 static void init_subsystems(uint64_t multiboot_magic, uint64_t multiboot_info);
 static void run_selftests(void);
+static void run_observe_dispatch_selftest(void);
 static void finalize_runtime_health(void);
 static void print_health_summary(void);
 static void enforce_stability_policy(void);
@@ -92,6 +93,7 @@ void kernel_main(uint64_t multiboot_magic, uint64_t multiboot_info) {
     
     /* Initialize all kernel subsystems */
     init_subsystems(multiboot_magic, multiboot_info);
+    run_observe_dispatch_selftest();
     user_mode_scaffold_init();
     kernel_room_dump();
     print_health_summary();
@@ -359,6 +361,41 @@ static void run_selftests(void) {
 
     kernel_health_mark(KERNEL_SUBSYSTEM_SELFTEST, KERNEL_HEALTH_OK, AIOS_OK);
     kernel_memory_selftest_print(&mem_result);
+}
+
+/*
+ * Drive the observation syscalls through the real dispatcher once all
+ * subsystems are up, proving the numbers a userspace agent would read
+ * match what the boot selftests just produced (pipeline executed once,
+ * one SLM plan applied with a non-zero timed latency).
+ */
+static void run_observe_dispatch_selftest(void) {
+    node_pipeline_snapshot_t pipe_snap = {0};
+    slm_plan_observation_t slm_obs = {0};
+
+    int64_t pipe_status = ai_syscall_dispatch(SYS_PIPE_STATS,
+        (uint64_t)(uintptr_t)&pipe_snap, 0, 0, 0, 0);
+    int64_t slm_status = ai_syscall_dispatch(SYS_SLM_PLAN_OBSERVE,
+        (uint64_t)(uintptr_t)&slm_obs, 0, 0, 0, 0);
+
+    bool ok = pipe_status == (int64_t)AIOS_OK &&
+              slm_status == (int64_t)AIOS_OK &&
+              pipe_snap.max_pipelines == NODE_PIPELINE_MAX &&
+              pipe_snap.total_executions >= 1 &&
+              slm_obs.apply_ok >= 1 &&
+              slm_obs.last_latency_ns > 0;
+
+    if (!ok) {
+        kernel_health_mark(KERNEL_SUBSYSTEM_SYSCALL,
+            KERNEL_HEALTH_DEGRADED, AIOS_ERR_IO);
+        serial_write("[SYSCALL] observe dispatch selftest FAIL\n");
+        return;
+    }
+
+    serial_printf("[SYSCALL] observe dispatch selftest PASS pipe_execs=%u slm_applies=%u slm_last_ns=%u\n",
+        pipe_snap.total_executions,
+        (uint64_t)slm_obs.apply_ok,
+        slm_obs.last_latency_ns);
 }
 
 static void finalize_runtime_health(void) {

@@ -307,6 +307,8 @@ int64_t ai_syscall_dispatch(uint64_t syscall_num, uint64_t arg1,
                     return (int64_t)sys_pipe_execute((syscall_pipe_execute_t *)arg1);
                 case SYS_PIPE_DESTROY:
                     return (int64_t)sys_pipe_destroy((syscall_pipe_destroy_t *)arg1);
+                case SYS_PIPE_STATS:
+                    return (int64_t)sys_pipe_stats((node_pipeline_snapshot_t *)arg1);
                 default:
                     break;
             }
@@ -364,6 +366,9 @@ int64_t ai_syscall_dispatch(uint64_t syscall_num, uint64_t arg1,
                 case SYS_NODEBIT_STATS:
                     return (int64_t)sys_nodebit_stats(
                         (syscall_nodebit_stats_t *)arg1);
+                case SYS_SLM_PLAN_OBSERVE:
+                    return (int64_t)sys_slm_plan_observe(
+                        (slm_plan_observation_t *)arg1);
                 default:
                     break;
             }
@@ -1057,6 +1062,24 @@ aios_status_t sys_pipe_destroy(syscall_pipe_destroy_t *req) {
     return node_pipeline_destroy(local_req.node_id, local_req.pipeline_id);
 }
 
+aios_status_t sys_pipe_stats(node_pipeline_snapshot_t *out) {
+    node_pipeline_snapshot_t snapshot;
+    aios_status_t status = syscall_output_buffer_status(out, sizeof(*out));
+
+    if (status != AIOS_OK) return status;
+    node_pipeline_get_snapshot(&snapshot);
+    return copy_to_user(out, &snapshot, sizeof(snapshot));
+}
+
+aios_status_t sys_slm_plan_observe(slm_plan_observation_t *out) {
+    slm_plan_observation_t observation;
+    aios_status_t status = syscall_output_buffer_status(out, sizeof(*out));
+
+    if (status != AIOS_OK) return status;
+    slm_plan_observation_read(&observation);
+    return copy_to_user(out, &observation, sizeof(observation));
+}
+
 /* ============================================================
  * System Info
  * ============================================================ */
@@ -1299,7 +1322,9 @@ static aios_status_t ai_syscall_contract_selftest(void) {
     if (sys_pipe_create(NULL) != AIOS_ERR_INVAL ||
         sys_pipe_add_stage(NULL) != AIOS_ERR_INVAL ||
         sys_pipe_execute(NULL) != AIOS_ERR_INVAL ||
-        sys_pipe_destroy(NULL) != AIOS_ERR_INVAL) {
+        sys_pipe_destroy(NULL) != AIOS_ERR_INVAL ||
+        sys_pipe_stats(NULL) != AIOS_ERR_INVAL ||
+        sys_slm_plan_observe(NULL) != AIOS_ERR_INVAL) {
         return AIOS_ERR_IO;
     }
     if (sys_info_memory(NULL) != AIOS_ERR_INVAL) {

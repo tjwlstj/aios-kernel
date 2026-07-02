@@ -138,6 +138,7 @@ function Get-SmokeRequiredPatterns {
         '\[PIPE\] Node pipeline ready',
         '\[PIPE\] selftest PASS',
         '\[SLM\] plan apply selftest PASS',
+        '\[SYSCALL\] observe dispatch selftest PASS',
         '\[SHELL\] Interactive shell started'
     )
 

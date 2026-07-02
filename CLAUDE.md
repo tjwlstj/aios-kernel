@@ -51,7 +51,10 @@ The kernel shell reads from both the PS/2 keyboard and COM1 serial, so QEMU
 commands answer with single-line `[STATE] <topic> key=value...` responses:
 `ping`, `state list|health|mem|nodes|pipeline|slm|sec|time|version`. List-shaped topics
 (`state nodes`) emit one summary line plus one `[STATE] node id=...` line per item;
-every line still follows the key=value convention. The `shell` testkit lane boots
+every line still follows the key=value convention. Each observation surface is
+mirrored as a syscall for userspace (`SYS_PIPE_STATS`, `SYS_NODEBIT_STATS`,
+`SYS_SLM_PLAN_OBSERVE`), and a post-init selftest drives them through the real
+dispatcher (`[SYSCALL] observe dispatch selftest PASS`). The `shell` testkit lane boots
 QEMU, drives these commands, asserts on the responses, and stores
 `kernel/build/shell-smoke/{transcript.log,summary.json}`. When adding a new
 `state` topic keep the response a single line with no spaces inside values, and
@@ -125,6 +128,7 @@ A successful boot must emit all of:
 [PIPE] Node pipeline ready
 [PIPE] selftest PASS
 [SLM] plan apply selftest PASS
+[SYSCALL] observe dispatch selftest PASS
 [SHELL] Interactive shell started
 [USER] Ring3 scaffold ready=1
 [ROOM] snapshot stability=...
