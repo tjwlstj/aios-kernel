@@ -49,7 +49,9 @@ python tools/testkit/aios-testkit.py os   # OS tool smoke test
 The kernel shell reads from both the PS/2 keyboard and COM1 serial, so QEMU
 `-serial stdio` gives a scriptable REPL into the running kernel. Machine-oriented
 commands answer with single-line `[STATE] <topic> key=value...` responses:
-`ping`, `state list|health|mem|pipeline|sec|time|version`. The `shell` testkit lane boots
+`ping`, `state list|health|mem|nodes|pipeline|sec|time|version`. List-shaped topics
+(`state nodes`) emit one summary line plus one `[STATE] node id=...` line per item;
+every line still follows the key=value convention. The `shell` testkit lane boots
 QEMU, drives these commands, asserts on the responses, and stores
 `kernel/build/shell-smoke/{transcript.log,summary.json}`. When adding a new
 `state` topic keep the response a single line with no spaces inside values, and
@@ -99,7 +101,7 @@ kernel/boot/boot.asm  (Multiboot2 entry, GDT, paging, SSE/AVX setup, long mode)
 - Groups: Model, Tensor, Inference, Training, Accelerator, Pipeline, Info, Autonomy, SLM/NodeBit.
 - `autonomy.c` — autonomy levels L0 (observe) → L3 (learning).
 - `slm_orchestrator.c` — 84 KB hardware + SLM snapshot, plan submit/validate/rollback.
-- `nodebit.c` — fast per-node policy bitmap lookup (`SYS_SLM_NODEBIT_LOOKUP`).
+- `nodebit.c` — fast per-node policy bitmap lookup (`SYS_SLM_NODEBIT_LOOKUP`). Every gate decision is timed with the TSC-backed monotonic clock into per-node stats (permits/denies/health blocks, gate latency min/avg/max ns, attributed work via `nodebit_observe_work`); read them with `SYS_NODEBIT_STATS` or the shell's `state nodes`.
 - `node_pipeline.c` — node-owned pipeline registry backing `SYS_PIPE_*` (0x600-0x603); every create/add-stage/execute/destroy needs a NodeBit PERMIT with `NODEBIT_CAP_PIPELINE`, and execute/destroy require the caller's node to own the pipeline. Stage execution is a control-plane accounting walk until the model runtime lands.
 
 **Kernel Room (`kernel/core/kernel_room.c`)**

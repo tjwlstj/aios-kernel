@@ -25,6 +25,8 @@
  *   state list       — enumerate available topics
  *   state health     — kernel health summary
  *   state mem        — heap statistics
+ *   state nodes      — per-node gate/work observation (summary line +
+ *                      one `[STATE] node id=...` line per active node)
  *   state pipeline   — node pipeline registry statistics
  *   state sec        — hardening status (nx/smep/umip/smap/canary)
  *   state time       — timer/TSC status
@@ -37,6 +39,7 @@
 #include <kernel/cpu_sec.h>
 #include <kernel/stack_guard.h>
 #include <runtime/node_pipeline.h>
+#include <runtime/nodebit.h>
 #include <drivers/keyboard.h>
 #include <drivers/vga.h>
 #include <drivers/serial.h>
@@ -95,7 +98,41 @@ static void cmd_ping(void) {
 }
 
 static void state_list(void) {
-    STATE_EMIT("[STATE] topics list=health,mem,pipeline,sec,time,version\n");
+    STATE_EMIT("[STATE] topics list=health,mem,nodes,pipeline,sec,time,version\n");
+}
+
+static void state_nodes(void) {
+    nodebit_stats_summary_t sum;
+    nodebit_node_stats_t ns;
+
+    nodebit_stats_summary(&sum);
+    STATE_EMIT("[STATE] nodes active=%u evals=%u permits=%u denies=%u health_blocks=%u eval_max_ns=%u work_ns=%u work_count=%u\n",
+        (uint64_t)sum.active_nodes,
+        (uint64_t)sum.evaluations,
+        (uint64_t)sum.permits,
+        (uint64_t)sum.denies,
+        (uint64_t)sum.health_blocks,
+        sum.eval_max_ns,
+        sum.work_total_ns,
+        (uint64_t)sum.work_count);
+
+    for (uint32_t i = 0; i < NODEBIT_MAX_ENTRIES; i++) {
+        if (nodebit_stats_at(i, &ns) != AIOS_OK) {
+            continue;
+        }
+        uint64_t avg_ns = ns.evaluations ? ns.eval_total_ns / ns.evaluations
+                                         : 0;
+        STATE_EMIT("[STATE] node id=%u evals=%u permits=%u denies=%u eval_avg_ns=%u eval_max_ns=%u work_ns=%u work_count=%u last_ns=%u\n",
+            (uint64_t)ns.node_id,
+            (uint64_t)ns.evaluations,
+            (uint64_t)ns.permits,
+            (uint64_t)ns.denies,
+            avg_ns,
+            ns.eval_max_ns,
+            ns.work_total_ns,
+            (uint64_t)ns.work_count,
+            ns.last_decision_ns);
+    }
 }
 
 static void state_pipeline(void) {
@@ -168,6 +205,7 @@ static void cmd_state(const char *arg, uint32_t arg_len) {
     if (arg_len == 0 || topic_is(arg, arg_len, "list")) { state_list();    return; }
     if (topic_is(arg, arg_len, "health"))               { state_health();  return; }
     if (topic_is(arg, arg_len, "mem"))                  { state_mem();     return; }
+    if (topic_is(arg, arg_len, "nodes"))                { state_nodes();   return; }
     if (topic_is(arg, arg_len, "pipeline"))             { state_pipeline(); return; }
     if (topic_is(arg, arg_len, "sec"))                  { state_sec();     return; }
     if (topic_is(arg, arg_len, "time"))                 { state_time();    return; }

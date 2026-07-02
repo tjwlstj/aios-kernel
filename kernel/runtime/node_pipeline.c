@@ -261,6 +261,9 @@ aios_status_t node_pipeline_execute(uint16_t node_id, uint32_t pipeline_id,
     g_last_status = AIOS_OK;
     spinlock_unlock(&g_lock);
 
+    /* Attribute the run to the owning node's observation record. */
+    nodebit_observe_work(node_id, duration_ns);
+
     if (result_out) {
         result_out->executed_stages = stage_count;
         result_out->duration_ns = duration_ns;
@@ -424,6 +427,25 @@ aios_status_t node_pipeline_selftest(void) {
     node_pipeline_get_snapshot(&snap);
     if (snap.active_count != 0 || snap.total_executions != 1 ||
         snap.total_stage_runs != 2 || snap.denied_count < 2) {
+        return AIOS_ERR_IO;
+    }
+
+    /* Per-node observation: the smoke node must have accumulated timed
+     * gate decisions (create + empty-execute + 2 add-stage + execute +
+     * destroy + retry-destroy = 7 permits; the gate clears the retry
+     * before the registry reports NODEV) and one attributed work item. */
+    nodebit_node_stats_t nstats;
+    if (nodebit_stats_lookup(PIPE_SELFTEST_NODE, &nstats) != AIOS_OK ||
+        nstats.evaluations != 7 || nstats.permits != 7 ||
+        nstats.denies != 0 || nstats.work_count != 1 ||
+        nstats.last_decision_ns == 0 ||
+        nstats.eval_max_ns < nstats.eval_min_ns ||
+        nstats.eval_total_ns < nstats.eval_max_ns) {
+        return AIOS_ERR_IO;
+    }
+    if (nodebit_stats_lookup(PIPE_SELFTEST_BAD_NODE, &nstats) !=
+        AIOS_ERR_NODEV ||
+        nodebit_observe_work(PIPE_SELFTEST_BAD_NODE, 1) != AIOS_ERR_NODEV) {
         return AIOS_ERR_IO;
     }
 

@@ -76,6 +76,36 @@ typedef struct {
     uint64_t         ts_ns;
 } nodebit_decision_t;
 
+/* Per-node high-precision observation record. Every gate decision is
+ * timed with the TSC-backed monotonic clock; work observed on behalf of
+ * a node (e.g. pipeline executions) is attributed via
+ * nodebit_observe_work(). eval_min_ns is 0 until the first evaluation. */
+typedef struct {
+    uint16_t  node_id;
+    uint32_t  evaluations;      /* gate decisions rendered for this node */
+    uint32_t  permits;
+    uint32_t  denies;
+    uint32_t  health_blocks;    /* denies caused by the health gate */
+    uint64_t  last_decision_ns; /* monotonic ns of the latest decision */
+    uint64_t  eval_total_ns;    /* cumulative gate evaluation latency */
+    uint64_t  eval_min_ns;
+    uint64_t  eval_max_ns;
+    uint64_t  work_total_ns;    /* attributed work duration */
+    uint32_t  work_count;       /* attributed work items */
+} nodebit_node_stats_t;
+
+/* Aggregate over all active nodes. */
+typedef struct {
+    uint32_t  active_nodes;
+    uint32_t  evaluations;
+    uint32_t  permits;
+    uint32_t  denies;
+    uint32_t  health_blocks;
+    uint64_t  eval_max_ns;
+    uint64_t  work_total_ns;
+    uint32_t  work_count;
+} nodebit_stats_summary_t;
+
 /* -------------------------------------------------------------------------
  * Syscall argument structures
  * ---------------------------------------------------------------------- */
@@ -92,6 +122,11 @@ typedef struct {
     uint64_t  caps_allowed;
 } syscall_nodebit_update_t;
 
+typedef struct {
+    uint16_t              node_id;
+    nodebit_node_stats_t *stats_out;   /* user pointer */
+} syscall_nodebit_stats_t;
+
 /* -------------------------------------------------------------------------
  * Public API
  * ---------------------------------------------------------------------- */
@@ -106,5 +141,13 @@ aios_status_t    nodebit_lookup(uint16_t node_id, nodebit_entry_t *out);
 uint32_t         nodebit_active_count(void);
 uint32_t         nodebit_risky_entry_count(void);
 const char      *nodebit_action_name(nodebit_action_t action);
+
+/* Per-node high-precision observation */
+aios_status_t    nodebit_stats_lookup(uint16_t node_id,
+                                      nodebit_node_stats_t *out);
+aios_status_t    nodebit_stats_at(uint32_t slot_index,
+                                  nodebit_node_stats_t *out);
+void             nodebit_stats_summary(nodebit_stats_summary_t *out);
+aios_status_t    nodebit_observe_work(uint16_t node_id, uint64_t duration_ns);
 
 #endif /* _AIOS_RUNTIME_NODEBIT_H */

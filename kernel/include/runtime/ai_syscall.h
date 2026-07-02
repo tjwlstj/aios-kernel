@@ -104,9 +104,10 @@
 #define SYS_SLM_PLAN_LIST           0x724  /* Enumerate queued plans */
 #define SYS_SLM_NODEBIT_LOOKUP      0x725  /* Read one effective policy NodeBit */
 
-/* NodeBit capability policy gate syscalls (0x726 - 0x727) */
+/* NodeBit capability policy gate syscalls (0x726 - 0x728) */
 #define SYS_NODEBIT_REGISTER        0x726  /* Register capability node entry */
 #define SYS_NODEBIT_UPDATE          0x727  /* Update node capability bitmask */
+#define SYS_NODEBIT_STATS           0x728  /* Read per-node observation stats */
 
 /* ============================================================
  * Syscall Argument Structures
@@ -267,6 +268,7 @@ aios_status_t sys_slm_nodebit_lookup(uint16_t node_id, slm_nodebit_t *out);
 /* NodeBit capability policy gate */
 aios_status_t sys_nodebit_register(syscall_nodebit_register_t *req);
 aios_status_t sys_nodebit_update(syscall_nodebit_update_t *req);
+aios_status_t sys_nodebit_stats(syscall_nodebit_stats_t *req);
 
 /* Node pipeline orchestration (SYS_PIPE_*) */
 aios_status_t sys_pipe_create(syscall_pipe_create_t *req);

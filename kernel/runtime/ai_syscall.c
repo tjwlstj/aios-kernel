@@ -361,6 +361,9 @@ int64_t ai_syscall_dispatch(uint64_t syscall_num, uint64_t arg1,
                 case SYS_NODEBIT_UPDATE:
                     return (int64_t)sys_nodebit_update(
                         (syscall_nodebit_update_t *)arg1);
+                case SYS_NODEBIT_STATS:
+                    return (int64_t)sys_nodebit_stats(
+                        (syscall_nodebit_stats_t *)arg1);
                 default:
                     break;
             }
@@ -989,6 +992,18 @@ aios_status_t sys_nodebit_update(syscall_nodebit_update_t *req) {
     return nodebit_update_caps(local_req.node_id, local_req.caps_allowed);
 }
 
+aios_status_t sys_nodebit_stats(syscall_nodebit_stats_t *req) {
+    syscall_nodebit_stats_t local_req;
+    nodebit_node_stats_t stats;
+    aios_status_t status = copy_from_user(&local_req, req, sizeof(local_req));
+
+    if (status != AIOS_OK) return status;
+
+    status = nodebit_stats_lookup(local_req.node_id, &stats);
+    if (status != AIOS_OK) return status;
+    return copy_to_user(local_req.stats_out, &stats, sizeof(stats));
+}
+
 aios_status_t sys_pipe_create(syscall_pipe_create_t *req) {
     syscall_pipe_create_t local_req;
     uint32_t pipeline_id = 0;
@@ -1276,6 +1291,9 @@ static aios_status_t ai_syscall_contract_selftest(void) {
         return AIOS_ERR_IO;
     }
     if (sys_nodebit_update(NULL) != AIOS_ERR_INVAL) {
+        return AIOS_ERR_IO;
+    }
+    if (sys_nodebit_stats(NULL) != AIOS_ERR_INVAL) {
         return AIOS_ERR_IO;
     }
     if (sys_pipe_create(NULL) != AIOS_ERR_INVAL ||

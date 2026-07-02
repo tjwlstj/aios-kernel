@@ -23,9 +23,10 @@
  * State
  * ---------------------------------------------------------------------- */
 
-static nodebit_entry_t  g_entries[NODEBIT_MAX_ENTRIES];
-static spinlock_t       g_lock = SPINLOCK_INIT;
-static bool             g_ready = false;
+static nodebit_entry_t       g_entries[NODEBIT_MAX_ENTRIES];
+static nodebit_node_stats_t  g_stats[NODEBIT_MAX_ENTRIES];  /* same slot index */
+static spinlock_t            g_lock = SPINLOCK_INIT;
+static bool                  g_ready = false;
 
 /* -------------------------------------------------------------------------
  * Internal helpers
@@ -53,6 +54,44 @@ static bool caps_mask_valid(uint64_t caps) {
     return (caps & ~NODEBIT_CAP_ALL) == 0;
 }
 
+/*
+ * Record one timed gate decision into the per-node observation slot.
+ * slot < 0 means the node was never registered — nothing to attribute.
+ * Latency is measured with the TSC-backed monotonic clock, so every
+ * decision carries nanosecond-precision gate timing.
+ */
+static void record_decision(int32_t slot, nodebit_action_t action,
+                            bool health_block, uint64_t start_ns) {
+    uint64_t end_ns = kernel_time_monotonic_ns();
+    uint64_t latency_ns = end_ns - start_ns;
+    nodebit_node_stats_t *stats;
+
+    if (slot < 0) {
+        return;
+    }
+
+    spinlock_lock(&g_lock);
+    stats = &g_stats[slot];
+    stats->evaluations++;
+    if (action == NODEBIT_ACTION_PERMIT) {
+        stats->permits++;
+    } else {
+        stats->denies++;
+    }
+    if (health_block) {
+        stats->health_blocks++;
+    }
+    stats->last_decision_ns = end_ns;
+    stats->eval_total_ns += latency_ns;
+    if (stats->evaluations == 1 || latency_ns < stats->eval_min_ns) {
+        stats->eval_min_ns = latency_ns;
+    }
+    if (latency_ns > stats->eval_max_ns) {
+        stats->eval_max_ns = latency_ns;
+    }
+    spinlock_unlock(&g_lock);
+}
+
 /* Copy at most NODEBIT_LABEL_MAX-1 characters and NUL-terminate. */
 static void copy_label(char *dst, const char *src) {
     uint32_t i = 0;
@@ -69,6 +108,7 @@ static void copy_label(char *dst, const char *src) {
 
 aios_status_t nodebit_init(void) {
     memset(g_entries, 0, sizeof(g_entries));
+    memset(g_stats, 0, sizeof(g_stats));
     g_ready = true;
     kprintf("[NODEBIT] Policy gate ready entries=0\n");
     serial_write("[NODEBIT] Policy gate ready entries=0\n");
@@ -101,6 +141,9 @@ aios_status_t nodebit_register(uint16_t node_id, const char *label,
     slot->health_gate  = health_gate;
     slot->active       = true;
     copy_label(slot->label, label);
+
+    memset(&g_stats[slot - g_entries], 0, sizeof(g_stats[0]));
+    g_stats[slot - g_entries].node_id = node_id;
 
     spinlock_unlock(&g_lock);
 
@@ -137,15 +180,19 @@ aios_status_t nodebit_evaluate(uint16_t node_id, uint64_t caps_requested,
                                 nodebit_decision_t *decision_out) {
     uint64_t caps_allowed;
     bool     health_gate;
+    uint64_t start_ns;
+    int32_t  slot = -1;
 
     if (!g_ready || !decision_out) {
         return AIOS_ERR_INVAL;
     }
 
+    start_ns = kernel_time_monotonic_ns();
+
     memset(decision_out, 0, sizeof(*decision_out));
     decision_out->node_id       = node_id;
     decision_out->caps_requested = caps_requested;
-    decision_out->ts_ns         = kernel_time_monotonic_ns();
+    decision_out->ts_ns         = start_ns;
 
     spinlock_lock(&g_lock);
     const nodebit_entry_t *entry = find_entry_locked(node_id);
@@ -154,6 +201,7 @@ aios_status_t nodebit_evaluate(uint16_t node_id, uint64_t caps_requested,
         decision_out->action = NODEBIT_ACTION_DENY;
         return AIOS_ERR_NODEV;
     }
+    slot = (int32_t)(entry - g_entries);
     caps_allowed = entry->caps_allowed;
     health_gate  = entry->health_gate;
     spinlock_unlock(&g_lock);
@@ -161,6 +209,7 @@ aios_status_t nodebit_evaluate(uint16_t node_id, uint64_t caps_requested,
     /* Requested capabilities must be a subset of the allowed set. */
     if ((caps_requested & caps_allowed) != caps_requested) {
         decision_out->action = NODEBIT_ACTION_DENY;
+        record_decision(slot, NODEBIT_ACTION_DENY, false, start_ns);
         return AIOS_OK;
     }
 
@@ -171,12 +220,14 @@ aios_status_t nodebit_evaluate(uint16_t node_id, uint64_t caps_requested,
         if (health.level != KERNEL_STABILITY_STABLE || !health.risky_io_allowed) {
             decision_out->blocked_by_health = true;
             decision_out->action = NODEBIT_ACTION_DENY;
+            record_decision(slot, NODEBIT_ACTION_DENY, true, start_ns);
             return AIOS_OK;
         }
     }
 
     decision_out->caps_granted = caps_requested;
     decision_out->action = NODEBIT_ACTION_PERMIT;
+    record_decision(slot, NODEBIT_ACTION_PERMIT, false, start_ns);
     return AIOS_OK;
 }
 
@@ -219,6 +270,88 @@ uint32_t nodebit_risky_entry_count(void) {
     }
     spinlock_unlock(&g_lock);
     return count;
+}
+
+aios_status_t nodebit_stats_lookup(uint16_t node_id,
+                                   nodebit_node_stats_t *out) {
+    const nodebit_entry_t *entry;
+
+    if (!g_ready || !out) {
+        return AIOS_ERR_INVAL;
+    }
+
+    spinlock_lock(&g_lock);
+    entry = find_entry_locked(node_id);
+    if (!entry) {
+        spinlock_unlock(&g_lock);
+        return AIOS_ERR_NODEV;
+    }
+    *out = g_stats[entry - g_entries];
+    spinlock_unlock(&g_lock);
+    return AIOS_OK;
+}
+
+aios_status_t nodebit_stats_at(uint32_t slot_index,
+                               nodebit_node_stats_t *out) {
+    if (!g_ready || !out || slot_index >= NODEBIT_MAX_ENTRIES) {
+        return AIOS_ERR_INVAL;
+    }
+
+    spinlock_lock(&g_lock);
+    if (!g_entries[slot_index].active) {
+        spinlock_unlock(&g_lock);
+        return AIOS_ERR_NODEV;
+    }
+    *out = g_stats[slot_index];
+    spinlock_unlock(&g_lock);
+    return AIOS_OK;
+}
+
+void nodebit_stats_summary(nodebit_stats_summary_t *out) {
+    if (!out) {
+        return;
+    }
+
+    memset(out, 0, sizeof(*out));
+
+    spinlock_lock(&g_lock);
+    for (uint32_t i = 0; i < NODEBIT_MAX_ENTRIES; i++) {
+        if (!g_entries[i].active) {
+            continue;
+        }
+        out->active_nodes++;
+        out->evaluations   += g_stats[i].evaluations;
+        out->permits       += g_stats[i].permits;
+        out->denies        += g_stats[i].denies;
+        out->health_blocks += g_stats[i].health_blocks;
+        out->work_total_ns += g_stats[i].work_total_ns;
+        out->work_count    += g_stats[i].work_count;
+        if (g_stats[i].eval_max_ns > out->eval_max_ns) {
+            out->eval_max_ns = g_stats[i].eval_max_ns;
+        }
+    }
+    spinlock_unlock(&g_lock);
+}
+
+aios_status_t nodebit_observe_work(uint16_t node_id, uint64_t duration_ns) {
+    const nodebit_entry_t *entry;
+    nodebit_node_stats_t *stats;
+
+    if (!g_ready) {
+        return AIOS_ERR_INVAL;
+    }
+
+    spinlock_lock(&g_lock);
+    entry = find_entry_locked(node_id);
+    if (!entry) {
+        spinlock_unlock(&g_lock);
+        return AIOS_ERR_NODEV;
+    }
+    stats = &g_stats[entry - g_entries];
+    stats->work_total_ns += duration_ns;
+    stats->work_count++;
+    spinlock_unlock(&g_lock);
+    return AIOS_OK;
 }
 
 const char *nodebit_action_name(nodebit_action_t action) {
