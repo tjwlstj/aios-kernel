@@ -40,8 +40,20 @@ python tools/testkit/aios-testkit.py kernel --target test --strict
 python tools/testkit/aios-testkit.py boot-matrix --profiles full minimal storage-only --strict
 python tools/testkit/aios-testkit.py boot-inventory --profiles full minimal storage-only --strict
 python tools/testkit/aios-testkit.py boot-perf --profiles full minimal storage-only --strict
+python tools/testkit/aios-testkit.py shell --strict              # interactive shell lane
+python tools/testkit/aios-testkit.py shell --strict --skip-build # reuse existing ISO
 python tools/testkit/aios-testkit.py os   # OS tool smoke test
 ```
+
+### Interactive Shell Lane (runtime observation channel)
+The kernel shell reads from both the PS/2 keyboard and COM1 serial, so QEMU
+`-serial stdio` gives a scriptable REPL into the running kernel. Machine-oriented
+commands answer with single-line `[STATE] <topic> key=value...` responses:
+`ping`, `state list|health|mem|sec|time|version`. The `shell` testkit lane boots
+QEMU, drives these commands, asserts on the responses, and stores
+`kernel/build/shell-smoke/{transcript.log,summary.json}`. When adding a new
+`state` topic keep the response a single line with no spaces inside values, and
+add an exchange to `DEFAULT_EXCHANGES` in `tools/testkit/lib/shell_lane.py`.
 
 ### Toolchain Requirements
 - `nasm`, `gcc` (or `gcc-12`), `ld`, `qemu-system-x86_64`
@@ -114,6 +126,15 @@ A successful boot must emit all of:
 
 ### Compiler Flags (non-obvious)
 C sources are compiled with `-ffreestanding -nostdlib -mno-sse -mno-mmx -mno-red-zone -mcmodel=kernel -fno-pic -fno-pie`. Do not add `-msse` or enable SSE implicitly — the kernel manually enables SIMD after CPU init.
+
+Stack protector is ON (`-fstack-protector-strong -mstack-protector-guard=global`); the runtime lives in `kernel/core/stack_guard.c`. Functions that swap the live canary must carry `__attribute__((no_stack_protector))`.
+
+### Hardening Baseline (do not regress)
+- NX/W^X: boot.asm marks every 2MB identity-map page outside kernel `.text` as NX (EFER.NXE). New executable regions require explicit page-table changes.
+- SMEP/UMIP enabled when the CPU supports them (`kernel/core/cpu_sec.c`, `[SEC]` boot lines). SMAP stays off until uaccess has stac/clac.
+- All CPU exceptions except `#BP` panic; `#PF` dumps CR2; `#DF` runs on TSS IST1.
+- CI runs cppcheck (`--enable=warning,performance,portability --error-exitcode=1`); keep it clean. Local: `cppcheck --std=c11 --platform=unix64 --enable=warning,performance,portability --inline-suppr --suppress=missingIncludeSystem --error-exitcode=1 -Ikernel/include kernel/`
+- Details and remaining roadmap: `docs/meta/hardening_baseline_2026_07_02_ko.md`.
 
 ## Directory Map (domains)
 

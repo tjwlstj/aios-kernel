@@ -19,6 +19,8 @@
   - host-local perf baseline을 생성하고 threshold 기반 회귀를 비교
 - `lib/boot_log.py`
   - serial log를 checkpoint / health / inventory / microbench 요약 JSON으로 파싱
+- `lib/shell_lane.py`
+  - QEMU `-serial stdio`로 부팅 후 커널 셸의 기계 판독형 `state` 명령을 구동/검증
 - `lib/os_lane.py`
   - OS 계층 도구 smoke
 - `kernel/build-windows.ps1`
@@ -75,6 +77,18 @@
   - current 결과는 `kernel/build/boot-inventory/current/<profile>.json`
   - baseline fixture는 `tools/testkit/fixtures/boot-baseline/<profile>.json`
 
+대화형 셸 레인:
+
+- `shell`
+  - QEMU 시리얼을 stdio에 붙여 "실행 중 커널"과 명령/응답으로 대화하는 레인
+  - `[SHELL] Interactive shell started` 대기 → `ping`, `state list/health/mem/sec/time/version`,
+    미지 토픽 오류 응답까지 순차 검증 → `reboot`로 클린 종료 (`-no-reboot` 덕에 QEMU exit)
+  - 응답 프로토콜: 한 줄 `[STATE] <topic> key=value ...` (값에 공백 없음)
+  - 아티팩트: `kernel/build/shell-smoke/transcript.log` (전체 시리얼 대화),
+    `kernel/build/shell-smoke/summary.json` (교환별 pass/fail)
+  - `--skip-build`로 기존 ISO 재사용 가능
+  - 새 `state` 토픽을 추가하면 `lib/shell_lane.py`의 `DEFAULT_EXCHANGES`에 교환을 등록한다
+
 부팅 성능:
 
 - `boot-perf`
@@ -97,6 +111,8 @@ python .\tools\testkit\aios-testkit.py boot-inventory --profiles full minimal st
 python .\tools\testkit\aios-testkit.py boot-inventory --profiles full minimal storage-only --strict --write-baseline
 python .\tools\testkit\aios-testkit.py boot-perf --profiles full minimal storage-only --strict --write-baseline
 python .\tools\testkit\aios-testkit.py boot-perf --profiles full minimal storage-only --strict
+python .\tools\testkit\aios-testkit.py shell --strict
+python .\tools\testkit\aios-testkit.py shell --strict --skip-build
 python .\tools\testkit\aios-testkit.py os
 python .\tools\testkit\aios-testkit.py all --strict
 python .\tools\testkit\aios-testkit.py all --strict --smoke-profile minimal --export-boot-summary

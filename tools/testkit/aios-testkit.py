@@ -33,6 +33,7 @@ from lib.boot_matrix_lane import run_boot_matrix
 from lib.boot_perf import run_boot_perf
 from lib.kernel_lane import run_kernel_suite
 from lib.os_lane import run_os_tool_suite
+from lib.shell_lane import run_shell_lane
 
 
 def print_info() -> None:
@@ -151,6 +152,18 @@ def parse_args() -> argparse.Namespace:
     perf_cmd.add_argument("--timeout", type=int, default=DEFAULT_QEMU_TIMEOUT)
     perf_cmd.add_argument("--strict", action="store_true")
 
+    shell_cmd = sub.add_parser(
+        "shell",
+        help="Boot QEMU with serial-on-stdio and drive the in-kernel shell's machine-readable state commands.",
+    )
+    shell_cmd.add_argument(
+        "--skip-build",
+        action="store_true",
+        help="Reuse the existing kernel ISO instead of rebuilding first.",
+    )
+    shell_cmd.add_argument("--timeout", type=int, default=DEFAULT_QEMU_TIMEOUT)
+    shell_cmd.add_argument("--strict", action="store_true")
+
     sub.add_parser("os", help="Run OS-layer tool smoke tests.")
     sub.add_parser("info", help="Print environment/toolkit info.")
     return parser.parse_args()
@@ -172,6 +185,9 @@ def lock_label(args: argparse.Namespace) -> str:
         profiles = ",".join(getattr(args, "profiles", []))
         mode = "write" if getattr(args, "write_baseline", False) else "check"
         return f"boot-perf:{mode}:{profiles}"
+    if args.command == "shell":
+        mode = "reuse" if getattr(args, "skip_build", False) else "build"
+        return f"shell:{mode}"
     return args.command
 
 
@@ -213,6 +229,9 @@ def main() -> int:
                 return 0
             if args.command == "boot-perf":
                 run_boot_perf(args.profiles, args.timeout, args.strict, args.write_baseline)
+                return 0
+            if args.command == "shell":
+                run_shell_lane(args.timeout, args.strict, args.skip_build)
                 return 0
             raise ToolError(f"Unsupported command: {args.command}")
     except (ToolError, subprocess.CalledProcessError, FileNotFoundError) as exc:

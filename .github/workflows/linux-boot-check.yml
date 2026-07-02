@@ -7,6 +7,27 @@ on:
   pull_request:
 
 jobs:
+  static-analysis:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install cppcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cppcheck
+
+      - name: Run cppcheck (kernel domain)
+        run: |
+          cppcheck --std=c11 --platform=unix64 \
+            --enable=warning,performance,portability \
+            --inline-suppr \
+            --suppress=missingIncludeSystem \
+            --error-exitcode=1 \
+            -Ikernel/include kernel/
+
   os-tools-matrix:
     strategy:
       fail-fast: false
@@ -65,6 +86,9 @@ jobs:
       - name: Run all-in-one kernel + OS smoke
         run: python tools/testkit/aios-testkit.py all --strict
 
+      - name: Run interactive shell lane
+        run: python tools/testkit/aios-testkit.py shell --strict --skip-build
+
       - name: Upload boot artifacts
         if: always()
         uses: actions/upload-artifact@v7
@@ -74,6 +98,8 @@ jobs:
             kernel/build/aios-kernel.bin
             kernel/build/aios-kernel.iso
             kernel/build/serial_output.log
+            kernel/build/shell-smoke/transcript.log
+            kernel/build/shell-smoke/summary.json
             kernel/build/tool-smoke/summary.json
             kernel/build/tool-smoke/static-chaos-score.json
             kernel/build/tool-smoke/memory_journal.jsonl
