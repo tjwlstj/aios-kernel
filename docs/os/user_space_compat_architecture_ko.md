@@ -1,5 +1,9 @@
 # AIOS 유저 공간 OS 아키텍처 설계
 
+> OLD (2026-07-03): 이 문서는 ring3 caller가 없던 시점의 compatibility 설계다.
+> 최신 ring3/ELF/uaccess 상태는 [OLD 문서 체크리스트](../meta/old_docs_check_2026_07_03_ko.md)와
+> [CLAUDE.md](../../CLAUDE.md)를 먼저 본다.
+
 작성일: 2026-03-29
 
 ## 목적

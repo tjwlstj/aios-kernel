@@ -1,5 +1,9 @@
 # Gemini CLI 드라이버/유저스페이스 추가 점검과 다음 실행 조각
 
+> OLD (2026-07-03): 이 Gemini 점검은 M1/M2 이전 체크포인트 기록이다.
+> 최신 작업 순서는 [OLD 문서 체크리스트](../meta/old_docs_check_2026_07_03_ko.md)와
+> [minimal_io_and_maturity_workflow_ko.md](../meta/minimal_io_and_maturity_workflow_ko.md)를 먼저 본다.
+
 작성일: 2026-04-12
 
 ## 목적

@@ -1,5 +1,9 @@
 # Gemini CLI 1차 검토 기록
 
+> OLD (2026-07-03): 이 문서는 첫 외부 리뷰 기록으로, ring3/TSS/syscall/ELF 부재를 전제로 한다.
+> 최신 구현 상태는 [OLD 문서 체크리스트](../meta/old_docs_check_2026_07_03_ko.md)와
+> [CLAUDE.md](../../CLAUDE.md)를 먼저 본다.
+
 ## 목적
 
 이 문서는 `Gemini CLI`가 현재 `AIOS` 저장소에서 실제로 동작하는지 검증하고, 첫 번째 저장소 리뷰 결과를 기록하기 위한 메모이다.

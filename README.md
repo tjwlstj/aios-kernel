@@ -12,7 +12,7 @@ AIOS(AI-Native Operating System)는 AI 워크로드를 **1급 시민(First-class
 
 장기 방향은 embodied AI OS입니다. LLM/SLM 에이전트는 유저스페이스에서 단기 기억과 장기 기억을 분리해 유지하고, 세션을 넘어 연속성을 보존하며, 하드웨어에는 커널이 중재하는 정책 경계를 통해 접근합니다.
 
-이 저장소는 아직 범용 상용 OS가 아닙니다. 유저스페이스 handoff, ELF 로더, 영속 기억 런타임, 실시간 학습 승격 루프는 설계/구현 예정 영역이며, 현재 트리는 커널 기반과 호스트 도구, QEMU 스모크 테스트 가능한 스캐폴딩을 제공합니다.
+이 저장소는 아직 범용 상용 OS가 아닙니다. 다만 2026-07 기준으로 첫 ring3 실행 조각은 동작합니다. 커널 내장 static ELF64 데모 이미지를 `elf_load`로 적재하고, CPL3에서 `int 0x80`으로 관측 시스콜을 왕복한 뒤 `exit(42)`로 복귀합니다. 장기 실행 유저스페이스 서비스, 디스크에서 적재되는 프로그램, 프로세스별 주소공간, 영속 기억 런타임, 실시간 학습 승격 루프는 후속 영역입니다.
 
 ## GitHub Description
 
@@ -20,14 +20,16 @@ Suggested repository description:
 
 > Kernel-first AI-native OS experiment for embodied LLM/SLM runtime: memory fabric, continuity roadmap, NodeBit policy gates, and mediated hardware access.
 
-## Current Status (2026-04-25)
+## Current Status (2026-07-03)
 
 - **Current beta:** `v0.2.0-beta.6` (`0.2.0-beta.6 "Genesis"` boot banner).
 - **Boot path:** x86_64 Multiboot2 커널, GDT/IDT/TSS, 페이징, PIT IRQ0 scheduler tick bootstrap, QEMU 스모크 테스트 기반.
+- **Hardening:** stack protector, NX/W^X 2MB identity-map marking, SMEP/UMIP/SMAP 감지/활성화 경로, #PF CR2 dump, #DF IST1, cppcheck CI.
 - **Memory:** 물리/가상 할당 기반, 텐서 메모리 메타데이터, 수명 프로파일링, 메모리 패브릭 노드, 공유 영역 스캐폴딩.
-- **Autonomy and policy:** 헬스 스냅샷, 제한된 자율 제안/롤백 경로, SLM 하드웨어 스냅샷, NodeBit 정책 조회.
-- **Userspace:** ring3 경계와 user access helper는 존재하지만, 전체 유저스페이스 handoff와 ELF 로더는 아직 없음.
+- **Autonomy and policy:** 헬스 스냅샷, 제한된 자율 제안/롤백 경로, SLM 하드웨어 스냅샷, NodeBit 정책 조회, Kernel Room syscall range classification.
+- **Userspace:** 첫 ring3 실행 slice 완료. 고정 64MB 2MB 유저 페이지에 static ELF64 데모를 적재하고 `int 0x80` 시스콜 왕복과 uaccess window 거부 경로를 검증한다. `aios-init`, 디스크 기반 ELF 적재, 프로세스별 CR3/address space, 장기 실행 유저스페이스 런타임은 아직 없음.
 - **Hardware AI access:** 가속기 인터페이스는 추상화/탐색 스캐폴딩 단계. 실제 GPU/NPU/TPU 드라이버와 직접 클럭 제어 백엔드는 계획 상태.
+- **I/O:** e1000은 RX ring bootstrap + bounded RX poll/rearm + TX smoke 수준. USB/storage는 bootstrap/probe 중심이며, 다음 storage 목표는 virtio-blk 최소 read path.
 - **Continuity runtime:** 단기/장기 기억 분리, 저널링, distillation, self-learning promotion flow는 유저스페이스 AI 런타임 로드맵.
 
 ## Project Direction
@@ -54,7 +56,7 @@ AIOS의 방향은 커널을 AI 시스템의 결정론적 body로 두고, 학습 
 │ Current kernel foundation                                      │
 │  - boot, paging, interrupts, scheduler foundation              │
 │  - tensor memory, memory fabric, HAL scaffolds                  │
-│  - user access guards and QEMU smoke-test hooks                │
+│  - ring3 static ELF demo, uaccess guards, QEMU testkit          │
 ├──────────────────────────────────────────────────────────────┤
 │ Hardware                                                       │
 │  CPU, memory, timers, PCI devices, storage/network bring-up     │
@@ -110,8 +112,10 @@ AIOS의 방향은 커널을 AI 시스템의 결정론적 body로 두고, 학습 
 
 ### Userspace Boundary Status
 - ring3 진입을 위한 TSS/segment/user access guard 기반
-- 유저 포인터 copy/validate 경로와 부트스트랩 snapshot ABI
-- 전체 유저스페이스 handoff, ELF loader, long-running userspace AI runtime은 후속 구현 대상
+- static ELF64 header/program-header 검증과 단일 PT_LOAD 세그먼트 적재 경로
+- CPL3 `int 0x80` -> `ai_syscall_dispatch` -> ring3 buffer copy -> `exit(42)` 왕복 smoke
+- uaccess window + SMAP STAC/CLAC fence 기반의 유저 포인터 경계 검증
+- `aios-init`, 디스크에서 적재되는 ELF, 프로세스별 주소공간, long-running userspace AI runtime은 후속 구현 대상
 
 ### AI System Call Interface
 > 이 표는 현재 ABI 공간과 스캐폴딩을 함께 보여줍니다. 모든 카테고리가 production-grade 구현을 의미하지는 않습니다.
@@ -196,6 +200,21 @@ python .\tools\testkit\aios-testkit.py all --strict
 
 Windows용 자세한 설치 및 경로 설정 방법은 [docs/tools/windows_build.md](docs/tools/windows_build.md)를 참고하세요.
 
+### Python Testkit
+
+Claude/Codex 작업과 CI에서 쓰는 주요 진입점은 `tools/testkit/aios-testkit.py`입니다.
+
+```powershell
+python .\tools\testkit\aios-testkit.py all --strict
+python .\tools\testkit\aios-testkit.py kernel --target test --strict
+python .\tools\testkit\aios-testkit.py boot-matrix --profiles full minimal storage-only --strict
+python .\tools\testkit\aios-testkit.py boot-inventory --profiles full minimal storage-only --strict
+python .\tools\testkit\aios-testkit.py boot-perf --profiles full minimal storage-only --strict
+python .\tools\testkit\aios-testkit.py shell --strict
+python .\tools\testkit\aios-testkit.py shell --strict --skip-build
+python .\tools\testkit\aios-testkit.py os
+```
+
 ### Run in QEMU
 ```bash
 make run            # QEMU에서 커널 실행 (VGA + 시리얼)
@@ -217,9 +236,9 @@ make debug          # GDB 디버깅 모드로 실행
 | AI 작업 슬롯 | 256개 규모의 scheduler foundation |
 | 가속기 슬롯 | 16개 디바이스 규모의 HAL/SLM snapshot ABI |
 | 모델 슬롯 | 64개 규모의 model registry scaffold |
-| 유저스페이스 | ring3/user access scaffold, full handoff 예정 |
+| 유저스페이스 | 첫 ring3 static ELF64 demo + `int 0x80` 왕복 완료, full service/runtime 예정 |
 | AI 가속기 | PCI/capability abstraction scaffold, 실제 벤더 드라이버 예정 |
-| CI | GitHub Actions (빌드 + QEMU 스모크 테스트) |
+| CI | GitHub Actions (cppcheck + OS tool smoke + QEMU smoke + shell lane) |
 
 ## Planning Documents
 
@@ -228,6 +247,8 @@ make debug          # GDB 디버깅 모드로 실행
 
 - [자율 OS 실행 로드맵](docs/autonomy/autonomous_os_execution_roadmap_ko.md)
 - [AI 친화 리소스 관리 개발 계획 (2026-04-27)](docs/autonomy/ai_resource_management_development_plan_ko.md)
+- [최소 I/O 점검과 성숙도 우선 작업흐름](docs/meta/minimal_io_and_maturity_workflow_ko.md)
+- [OLD 문서 체크리스트](docs/meta/old_docs_check_2026_07_03_ko.md)
 - [유저공간 OS 구현 방향](docs/os/user_space_os_direction_ko.md)
 - [AI 에이전트 OS용 모델 스택 추천](docs/models/agent_model_stack_recommendations_ko.md)
 - [종합 점검 보고서 (2026-04-15)](docs/meta/inspection_report_2026_04_15.md)

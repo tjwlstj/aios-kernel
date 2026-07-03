@@ -1,5 +1,9 @@
 # AIOS 현재 커널 부족점과 외부 기준 정리 (2026-03-29)
 
+> OLD (2026-07-03): 이 보고서는 본문 상당 부분이 M1/M2 이전 기준이다.
+> 현재 구현 기준은 [OLD 문서 체크리스트](old_docs_check_2026_07_03_ko.md)와
+> [minimal_io_and_maturity_workflow_ko.md](minimal_io_and_maturity_workflow_ko.md)를 먼저 본다.
+
 > **진행 갱신 (2026-07):** 아래 1순위 갭인 "유저 모드 / 실행 ABI"의 첫 슬라이스가 반영되었다.
 > ring3 진입(`iretq`) + `int 0x80` 시스콜 왕복 + 유저 페이지 매핑이 동작하며, 커널 내장 데모
 > 프로그램이 CPL3에서 관측 시스콜을 호출해 결과를 유저 버퍼로 받고 `exit`로 복귀한다

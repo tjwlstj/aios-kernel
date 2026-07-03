@@ -1,5 +1,9 @@
 # AIOS 유저공간 OS 구현 방향 정리
 
+> OLD (2026-07-03): 이 문서는 실제 ring3 handoff와 static ELF64 loader 완료 이전 기준이다.
+> 최신 구현 상태는 [OLD 문서 체크리스트](../meta/old_docs_check_2026_07_03_ko.md),
+> [minimal_io_and_maturity_workflow_ko.md](../meta/minimal_io_and_maturity_workflow_ko.md), [CLAUDE.md](../../CLAUDE.md)를 먼저 본다.
+
 작성일: 2026-04-19
 
 ## 목적

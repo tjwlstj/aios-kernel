@@ -3,6 +3,14 @@
 문서를 도메인별로 나눠 정리했다. 도메인 경계와 의존 규칙은 저장소 루트의
 [PROJECT.md](../PROJECT.md)를 먼저 참고할 것.
 
+## 문서 신선도 기준
+
+- 최신 구현 기준은 [CLAUDE.md](../CLAUDE.md)와
+  [minimal_io_and_maturity_workflow_ko.md](meta/minimal_io_and_maturity_workflow_ko.md)를 우선한다.
+- M1 uaccess/SMAP, M2 static ELF64 loader 이전 상태를 전제로 한 문서는
+  [OLD 문서 체크리스트](meta/old_docs_check_2026_07_03_ko.md)에 따로 표시했다.
+- `OLD` 문서는 역사적 맥락용이며, 새 구현 판단에는 최신 기준 문서를 먼저 사용한다.
+
 ## 전체 아키텍처
 - [design.md](design.md) — 전체 설계 개요
 - [architecture.mmd](architecture.mmd) / [architecture.png](architecture.png) — 아키텍처 다이어그램
@@ -52,6 +60,7 @@
 - [gemini_driver_userspace_checkpoint_ko.md](tools/gemini_driver_userspace_checkpoint_ko.md)
 
 ## meta/ — 점검 보고서 · 로드맵 · 외부 사례 · 릴리스
+- [old_docs_check_2026_07_03_ko.md](meta/old_docs_check_2026_07_03_ko.md)
 - [minimal_io_and_maturity_workflow_ko.md](meta/minimal_io_and_maturity_workflow_ko.md)
 - [hardening_baseline_2026_07_02_ko.md](meta/hardening_baseline_2026_07_02_ko.md)
 - [inspection_report_2026_04_15.md](meta/inspection_report_2026_04_15.md)
