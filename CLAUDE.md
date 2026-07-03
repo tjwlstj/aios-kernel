@@ -154,6 +154,14 @@ Stack protector is ON (`-fstack-protector-strong -mstack-protector-guard=global`
 - CI runs cppcheck (`--enable=warning,performance,portability --error-exitcode=1`); keep it clean. Local: `cppcheck --std=c11 --platform=unix64 --enable=warning,performance,portability --inline-suppr --suppress=missingIncludeSystem --error-exitcode=1 -Ikernel/include kernel/`
 - Details and remaining roadmap: `docs/meta/hardening_baseline_2026_07_02_ko.md`.
 
+### Current Workflow Plan
+The maturity-first roadmap (M1 uaccess/SMAP → M2 ELF loader → M3 preemption →
+M4 virtio-blk storage read → M5 load programs from disk) and the per-step
+working conventions (selftest marker + smoke pattern + `state` topic + shell
+lane exchange + cppcheck clean) are pinned in
+`docs/meta/minimal_io_and_maturity_workflow_ko.md`. Follow it when picking up
+the next task.
+
 ## Directory Map (domains)
 
 | Path | Purpose |
