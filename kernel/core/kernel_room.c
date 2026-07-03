@@ -75,7 +75,7 @@ static const kernel_room_gate_descriptor_t g_gate_table[KERNEL_ROOM_GATE_COUNT] 
         .id = KERNEL_ROOM_GATE_PIPE,
         .name = "pipe",
         .syscall_start = SYS_PIPE_CREATE,
-        .syscall_end = SYS_PIPE_DESTROY,
+        .syscall_end = SYS_PIPE_STATS,
         .min_stability = KERNEL_STABILITY_DEGRADED,
         .risk = KERNEL_ROOM_GATE_RISK_BOUNDED_CONTROL,
         .completion_ready = false,
@@ -107,8 +107,11 @@ static const kernel_room_gate_descriptor_t g_gate_table[KERNEL_ROOM_GATE_COUNT] 
     [KERNEL_ROOM_GATE_SLM] = {
         .id = KERNEL_ROOM_GATE_SLM,
         .name = "slm",
+        /* Covers the whole SLM + NodeBit control-plane block, including
+         * nodebit lookup/register/update/stats and plan-observe
+         * (0x725-0x729), so the ROOM risk snapshot spans every syscall. */
         .syscall_start = SYS_SLM_HW_SNAPSHOT,
-        .syscall_end = SYS_SLM_PLAN_LIST,
+        .syscall_end = SYS_SLM_PLAN_OBSERVE,
         .min_stability = KERNEL_STABILITY_DEGRADED,
         .risk = KERNEL_ROOM_GATE_RISK_BOUNDED_CONTROL,
         .completion_ready = false,

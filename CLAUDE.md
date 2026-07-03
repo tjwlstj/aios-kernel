@@ -118,7 +118,8 @@ kernel/boot/boot.asm  (Multiboot2 entry, GDT, paging, SSE/AVX setup, long mode)
 
 **Kernel Room (`kernel/core/kernel_room.c`)**
 - 9 gate descriptors mapping syscall ranges to risk classifications (OBSERVE / BOUNDED_CONTROL / BOUNDED_DATA / IO_PATH).
-- Gate count must match the enum exactly; stability check runs before each syscall.
+- Gate count must match the enum exactly, and gate ranges must cover every defined syscall number — extend the covering gate's `syscall_end` when adding syscalls.
+- The gate table is **classification metadata** consumed by the ROOM snapshot; the dispatcher does not check it per call. Runtime enforcement lives in the NodeBit capability gate (`nodebit_evaluate`), the autonomy safe-mode, and the health flags (`autonomy_allowed` / `risky_io_allowed`). Per-syscall gate enforcement is future work — do not describe it as existing.
 
 **Health (`kernel/core/health.c`)**
 - Produces stability snapshots: HEALTHY / DEGRADED / CRITICAL.
@@ -190,7 +191,7 @@ the next task.
 ## Key Invariants
 
 - Tensor allocations must remain 64-byte aligned (AVX-512 requirement).
-- Kernel Room gate count must equal the gate enum size (`kernel/core/kernel_room.c`).
+- Kernel Room gate count must equal the gate enum size, and gate syscall ranges must cover the full syscall surface (`kernel/core/kernel_room.c`).
 - AI syscall number ranges are ABI-stable — do not renumber or overlap them. This is the only
   contract between `kernel/` and `os/`.
 - Health snapshot ABI must remain stable across builds (consumed by SLM orchestrator).
