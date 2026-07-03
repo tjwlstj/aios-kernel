@@ -201,13 +201,14 @@ static void state_health(void) {
 static void state_mem(void) {
     heap_stats_t s;
     heap_get_stats(&s);
-    STATE_EMIT("[STATE] mem heap_total=%u heap_used=%u heap_free=%u blocks=%u allocs=%u frees=%u\n",
+    STATE_EMIT("[STATE] mem heap_total=%u heap_used=%u heap_free=%u blocks=%u allocs=%u frees=%u lock_acquires=%u\n",
         (uint64_t)s.total,
         (uint64_t)s.used,
         (uint64_t)s.free,
         (uint64_t)s.blocks,
         (uint64_t)s.allocs,
-        (uint64_t)s.frees);
+        (uint64_t)s.frees,
+        heap_lock_acquire_count());
 }
 
 static void state_sec(void) {

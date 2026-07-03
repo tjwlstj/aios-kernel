@@ -130,6 +130,7 @@ function Get-SmokeRequiredPatterns {
     $patterns = @(
         'AIOS Kernel Ready',
         '\[SELFTEST\] Memory microbench PASS',
+        '\[HEAP\] lock selftest PASS',
         '\[DEV\] Peripheral probe ready',
         '\[USER\] Ring3 scaffold ready=1',
         '\[ROOM\] snapshot stability=',

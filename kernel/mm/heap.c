@@ -6,13 +6,16 @@
  * Each block carries a 32-byte header (size-t + magic + free flag + two
  * pointers), so allocations returned to callers are always 16-byte aligned.
  *
- * Not thread-safe (no spinlock yet) — safe as long as we are single-threaded
- * in the boot/init path and the shell runs with interrupts enabled but no
- * concurrent kernel threads.
+ * Thread-safe: kmalloc/kfree/heap_get_stats run under an IRQ-saving
+ * spinlock, so the allocator stays consistent once preemption and
+ * IRQ-context allocation exist. Critical sections are short (a first-fit
+ * walk), so briefly masking interrupts is acceptable.
  */
 
 #include <mm/heap.h>
 #include <lib/string.h>
+#include <kernel/spinlock.h>
+#include <drivers/serial.h>
 #include <interrupt/idt.h>    /* kernel_panic */
 
 /* -------------------------------------------------------------------------
@@ -53,6 +56,8 @@ static uint8_t ALIGNED(16) heap_pool[HEAP_POOL_SIZE];
 static heap_block_t *heap_head  = NULL;
 static bool          heap_ready = false;
 static heap_stats_t  heap_stats_data;
+static spinlock_t    heap_lock  = SPINLOCK_INIT;
+static uint64_t      heap_lock_acquires = 0;
 
 /* -------------------------------------------------------------------------
  * Internal helpers
@@ -113,10 +118,14 @@ void *kmalloc(size_t size) {
 
     size_t aligned = round_up(size);
 
+    uint64_t flags = spinlock_irqsave(&heap_lock);
+    heap_lock_acquires++;
+
     /* First-fit search */
     heap_block_t *cur = heap_head;
     while (cur) {
         if (cur->magic != HEAP_MAGIC_FREE && cur->magic != HEAP_MAGIC_USED) {
+            /* panic halts the CPU forever, so the held lock is irrelevant */
             kernel_panic("kmalloc: heap corruption detected");
         }
         if (cur->free && cur->size >= aligned) {
@@ -126,6 +135,7 @@ void *kmalloc(size_t size) {
     }
 
     if (!cur) {
+        spinlock_irqrestore(&heap_lock, flags);
         return NULL; /* OOM */
     }
 
@@ -153,7 +163,9 @@ void *kmalloc(size_t size) {
     heap_stats_data.free   -= cur->size;
     heap_stats_data.allocs++;
 
-    return (void *)((uint8_t *)cur + sizeof(heap_block_t));
+    void *result = (void *)((uint8_t *)cur + sizeof(heap_block_t));
+    spinlock_irqrestore(&heap_lock, flags);
+    return result;
 }
 
 void kfree(void *ptr) {
@@ -162,6 +174,9 @@ void kfree(void *ptr) {
     }
 
     heap_block_t *block = (heap_block_t *)((uint8_t *)ptr - sizeof(heap_block_t));
+
+    uint64_t flags = spinlock_irqsave(&heap_lock);
+    heap_lock_acquires++;
 
     if (block->magic != HEAP_MAGIC_USED) {
         kernel_panic("kfree: double-free or heap corruption");
@@ -178,12 +193,55 @@ void kfree(void *ptr) {
     block->free  = 1;
 
     coalesce(block);
+    spinlock_irqrestore(&heap_lock, flags);
 }
 
 void heap_get_stats(heap_stats_t *out) {
-    if (out) {
-        *out = heap_stats_data;
+    if (!out) {
+        return;
     }
+    /* Read under the lock so stats can't be observed mid-update. This is a
+     * read path, so it does not count toward heap_lock_acquires (which
+     * tracks mutating alloc/free acquisitions). */
+    uint64_t flags = spinlock_irqsave(&heap_lock);
+    *out = heap_stats_data;
+    spinlock_irqrestore(&heap_lock, flags);
+}
+
+uint64_t heap_lock_acquire_count(void) {
+    return heap_lock_acquires;
+}
+
+/*
+ * Verify the allocator's locking invariants at boot: the lock is free at
+ * rest, each kmalloc/kfree takes it exactly once, and it is released after
+ * every operation. This is the concurrency-correctness check that precedes
+ * real preemption (M3).
+ */
+aios_status_t heap_lock_selftest(void) {
+    if (spinlock_is_locked(&heap_lock)) {
+        return AIOS_ERR_BUSY;
+    }
+
+    uint64_t before = heap_lock_acquires;
+    void *a = kmalloc(64);
+    void *b = kmalloc(128);
+    if (!a || !b) {
+        kfree(a);
+        kfree(b);
+        return AIOS_ERR_NOMEM;
+    }
+    kfree(a);
+    kfree(b);
+
+    /* 2 allocs + 2 frees must be exactly 4 lock acquisitions, and the lock
+     * must be released afterwards. */
+    if (heap_lock_acquires != before + 4 || spinlock_is_locked(&heap_lock)) {
+        return AIOS_ERR_IO;
+    }
+
+    serial_printf("[HEAP] lock selftest PASS acquires=%u\n", heap_lock_acquires);
+    return AIOS_OK;
 }
 
 __asm__(".section .note.GNU-stack,\"\",@progbits\n\t.previous");

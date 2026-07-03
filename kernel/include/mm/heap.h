@@ -37,7 +37,13 @@ void *kmalloc(size_t size);
  */
 void kfree(void *ptr);
 
-/* Fill heap statistics into *out. */
+/* Fill heap statistics into *out. Reads under the heap lock. */
 void heap_get_stats(heap_stats_t *out);
+
+/* Cumulative mutating (alloc/free) lock acquisitions — concurrency telemetry. */
+uint64_t heap_lock_acquire_count(void);
+
+/* Boot-time check of the allocator's locking invariants. */
+aios_status_t heap_lock_selftest(void);
 
 #endif /* _AIOS_MM_HEAP_H */

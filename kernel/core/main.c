@@ -265,6 +265,11 @@ static void init_subsystems(uint64_t multiboot_magic, uint64_t multiboot_info) {
     /* 0. Kernel heap — available to all subsequent subsystems */
     INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_HEAP,
         "Kernel Heap (kmalloc/kfree)", heap_init());
+    if (heap_lock_selftest() != AIOS_OK) {
+        kernel_health_mark(KERNEL_SUBSYSTEM_HEAP,
+            KERNEL_HEALTH_DEGRADED, AIOS_ERR_IO);
+        serial_write("[HEAP] lock selftest FAIL\n");
+    }
 
     /* 1. IDT - must be first to catch any exceptions during init */
     INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_IDT,

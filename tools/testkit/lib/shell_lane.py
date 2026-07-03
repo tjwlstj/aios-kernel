@@ -64,7 +64,7 @@ DEFAULT_EXCHANGES: list[dict[str, object]] = [
     {"command": "ping", "expect": ["[STATE] pong ticks="]},
     {"command": "state list", "expect": ["[STATE] topics list="]},
     {"command": "state health", "expect": ["[STATE] health stability=", "autonomy="]},
-    {"command": "state mem", "expect": ["[STATE] mem heap_total=", "heap_free="]},
+    {"command": "state mem", "expect": ["[STATE] mem heap_total=", "heap_free=", "lock_acquires="]},
     {"command": "state pipeline", "expect": ["[STATE] pipeline active=", "executions="]},
     {"command": "state nodes", "expect": ["[STATE] nodes active=", "[STATE] node id=40"]},
     {"command": "state slm", "expect": ["[STATE] slm apply_ok=1", "tsc_khz="]},

@@ -85,7 +85,7 @@ kernel/boot/boot.asm  (Multiboot2 entry, GDT, paging, SSE/AVX setup, long mode)
 **Memory (`kernel/mm/`)**
 - `tensor_mm.c` — 64-byte aligned tensor allocator with named pools (Tensor, Model, Inference, KV-Cache, etc.), best-fit + buddy, lifetime tagging (SHORT_TERM / LONG_TERM / REALTIME). The 64-byte alignment is a hard invariant for AVX-512 correctness.
 - `memory_fabric.c` — per-agent memory domains (seeds), zero-copy shared windows, NUMA-ready.
-- `heap.c` — general kernel heap.
+- `heap.c` — general kernel heap; kmalloc/kfree/get_stats run under an IRQ-saving spinlock (`heap_lock_selftest` checks the locking invariants at boot). Ready for preemption/IRQ-context allocation.
 
 **Interrupt (`kernel/interrupt/`)**
 - `idt.c` — 32 CPU exceptions + legacy PIC IRQ0 (PIT timer at 100 Hz for scheduler bootstrap).
@@ -133,6 +133,7 @@ A successful boot must emit all of:
 ```
 [TIMER] PIT IRQ ready
 [SELFTEST] Memory microbench PASS
+[HEAP] lock selftest PASS
 [DEV] Peripheral probe ready
 [HEALTH] stability=...
 [PIPE] Node pipeline ready
