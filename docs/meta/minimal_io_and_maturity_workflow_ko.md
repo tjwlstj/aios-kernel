@@ -59,8 +59,9 @@ QEMU 기본 `-hda`와 즉시 호환되고 수십 줄로 섹터를 읽을 수 있
 
 ### M3. 타이머 선점 + 문맥전환 + 프로세스별 주소공간 (+ 힙 스핀락)
 - **M3-a 힙 스핀락 ✅ 완료 (2026-07-04):** `mm/heap.c`의 kmalloc/kfree/get_stats를 `spinlock_irqsave`로 보호(향후 IRQ 컨텍스트 할당 대비 IRQ 마스킹), 락 획득 카운터 + `heap_lock_selftest`(락 유휴·정확히 1회 획득·해제 불변식 검증) + `[HEAP] lock selftest PASS acquires=4` 마커, `state mem`에 `lock_acquires` 노출. 선점의 독립 선행 조각으로 먼저 반영.
-- **잔여 작업(M3-b):** `ai_sched_tick()`을 카운팅에서 실제 태스크 전환으로 승격(커널 스레드 2개 왕복부터), 컨텍스트 저장/복원 asm, **프로세스별 PML4 복제 + CR3 스위칭**(M2에서 이월 — 동시 유저 태스크가 생기는 이 시점에 필요).
-- **완료 기준:** 두 태스크 교대 실행의 마커 검증, 각 태스크 별도 주소공간, 힙 동시성 셀프테스트(M3-a로 충족).
+- **M3-b-1 협력적 컨텍스트 스위치 ✅ 완료 (2026-07-04):** `sched/kthread_switch.asm`(callee-saved+rsp 저장/복원) + `sched/kthread.c`(초기 스택 프레임 조립, 핑퐁 2스레드 셀프테스트). AI 워크로드 스케줄러(vruntime 장부질)와 분리된 진짜 CPU 컨텍스트 스위치. 각 스레드 스택의 루프변수가 전환을 넘어 보존됨을 검증 → `[SCHED] context switch selftest PASS switches=8 ping=3 pong=3`, `state sched`에 `kthread_switches` 노출. **함정 발견:** 셀프테스트에서 무조건 `sti` 시 PIC 리매핑 이전이라 IRQ0가 벡터 8(#DF)로 진입 → 이전 IF 보존 방식으로 수정(#PF/#DF 봉쇄가 즉시 원인 지목).
+- **잔여 작업(M3-b-2):** 타이머 IRQ 구동 선점(IRQ 컨텍스트에서 kthread_switch 호출), **프로세스별 PML4 복제 + CR3 스위칭**(M2에서 이월 — 동시 유저 태스크가 생기는 이 시점에 필요), `ai_sched_tick()`을 실제 전환에 연결.
+- **완료 기준:** 선점으로 태스크가 자동 교대되는 마커, 각 태스크 별도 주소공간, 힙 동시성 셀프테스트(M3-a로 충족).
 
 ### M4. storage read — virtio-blk 최소 데이터 경로
 - **작업:** virtio-pci 트랜스포트(modern, 1.2 기준) + virtqueue 1개 + 동기 섹터 읽기. `storage_host`에 `STORAGE_HOST_CONTROLLER_VIRTIO` 분기. testkit에 디스크 이미지 생성 + `-device virtio-blk-pci` 스모크 프로파일(`storage-virtio`) 추가.

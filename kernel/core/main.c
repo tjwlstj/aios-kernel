@@ -28,6 +28,7 @@
 #include <mm/tensor_mm.h>
 #include <mm/memory_fabric.h>
 #include <sched/ai_sched.h>
+#include <sched/kthread.h>
 #include <hal/accel_hal.h>
 #include <runtime/ai_syscall.h>
 #include <runtime/autonomy.h>
@@ -294,6 +295,10 @@ static void init_subsystems(uint64_t multiboot_magic, uint64_t multiboot_info) {
     /* 6. AI Workload Scheduler */
     INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_SCHED,
         "AI Workload Scheduler", ai_sched_init());
+    if (kthread_selftest() != AIOS_OK) {
+        kernel_health_mark(KERNEL_SUBSYSTEM_SCHED,
+            KERNEL_HEALTH_DEGRADED, AIOS_ERR_IO);
+    }
 
     /* 7. PIT IRQ0 tick source for scheduler accounting */
     INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_TIME,

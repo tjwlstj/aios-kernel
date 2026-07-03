@@ -25,6 +25,7 @@
  *   state list       — enumerate available topics
  *   state health     — kernel health summary
  *   state mem        — heap statistics
+ *   state sched      — kernel-thread context switches + workload task stats
  *   state nodes      — per-node gate/work observation (summary line +
  *                      one `[STATE] node id=...` line per active node)
  *   state pipeline   — node pipeline registry statistics
@@ -44,6 +45,8 @@
 #include <runtime/nodebit.h>
 #include <runtime/slm_orchestrator.h>
 #include <kernel/user_exec.h>
+#include <sched/kthread.h>
+#include <sched/ai_sched.h>
 #include <drivers/keyboard.h>
 #include <drivers/vga.h>
 #include <drivers/serial.h>
@@ -102,7 +105,18 @@ static void cmd_ping(void) {
 }
 
 static void state_list(void) {
-    STATE_EMIT("[STATE] topics list=health,mem,nodes,pipeline,slm,user,sec,time,version\n");
+    STATE_EMIT("[STATE] topics list=health,mem,sched,nodes,pipeline,slm,user,sec,time,version\n");
+}
+
+static void state_sched(void) {
+    sched_stats_t s;
+    ai_sched_stats(&s);
+    STATE_EMIT("[STATE] sched kthread_switches=%u total_tasks=%u active_tasks=%u workload_ctx_switches=%u preemptions=%u\n",
+        kthread_switch_count(),
+        (uint64_t)s.total_tasks,
+        (uint64_t)s.active_tasks,
+        (uint64_t)s.context_switches,
+        (uint64_t)s.preemptions);
 }
 
 static void state_user(void) {
@@ -243,6 +257,7 @@ static void cmd_state(const char *arg, uint32_t arg_len) {
     if (arg_len == 0 || topic_is(arg, arg_len, "list")) { state_list();    return; }
     if (topic_is(arg, arg_len, "health"))               { state_health();  return; }
     if (topic_is(arg, arg_len, "mem"))                  { state_mem();     return; }
+    if (topic_is(arg, arg_len, "sched"))                { state_sched();   return; }
     if (topic_is(arg, arg_len, "nodes"))                { state_nodes();   return; }
     if (topic_is(arg, arg_len, "pipeline"))             { state_pipeline(); return; }
     if (topic_is(arg, arg_len, "slm"))                  { state_slm();     return; }

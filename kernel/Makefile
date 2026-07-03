@@ -43,7 +43,8 @@ LDFLAGS     = -T $(KERNEL_DIR)/linker.ld -nostdlib -z max-page-size=0x1000
 # Source files
 ASM_SOURCES = $(BOOT_DIR)/boot.asm \
               $(INTERRUPT_DIR)/isr_stub.asm \
-              $(KERNEL_DIR)/user_entry.asm
+              $(KERNEL_DIR)/user_entry.asm \
+              $(SCHED_DIR)/kthread_switch.asm
 C_SOURCES   = $(KERNEL_DIR)/main.c \
               $(KERNEL_DIR)/acpi.c \
               $(KERNEL_DIR)/health.c \
@@ -63,6 +64,7 @@ C_SOURCES   = $(KERNEL_DIR)/main.c \
               $(MM_DIR)/memory_fabric.c \
               $(MM_DIR)/heap.c \
               $(SCHED_DIR)/ai_sched.c \
+              $(SCHED_DIR)/kthread.c \
               $(HAL_DIR)/accel_hal.c \
               $(RUNTIME_DIR)/ai_syscall.c \
               $(RUNTIME_DIR)/autonomy.c \

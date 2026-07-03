@@ -92,8 +92,13 @@ kernel/boot/boot.asm  (Multiboot2 entry, GDT, paging, SSE/AVX setup, long mode)
 - `isr_stub.asm` — assembly stubs that push context and call C handlers.
 
 **Scheduler (`kernel/sched/ai_sched.c`)**
-- MLFQ + CFS-inspired fairness, 256-task slots.
+- MLFQ + CFS-inspired fairness, 256-task slots. This is a **workload accounting** model (vruntime bookkeeping); it does not switch CPU context.
 - Metadata for deadline-aware inference tasks and accelerator affinity.
+
+**Kernel Threads (`kernel/sched/kthread.c`, `kthread_switch.asm`)**
+- Real CPU context switching (M3-b), distinct from the workload scheduler. `kthread_switch` swaps callee-saved registers + rsp between threads; `kthread_init` builds an initial frame that returns straight to the thread entry.
+- `kthread_selftest` runs a cooperative ping-pong (two threads, each with its own stack) whose per-stack loop counters prove correct save/restore — `[SCHED] context switch selftest PASS`. Observable via `state sched` (`kthread_switches`).
+- Preemptive (timer-IRQ-driven) switching and per-process CR3 are the next M3-b sub-slices. Note: never `sti` before the PIC is remapped (subsystem 7) — IRQ0 would arrive as vector 8 (#DF).
 
 **Hardware Abstraction (`kernel/hal/accel_hal.c`)**
 - PCI enumeration + accelerator abstraction (GPU/TPU/NPU/FPGA/CPU-SIMD).
@@ -134,6 +139,7 @@ A successful boot must emit all of:
 [TIMER] PIT IRQ ready
 [SELFTEST] Memory microbench PASS
 [HEAP] lock selftest PASS
+[SCHED] context switch selftest PASS
 [DEV] Peripheral probe ready
 [HEALTH] stability=...
 [PIPE] Node pipeline ready
