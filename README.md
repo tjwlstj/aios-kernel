@@ -18,7 +18,7 @@ AIOS(AI-Native Operating System)는 AI 워크로드를 **1급 시민(First-class
 
 Suggested repository description:
 
-> Kernel-first AI-native OS experiment for embodied LLM/SLM runtime: memory fabric, continuity roadmap, NodeBit policy gates, and mediated hardware access.
+> Kernel-first AI-native OS experiment for embodied LLM/SLM runtime: ring3 ELF demo, memory fabric, NodeBit policy gates, and mediated hardware access.
 
 ## Current Status (2026-07-03)
 
