@@ -68,6 +68,7 @@ DEFAULT_EXCHANGES: list[dict[str, object]] = [
     {"command": "state pipeline", "expect": ["[STATE] pipeline active=", "executions="]},
     {"command": "state nodes", "expect": ["[STATE] nodes active=", "[STATE] node id=40"]},
     {"command": "state slm", "expect": ["[STATE] slm apply_ok=1", "tsc_khz="]},
+    {"command": "state user", "expect": ["[STATE] user attempted=1", "entered=1 returned=1 syscall_ok=1", "exit_code=42"]},
     {"command": "state sec", "expect": ["[STATE] sec nx=", "canary=1"]},
     {"command": "state time", "expect": ["[STATE] time ticks=", "hz="]},
     {"command": "state version", "expect": ["[STATE] version release="]},

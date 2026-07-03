@@ -13,6 +13,11 @@
 static idt_entry_t idt[IDT_ENTRIES];
 static idt_ptr_t   idt_ptr;
 
+/* int 0x80 syscall gate: DPL=3 so ring3 can invoke it; 64-bit interrupt gate. */
+#define IDT_GATE_SYSCALL 0xEE
+#define SYSCALL_VECTOR   0x80
+extern void isr_syscall(void);
+
 #define PIC1_COMMAND 0x20
 #define PIC2_COMMAND 0xA0
 #define PIC_EOI      0x20
@@ -210,6 +215,9 @@ aios_status_t idt_init(void) {
     /* Double fault runs on its own known-good stack (TSS IST1) so a
      * corrupted kernel stack cannot escalate #DF into a triple fault. */
     idt[8].ist = 1;
+
+    /* int 0x80 syscall entry, callable from ring3 (DPL=3). */
+    idt_set_gate(SYSCALL_VECTOR, (uint64_t)isr_syscall, 0x08, IDT_GATE_SYSCALL);
 
     /* Set up IDT pointer */
     idt_ptr.limit = (uint16_t)(sizeof(idt) - 1);

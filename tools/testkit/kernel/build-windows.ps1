@@ -139,6 +139,7 @@ function Get-SmokeRequiredPatterns {
         '\[PIPE\] selftest PASS',
         '\[SLM\] plan apply selftest PASS',
         '\[SYSCALL\] observe dispatch selftest PASS',
+        '\[USER\] ring3 exec PASS',
         '\[SHELL\] Interactive shell started'
     )
 

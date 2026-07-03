@@ -71,6 +71,7 @@ def required_smoke_patterns(smoke_profile: str) -> list[str]:
         "[PIPE] selftest PASS",
         "[SLM] plan apply selftest PASS",
         "[SYSCALL] observe dispatch selftest PASS",
+        "[USER] ring3 exec PASS",
         "[SHELL] Interactive shell started",
     ]
     if smoke_profile == "storage-only":

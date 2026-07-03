@@ -42,7 +42,8 @@ LDFLAGS     = -T $(KERNEL_DIR)/linker.ld -nostdlib -z max-page-size=0x1000
 
 # Source files
 ASM_SOURCES = $(BOOT_DIR)/boot.asm \
-              $(INTERRUPT_DIR)/isr_stub.asm
+              $(INTERRUPT_DIR)/isr_stub.asm \
+              $(KERNEL_DIR)/user_entry.asm
 C_SOURCES   = $(KERNEL_DIR)/main.c \
               $(KERNEL_DIR)/acpi.c \
               $(KERNEL_DIR)/health.c \
@@ -51,6 +52,7 @@ C_SOURCES   = $(KERNEL_DIR)/main.c \
               $(KERNEL_DIR)/selftest.c \
               $(KERNEL_DIR)/user_mode.c \
               $(KERNEL_DIR)/user_access.c \
+              $(KERNEL_DIR)/user_exec.c \
               $(KERNEL_DIR)/stack_guard.c \
               $(KERNEL_DIR)/cpu_sec.c \
               $(KERNEL_DIR)/shell.c \

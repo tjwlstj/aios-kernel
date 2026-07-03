@@ -29,6 +29,7 @@
  *                      one `[STATE] node id=...` line per active node)
  *   state pipeline   — node pipeline registry statistics
  *   state slm        — SLM plan apply observation (high-precision timing)
+ *   state user       — first ring3 execution round-trip result
  *   state sec        — hardening status (nx/smep/umip/smap/canary)
  *   state time       — timer/TSC status
  *   state version    — kernel release
@@ -42,6 +43,7 @@
 #include <runtime/node_pipeline.h>
 #include <runtime/nodebit.h>
 #include <runtime/slm_orchestrator.h>
+#include <kernel/user_exec.h>
 #include <drivers/keyboard.h>
 #include <drivers/vga.h>
 #include <drivers/serial.h>
@@ -100,7 +102,21 @@ static void cmd_ping(void) {
 }
 
 static void state_list(void) {
-    STATE_EMIT("[STATE] topics list=health,mem,nodes,pipeline,slm,sec,time,version\n");
+    STATE_EMIT("[STATE] topics list=health,mem,nodes,pipeline,slm,user,sec,time,version\n");
+}
+
+static void state_user(void) {
+    user_exec_info_t u;
+    user_exec_get_info(&u);
+    STATE_EMIT("[STATE] user attempted=%u entered=%u returned=%u syscall_ok=%u syscalls=%u exit_code=%u pipe_max=%u dur_ns=%u\n",
+        (uint64_t)u.attempted,
+        (uint64_t)u.entered,
+        (uint64_t)u.returned,
+        (uint64_t)u.syscall_ok,
+        (uint64_t)u.user_syscalls,
+        u.exit_code,
+        (uint64_t)u.observed_pipeline_max,
+        u.duration_ns);
 }
 
 static void state_slm(void) {
@@ -225,6 +241,7 @@ static void cmd_state(const char *arg, uint32_t arg_len) {
     if (topic_is(arg, arg_len, "nodes"))                { state_nodes();   return; }
     if (topic_is(arg, arg_len, "pipeline"))             { state_pipeline(); return; }
     if (topic_is(arg, arg_len, "slm"))                  { state_slm();     return; }
+    if (topic_is(arg, arg_len, "user"))                 { state_user();    return; }
     if (topic_is(arg, arg_len, "sec"))                  { state_sec();     return; }
     if (topic_is(arg, arg_len, "time"))                 { state_time();    return; }
     if (topic_is(arg, arg_len, "version"))              { state_version(); return; }

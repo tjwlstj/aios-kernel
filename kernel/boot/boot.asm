@@ -55,10 +55,16 @@ gdt64_pointer:
 ; =============================================================================
 section .bss
 align 4096
+; The ring3 path promotes one region to a user page. User access is the AND
+; of the U/S bit across all four levels, so p4/p3/p2 are all exposed and the
+; User bit is set on the covering entry at every level.
+global p4_table
 p4_table:
     resb 4096
+global p3_table
 p3_table:
     resb 4096
+global p2_table_0
 p2_table_0:
     resb 4096
 p2_table_1:
@@ -84,6 +90,15 @@ alignb 16
 df_stack_bottom:
     resb 16384      ; 16KB
 df_stack_top:
+
+; Dedicated ring0 stack for syscall/IRQ entry from ring3 (TSS rsp0).
+; Kept separate from the boot stack so a user->kernel transition never
+; clobbers the frame of the kernel routine that launched ring3.
+alignb 16
+global syscall_stack_top
+syscall_stack_bottom:
+    resb 16384      ; 16KB
+syscall_stack_top:
 
 ; Boot-time TSS scaffold for later ring3 handoff work
 align 16
@@ -383,8 +398,8 @@ long_mode_start:
 ; Prepare ring3/user-mode scaffold (GDT user segments + TSS + TR load)
 ; =============================================================================
 setup_ring3_scaffold:
-    lea rax, [rel stack_top]
-    mov [rel aios_boot_tss64 + 4], rax
+    lea rax, [rel syscall_stack_top]
+    mov [rel aios_boot_tss64 + 4], rax   ; rsp0: ring3->ring0 entry stack
     lea rax, [rel df_stack_top]
     mov [rel aios_boot_tss64 + 36], rax  ; IST1: double-fault stack
     mov word [rel aios_boot_tss64 + 102], 104

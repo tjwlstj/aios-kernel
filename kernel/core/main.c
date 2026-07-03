@@ -11,6 +11,7 @@
 #include <kernel/cpu_sec.h>
 #include <kernel/health.h>
 #include <kernel/stack_guard.h>
+#include <kernel/user_exec.h>
 #include <kernel/kernel_room.h>
 #include <kernel/selftest.h>
 #include <kernel/time.h>
@@ -95,6 +96,15 @@ void kernel_main(uint64_t multiboot_magic, uint64_t multiboot_info) {
     init_subsystems(multiboot_magic, multiboot_info);
     run_observe_dispatch_selftest();
     user_mode_scaffold_init();
+
+    /* First ring3 slice: enter CPL3 and round-trip a syscall. Requires the
+     * TSS/GDT scaffold above and the int 0x80 gate from idt_init. */
+    if (user_mode_scaffold_ready()) {
+        user_exec_run_first();
+    } else {
+        serial_write("[USER] ring3 exec SKIP: scaffold not ready\n");
+    }
+
     kernel_room_dump();
     print_health_summary();
     enforce_stability_policy();
