@@ -98,11 +98,20 @@ isr_syscall:
 ;   2) exit(42)
 ; -----------------------------------------------------------------------------
 user_program_start:
+    ; 1) Valid call: result buffer inside the user window.
     mov rax, 0x604          ; SYS_PIPE_STATS
     mov rdi, 0x4001000      ; user result buffer (USER_REGION + 4KB)
     int 0x80
-    xor rax, rax            ; exit
-    mov rdi, 42             ; exit code
+    ; 2) Hostile call: ask the kernel to write into kernel memory. The
+    ;    uaccess window must reject it (return AIOS_ERR_PERM = -6). Stash
+    ;    the return value so the kernel can verify enforcement happened.
+    mov rax, 0x604          ; SYS_PIPE_STATS
+    mov rdi, 0x100000       ; kernel image address, outside the user window
+    int 0x80
+    mov [0x4001800], rax    ; record the rejection return value
+    ; 3) exit(42)
+    xor rax, rax
+    mov rdi, 42
     int 0x80
 .hang:
     jmp .hang

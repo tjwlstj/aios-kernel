@@ -16,7 +16,56 @@ static const char *const user_access_reason_names[USER_ACCESS_REASON_COUNT] = {
     [USER_ACCESS_REASON_RANGE_OVERFLOW] = "range-overflow",
     [USER_ACCESS_REASON_BAD_FLAGS] = "bad-flags",
     [USER_ACCESS_REASON_PROTECTION_UNAVAILABLE] = "protection-unavailable",
+    [USER_ACCESS_REASON_OUT_OF_WINDOW] = "out-of-window",
 };
+
+/* Active user address window (see header). */
+static bool      g_window_active = false;
+static uintptr_t g_window_start = 0;
+static uintptr_t g_window_end = 0;   /* inclusive */
+
+/* STAC/CLAC fence state; only true once SMAP is enabled on this CPU. */
+static bool g_smap_active = false;
+
+void user_access_set_window(uintptr_t base, uint64_t size) {
+    if (size == 0) {
+        user_access_clear_window();
+        return;
+    }
+    g_window_start = base;
+    g_window_end = base + (uintptr_t)(size - 1);
+    g_window_active = true;
+}
+
+void user_access_clear_window(void) {
+    g_window_active = false;
+    g_window_start = 0;
+    g_window_end = 0;
+}
+
+bool user_access_window_active(void) {
+    return g_window_active;
+}
+
+void user_access_set_smap_active(bool active) {
+    g_smap_active = active;
+}
+
+/* Allow the kernel to touch user pages only for the duration of a copy. */
+void user_access_fence_begin(void) {
+    if (g_smap_active) {
+        __asm__ volatile ("stac" ::: "cc", "memory");
+    }
+}
+
+void user_access_fence_end(void) {
+    if (g_smap_active) {
+        __asm__ volatile ("clac" ::: "cc", "memory");
+    }
+}
+
+#define uaccess_fence_begin user_access_fence_begin
+#define uaccess_fence_end   user_access_fence_end
 
 AIOS_STATIC_ASSERT(ARRAY_SIZE(user_access_reason_names) == USER_ACCESS_REASON_COUNT,
     "User access reason table must stay aligned");
@@ -76,6 +125,15 @@ user_access_check_t user_access_probe(const void *ptr, uint64_t size,
     }
 
     end = start + (uintptr_t)(size - 1);
+
+    /* When a ring3 run is active, the buffer must lie fully inside the
+     * user window; this rejects ring3-supplied pointers into kernel
+     * memory. Kernel-internal callers run with no window and skip this. */
+    if (g_window_active && (start < g_window_start || end > g_window_end)) {
+        return user_access_make_result(false,
+            USER_ACCESS_REASON_OUT_OF_WINDOW, start, end, size, flags);
+    }
+
     return user_access_make_result(true, USER_ACCESS_REASON_OK,
         start, end, size, flags);
 }
@@ -91,6 +149,7 @@ aios_status_t user_access_status(user_access_reason_t reason) {
         case USER_ACCESS_REASON_RANGE_OVERFLOW:
             return AIOS_ERR_OVERFLOW;
         case USER_ACCESS_REASON_PROTECTION_UNAVAILABLE:
+        case USER_ACCESS_REASON_OUT_OF_WINDOW:
             return AIOS_ERR_PERM;
         case USER_ACCESS_REASON_NULL_PTR:
         case USER_ACCESS_REASON_ZERO_SIZE:
@@ -125,7 +184,9 @@ aios_status_t copy_to_user(void *user_dst, const void *kernel_src,
         return user_access_status(check.reason);
     }
 
+    uaccess_fence_begin();
     memcpy(user_dst, kernel_src, (size_t)size);
+    uaccess_fence_end();
     return AIOS_OK;
 }
 
@@ -145,7 +206,9 @@ aios_status_t copy_from_user(void *kernel_dst, const void *user_src,
         return user_access_status(check.reason);
     }
 
+    uaccess_fence_begin();
     memcpy(kernel_dst, user_src, (size_t)size);
+    uaccess_fence_end();
     return AIOS_OK;
 }
 
@@ -163,13 +226,16 @@ aios_status_t copy_string_from_user(char *kernel_dst, const char *user_src,
         return user_access_status(check.reason);
     }
 
+    uaccess_fence_begin();
     for (uint64_t i = 0; i < max_len; i++) {
         char c = user_src[i];
         kernel_dst[i] = c;
         if (c == '\0') {
+            uaccess_fence_end();
             return AIOS_OK;
         }
     }
+    uaccess_fence_end();
 
     kernel_dst[max_len - 1] = '\0';
     return AIOS_ERR_OVERFLOW;
@@ -242,7 +308,35 @@ aios_status_t user_access_selftest(void) {
         return AIOS_ERR_IO;
     }
 
-    serial_write("[UACCESS] selftest PASS structural=1 copy=1 zero_copy=1 string=1\n");
+    /* User address window: while active, buffers outside the window are
+     * rejected as OUT_OF_WINDOW; buffers inside pass; clearing restores
+     * the unrestricted kernel-internal behavior. Use a low fake window so
+     * the on-stack kernel slots fall outside it. */
+    user_access_set_window(0x1000, 0x1000);
+    check = user_access_probe(&user_slot, sizeof(user_slot), USER_ACCESS_F_WRITE);
+    if (check.ok || check.reason != USER_ACCESS_REASON_OUT_OF_WINDOW ||
+        user_access_status(check.reason) != AIOS_ERR_PERM) {
+        user_access_clear_window();
+        return AIOS_ERR_IO;
+    }
+    check = user_access_probe((void *)0x1000, 0x800, USER_ACCESS_F_READ);
+    if (!check.ok || check.reason != USER_ACCESS_REASON_OK) {
+        user_access_clear_window();
+        return AIOS_ERR_IO;
+    }
+    /* A buffer straddling the window's upper edge must be rejected. */
+    check = user_access_probe((void *)0x1800, 0x1000, USER_ACCESS_F_READ);
+    if (check.ok || check.reason != USER_ACCESS_REASON_OUT_OF_WINDOW) {
+        user_access_clear_window();
+        return AIOS_ERR_IO;
+    }
+    user_access_clear_window();
+    if (user_access_window_active() ||
+        !access_ok(&user_slot, sizeof(user_slot), USER_ACCESS_F_WRITE)) {
+        return AIOS_ERR_IO;
+    }
+
+    serial_write("[UACCESS] selftest PASS structural=1 copy=1 zero_copy=1 string=1 window=1\n");
     return AIOS_OK;
 }
 

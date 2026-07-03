@@ -4,6 +4,7 @@
  */
 
 #include <kernel/user_exec.h>
+#include <kernel/user_access.h>
 #include <kernel/time.h>
 #include <runtime/node_pipeline.h>
 #include <drivers/serial.h>
@@ -28,6 +29,7 @@ extern uint64_t p2_table_0[];
 #define USER_REGION_BASE   0x4000000UL           /* 64 MB */
 #define USER_REGION_SIZE   0x200000UL            /* one 2MB huge page */
 #define USER_BUFFER_ADDR   (USER_REGION_BASE + 0x1000UL)
+#define USER_REJECT_ADDR   (USER_REGION_BASE + 0x1800UL)  /* rejection stash */
 #define USER_STACK_TOP     (USER_REGION_BASE + USER_REGION_SIZE - 16UL)
 
 /* 2MB PDE flags: Present | Writable | User | PageSize (huge), NX cleared so
@@ -79,19 +81,29 @@ aios_status_t user_exec_run_first(void) {
     /* 1. Promote the region to a user-accessible, executable page. */
     map_user_region();
 
-    /* 2. Stage the program and clear the result buffer in the user page. */
-    memcpy((void *)USER_REGION_BASE, user_program_start, (size_t)program_size);
+    /* 2. Stage the program and clear the result buffer in the user page.
+     *    These are deliberate kernel writes to user pages, so bracket them
+     *    with the SMAP fence (no-op when SMAP is off). */
     user_result = (node_pipeline_snapshot_t *)USER_BUFFER_ADDR;
+    user_access_fence_begin();
+    memcpy((void *)USER_REGION_BASE, user_program_start, (size_t)program_size);
     memset(user_result, 0, sizeof(*user_result));
+    *(volatile int64_t *)USER_REJECT_ADDR = 0;
+    user_access_fence_end();
 
     g_user_syscalls = 0;
     g_user_exit_code = 0;
     g_user_exited = 0;
 
-    /* 3. Enter ring3. Returns here on the exit syscall. */
+    /* 3. Constrain uaccess to the user page, then enter ring3. Any syscall
+     *    the program issues with a pointer outside the window is denied.
+     *    The window is cleared on return so kernel-internal uaccess (which
+     *    runs with no window) is never affected. */
+    user_access_set_window(USER_REGION_BASE, USER_REGION_SIZE);
     enter_ns = kernel_time_monotonic_ns();
     user_mode_run(USER_REGION_BASE, USER_STACK_TOP);
     exit_ns = kernel_time_monotonic_ns();
+    user_access_clear_window();
 
     /* 4. Collect and verify the round trip. */
     g_user_exec.user_syscalls = (uint32_t)g_user_syscalls;
@@ -99,21 +111,31 @@ aios_status_t user_exec_run_first(void) {
     g_user_exec.duration_ns = exit_ns - enter_ns;
     g_user_exec.entered = g_user_syscalls >= 1;
     g_user_exec.returned = g_user_exited != 0;
-    g_user_exec.observed_pipeline_max = user_result->max_pipelines;
-    /* The user-issued SYS_PIPE_STATS must have written the real registry
-     * capacity into the user buffer — proof ring3 actually reached the
-     * kernel and got data back. */
-    g_user_exec.syscall_ok =
-        user_result->max_pipelines == NODE_PIPELINE_MAX;
+
+    /* Read the user page's result and rejection stash back (SMAP fenced).
+     * SYS_PIPE_STATS must have written the real registry capacity — proof
+     * ring3 reached the kernel and got data — and the hostile syscall with
+     * a kernel-range pointer must have been denied with AIOS_ERR_PERM,
+     * proving the uaccess window blocked ring3 from reaching kernel memory. */
+    user_access_fence_begin();
+    uint32_t observed_max = user_result->max_pipelines;
+    int64_t reject_value = *(volatile int64_t *)USER_REJECT_ADDR;
+    user_access_fence_end();
+
+    g_user_exec.observed_pipeline_max = observed_max;
+    g_user_exec.syscall_ok = observed_max == NODE_PIPELINE_MAX;
+    g_user_exec.boundary_ok = reject_value == (int64_t)AIOS_ERR_PERM;
 
     bool ok = g_user_exec.entered && g_user_exec.returned &&
-              g_user_exec.syscall_ok && g_user_exec.exit_code == 42;
+              g_user_exec.syscall_ok && g_user_exec.boundary_ok &&
+              g_user_exec.exit_code == 42;
 
-    serial_printf("[USER] ring3 exec %s entered=%u returned=%u syscalls=%u exit_code=%u pipe_max=%u dur_ns=%u\n",
+    serial_printf("[USER] ring3 exec %s entered=%u returned=%u syscalls=%u boundary_ok=%u exit_code=%u pipe_max=%u dur_ns=%u\n",
         ok ? "PASS" : "FAIL",
         (uint64_t)g_user_exec.entered,
         (uint64_t)g_user_exec.returned,
         (uint64_t)g_user_exec.user_syscalls,
+        (uint64_t)g_user_exec.boundary_ok,
         g_user_exec.exit_code,
         (uint64_t)g_user_exec.observed_pipeline_max,
         g_user_exec.duration_ns);

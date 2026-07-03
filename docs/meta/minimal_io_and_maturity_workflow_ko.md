@@ -45,10 +45,11 @@ QEMU 기본 `-hda`와 즉시 호환되고 수십 줄로 섹터를 읽을 수 있
 
 각 단계는 이번에 확립한 작업 규약(§4)을 따른다. 순서는 의존 관계로 고정되어 있다.
 
-### M1. uaccess 유저/커널 주소 경계 + SMAP  ← 다음 작업
+### M1. uaccess 유저/커널 주소 경계 + SMAP  ✅ 완료 (2026-07-03)
 - **왜 지금:** ring3 유저 페이지(64MB 고정 영역)가 생겨 "유저 포인터는 유저 영역만"이 처음으로 정의 가능해짐.
-- **작업:** `user_access.c`에 유저 주소 윈도우 검사 추가(유저 요청의 커널 범위 포인터 거부 — 단, 커널 내부 셀프테스트 경로 구분 필요), `copy_*_user`에 `stac`/`clac` 브래킷, CPUID SMAP 지원 시 CR4.SMAP 활성화(`cpu_sec.c`).
-- **완료 기준:** `[UACCESS]` selftest에 경계 케이스 추가 PASS, `state sec`에 `smap=1`(지원 CPU), 스모크 3종 통과.
+- **반영:** `user_access.c`에 유저 주소 윈도우(ring3 실행 중에만 활성 — 커널 내부 uaccess는 윈도우 미설정이라 무영향) + `OUT_OF_WINDOW` 거부. `copy_*_user`와 `user_access_fence_begin/end`(프로그램 스테이징 등 직접 유저 페이지 접근용)에 SMAP 조건부 `stac`/`clac`. `cpu_sec.c`가 SMAP 지원 시 CR4.SMAP 활성화 후 uaccess에 통지.
+- **검증 완료:** `[UACCESS] selftest ... window=1`, ring3 데모가 커널 주소로 시도한 시스콜이 거부됨(`[USER] ring3 exec PASS ... boundary_ok=1`), `-cpu max`에서 `[SEC] ... smap=1`로 SMAP 경로까지 통과. 기본 CPU(smap=0)/`-cpu max`(smap=1) + 스모크 3종 + shell 레인 + cppcheck 클린.
+- **교훈:** SMAP을 켜자 `user_exec`의 스테이징 memcpy가 즉시 #PF — SMAP이 브래킷 밖 유저 페이지 접근을 실제로 잡는다는 증거. 앞으로 커널이 유저 페이지를 직접 만지는 모든 경로는 fence 필수.
 
 ### M2. ELF 로더 + 프로세스 주소공간 (Phase 1 완성)
 - **작업:** static ELF64 파서(PT_LOAD만), 프로세스별 페이지 테이블(현재 고정 단일 유저 페이지 → 전용 PML4 복제), `user_exec`를 "내장 blob 실행기"에서 "이미지 실행기"로 승격. 초기 이미지는 커널에 링크로 내장(스토리지 이전 단계).

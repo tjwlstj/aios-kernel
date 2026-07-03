@@ -18,6 +18,7 @@ typedef struct {
     bool     entered;         /* reached ring3 (>=1 user syscall observed) */
     bool     returned;        /* came back via the exit syscall */
     bool     syscall_ok;      /* user buffer held valid syscall result */
+    bool     boundary_ok;     /* ring3 attempt to reach kernel memory was denied */
     uint32_t user_syscalls;   /* int 0x80 count during the run */
     uint64_t exit_code;       /* exit() argument from ring3 */
     uint64_t duration_ns;     /* high-precision ring3 residency time */

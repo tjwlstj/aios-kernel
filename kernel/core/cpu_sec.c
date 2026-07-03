@@ -4,6 +4,7 @@
  */
 
 #include <kernel/cpu_sec.h>
+#include <kernel/user_access.h>
 #include <drivers/serial.h>
 
 #define CPUID_EXT_FEATURES      0x80000001u
@@ -19,6 +20,7 @@
 
 #define CR4_UMIP                BIT(11)
 #define CR4_SMEP                BIT(20)
+#define CR4_SMAP                BIT(21)
 
 static cpu_sec_info_t g_cpu_sec;
 
@@ -81,19 +83,29 @@ aios_status_t cpu_security_init(void) {
     if (g_cpu_sec.umip_supported) {
         cr4 |= CR4_UMIP;
     }
+    /* SMAP is now backed by STAC/CLAC bracketing in the uaccess copies,
+     * so enable it when supported. The CPU keeps AC=0 by default, so any
+     * stray kernel touch of a user page outside a copy now faults. */
+    if (g_cpu_sec.smap_supported) {
+        cr4 |= CR4_SMAP;
+    }
     write_cr4(cr4);
 
     cr4 = read_cr4();
     g_cpu_sec.smep_enabled = (cr4 & CR4_SMEP) != 0;
     g_cpu_sec.umip_enabled = (cr4 & CR4_UMIP) != 0;
-    /* SMAP stays off until uaccess wraps copies with stac/clac. */
-    g_cpu_sec.smap_enabled = false;
+    g_cpu_sec.smap_enabled = (cr4 & CR4_SMAP) != 0;
 
-    serial_printf("[SEC] nx=%u smep=%u umip=%u smap_supported=%u smap=0\n",
+    /* Tell the uaccess layer whether to emit STAC/CLAC around user-page
+     * touches (STAC/CLAC are #UD on CPUs without SMAP). */
+    user_access_set_smap_active(g_cpu_sec.smap_enabled);
+
+    serial_printf("[SEC] nx=%u smep=%u umip=%u smap_supported=%u smap=%u\n",
         (uint64_t)g_cpu_sec.nx_enabled,
         (uint64_t)g_cpu_sec.smep_enabled,
         (uint64_t)g_cpu_sec.umip_enabled,
-        (uint64_t)g_cpu_sec.smap_supported);
+        (uint64_t)g_cpu_sec.smap_supported,
+        (uint64_t)g_cpu_sec.smap_enabled);
 
     return AIOS_OK;
 }
