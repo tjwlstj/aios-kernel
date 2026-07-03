@@ -156,6 +156,7 @@ Stack protector is ON (`-fstack-protector-strong -mstack-protector-guard=global`
 - uaccess user window: during a ring3 run, `access_ok` requires buffers to lie inside the registered user window, so a ring3-supplied pointer into kernel memory is denied (`[USER] ... boundary_ok=1`). Kernel-internal uaccess runs with no window and is unaffected. Any direct kernel touch of a user page outside `copy_*_user` must be wrapped in `user_access_fence_begin/end`.
 - All CPU exceptions except `#BP` panic; `#PF` dumps CR2; `#DF` runs on TSS IST1.
 - CI runs cppcheck (`--enable=warning,performance,portability --error-exitcode=1`); keep it clean. Local: `cppcheck --std=c11 --platform=unix64 --enable=warning,performance,portability --inline-suppr --suppress=missingIncludeSystem --error-exitcode=1 -Ikernel/include kernel/`
+- Windows local fallback when Cppcheck is installed outside `PATH`: `& 'C:\Program Files\Cppcheck\cppcheck.exe' --std=c11 --platform=unix64 --enable=warning,performance,portability --inline-suppr --suppress=missingIncludeSystem --error-exitcode=1 -Ikernel/include kernel/`
 - Details and remaining roadmap: `docs/meta/hardening_baseline_2026_07_02_ko.md`.
 
 ### Current Workflow Plan

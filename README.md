@@ -215,6 +215,18 @@ python .\tools\testkit\aios-testkit.py shell --strict --skip-build
 python .\tools\testkit\aios-testkit.py os
 ```
 
+Static analysis uses the same cppcheck lane as CI. If `cppcheck` is on `PATH`, run:
+
+```powershell
+cppcheck --std=c11 --platform=unix64 --enable=warning,performance,portability --inline-suppr --suppress=missingIncludeSystem --error-exitcode=1 -Ikernel/include kernel/
+```
+
+On Windows hosts where Cppcheck is installed but not on `PATH`, the Program Files install can be called directly:
+
+```powershell
+& 'C:\Program Files\Cppcheck\cppcheck.exe' --std=c11 --platform=unix64 --enable=warning,performance,portability --inline-suppr --suppress=missingIncludeSystem --error-exitcode=1 -Ikernel/include kernel/
+```
+
 ### Run in QEMU
 ```bash
 make run            # QEMU에서 커널 실행 (VGA + 시리얼)
