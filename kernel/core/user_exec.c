@@ -5,15 +5,17 @@
 
 #include <kernel/user_exec.h>
 #include <kernel/user_access.h>
+#include <kernel/elf.h>
 #include <kernel/time.h>
 #include <runtime/node_pipeline.h>
 #include <drivers/serial.h>
 #include <lib/string.h>
 
-/* Ring3 entry / syscall path / demo program (kernel/core/user_entry.asm). */
+/* Ring3 entry / syscall path (kernel/core/user_entry.asm). */
 extern void user_mode_run(uint64_t entry_rip, uint64_t user_stack_top);
-extern uint8_t user_program_start[];
-extern uint8_t user_program_end[];
+/* Embedded static ELF64 demo image parsed by the ELF loader. */
+extern uint8_t user_elf_image_start[];
+extern uint8_t user_elf_image_end[];
 extern volatile uint64_t g_user_syscalls;
 extern volatile uint64_t g_user_exit_code;
 extern volatile uint8_t  g_user_exited;
@@ -65,43 +67,53 @@ static void map_user_region(void) {
 
 aios_status_t user_exec_run_first(void) {
     node_pipeline_snapshot_t *user_result;
-    uint64_t program_size = (uint64_t)((uintptr_t)user_program_end -
-                                       (uintptr_t)user_program_start);
+    uint64_t image_size = (uint64_t)((uintptr_t)user_elf_image_end -
+                                     (uintptr_t)user_elf_image_start);
+    elf_load_result_t elf = {0};
+    aios_status_t elf_status;
     uint64_t enter_ns;
     uint64_t exit_ns;
 
     memset(&g_user_exec, 0, sizeof(g_user_exec));
     g_user_exec.attempted = true;
 
-    if (program_size == 0 || program_size > 0x1000UL) {
-        serial_write("[USER] ring3 exec ABORT: bad program size\n");
-        return AIOS_ERR_INVAL;
-    }
-
     /* 1. Promote the region to a user-accessible, executable page. */
     map_user_region();
 
-    /* 2. Stage the program and clear the result buffer in the user page.
-     *    These are deliberate kernel writes to user pages, so bracket them
-     *    with the SMAP fence (no-op when SMAP is off). */
+    /* 2. Load the ELF image into the user region and stage the syscall
+     *    scratch buffers. These are deliberate kernel writes to user pages,
+     *    so bracket them with the SMAP fence (no-op when SMAP is off). The
+     *    loader copies segments to their p_vaddr and zeroes any .bss tail. */
     user_result = (node_pipeline_snapshot_t *)USER_BUFFER_ADDR;
     user_access_fence_begin();
-    memcpy((void *)USER_REGION_BASE, user_program_start, (size_t)program_size);
-    memset(user_result, 0, sizeof(*user_result));
-    *(volatile int64_t *)USER_REJECT_ADDR = 0;
+    elf_status = elf_load(user_elf_image_start, image_size,
+                          USER_REGION_BASE, USER_REGION_SIZE, &elf);
+    if (elf_status == AIOS_OK) {
+        memset(user_result, 0, sizeof(*user_result));
+        *(volatile int64_t *)USER_REJECT_ADDR = 0;
+    }
     user_access_fence_end();
+
+    if (elf_status != AIOS_OK) {
+        serial_write("[USER] ring3 exec ABORT: ELF load failed\n");
+        return elf_status;
+    }
+
+    g_user_exec.elf_loaded = true;
+    g_user_exec.elf_entry = elf.entry;
+    g_user_exec.elf_segments = elf.loadable_segments;
 
     g_user_syscalls = 0;
     g_user_exit_code = 0;
     g_user_exited = 0;
 
-    /* 3. Constrain uaccess to the user page, then enter ring3. Any syscall
-     *    the program issues with a pointer outside the window is denied.
-     *    The window is cleared on return so kernel-internal uaccess (which
-     *    runs with no window) is never affected. */
+    /* 3. Constrain uaccess to the user page, then enter ring3 at the ELF
+     *    entry point. Any syscall the program issues with a pointer outside
+     *    the window is denied. The window is cleared on return so
+     *    kernel-internal uaccess (which runs with no window) is unaffected. */
     user_access_set_window(USER_REGION_BASE, USER_REGION_SIZE);
     enter_ns = kernel_time_monotonic_ns();
-    user_mode_run(USER_REGION_BASE, USER_STACK_TOP);
+    user_mode_run(elf.entry, USER_STACK_TOP);
     exit_ns = kernel_time_monotonic_ns();
     user_access_clear_window();
 
@@ -126,12 +138,14 @@ aios_status_t user_exec_run_first(void) {
     g_user_exec.syscall_ok = observed_max == NODE_PIPELINE_MAX;
     g_user_exec.boundary_ok = reject_value == (int64_t)AIOS_ERR_PERM;
 
-    bool ok = g_user_exec.entered && g_user_exec.returned &&
-              g_user_exec.syscall_ok && g_user_exec.boundary_ok &&
-              g_user_exec.exit_code == 42;
+    bool ok = g_user_exec.elf_loaded && g_user_exec.entered &&
+              g_user_exec.returned && g_user_exec.syscall_ok &&
+              g_user_exec.boundary_ok && g_user_exec.exit_code == 42;
 
-    serial_printf("[USER] ring3 exec %s entered=%u returned=%u syscalls=%u boundary_ok=%u exit_code=%u pipe_max=%u dur_ns=%u\n",
+    serial_printf("[USER] ring3 exec %s elf_entry=%x segments=%u entered=%u returned=%u syscalls=%u boundary_ok=%u exit_code=%u pipe_max=%u dur_ns=%u\n",
         ok ? "PASS" : "FAIL",
+        g_user_exec.elf_entry,
+        (uint64_t)g_user_exec.elf_segments,
         (uint64_t)g_user_exec.entered,
         (uint64_t)g_user_exec.returned,
         (uint64_t)g_user_exec.user_syscalls,

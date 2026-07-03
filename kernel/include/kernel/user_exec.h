@@ -23,6 +23,9 @@ typedef struct {
     uint64_t exit_code;       /* exit() argument from ring3 */
     uint64_t duration_ns;     /* high-precision ring3 residency time */
     uint32_t observed_pipeline_max; /* value the user syscall read back */
+    bool     elf_loaded;      /* image parsed and mapped as ELF64 */
+    uint64_t elf_entry;       /* e_entry of the loaded image */
+    uint32_t elf_segments;    /* PT_LOAD segments mapped */
 } user_exec_info_t;
 
 /* Run the first ring3 slice. Returns AIOS_OK only on a fully verified

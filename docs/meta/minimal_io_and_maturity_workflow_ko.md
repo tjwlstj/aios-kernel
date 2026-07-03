@@ -51,13 +51,15 @@ QEMU 기본 `-hda`와 즉시 호환되고 수십 줄로 섹터를 읽을 수 있
 - **검증 완료:** `[UACCESS] selftest ... window=1`, ring3 데모가 커널 주소로 시도한 시스콜이 거부됨(`[USER] ring3 exec PASS ... boundary_ok=1`), `-cpu max`에서 `[SEC] ... smap=1`로 SMAP 경로까지 통과. 기본 CPU(smap=0)/`-cpu max`(smap=1) + 스모크 3종 + shell 레인 + cppcheck 클린.
 - **교훈:** SMAP을 켜자 `user_exec`의 스테이징 memcpy가 즉시 #PF — SMAP이 브래킷 밖 유저 페이지 접근을 실제로 잡는다는 증거. 앞으로 커널이 유저 페이지를 직접 만지는 모든 경로는 fence 필수.
 
-### M2. ELF 로더 + 프로세스 주소공간 (Phase 1 완성)
-- **작업:** static ELF64 파서(PT_LOAD만), 프로세스별 페이지 테이블(현재 고정 단일 유저 페이지 → 전용 PML4 복제), `user_exec`를 "내장 blob 실행기"에서 "이미지 실행기"로 승격. 초기 이미지는 커널에 링크로 내장(스토리지 이전 단계).
-- **완료 기준:** 내장 ELF가 ring3에서 실행되고 exit 코드 검증, `state user`에 이미지 기반 실행 반영.
+### M2. static ELF64 로더 (Phase 1 핵심)  ✅ 완료 (2026-07-03)
+- **반영:** `kernel/core/elf_loader.c` — Elf64_Ehdr/Phdr 검증(magic/class/machine=x86_64/type=EXEC), PT_LOAD 세그먼트를 `p_vaddr`로 복사 + `.bss`(memsz-filesz) 제로화 + image/region 경계 검사. 데모 프로그램을 `user_entry.asm`에 손수 조립한 **유효 ELF64 이미지**(`user_elf_image_start/end`)로 교체 — 별도 링크 단계 없이 make/PS1 동일 동작. `user_exec`가 blob memcpy 대신 `elf_load` 사용, `e_entry`로 ring3 진입.
+- **검증 완료:** `[ELF] loaded entry=0x4000078 segments=1 filesz=44 memsz=108`(.bss 제로화 포함), `[USER] ring3 exec PASS elf_entry=... boundary_ok=1 exit_code=42`. 기본/`-cpu max`(SMAP) + 스모크 3종 + shell 레인 + cppcheck 클린.
+- **스코프 조정 근거:** "프로세스별 CR3 전용 주소공간 복제"는 동시 유저 태스크가 2개 이상 필요한 **M3(선점)와 병합**한다 — 태스크 하나뿐이면 별도 주소공간이 불필요하고, CR3 스위칭은 문맥전환 로직과 함께 만드는 게 자연스럽다. M2는 세그먼트 기반 ELF 로더 + 유저 매핑(공유 페이지 테이블)까지로 완결.
+- **잔여:** per-segment 4K W^X(M6), 디스크에서 ELF 적재(M5).
 
-### M3. 타이머 선점 + 문맥전환 (+ 힙 스핀락)
-- **작업:** `ai_sched_tick()`을 카운팅에서 실제 태스크 전환으로 승격(커널 스레드 2개 왕복부터), 컨텍스트 저장/복원 asm, `mm/heap.c` 스핀락(주석에 명시된 부채).
-- **완료 기준:** 두 태스크 교대 실행의 마커 검증, 힙 동시성 셀프테스트.
+### M3. 타이머 선점 + 문맥전환 + 프로세스별 주소공간 (+ 힙 스핀락)
+- **작업:** `ai_sched_tick()`을 카운팅에서 실제 태스크 전환으로 승격(커널 스레드 2개 왕복부터), 컨텍스트 저장/복원 asm, **프로세스별 PML4 복제 + CR3 스위칭**(M2에서 이월 — 동시 유저 태스크가 생기는 이 시점에 필요), `mm/heap.c` 스핀락(주석에 명시된 부채).
+- **완료 기준:** 두 태스크 교대 실행의 마커 검증, 각 태스크 별도 주소공간, 힙 동시성 셀프테스트.
 
 ### M4. storage read — virtio-blk 최소 데이터 경로
 - **작업:** virtio-pci 트랜스포트(modern, 1.2 기준) + virtqueue 1개 + 동기 섹터 읽기. `storage_host`에 `STORAGE_HOST_CONTROLLER_VIRTIO` 분기. testkit에 디스크 이미지 생성 + `-device virtio-blk-pci` 스모크 프로파일(`storage-virtio`) 추가.

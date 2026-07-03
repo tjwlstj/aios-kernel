@@ -99,8 +99,10 @@ kernel/boot/boot.asm  (Multiboot2 entry, GDT, paging, SSE/AVX setup, long mode)
 - PCI enumeration + accelerator abstraction (GPU/TPU/NPU/FPGA/CPU-SIMD).
 - 16-device slots; CPU SIMD fallback via SSE/AVX.
 
-**Ring3 Execution (`kernel/core/user_exec.c`, `kernel/core/user_entry.asm`)**
-- First real userspace slice: promotes a fixed 2MB region at 64MB to a user page (U/S bit set at PML4/PDPT/PDE — user access is the AND across all levels), enters CPL3 via `iretq`, and runs a tiny program that calls back through `int 0x80`.
+**Ring3 Execution (`kernel/core/user_exec.c`, `kernel/core/user_entry.asm`, `kernel/core/elf_loader.c`)**
+- First real userspace slice: promotes a fixed 2MB region at 64MB to a user page (U/S bit set at PML4/PDPT/PDE — user access is the AND across all levels), loads a static ELF64 image into it via `elf_load` (validates the header, maps PT_LOAD segments to their `p_vaddr`, zeroes the `.bss` tail), enters CPL3 via `iretq` at `e_entry`, and runs a tiny program that calls back through `int 0x80`.
+- The demo user program is a real ELF64 image hand-assembled in `user_entry.asm` (`user_elf_image_start/end`) — no second link step, works identically under `make` and the Windows build.
+- Per-process page tables / CR3 switching are deferred to M3 (needed once >1 user task runs concurrently); this slice runs on the shared boot page tables. Per-segment 4K W^X is a later step (the user region is one W^X+U huge page).
 - `int 0x80` gate is DPL=3 (`idt.c`, vector 0x80) routed to `isr_syscall`, which re-maps ring3 args (rax=num, rdi/rsi/rdx/r10/r8) to `ai_syscall_dispatch`; `rax==0` is exit and restores the saved kernel stack.
 - Ring3->ring0 entry uses a dedicated TSS `rsp0` stack (`syscall_stack_top` in boot.asm), separate from the boot stack, so a syscall can't clobber the launcher's frame.
 - The demo program calls `SYS_PIPE_STATS` into a user buffer then `exit(42)`; the kernel verifies the buffer holds the real registry capacity — proof of a full round trip. Result is observable via `state user`.

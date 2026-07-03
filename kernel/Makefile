@@ -53,6 +53,7 @@ C_SOURCES   = $(KERNEL_DIR)/main.c \
               $(KERNEL_DIR)/user_mode.c \
               $(KERNEL_DIR)/user_access.c \
               $(KERNEL_DIR)/user_exec.c \
+              $(KERNEL_DIR)/elf_loader.c \
               $(KERNEL_DIR)/stack_guard.c \
               $(KERNEL_DIR)/cpu_sec.c \
               $(KERNEL_DIR)/shell.c \

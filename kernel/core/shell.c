@@ -108,8 +108,11 @@ static void state_list(void) {
 static void state_user(void) {
     user_exec_info_t u;
     user_exec_get_info(&u);
-    STATE_EMIT("[STATE] user attempted=%u entered=%u returned=%u syscall_ok=%u boundary_ok=%u syscalls=%u exit_code=%u pipe_max=%u dur_ns=%u\n",
+    STATE_EMIT("[STATE] user attempted=%u elf_loaded=%u elf_entry=%x segments=%u entered=%u returned=%u syscall_ok=%u boundary_ok=%u syscalls=%u exit_code=%u pipe_max=%u dur_ns=%u\n",
         (uint64_t)u.attempted,
+        (uint64_t)u.elf_loaded,
+        u.elf_entry,
+        (uint64_t)u.elf_segments,
         (uint64_t)u.entered,
         (uint64_t)u.returned,
         (uint64_t)u.syscall_ok,

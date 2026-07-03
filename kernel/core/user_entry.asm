@@ -12,8 +12,8 @@ bits 64
 
 global user_mode_run
 global isr_syscall
-global user_program_start
-global user_program_end
+global user_elf_image_start
+global user_elf_image_end
 global g_user_syscalls
 global g_user_exit_code
 global g_user_exited
@@ -92,30 +92,59 @@ isr_syscall:
     ret
 
 ; -----------------------------------------------------------------------------
-; Demo user program (position-fixed). Copied into the user page at
-; 0x4000000 before entry; addresses below are absolute into that page.
+; Demo user program delivered as a real static ELF64 image, parsed by the
+; kernel elf_loader. The code segment loads at USER_CODE_VADDR; p_memsz is
+; larger than p_filesz so the loader also exercises .bss zeroing.
 ;   1) SYS_PIPE_STATS(0x604) with the result buffer at 0x4001000
-;   2) exit(42)
+;   2) hostile SYS_PIPE_STATS with a kernel-range pointer (must be denied)
+;   3) exit(42)
 ; -----------------------------------------------------------------------------
-user_program_start:
-    ; 1) Valid call: result buffer inside the user window.
+%define USER_CODE_VADDR 0x4000000
+
+section .rodata
+align 8
+user_elf_image_start:
+elf_ehdr:
+    db 0x7f, 'E', 'L', 'F'      ; e_ident magic
+    db 2, 1, 1, 0               ; ELFCLASS64, ELFDATA2LSB, EV_CURRENT, ABI
+    times 8 db 0                ; e_ident padding
+    dw 2                        ; e_type = ET_EXEC
+    dw 62                       ; e_machine = EM_X86_64
+    dd 1                        ; e_version
+    dq USER_CODE_VADDR + (elf_code - user_elf_image_start) ; e_entry
+    dq elf_phdr - user_elf_image_start                     ; e_phoff
+    dq 0                        ; e_shoff
+    dd 0                        ; e_flags
+    dw 64                       ; e_ehsize
+    dw 56                       ; e_phentsize
+    dw 1                        ; e_phnum
+    dw 0                        ; e_shentsize
+    dw 0                        ; e_shnum
+    dw 0                        ; e_shstrndx
+elf_phdr:
+    dd 1                        ; p_type = PT_LOAD
+    dd 5                        ; p_flags = R+X
+    dq elf_code - user_elf_image_start                     ; p_offset
+    dq USER_CODE_VADDR + (elf_code - user_elf_image_start) ; p_vaddr
+    dq USER_CODE_VADDR + (elf_code - user_elf_image_start) ; p_paddr
+    dq elf_code_end - elf_code                             ; p_filesz
+    dq (elf_code_end - elf_code) + 64                      ; p_memsz (+bss)
+    dq 0x1000                   ; p_align
+elf_code:
     mov rax, 0x604          ; SYS_PIPE_STATS
     mov rdi, 0x4001000      ; user result buffer (USER_REGION + 4KB)
     int 0x80
-    ; 2) Hostile call: ask the kernel to write into kernel memory. The
-    ;    uaccess window must reject it (return AIOS_ERR_PERM = -6). Stash
-    ;    the return value so the kernel can verify enforcement happened.
-    mov rax, 0x604          ; SYS_PIPE_STATS
-    mov rdi, 0x100000       ; kernel image address, outside the user window
+    mov rax, 0x604          ; hostile: kernel-range pointer
+    mov rdi, 0x100000
     int 0x80
     mov [0x4001800], rax    ; record the rejection return value
-    ; 3) exit(42)
-    xor rax, rax
-    mov rdi, 42
+    xor rax, rax            ; exit
+    mov rdi, 42             ; exit code
     int 0x80
 .hang:
     jmp .hang
-user_program_end:
+elf_code_end:
+user_elf_image_end:
 
 ; -----------------------------------------------------------------------------
 section .bss
