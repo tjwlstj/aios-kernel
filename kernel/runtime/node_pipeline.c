@@ -57,7 +57,7 @@ static node_pipeline_t *find_free_slot_locked(void) {
 
 static void copy_label(char *dst, const char *src) {
     uint32_t i = 0;
-    while (src[i] && i < NODE_PIPELINE_LABEL_MAX - 1) {
+    while (i + 1 < NODE_PIPELINE_LABEL_MAX && src[i]) {
         dst[i] = src[i];
         i++;
     }

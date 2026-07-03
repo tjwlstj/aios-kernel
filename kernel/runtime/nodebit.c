@@ -95,7 +95,7 @@ static void record_decision(int32_t slot, nodebit_action_t action,
 /* Copy at most NODEBIT_LABEL_MAX-1 characters and NUL-terminate. */
 static void copy_label(char *dst, const char *src) {
     uint32_t i = 0;
-    while (src[i] && i < NODEBIT_LABEL_MAX - 1) {
+    while (i + 1 < NODEBIT_LABEL_MAX && src[i]) {
         dst[i] = src[i];
         i++;
     }

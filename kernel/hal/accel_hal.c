@@ -131,7 +131,7 @@ static accel_vendor_t identify_vendor(uint16_t vendor_id) {
 
 static void copy_string(char *dst, const char *src, uint32_t max_len) {
     uint32_t i = 0;
-    while (src[i] && i < max_len - 1) {
+    while (i + 1 < max_len && src[i]) {
         dst[i] = src[i];
         i++;
     }

@@ -23,7 +23,7 @@ static platform_probe_summary_t probe_summary = {0};
 
 static void copy_string(char *dst, const char *src, uint32_t max_len) {
     uint32_t i = 0;
-    while (src[i] && i + 1 < max_len) {
+    while (i + 1 < max_len && src[i]) {
         dst[i] = src[i];
         i++;
     }

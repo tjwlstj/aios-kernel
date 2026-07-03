@@ -58,7 +58,7 @@ static void copy_name(char *dst, const char *src, uint32_t max_len) {
         return;
     }
 
-    while (src[i] && i + 1 < max_len) {
+    while (i + 1 < max_len && src[i]) {
         dst[i] = src[i];
         i++;
     }

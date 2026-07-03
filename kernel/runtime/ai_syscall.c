@@ -109,7 +109,7 @@ static aios_status_t syscall_optional_output_buffer_status(const void *ptr,
 
 static void copy_str(char *dst, const char *src, uint32_t max_len) {
     uint32_t i = 0;
-    while (src[i] && i < max_len - 1) {
+    while (i + 1 < max_len && src[i]) {
         dst[i] = src[i];
         i++;
     }
