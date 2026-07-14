@@ -169,6 +169,13 @@ Stack protector is ON (`-fstack-protector-strong -mstack-protector-guard=global`
 - Windows local fallback when Cppcheck is installed outside `PATH`: `& 'C:\Program Files\Cppcheck\cppcheck.exe' --std=c11 --platform=unix64 --enable=warning,performance,portability --inline-suppr --suppress=missingIncludeSystem --error-exitcode=1 -Ikernel/include kernel/`
 - Details and remaining roadmap: `docs/meta/hardening_baseline_2026_07_02_ko.md`.
 
+### Handoff Tips (landmines)
+Hard-won invariants and debugging notes for this kernel (sti/PIC ordering, IF
+inheritance on context switch, SMAP fences, 4-level user page bits, #DF frames,
+the two-scheduler and two-NodeBit splits) are collected in
+`docs/meta/codex_handoff_tips_ko.md`. Read it before touching the ring3 /
+scheduler / paging / syscall paths.
+
 ### Current Workflow Plan
 The maturity-first roadmap (M1 uaccess/SMAP → M2 ELF loader → M3 preemption →
 M4 virtio-blk storage read → M5 load programs from disk) and the per-step
