@@ -64,6 +64,7 @@ def required_smoke_patterns(smoke_profile: str) -> list[str]:
         "[HEAP] lock selftest PASS",
         "[SCHED] context switch selftest PASS",
         "[SCHED] preempt selftest PASS",
+        "[MM] address space selftest PASS",
         "[TIMER] PIT IRQ ready",
         "[DEV] Peripheral probe ready",
         "[USER] Ring3 scaffold ready=1",

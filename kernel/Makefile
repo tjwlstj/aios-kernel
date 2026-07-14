@@ -63,6 +63,7 @@ C_SOURCES   = $(KERNEL_DIR)/main.c \
               $(MM_DIR)/tensor_mm.c \
               $(MM_DIR)/memory_fabric.c \
               $(MM_DIR)/heap.c \
+              $(MM_DIR)/address_space.c \
               $(SCHED_DIR)/ai_sched.c \
               $(SCHED_DIR)/kthread.c \
               $(HAL_DIR)/accel_hal.c \

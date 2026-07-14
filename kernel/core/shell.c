@@ -51,6 +51,7 @@
 #include <drivers/vga.h>
 #include <drivers/serial.h>
 #include <mm/heap.h>
+#include <mm/address_space.h>
 #include <lib/string.h>
 
 /* -------------------------------------------------------------------------
@@ -110,10 +111,14 @@ static void state_list(void) {
 
 static void state_sched(void) {
     sched_stats_t s;
+    address_space_stats_t as;
     ai_sched_stats(&s);
-    STATE_EMIT("[STATE] sched kthread_switches=%u preempt_ticks=%u total_tasks=%u active_tasks=%u workload_ctx_switches=%u preemptions=%u\n",
+    address_space_get_stats(&as);
+    STATE_EMIT("[STATE] sched kthread_switches=%u preempt_ticks=%u address_space_switches=%u address_space_ready=%u total_tasks=%u active_tasks=%u workload_ctx_switches=%u preemptions=%u\n",
         kthread_switch_count(),
         kthread_preempt_tick_count(),
+        as.switches,
+        as.selftest_passed ? 1ULL : 0ULL,
         (uint64_t)s.total_tasks,
         (uint64_t)s.active_tasks,
         (uint64_t)s.context_switches,

@@ -36,6 +36,7 @@
 #include <runtime/node_pipeline.h>
 #include <runtime/slm_orchestrator.h>
 #include <mm/heap.h>
+#include <mm/address_space.h>
 #include <drivers/keyboard.h>
 #include <kernel/shell.h>
 
@@ -306,6 +307,10 @@ static void init_subsystems(uint64_t multiboot_magic, uint64_t multiboot_info) {
     INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_SCHED,
         "AI Workload Scheduler", ai_sched_init());
     if (kthread_selftest() != AIOS_OK) {
+        kernel_health_mark(KERNEL_SUBSYSTEM_SCHED,
+            KERNEL_HEALTH_DEGRADED, AIOS_ERR_IO);
+    }
+    if (address_space_selftest() != AIOS_OK) {
         kernel_health_mark(KERNEL_SUBSYSTEM_SCHED,
             KERNEL_HEALTH_DEGRADED, AIOS_ERR_IO);
     }

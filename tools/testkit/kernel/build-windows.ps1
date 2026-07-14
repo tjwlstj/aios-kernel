@@ -133,6 +133,7 @@ function Get-SmokeRequiredPatterns {
         '\[HEAP\] lock selftest PASS',
         '\[SCHED\] context switch selftest PASS',
         '\[SCHED\] preempt selftest PASS',
+        '\[MM\] address space selftest PASS',
         '\[DEV\] Peripheral probe ready',
         '\[USER\] Ring3 scaffold ready=1',
         '\[ROOM\] snapshot stability=',
