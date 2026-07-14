@@ -138,11 +138,14 @@ kernel/boot/boot.asm  (Multiboot2 entry, GDT, paging, SSE/AVX setup, long mode)
 ### Smoke Test Checkpoints (CI-verified)
 A successful boot must emit all of:
 ```
+[BOOT] Multiboot2 handoff PASS
 [TIMER] PIT IRQ ready
 [SELFTEST] Memory microbench PASS
 [HEAP] lock selftest PASS
 [SCHED] context switch selftest PASS
 [SCHED] preempt selftest PASS
+[MM] address space selftest PASS
+[MM] user leaf isolation selftest PASS
 [DEV] Peripheral probe ready
 [HEALTH] stability=...
 [PIPE] Node pipeline ready

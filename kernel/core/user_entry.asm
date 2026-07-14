@@ -72,7 +72,9 @@ isr_syscall:
     mov rdx, rsi           ; a2
     mov rsi, rdi           ; a1
     mov rdi, rax           ; num
+    sub rsp, 8             ; align the SysV call site (CPU frame is 40 bytes)
     call ai_syscall_dispatch
+    add rsp, 8
     ; Return value is in rax; iretq leaves rax untouched so ring3 sees it.
     iretq
 

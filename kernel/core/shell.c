@@ -114,11 +114,13 @@ static void state_sched(void) {
     address_space_stats_t as;
     ai_sched_stats(&s);
     address_space_get_stats(&as);
-    STATE_EMIT("[STATE] sched kthread_switches=%u preempt_ticks=%u address_space_switches=%u address_space_ready=%u total_tasks=%u active_tasks=%u workload_ctx_switches=%u preemptions=%u\n",
+    STATE_EMIT("[STATE] sched kthread_switches=%u preempt_ticks=%u address_space_switches=%u address_space_ready=%u user_leaf_slots=%u user_leaf_isolated=%u total_tasks=%u active_tasks=%u workload_ctx_switches=%u preemptions=%u\n",
         kthread_switch_count(),
         kthread_preempt_tick_count(),
         as.switches,
         as.selftest_passed ? 1ULL : 0ULL,
+        (uint64_t)as.user_leaf_slots,
+        as.user_leaf_isolation_passed ? 1ULL : 0ULL,
         (uint64_t)s.total_tasks,
         (uint64_t)s.active_tasks,
         (uint64_t)s.context_switches,

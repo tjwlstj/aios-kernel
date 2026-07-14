@@ -60,11 +60,13 @@ def required_smoke_patterns(smoke_profile: str) -> list[str]:
     smoke_profile = ensure_smoke_profile(smoke_profile)
     required = [
         "AIOS Kernel Ready",
+        "[BOOT] Multiboot2 handoff PASS",
         "[SELFTEST] Memory microbench PASS",
         "[HEAP] lock selftest PASS",
         "[SCHED] context switch selftest PASS",
         "[SCHED] preempt selftest PASS",
         "[MM] address space selftest PASS",
+        "[MM] user leaf isolation selftest PASS",
         "[TIMER] PIT IRQ ready",
         "[DEV] Peripheral probe ready",
         "[USER] Ring3 scaffold ready=1",

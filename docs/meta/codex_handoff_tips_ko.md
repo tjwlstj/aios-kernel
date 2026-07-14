@@ -57,6 +57,9 @@ ring3에서 유저 페이지 접근 시 PML4→PDPT→PD→PT의 **모든** 레�
 ### 2.6 #DF 프레임의 레지스터 값은 신뢰하지 말 것
 #DF는 첫 폴트가 이미 스택을 손상시킨 뒤라 캡처된 RIP/RSP가 쓰레기일 수 있다(0x8 등). #DF가 뜨면 **원인은 직전의 다른 폴트**다. 이럴 땐 시리얼 디버그(`serial_printf`)로 실패 지점을 좁혀라 — 이 커널은 예외 시 CR2 덤프(#PF)와 전 예외 panic 봉쇄가 있어, 조용한 폴트 루프 대신 즉시 로그가 남는다.
 
+### 2.7 Multiboot info 포인터는 EBP 보존값에서 복구한다
+`_start`는 GRUB의 EBX(Multiboot info)를 EBP에 보존하지만 `setup_page_tables`가 EDI를 page-directory cursor로 덮는다. 과거 `long_mode_start`가 이 EDI를 C에 넘겨 부팅 로그의 info 주소가 항상 `p2_table_3`과 같았고, ACPI는 BIOS scan fallback 덕분에 통과했다. M3-b-3b1에서 `r13d = ebp`로 바로잡고, header/정렬/전체 tag chain/terminating tag를 bounded walk로 검증해 `[BOOT] Multiboot2 handoff PASS`로 남긴다. 실패한 handoff는 ACPI 같은 소비자에게 전달하지 않는다. 다시 EDI를 handoff 포인터로 사용하지 말 것. 실제 PMM 전에는 복구된 MBI의 memory-map tag 의미/예약 범위 셀프테스트와 Linux GRUB 교차검증이 별도로 필요하다.
+
 ---
 
 ## 3. 알아두면 좋은 구조
@@ -80,7 +83,7 @@ ring3에서 유저 페이지 접근 시 PML4→PDPT→PD→PT의 **모든** 레�
 ## 5. 다음 작업: M3-b-3b
 
 `address_space_selftest`는 부트 PML4 복제 + CR3 왕복까지 증명했다(공유 매핑). 다음은:
-1. **프로세스별 유저 leaf page-table** — 유저 영역(현재 고정 64MB)을 프로세스마다 다른 물리 프레임에 매핑, 커널 매핑은 공유.
+1. **정적 주소공간 슬롯별 private user leaf proof ✅ M3-b-3b1 완료 (2026-07-14)** — 정적 2슬롯에서 유저 영역(현재 고정 64MB)을 서로 다른 2MiB backing에 매핑하고 canary 격리를 검증했다. 범용 주소공간 객체, PMM, 실제 프로세스 실행 연결은 아직 아니다.
 2. **프로세스 소유 구조** — `process { address_space(CR3), registers, kernel_stack, capabilities }` (외부 평가 §6의 `struct process` 참고).
 3. **ring3 프로세스 2개 선점 교대** — kthread 선점(M3-b-2) + CR3 스위치(M3-b-3a)를 결합. 타이머 틱에서 다음 프로세스로 CR3까지 전환.
 4. 완료 기준: 두 ring3 프로세스가 각자 주소공간에서 시스콜을 왕복하며 선점 교대, `[SCHED]`/`[MM]`/`state user` 마커로 검증.

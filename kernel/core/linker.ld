@@ -51,6 +51,12 @@ SECTIONS {
     /* Kernel end marker */
     __kernel_end = .;
 
+    /* The bootstrap ring3 ABI reserves VA 64MiB. Keep the linked kernel and
+     * its static isolation backing below that boundary until a real VMM can
+     * place user mappings dynamically. */
+    ASSERT(__kernel_end <= 0x4000000,
+           "kernel image overlaps fixed 64MiB user region")
+
     /* Tensor memory pool starts after kernel */
     . = ALIGN(2M);
     __tensor_pool_start = .;

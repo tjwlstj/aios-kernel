@@ -340,9 +340,11 @@ long_mode_start:
     mov al, 'D'
     out debug_port, al
 
-    ; Preserve multiboot handoff values before reusing rdi/rsi
-    mov r12, rsi
-    mov r13, rdi
+    ; Recover the original 32-bit Multiboot handoff values. setup_page_tables
+    ; uses EDI as its page-directory cursor, so the info pointer must come
+    ; from EBP (where _start preserved EBX), not from the clobbered EDI.
+    mov r12d, esi
+    mov r13d, ebp
 
     ; Reload segment registers and reset the 64-bit stack
     xor eax, eax

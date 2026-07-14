@@ -26,8 +26,9 @@ extern uint64_t p4_table[];
 extern uint64_t p3_table[];
 extern uint64_t p2_table_0[];
 
-/* Fixed user region well clear of the kernel image, heap, and tensor pool
- * (QEMU smoke runs with 256MB). Identity mapped, so virtual == physical. */
+/* Fixed bootstrap user region used by the original single-process slice.
+ * It is identity mapped here; private physical backing is now proven by the
+ * M3-b-3b1 address-space selftest but is not wired into this runner yet. */
 #define USER_REGION_BASE   0x4000000UL           /* 64 MB */
 #define USER_REGION_SIZE   0x200000UL            /* one 2MB huge page */
 #define USER_BUFFER_ADDR   (USER_REGION_BASE + 0x1000UL)

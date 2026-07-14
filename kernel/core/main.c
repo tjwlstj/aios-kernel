@@ -47,9 +47,23 @@
 #define AIOS_VERSION_PRERELEASE "beta.6"
 #define AIOS_CODENAME       "Genesis"
 
+#define MULTIBOOT2_BOOT_MAGIC    0x36d76289UL
+#define MULTIBOOT2_INFO_LIMIT    MB(1)
+#define MULTIBOOT2_PHYS_LIMIT    0x100000000ULL
+
+typedef struct PACKED {
+    uint32_t total_size;
+    uint32_t reserved;
+} multiboot2_info_header_t;
+
+typedef struct PACKED {
+    uint32_t type;
+    uint32_t size;
+} multiboot2_tag_header_t;
+
 /* Forward declarations */
 static void print_banner(void);
-static void print_boot_protocol(uint64_t multiboot_magic, uint64_t multiboot_info);
+static bool print_boot_protocol(uint64_t multiboot_magic, uint64_t multiboot_info);
 static void print_system_info(void);
 static void init_subsystems(uint64_t multiboot_magic, uint64_t multiboot_info);
 static void run_selftests(void);
@@ -72,6 +86,8 @@ static void init_subsystem(kernel_subsystem_id_t id, const char *name, aios_stat
  * @multiboot_info: Pointer to multiboot2 information structure
  */
 void kernel_main(uint64_t multiboot_magic, uint64_t multiboot_info) {
+    bool multiboot2_handoff_ok;
+
     /* Initialize console first for output */
     console_init();
     
@@ -89,13 +105,16 @@ void kernel_main(uint64_t multiboot_magic, uint64_t multiboot_info) {
     /* Display boot banner */
     print_banner();
 
-    print_boot_protocol(multiboot_magic, multiboot_info);
+    multiboot2_handoff_ok =
+        print_boot_protocol(multiboot_magic, multiboot_info);
     
     /* Print system information */
     print_system_info();
     
     /* Initialize all kernel subsystems */
-    init_subsystems(multiboot_magic, multiboot_info);
+    /* A malformed handoff must never reach parsers that walk boot tags. */
+    init_subsystems(multiboot2_handoff_ok ? multiboot_magic : 0,
+        multiboot2_handoff_ok ? multiboot_info : 0);
 
     /* Timer-driven preemption check. Runs after the timer IRQ subsystem so
      * the PIC is remapped (a stray IRQ0 would otherwise be vector 8/#DF);
@@ -166,13 +185,75 @@ static void init_subsystem(kernel_subsystem_id_t id, const char *name, aios_stat
     serial_printf("DEGRADED status=%d\n", (int64_t)status);
 }
 
-static void print_boot_protocol(uint64_t multiboot_magic, uint64_t multiboot_info) {
-    if (multiboot_magic == 0x36d76289) {
+static bool multiboot2_handoff_valid(uint64_t info_addr, uint32_t *size_out) {
+    const multiboot2_info_header_t *header;
+    uint32_t total_size;
+    uint64_t cursor;
+    uint64_t limit;
+
+    if (info_addr == 0 || (info_addr & 7UL) != 0 ||
+        info_addr > MULTIBOOT2_PHYS_LIMIT - sizeof(*header)) {
+        return false;
+    }
+
+    header = (const multiboot2_info_header_t *)(uintptr_t)info_addr;
+    total_size = header->total_size;
+    if (header->reserved != 0 ||
+        total_size < sizeof(*header) + sizeof(multiboot2_tag_header_t) ||
+        total_size > MULTIBOOT2_INFO_LIMIT ||
+        (total_size & 7U) != 0 ||
+        info_addr > MULTIBOOT2_PHYS_LIMIT - total_size) {
+        return false;
+    }
+
+    cursor = info_addr + sizeof(*header);
+    limit = info_addr + total_size;
+    while (cursor <= limit - sizeof(multiboot2_tag_header_t)) {
+        const multiboot2_tag_header_t *tag =
+            (const multiboot2_tag_header_t *)(uintptr_t)cursor;
+        uint64_t advance;
+
+        if (tag->size < sizeof(*tag)) {
+            return false;
+        }
+        if (tag->type == 0) {
+            if (tag->size != sizeof(*tag) ||
+                cursor != limit - sizeof(*tag)) {
+                return false;
+            }
+            if (size_out) {
+                *size_out = total_size;
+            }
+            return true;
+        }
+
+        advance = ((uint64_t)tag->size + 7ULL) & ~7ULL;
+        if (advance > limit - cursor) {
+            return false;
+        }
+        cursor += advance;
+    }
+
+    return false;
+}
+
+static bool print_boot_protocol(uint64_t multiboot_magic, uint64_t multiboot_info) {
+    if (multiboot_magic == MULTIBOOT2_BOOT_MAGIC) {
+        uint32_t info_size = 0;
+        bool handoff_valid = multiboot2_handoff_valid(multiboot_info, &info_size);
+
         kprintf("[BOOT] Multiboot2 verified. Info struct at ");
         console_write_hex(multiboot_info);
         console_newline();
         serial_printf("[BOOT] Multiboot2 verified. Info at %x\n", multiboot_info);
-        return;
+        serial_printf("[BOOT] Multiboot2 handoff %s size=%u aligned=%u\n",
+            handoff_valid ? "PASS" : "FAIL",
+            (uint64_t)info_size,
+            (multiboot_info & 7UL) == 0 ? 1ULL : 0ULL);
+        if (!handoff_valid) {
+            serial_write("[BOOT] Multiboot2 handoff rejected for consumers\n");
+        }
+        return handoff_valid;
     }
 
     if (multiboot_magic == 0x2badb002) {
@@ -180,7 +261,7 @@ static void print_boot_protocol(uint64_t multiboot_magic, uint64_t multiboot_inf
             VGA_YELLOW, VGA_BLUE);
         serial_printf("[BOOT] Multiboot1 compatibility path active. Info at %x\n",
             multiboot_info);
-        return;
+        return false;
     }
 
     console_write_color("[BOOT] WARNING: Unknown boot handoff. Magic=",
@@ -189,6 +270,7 @@ static void print_boot_protocol(uint64_t multiboot_magic, uint64_t multiboot_inf
     console_newline();
     serial_printf("[BOOT] WARNING: Unknown boot handoff. Magic=%x info=%x\n",
         multiboot_magic, multiboot_info);
+    return false;
 }
 
 static void print_banner(void) {
@@ -311,6 +393,10 @@ static void init_subsystems(uint64_t multiboot_magic, uint64_t multiboot_info) {
             KERNEL_HEALTH_DEGRADED, AIOS_ERR_IO);
     }
     if (address_space_selftest() != AIOS_OK) {
+        kernel_health_mark(KERNEL_SUBSYSTEM_SCHED,
+            KERNEL_HEALTH_DEGRADED, AIOS_ERR_IO);
+    }
+    if (address_space_user_isolation_selftest() != AIOS_OK) {
         kernel_health_mark(KERNEL_SUBSYSTEM_SCHED,
             KERNEL_HEALTH_DEGRADED, AIOS_ERR_IO);
     }
