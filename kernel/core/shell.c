@@ -111,8 +111,9 @@ static void state_list(void) {
 static void state_sched(void) {
     sched_stats_t s;
     ai_sched_stats(&s);
-    STATE_EMIT("[STATE] sched kthread_switches=%u total_tasks=%u active_tasks=%u workload_ctx_switches=%u preemptions=%u\n",
+    STATE_EMIT("[STATE] sched kthread_switches=%u preempt_ticks=%u total_tasks=%u active_tasks=%u workload_ctx_switches=%u preemptions=%u\n",
         kthread_switch_count(),
+        kthread_preempt_tick_count(),
         (uint64_t)s.total_tasks,
         (uint64_t)s.active_tasks,
         (uint64_t)s.context_switches,

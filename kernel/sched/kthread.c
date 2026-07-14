@@ -133,4 +133,120 @@ aios_status_t kthread_selftest(void) {
     return AIOS_OK;
 }
 
+/* -------------------------------------------------------------------------
+ * Timer-driven preemption
+ *
+ * Two worker threads spin incrementing their own counters and NEVER call
+ * kthread_switch. The only path that can move control between them is the
+ * timer IRQ handler calling kthread_preempt_tick. So both counters
+ * advancing is proof of real preemption.
+ * ---------------------------------------------------------------------- */
+
+#define KT_PREEMPT_COUNT     2U
+#define KT_WORK_THRESHOLD    50000U   /* reached well within one 10ms slice */
+#define KT_PREEMPT_TICK_CAP  200U     /* ~2s safety bail (smoke timeout >> this) */
+
+static kthread_t  g_pre_main;
+static kthread_t  g_pre_t1;
+static kthread_t  g_pre_t2;
+static uint8_t    g_pre_stack1[KT_STACK_SIZE] ALIGNED(16);
+static uint8_t    g_pre_stack2[KT_STACK_SIZE] ALIGNED(16);
+static kthread_t *g_pre_threads[KT_PREEMPT_COUNT];
+static uint32_t   g_pre_current;
+static volatile bool     g_pre_armed = false;
+static volatile uint32_t g_pre_w1_work;
+static volatile uint32_t g_pre_w2_work;
+static volatile uint32_t g_pre_ticks;
+
+uint64_t kthread_preempt_tick_count(void) {
+    return g_pre_ticks;
+}
+
+/* Worker entries enable interrupts first (a freshly-switched thread inherits
+ * IF=0 from the IRQ/boot context; without sti it could never be preempted).
+ * They then spin forever — the timer is the only thing that moves control. */
+static void pre_worker1(void) {
+    __asm__ volatile ("sti" ::: "memory");
+    for (;;) {
+        g_pre_w1_work++;
+    }
+}
+
+static void pre_worker2(void) {
+    __asm__ volatile ("sti" ::: "memory");
+    for (;;) {
+        g_pre_w2_work++;
+    }
+}
+
+void kthread_preempt_tick(void) {
+    uint32_t prev;
+    uint32_t next;
+
+    if (!g_pre_armed) {
+        return;
+    }
+
+    g_pre_ticks++;
+
+    /* Done (both progressed) or safety bail: return to the bootstrap ctx. */
+    if ((g_pre_w1_work >= KT_WORK_THRESHOLD &&
+         g_pre_w2_work >= KT_WORK_THRESHOLD) ||
+        g_pre_ticks >= KT_PREEMPT_TICK_CAP) {
+        kthread_t *cur = g_pre_threads[g_pre_current];
+        g_pre_armed = false;
+        kthread_switch(&cur->rsp, g_pre_main.rsp);  /* does not return here */
+        return;
+    }
+
+    /* Round-robin to the next runnable worker. */
+    prev = g_pre_current;
+    next = (g_pre_current + 1U) % KT_PREEMPT_COUNT;
+    if (next == prev) {
+        return;
+    }
+    g_pre_current = next;
+    kthread_switch(&g_pre_threads[prev]->rsp, g_pre_threads[next]->rsp);
+}
+
+aios_status_t kthread_preempt_selftest(void) {
+    uint64_t sw_before;
+    uint64_t sw_delta;
+
+    g_pre_w1_work = 0;
+    g_pre_w2_work = 0;
+    g_pre_ticks = 0;
+    g_pre_current = 0;
+
+    kthread_init(&g_pre_t1, 3, "kt-pre1", pre_worker1,
+                 g_pre_stack1 + KT_STACK_SIZE);
+    kthread_init(&g_pre_t2, 4, "kt-pre2", pre_worker2,
+                 g_pre_stack2 + KT_STACK_SIZE);
+    g_pre_threads[0] = &g_pre_t1;
+    g_pre_threads[1] = &g_pre_t2;
+
+    sw_before = g_kthread_switches;
+    g_pre_armed = true;
+    /* Bootstrap into worker 1; the timer round-robins from here and switches
+     * back to us once both workers have progressed (or the safety cap hits).
+     * We resume with IF=0 (the switch back is a plain kthread_switch, and the
+     * timer path ran with interrupts masked), so boot continues cleanly. */
+    kthread_switch(&g_pre_main.rsp, g_pre_t1.rsp);
+    sw_delta = g_kthread_switches - sw_before;
+
+    if (g_pre_w1_work < KT_WORK_THRESHOLD ||
+        g_pre_w2_work < KT_WORK_THRESHOLD ||
+        g_pre_ticks < 2 || g_pre_ticks >= KT_PREEMPT_TICK_CAP) {
+        serial_printf("[SCHED] preempt selftest FAIL ticks=%u w1=%u w2=%u\n",
+            (uint64_t)g_pre_ticks, (uint64_t)g_pre_w1_work,
+            (uint64_t)g_pre_w2_work);
+        return AIOS_ERR_IO;
+    }
+
+    serial_printf("[SCHED] preempt selftest PASS ticks=%u switches=%u w1=%u w2=%u\n",
+        (uint64_t)g_pre_ticks, sw_delta,
+        (uint64_t)g_pre_w1_work, (uint64_t)g_pre_w2_work);
+    return AIOS_OK;
+}
+
 __asm__(".section .note.GNU-stack,\"\",@progbits\n\t.previous");

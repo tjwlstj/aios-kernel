@@ -5,6 +5,7 @@
 
 #include <interrupt/idt.h>
 #include <kernel/time.h>
+#include <sched/kthread.h>
 #include <drivers/vga.h>
 #include <drivers/serial.h>
 #include <drivers/keyboard.h>
@@ -235,7 +236,14 @@ void exception_handler(interrupt_frame_t *frame) {
     if (int_no >= IRQ_BASE && int_no < (IRQ_BASE + IRQ_COUNT)) {
         if (int_no == KERNEL_TIMER_IRQ_VECTOR) {
             kernel_timer_irq_handler();
-        } else if (int_no == KEYBOARD_IRQ_VECTOR) {
+            /* EOI before any preemptive switch: if we context-switch away
+             * here, this tick's EOI must already be posted so the PIC keeps
+             * delivering timer IRQs to whichever thread runs next. */
+            pic_send_eoi(int_no);
+            kthread_preempt_tick();
+            return;
+        }
+        if (int_no == KEYBOARD_IRQ_VECTOR) {
             keyboard_irq_handler();
         }
         pic_send_eoi(int_no);

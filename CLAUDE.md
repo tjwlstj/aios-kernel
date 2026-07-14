@@ -97,8 +97,10 @@ kernel/boot/boot.asm  (Multiboot2 entry, GDT, paging, SSE/AVX setup, long mode)
 
 **Kernel Threads (`kernel/sched/kthread.c`, `kthread_switch.asm`)**
 - Real CPU context switching (M3-b), distinct from the workload scheduler. `kthread_switch` swaps callee-saved registers + rsp between threads; `kthread_init` builds an initial frame that returns straight to the thread entry.
-- `kthread_selftest` runs a cooperative ping-pong (two threads, each with its own stack) whose per-stack loop counters prove correct save/restore — `[SCHED] context switch selftest PASS`. Observable via `state sched` (`kthread_switches`).
-- Preemptive (timer-IRQ-driven) switching and per-process CR3 are the next M3-b sub-slices. Note: never `sti` before the PIC is remapped (subsystem 7) — IRQ0 would arrive as vector 8 (#DF).
+- `kthread_selftest` runs a cooperative ping-pong (two threads, each with its own stack) whose per-stack loop counters prove correct save/restore — `[SCHED] context switch selftest PASS`.
+- **Preemption**: the timer IRQ handler calls `kthread_preempt_tick` (after EOI) which round-robins between runnable kernel threads via `kthread_switch`. `kthread_preempt_selftest` proves it: two workers that never yield both make progress — `[SCHED] preempt selftest PASS`. Observable via `state sched` (`kthread_switches`, `preempt_ticks`).
+- Invariants for this path: send the timer EOI **before** any preemptive switch; a freshly-switched thread inherits IF=0, so worker/thread entries must `sti` themselves to be preemptible; never `sti` before the PIC is remapped (subsystem 7) — IRQ0 would arrive as vector 8 (#DF).
+- Per-process CR3/address-space switching is the next M3-b sub-slice (needed for userspace processes, not kernel threads).
 
 **Hardware Abstraction (`kernel/hal/accel_hal.c`)**
 - PCI enumeration + accelerator abstraction (GPU/TPU/NPU/FPGA/CPU-SIMD).
@@ -140,6 +142,7 @@ A successful boot must emit all of:
 [SELFTEST] Memory microbench PASS
 [HEAP] lock selftest PASS
 [SCHED] context switch selftest PASS
+[SCHED] preempt selftest PASS
 [DEV] Peripheral probe ready
 [HEALTH] stability=...
 [PIPE] Node pipeline ready

@@ -60,8 +60,9 @@ QEMU 기본 `-hda`와 즉시 호환되고 수십 줄로 섹터를 읽을 수 있
 ### M3. 타이머 선점 + 문맥전환 + 프로세스별 주소공간 (+ 힙 스핀락)
 - **M3-a 힙 스핀락 ✅ 완료 (2026-07-04):** `mm/heap.c`의 kmalloc/kfree/get_stats를 `spinlock_irqsave`로 보호(향후 IRQ 컨텍스트 할당 대비 IRQ 마스킹), 락 획득 카운터 + `heap_lock_selftest`(락 유휴·정확히 1회 획득·해제 불변식 검증) + `[HEAP] lock selftest PASS acquires=4` 마커, `state mem`에 `lock_acquires` 노출. 선점의 독립 선행 조각으로 먼저 반영.
 - **M3-b-1 협력적 컨텍스트 스위치 ✅ 완료 (2026-07-04):** `sched/kthread_switch.asm`(callee-saved+rsp 저장/복원) + `sched/kthread.c`(초기 스택 프레임 조립, 핑퐁 2스레드 셀프테스트). AI 워크로드 스케줄러(vruntime 장부질)와 분리된 진짜 CPU 컨텍스트 스위치. 각 스레드 스택의 루프변수가 전환을 넘어 보존됨을 검증 → `[SCHED] context switch selftest PASS switches=8 ping=3 pong=3`, `state sched`에 `kthread_switches` 노출. **함정 발견:** 셀프테스트에서 무조건 `sti` 시 PIC 리매핑 이전이라 IRQ0가 벡터 8(#DF)로 진입 → 이전 IF 보존 방식으로 수정(#PF/#DF 봉쇄가 즉시 원인 지목).
-- **잔여 작업(M3-b-2):** 타이머 IRQ 구동 선점(IRQ 컨텍스트에서 kthread_switch 호출), **프로세스별 PML4 복제 + CR3 스위칭**(M2에서 이월 — 동시 유저 태스크가 생기는 이 시점에 필요), `ai_sched_tick()`을 실제 전환에 연결.
-- **완료 기준:** 선점으로 태스크가 자동 교대되는 마커, 각 태스크 별도 주소공간, 힙 동시성 셀프테스트(M3-a로 충족).
+- **M3-b-2 타이머 선점 ✅ 완료 (2026-07-14):** 타이머 IRQ 핸들러가 EOI 후 `kthread_preempt_tick`을 호출해 러너블 커널 스레드를 라운드로빈 `kthread_switch`. 자발적 양보를 절대 안 하는 두 워커가 둘 다 진행함을 검증(= 타이머 강제 전환 증명) → `[SCHED] preempt selftest PASS ticks=2 switches=3`, `state sched`에 `preempt_ticks` 노출. **핵심 불변식(설계에 선반영해 #DF 없이 1트 통과):** ① 선점 스위치 전 EOI 전송, ② 갓 스위치된 스레드는 IF=0 상속이라 진입점에서 `sti` 필수(안 하면 선점 불가 무한루프), ③ PIC 리매핑(subsystem 7) 전 `sti` 금지(IRQ0=벡터8=#DF). tick 안전 상한으로 행 방지.
+- **잔여 작업(M3-b-3):** **프로세스별 PML4 복제 + CR3 스위칭**(M2에서 이월 — 유저스페이스 프로세스에 필요, 커널 스레드엔 불필요), ring3 프로세스 2개 선점 실행, `ai_sched_tick()`을 실제 전환에 연결.
+- **완료 기준:** ring3 프로세스 2개가 각자 주소공간에서 선점 교대, 힙 동시성 셀프테스트(M3-a로 충족).
 
 ### M4. storage read — virtio-blk 최소 데이터 경로
 - **작업:** virtio-pci 트랜스포트(modern, 1.2 기준) + virtqueue 1개 + 동기 섹터 읽기. `storage_host`에 `STORAGE_HOST_CONTROLLER_VIRTIO` 분기. testkit에 디스크 이미지 생성 + `-device virtio-blk-pci` 스모크 프로파일(`storage-virtio`) 추가.
@@ -72,8 +73,34 @@ QEMU 기본 `-hda`와 즉시 호환되고 수십 줄로 섹터를 읽을 수 있
 - **작업:** 디스크 이미지의 고정 오프셋(파일시스템 이전 단계)에서 ELF를 읽어 M2 로더로 실행. `os/apps/` 첫 실물 앱.
 - **완료 기준:** "디스크의 프로그램이 ring3에서 돌고 시스콜로 관측 데이터를 읽는다" — 이 시점에 커널→OS 계층 연결 고리가 완성된다.
 
-### M6+. 후순위 (순서 유연)
+### 성숙도 축(실행 경로) 후순위 — 순서 유연
 - e1000 일반 RX 경로(연속 수신), 4K 단위 W^X 정밀화, UBSan 디버그 레인, xHCI transfer ring, KASLR, 간단한 파일시스템(또는 tar 아카이브 파싱).
+
+## 3-B. AI 지속성·보안 축 (M6~M9) — 외부 평가 반영 (2026-07-14)
+
+`docs/meta/`의 외부 평가(체시)가 우리 실행-경로 로드맵(M1~M5)과 근거리에서 일치함을 확인했고, 우리 가이드가 느슨히 남겨둔 장기 축을 아래로 구체화한다. **핵심 원칙: 신원·정책·영속은 실행 기반(M3-b-2 멀티프로세스 + M5 디스크 실행) 위에서만 의미가 생긴다** — principal_id를 프로세스 이전에 넣는 것은 M1의 SMAP 교훈("진짜 유저 페이지가 있어야 SMAP이 의미")처럼 허공에 짓는 것이다. 그래서 이 축은 M5 이후에 배치한다.
+
+교차검증된 판단(우리 코드/최근 결정과 평가가 독립적으로 일치):
+- **Kernel Room은 현재 "계기판/관측실"이지 불가피한 단일 집행점이 아니다** (체크포인트 드리프트 수정 때 CLAUDE.md에 이미 명시). M6에서 진짜 게이트로 승격.
+- **두 NodeBit 체계(런타임 `nodebit.c` ↔ SLM `slm_nodebit`)가 독립 발전 중** (SLM 관측 작업 때 "distinct"로 확인, 억지 결합 회피). M7에서 단일 원본으로 통합.
+
+### M6. principal/신원 모델 + Kernel Room 단일 authorize
+- **작업:** 프로세스에 `principal_id`/`security_domain` 도입(M3-b-2 프로세스 구조에 필드 추가), `kernel_room_authorize(principal, syscall, target_node, caps, policy_gen)` 공통 게이트 신설, 위험 시스콜(드라이버 재초기화/DMA/MMIO/저장 쓰기/네트워크 송신/모델 변경/정책 변경)이 반드시 이 게이트를 통과하도록 배선. 일반 AI 프로세스는 lookup/evaluate만, 정책 제안은 Policy Broker, commit은 Trusted Init/Guardian로 권한 분리.
+- **완료 기준:** 위험 시스콜이 authorize를 우회할 수 없음을 셀프테스트로 증명(`[ROOM] authorize selftest PASS`), `state room`에 authorize 통계.
+
+### M7. NodeBit 정책 원본 통합 (TOCTOU 방지 포함)
+- **작업:** 런타임 NodeBit과 SLM NodeBit을 `aios_policy_node`(node_id/parent/owner/caps/observe/apply/risky/required_health/generation/flags) 단일 테이블로 합치고 Kernel Room·SLM·Pipeline은 이를 서로 다른 뷰로 읽게 한다. 결정-실행 사이 정책 generation 확인(decision token + generation)으로 TOCTOU 차단.
+- **완료 기준:** 두 체계 판정 불일치 불가, generation 불일치 시 재평가 셀프테스트.
+
+### M8. 영속 정책 저널 (append-only)
+- **작업:** M4 virtio-blk 위에 append-only 저널(POLICY_PROPOSED→VALIDATED→ACTION_PREPARED→APPLIED→VERIFIED→COMMITTED/ROLLED_BACK). 재부팅 시 `APPLIED`인데 `COMMITTED` 없는 액션을 찾아 rollback 또는 commit 재개.
+- **완료 기준:** 재부팅 경계를 넘어 미완료 액션 복원 셀프테스트.
+
+### M9. AI Flow 지속 실행 컨텍스트
+- **작업:** `process`(주소공간/레지스터/커널스택/capabilities)와 `ai_flow`(flow_id/agent_id/state/continuation/compute·io queue/memory handles/deadline)를 분리. 프로세스가 죽어도 flow_id로 동일 AI 작업 재개. 공통 SQ/CQ 비동기 I/O(ai_ring 확장), checkpoint begin/attach/commit/restore, speculative branch + commit gate.
+- **완료 기준:** 프로세스 재시작 후 동일 flow_id로 continuation 재개 셀프테스트. (이 단계가 "AI 지속성을 OS 차원에서 보증"의 핵심.)
+
+> 상세 근거와 성숙도 스코어카드(종합 ~4.5/10)는 외부 평가 원문 참조. 이 축은 실행 기반이 선 뒤 착수하되, 규약(§4)은 동일하게 적용한다.
 
 ## 4. 작업 규약 (모든 단계 공통 — 이번 세션에서 확립)
 

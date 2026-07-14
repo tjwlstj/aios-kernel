@@ -95,6 +95,16 @@ void kernel_main(uint64_t multiboot_magic, uint64_t multiboot_info) {
     
     /* Initialize all kernel subsystems */
     init_subsystems(multiboot_magic, multiboot_info);
+
+    /* Timer-driven preemption check. Runs after the timer IRQ subsystem so
+     * the PIC is remapped (a stray IRQ0 would otherwise be vector 8/#DF);
+     * the selftest arms preemption, enables interrupts inside its worker
+     * threads, and disarms before returning with IF still masked. */
+    if (kthread_preempt_selftest() != AIOS_OK) {
+        kernel_health_mark(KERNEL_SUBSYSTEM_SCHED,
+            KERNEL_HEALTH_DEGRADED, AIOS_ERR_IO);
+    }
+
     run_observe_dispatch_selftest();
     user_mode_scaffold_init();
 

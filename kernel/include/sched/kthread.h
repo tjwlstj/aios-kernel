@@ -40,4 +40,22 @@ uint64_t kthread_switch_count(void);
 /* Boot-time cooperative ping-pong check of the switch primitive. */
 aios_status_t kthread_selftest(void);
 
+/*
+ * Called from the timer IRQ handler (after EOI). When preemption is armed,
+ * round-robins between the runnable kernel threads via kthread_switch.
+ * A no-op (cheap early return) when not armed, so it is safe to call on
+ * every tick in normal operation.
+ */
+void kthread_preempt_tick(void);
+
+/*
+ * Boot-time check that the timer preempts two kernel threads that never
+ * voluntarily yield: both making progress proves the switch was forced by
+ * the timer, not cooperative.
+ */
+aios_status_t kthread_preempt_selftest(void);
+
+/* Timer ticks observed while preemption was armed (telemetry). */
+uint64_t kthread_preempt_tick_count(void);
+
 #endif /* _AIOS_SCHED_KTHREAD_H */
