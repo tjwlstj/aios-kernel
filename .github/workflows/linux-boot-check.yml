@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - beta
   pull_request:
 
 jobs:
@@ -92,6 +93,9 @@ jobs:
       - name: Run interactive shell lane
         run: python tools/testkit/aios-testkit.py shell --strict --skip-build
 
+      - name: Run boot inventory (all profiles + structural drift)
+        run: python tools/testkit/aios-testkit.py boot-inventory --profiles full minimal storage-only --strict
+
       - name: Upload boot artifacts
         if: always()
         uses: actions/upload-artifact@v7
@@ -103,6 +107,8 @@ jobs:
             kernel/build/serial_output.log
             kernel/build/shell-smoke/transcript.log
             kernel/build/shell-smoke/summary.json
+            kernel/build/boot-matrix/summary.json
+            kernel/build/boot-inventory/summary.json
             kernel/build/tool-smoke/summary.json
             kernel/build/tool-smoke/static-chaos-score.json
             kernel/build/tool-smoke/memory_journal.jsonl
