@@ -66,6 +66,9 @@ QEMU 기본 `-hda`와 즉시 호환되고 수십 줄로 섹터를 읽을 수 있
 - **M3-b-3b2a private CR3 단일 runner ✅ 완료 (2026-07-15):** 기존 ring3 ELF runner가 더 이상 부트 page table의 64MiB identity leaf를 U/RWX로 바꾸지 않고 static slot 0을 guarded activate/restore하여 실행한다. ELF staging·syscall·결과 판독은 private CR3 안에서 끝내고, exact raw CR3와 이전 IF bit의 readback을 확인한 뒤에만 slot 실행 정책을 reset하고 backing을 scrub한다. `leaf_sealed`(software policy reset+scrub)와 `nx_enforced`(hardware NX)는 별도 관측한다. private CR3에서 가려지는 물리 `[64MiB,66MiB)`는 tensor free list와 활성 tensor record에서 제외하며 `[MM] bootstrap user tensor exclusion PASS ... excluded=2097152 managed=1004535808 configured=1006632960 ... boundary=1 coalesce=1`과 `[USER] private address space exec PASS slot=0 cr3_restored=1 if_restored=1 leaf_sealed=1 nx_enforced=1 tensor_excluded=1`로 검증한다. 이는 tensor allocator의 2MiB 제외(설정 960MiB 중 관리 958MiB)이지 전역 PMM 예약이나 물리 메모리 소유권 주장이 아니다. 이 완료 시점에는 아직 process 객체나 PMM이 없었다.
 - **M3-b-3b2b static bootstrap process + BSP TSS entry stack ✅ 완료 (2026-07-15):** 정적 descriptor 2개가 각 slot의 unique CR3/backing, process-local run state, unique 16KiB ring0 entry stack을 결속한다. 실제 실행은 PID 1/slot 0 한 번이며, IF=0에서 기존 BSP boot-TSS `rsp0`와 다른 process stack top을 exact publish한다. 데모의 `int 0x80` 3회가 모두 `stack_top-40`의 동일 raw entry frame에서 시작했음을 확인하고 `rsp0 → CR3 → leaf seal/scrub → current owner 해제 → caller IF` 순으로 복원한다. 전역 resume/syscall/exit 값은 process run state로 이동했다. C layout은 explicit offset에 static-assert되고 NASM 상수는 이를 mirror하며 실제 boot proof가 양쪽 drift를 잡는다. `[PROC] bootstrap ownership selftest PASS slots=2 owned=2 stack_bytes=16384 unique_cr3=1 unique_backing=1 unique_stack=1`과 `[USER] bootstrap process stack PASS pid=1 slot=0 process_bound=1 kstack_bytes=16384 rsp0_changed=1 rsp0_published=1 int80_entries=3 all_int80_entries_in_stack=1 rsp0_restored=1 kstack_floor_canary=1`로 검증한다. 이는 static bootstrap binding/BSP 단일 TSS 증명이다. slot 1 실행, 전체 register trapframe, 동적 lifecycle/PMM, guard page, SMP per-CPU TSS를 뜻하지 않는다.
 - **잔여 작업(M3-b-3b2c+):** full saved-register/trapframe과 scheduler runnable state를 process에 결속하고 slot 1도 실제 실행한다. 이후 두 ring3 process의 timer preemption에서 current process·CR3·BSP TSS `rsp0`를 원자적으로 교대하고 `ai_sched_tick()`의 reschedule 요청을 연결한다. 장기 단계에서 동적 PMM/VMM, guard page, SMP per-CPU TSS로 일반화한다.
+- **착수 게이트:** M3-b-3b2c는 `docs/tools/verification_tooling_evolution_design_ko.md` §10의
+  trapframe/rollback/process-switch 증거 계약을 먼저 고정한 뒤 시작한다. 정상 부팅만으로
+  fault/hang 복구나 원자적 교대를 증명했다고 간주하지 않는다.
 - **완료 기준:** ring3 프로세스 2개가 각자 주소공간에서 선점 교대, 힙 동시성 셀프테스트(M3-a로 충족).
 
 ### M4. storage read — virtio-blk 최소 데이터 경로
@@ -109,11 +112,11 @@ QEMU 기본 `-hda`와 즉시 호환되고 수십 줄로 섹터를 읽을 수 있
 ## 4. 작업 규약 (모든 단계 공통 — 이번 세션에서 확립)
 
 1. **셀프테스트 우선:** 새 경로는 부팅 셀프테스트로 왕복 검증하고 `[XXX] ... PASS` 마커를 남긴다.
-2. **스모크 필수화:** 마커를 `tools/testkit/lib/kernel_lane.py`와 `build-windows.ps1` 필수 패턴에 추가한다.
+2. **스모크 필수화:** shared manifest 도입 전에는 마커를 `tools/testkit/lib/kernel_lane.py`와 `build-windows.ps1` 필수 패턴에 함께 추가한다.
 3. **관측 연결:** 런타임 상태는 `state <topic>` 셸 토픽(한 줄 key=value) + 필요 시 시스콜 미러로 노출하고, shell 레인 `DEFAULT_EXCHANGES`에 교환을 등록한다.
 4. **고정밀 계측:** 시간이 걸리는 경로는 TSC 모노토닉 ns로 계측해 관측에 포함한다.
 5. **정적 분석 클린 유지:** cppcheck exit 0.
-6. **검증 세트:** 스모크 3종(full/minimal/storage-only) + shell 레인 + (구조 변경 시) boot-inventory.
+6. **검증 세트:** host unit test를 먼저 통과시키고 스모크 3종(full/minimal/storage-only) + shell 레인 + (구조 변경 시) boot-inventory를 실행한다. normal verdict는 전체 로그 fatal, stable health, terminal 순서·중복을 fail-closed로 판정한다.
 7. **ABI 불변식:** 시스콜 번호는 추가만, 재번호 금지. Kernel Room 게이트 수 = enum 크기.
 
 ## Sources

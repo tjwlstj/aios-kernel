@@ -19,12 +19,18 @@
   - host-local perf baseline을 생성하고 threshold 기반 회귀를 비교
 - `lib/boot_log.py`
   - serial log를 checkpoint / health / inventory / microbench 요약 JSON으로 파싱
+- `lib/boot_verdict.py`
+  - 전체 serial log의 fatal, health, terminal checkpoint 순서·중복을 fail-closed로 판정
+- `lib/baseline_guard.py`
+  - inventory/perf baseline 쓰기의 strict matrix·profile·record 출처를 검증
 - `lib/shell_lane.py`
-  - QEMU `-serial stdio`로 부팅 후 커널 셸의 기계 판독형 `state` 명령을 구동/검증
+  - QEMU `-serial stdio`로 커널 셸을 구동하고 reboot acknowledgement와 clean exit까지 검증
 - `lib/os_lane.py`
   - OS 계층 도구 smoke
 - `kernel/build-windows.ps1`
   - Windows 커널 빌드/부팅용 전용 엔트리포인트
+- `tests/`
+  - QEMU 없이 verdict, baseline guard, matrix, shell 반례를 검증하는 host unit test
 
 원칙:
 
@@ -32,6 +38,8 @@
 - 빌드는 루트 `Makefile`이 `kernel/`로 위임하므로, testkit은 항상 저장소 루트에서 실행한다
 - `kernel/build/.testkit-lock/`으로 동시 실행을 차단
 - `all`은 항상 `kernel -> os` 순서로 순차 실행
+- 정상 부팅은 전체 로그의 fatal/health/terminal chain을 fail-closed로 판정
+- baseline 쓰기는 `--strict`와 완전한 trusted matrix 결과를 모두 요구
 
 스모크 프로파일:
 
@@ -45,6 +53,7 @@
 - `storage-only`
   - 현재 QEMU 토폴로지는 `minimal`과 같다
   - 대신 storage bring-up과 `storage-bootstrap` SLM seed를 추가로 요구한다
+  - `IDE channels`는 marker-only가 아니라 서로 다른 primary/secondary 주소와 각 채널의 `status/live`가 완전한 레코드여야 한다
   - 즉, "저장장치만 남은 최소 부팅 경로"를 별도 프로파일로 강하게 본다
 
 부팅 요약 내보내기:
@@ -62,6 +71,12 @@
 - `[ROOM] snapshot stability=...`
 - `[HEALTH] stability=...`
 
+필수 문자열 존재만으로 PASS하지 않는다. normal verdict v1은 전체 로그의 panic,
+exception, 대문자 단어 `FAIL`/`FATAL`을 금지하고, health가
+`stability=stable degraded=0 failed=0`인지 확인한다. ring3 scaffold부터 shell 시작까지의
+terminal checkpoint는 각각 정확히 한 번, 정의된 순서로 나타나야 한다. 증거 행과 토큰
+경계를 고정하고 contract-bearing 행의 중복 key를 거부하므로 인용·접두사 위장도 PASS하지 않는다.
+
 부팅 매트릭스:
 
 - `boot-matrix`
@@ -76,6 +91,8 @@
   - 현재 inventory는 `ready`, `stability`, `device_summary`, `health_summary`, `controller_states`, `slm_seeded_plan_count`, `process_stack`
   - current 결과는 `kernel/build/boot-inventory/current/<profile>.json`
   - baseline fixture는 `tools/testkit/fixtures/boot-baseline/<profile>.json`
+  - `--write-baseline`은 `--strict`, matrix 전체 PASS, 정확한 profile 순서,
+    canonical verdict와 profile별 controller/process/numeric proof를 모두 요구
 
 대화형 셸 레인:
 
@@ -85,8 +102,10 @@
     미지 토픽 오류 응답까지 순차 검증 → `reboot`로 클린 종료 (`-no-reboot` 덕에 QEMU exit)
   - 응답 프로토콜: 한 줄 `[STATE] <topic> key=value ...` (값에 공백 없음).
     리스트형 토픽(`state nodes`)은 요약 한 줄 + 항목당 `[STATE] node id=...` 한 줄
+  - 각 교환은 한 response record의 토큰 경계로 검증하고, 종료 전 reader를 drain한 뒤
+    전체 transcript에 normal boot verdict를 다시 적용한다
   - 아티팩트: `kernel/build/shell-smoke/transcript.log` (전체 시리얼 대화),
-    `kernel/build/shell-smoke/summary.json` (교환별 pass/fail)
+    `kernel/build/shell-smoke/summary.json` (교환별 pass/fail, boot verdict, termination)
   - `--skip-build`로 기존 ISO 재사용 가능
   - 새 `state` 토픽을 추가하면 `lib/shell_lane.py`의 `DEFAULT_EXCHANGES`에 교환을 등록한다
 
@@ -97,10 +116,13 @@
   - current 결과는 `kernel/build/boot-perf/current/<profile>.json`
   - baseline은 로컬 전용 `kernel/build/boot-perf/baseline/<profile>.json`
   - 기본 비교는 `memcpy MiB/s`, `memset/memcpy/memmove cyc_per_kib`, `dram latency x100`
+  - 비교는 같은 profile/size/iterations/tier와 finite positive metric만 허용
+  - `--write-baseline`은 inventory와 같은 trusted-source guard와 필수 perf metric 완전성을 요구
 
 권장 사용 (저장소 루트에서 실행):
 
 ```powershell
+py -3 -m unittest discover -s tools/testkit/tests -t tools/testkit -p "test_*.py" -v
 python .\tools\testkit\aios-testkit.py info
 python .\tools\testkit\aios-testkit.py kernel --target test --strict
 python .\tools\testkit\aios-testkit.py kernel --target test --strict --export-boot-summary
@@ -123,4 +145,6 @@ pwsh -File .\tools\testkit\kernel\build-windows.ps1 -Target test -SmokeProfile m
 
 추가 구상:
 
-- 부팅 커널 테스트 확장안은 `docs/tools/boot_kernel_testkit_expansion_plan_ko.md`에 정리한다
+- 현재 검증 계약과 단계별 로드맵의 정본은
+  `docs/tools/verification_tooling_evolution_design_ko.md`다
+- `docs/tools/boot_kernel_testkit_expansion_plan_ko.md`는 초기 확장 기록으로 유지한다

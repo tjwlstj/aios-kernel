@@ -1,0 +1,253 @@
+from __future__ import annotations
+
+import unittest
+
+from lib.boot_verdict import evaluate_normal_boot
+
+
+REQUIRED_PATTERNS = ["[BOOT] profile-required"]
+
+
+def normal_lines() -> list[str]:
+    return [
+        "[BOOT] profile-required",
+        "[USER] Ring3 scaffold ready=1 tr=0x28",
+        "[PROC] bootstrap ownership selftest PASS slots=2",
+        "[USER] ring3 exec PASS exit_code=42",
+        "[USER] private address space exec PASS slot=0",
+        "[USER] bootstrap process stack PASS pid=1",
+        "[ROOM] snapshot stability=stable ok=18 degraded=0 failed=0",
+        "[HEALTH] stability=stable ok=18 degraded=0 failed=0 unknown=2",
+        "=== AIOS Kernel Ready ===",
+        "[KERNEL] Boot complete. Launching interactive shell...",
+        "[SHELL] Interactive shell started",
+    ]
+
+
+def evaluate(lines: list[str]) -> dict[str, object]:
+    return evaluate_normal_boot("\n".join(lines), REQUIRED_PATTERNS)
+
+
+def reason_codes(verdict: dict[str, object]) -> list[str]:
+    return [reason["code"] for reason in verdict["reasons"]]
+
+
+class NormalBootVerdictTests(unittest.TestCase):
+    def test_complete_normal_log_passes(self) -> None:
+        verdict = evaluate(normal_lines())
+
+        self.assertEqual("PASS", verdict["outcome"])
+        self.assertTrue(verdict["passed"])
+        self.assertTrue(verdict["health"]["passed"])
+        self.assertTrue(verdict["checkpoints"]["passed"])
+        self.assertEqual("not-evaluated", verdict["termination"]["reason"])
+
+    def test_required_marker_missing_fails(self) -> None:
+        lines = normal_lines()
+        lines.remove("[BOOT] profile-required")
+
+        verdict = evaluate(lines)
+
+        self.assertFalse(verdict["passed"])
+        self.assertIn("MISSING_REQUIRED_PATTERNS", reason_codes(verdict))
+
+    def test_required_marker_token_suffix_does_not_match(self) -> None:
+        lines = normal_lines()
+        lines[0] = "[BOOT] profile-required-extra"
+
+        verdict = evaluate(lines)
+
+        self.assertFalse(verdict["passed"])
+        self.assertIn("MISSING_REQUIRED_PATTERNS", reason_codes(verdict))
+
+    def test_fatal_after_all_pass_markers_fails(self) -> None:
+        fatal_lines = (
+            "*** KERNEL PANIC *** late panic",
+            "!!! EXCEPTION vector=14",
+            "[SELFTEST] explicit FAIL reason=late",
+            "[GUARD] FATAL reason=late",
+        )
+        for fatal_line in fatal_lines:
+            with self.subTest(fatal_line=fatal_line):
+                verdict = evaluate([*normal_lines(), fatal_line])
+                self.assertFalse(verdict["passed"])
+                self.assertIn("FATAL_EVENTS_PRESENT", reason_codes(verdict))
+                self.assertGreater(verdict["fatal_events"][0]["line"], 10)
+
+    def test_harmless_failed_fields_do_not_trigger_fatal_scan(self) -> None:
+        lines = normal_lines()
+        lines.insert(-1, "[STATE] slm failed=0 apply_failed=0")
+
+        verdict = evaluate(lines)
+
+        self.assertTrue(verdict["passed"])
+        self.assertEqual([], verdict["fatal_events"])
+
+    def test_degraded_failed_and_malformed_health_fail(self) -> None:
+        health_lines = (
+            "[HEALTH] stability=degraded ok=17 degraded=1 failed=0 unknown=2",
+            "[HEALTH] stability=stable ok=17 degraded=0 failed=1 unknown=2",
+            "[HEALTH] stability=stable degraded=zero failed=0",
+            "[HEALTH] stability=stable ok=18 degraded=0 failed=0 degraded=1",
+            "[HEALTH] stability=stable not-degraded=0 not-failed=0",
+        )
+        for health_line in health_lines:
+            with self.subTest(health_line=health_line):
+                lines = normal_lines()
+                lines[7] = health_line
+                verdict = evaluate(lines)
+                self.assertFalse(verdict["passed"])
+                self.assertIn("HEALTH_INVALID", reason_codes(verdict))
+
+    def test_health_zero_fields_require_canonical_unsigned_zero(self) -> None:
+        health_lines = (
+            "[HEALTH] stability=stable ok=18 degraded=-0 failed=0 unknown=2",
+            "[HEALTH] stability=stable ok=18 degraded=0 failed=+0 unknown=2",
+            "[HEALTH] stability=stable ok=18 degraded=000 failed=0 unknown=2",
+        )
+        for health_line in health_lines:
+            with self.subTest(health_line=health_line):
+                lines = normal_lines()
+                lines[7] = health_line
+                verdict = evaluate(lines)
+                self.assertFalse(verdict["passed"])
+                self.assertIn("HEALTH_INVALID", reason_codes(verdict))
+
+    def test_terminal_checkpoint_token_suffixes_do_not_match(self) -> None:
+        variants = (
+            (1, "[USER] Ring3 scaffold ready=10 tr=0x28"),
+            (2, "[PROC] bootstrap ownership selftest PASSFAIL slots=2"),
+            (6, "[ROOM] snapshot stability=stable_bad ok=18 degraded=0 failed=0"),
+        )
+        for index, replacement in variants:
+            with self.subTest(replacement=replacement):
+                lines = normal_lines()
+                lines[index] = replacement
+                verdict = evaluate(lines)
+                self.assertFalse(verdict["passed"])
+                self.assertIn("TERMINAL_CHECKPOINTS_MISSING", reason_codes(verdict))
+
+    def test_duplicate_contract_field_fails_even_after_required_substring(self) -> None:
+        lines = normal_lines()
+        lines[4] = (
+            "[USER] private address space exec PASS slot=0 cr3_restored=1 "
+            "if_restored=1 cr3_restored=0"
+        )
+
+        verdict = evaluate(lines)
+
+        self.assertFalse(verdict["passed"])
+        self.assertIn("EVIDENCE_FIELDS_DUPLICATED", reason_codes(verdict))
+
+        ide_line = (
+            "[STO] IDE channels primary=0x1f0/0x3f6 status=0x0 live=1 "
+            "secondary=0x170/0x376 status=0x50 live=1"
+        )
+        valid = evaluate_normal_boot(
+            "\n".join([*normal_lines(), ide_line]),
+            ["[STO] IDE channels"],
+        )
+        self.assertTrue(valid["passed"])
+
+        conflicting = ide_line.replace(
+            "primary=0x1f0/0x3f6",
+            "primary=0x1f0/0x3f6 primary=0x170/0x376",
+        )
+        verdict = evaluate_normal_boot(
+            "\n".join([*normal_lines(), conflicting]),
+            ["[STO] IDE channels"],
+        )
+        self.assertFalse(verdict["passed"])
+        self.assertIn("EVIDENCE_FIELDS_DUPLICATED", reason_codes(verdict))
+
+        for malformed in (
+            "[STO] IDE channels",
+            "[STO] IDE channels primary=0x1f0/0x3f6 status=0x0 live=1",
+        ):
+            with self.subTest(malformed=malformed):
+                verdict = evaluate_normal_boot(
+                    "\n".join([*normal_lines(), malformed]),
+                    ["[STO] IDE channels"],
+                )
+                self.assertFalse(verdict["passed"])
+                self.assertIn("EVIDENCE_RECORD_INVALID", reason_codes(verdict))
+
+    def test_diagnostic_text_cannot_impersonate_terminal_evidence(self) -> None:
+        lines = normal_lines()
+        lines[3] = "[WARN] old marker: [USER] ring3 exec PASS exit_code=42"
+
+        verdict = evaluate(lines)
+
+        self.assertFalse(verdict["passed"])
+        self.assertIn("TERMINAL_CHECKPOINTS_MISSING", reason_codes(verdict))
+
+        lines = normal_lines()
+        lines[3] = "    [USER] ring3 exec PASS exit_code=42"
+        verdict = evaluate(lines)
+        self.assertFalse(verdict["passed"])
+        self.assertIn("TERMINAL_CHECKPOINTS_MISSING", reason_codes(verdict))
+
+    def test_profile_field_fragment_requires_its_evidence_record(self) -> None:
+        valid = [*normal_lines(), "[SLM] Seeded plan 4 label=storage-bootstrap action=8"]
+        quoted = [*normal_lines(), "[WARN] old label=storage-bootstrap ignored"]
+
+        self.assertTrue(
+            evaluate_normal_boot("\n".join(valid), ["label=storage-bootstrap"])["passed"]
+        )
+        verdict = evaluate_normal_boot(
+            "\n".join(quoted),
+            ["label=storage-bootstrap"],
+        )
+        self.assertFalse(verdict["passed"])
+        self.assertIn("MISSING_REQUIRED_PATTERNS", reason_codes(verdict))
+
+        conflicting = [
+            *normal_lines(),
+            "[SLM] Seeded plan 4 label=storage-bootstrap label=other action=8",
+        ]
+        verdict = evaluate_normal_boot(
+            "\n".join(conflicting),
+            ["label=storage-bootstrap"],
+        )
+        self.assertFalse(verdict["passed"])
+        self.assertIn("EVIDENCE_FIELDS_DUPLICATED", reason_codes(verdict))
+
+    def test_reordered_terminal_checkpoints_fail(self) -> None:
+        lines = normal_lines()
+        lines[3], lines[4] = lines[4], lines[3]
+
+        verdict = evaluate(lines)
+
+        self.assertFalse(verdict["passed"])
+        self.assertIn("TERMINAL_CHECKPOINT_ORDER_INVALID", reason_codes(verdict))
+        self.assertTrue(verdict["checkpoints"]["order_violations"])
+
+    def test_duplicated_terminal_checkpoint_fails(self) -> None:
+        lines = normal_lines()
+        lines[3] += " [USER] ring3 exec PASS conflicting=1"
+
+        verdict = evaluate(lines)
+
+        self.assertFalse(verdict["passed"])
+        self.assertIn("TERMINAL_CHECKPOINTS_DUPLICATED", reason_codes(verdict))
+        self.assertTrue(verdict["checkpoints"]["duplicates"])
+
+    def test_truncated_log_fails(self) -> None:
+        verdict = evaluate(normal_lines()[:-3])
+
+        self.assertFalse(verdict["passed"])
+        self.assertIn("TERMINAL_CHECKPOINTS_MISSING", reason_codes(verdict))
+
+    def test_verdict_line_numbers_match_raw_log(self) -> None:
+        lines = normal_lines()
+        lines.insert(1, "")
+        lines.append("*** KERNEL PANIC *** after-blank")
+
+        verdict = evaluate(lines)
+
+        self.assertFalse(verdict["passed"])
+        self.assertEqual(len(lines), verdict["fatal_events"][0]["line"])
+
+
+if __name__ == "__main__":
+    unittest.main()

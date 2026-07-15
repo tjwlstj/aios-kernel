@@ -9,7 +9,7 @@ M3-b-3a부터 M3-b-3b2b까지(주소공간 전환 → private leaf → process-o
 ## 1. 작업 사이클 (매 변경 공통) — 이대로만 하면 회귀 없음
 
 1. **셀프테스트 우선.** 새 경로는 부팅 셀프테스트로 왕복 검증하고 `[XXX] ... PASS key=value` 한 줄 마커를 남긴다. 실패도 `[XXX] ... FAIL ...`로 한 줄.
-2. **스모크 마커 필수화 (두 곳 동시!).** 마커를 반드시 **둘 다** 추가한다:
+2. **스모크 마커 필수화 (현재는 두 곳 동시!).** shared manifest가 도입되기 전까지 마커를 반드시 **둘 다** 추가한다:
    - `tools/testkit/lib/kernel_lane.py`의 `required_smoke_patterns()` (리눅스/CI)
    - `tools/testkit/kernel/build-windows.ps1`의 `Get-SmokeRequiredPatterns` (윈도우 로컬)
    - 한쪽만 넣으면 다른 OS에서 스모크가 통과해버려 회귀를 놓친다.
@@ -17,6 +17,7 @@ M3-b-3a부터 M3-b-3b2b까지(주소공간 전환 → private leaf → process-o
 4. **고정밀 계측.** 시간이 걸리는 경로는 `kernel_time_monotonic_ns()`(TSC 기반)로 재서 관측에 ns로 포함.
 5. **검증 세트 (커밋 전 전부):**
    ```
+   py -3 -m unittest discover -s tools/testkit/tests -t tools/testkit -p "test_*.py" -v
    cppcheck --std=c11 --platform=unix64 --enable=warning,performance,portability \
      --inline-suppr --suppress=missingIncludeSystem --error-exitcode=1 -Ikernel/include kernel/
    pwsh -File tools/testkit/kernel/build-windows.ps1 -Target test                       # full
@@ -26,6 +27,11 @@ M3-b-3a부터 M3-b-3b2b까지(주소공간 전환 → private leaf → process-o
     py -3 tools/testkit/aios-testkit.py boot-inventory --profiles full minimal storage-only --strict
    ```
    Windows에서 `python`이 Store alias로 잡히면 `py -3`를 쓴다.
+   normal verdict v1은 필수 문자열만 보지 않고 전체 로그의 panic/exception/대문자
+   `FAIL`·`FATAL`, health, terminal checkpoint 순서·중복, 증거 행/토큰 경계와 중복 key를
+   판정한다. shell PASS에는 같은 response record, 전체 transcript verdict, reader drain,
+   reboot acknowledgement와 QEMU exit code 0도 필요하다. 최신 계약은
+   `docs/tools/verification_tooling_evolution_design_ko.md`를 따른다.
 6. **작업 브랜치는 `beta`.** main으로의 병합/PR은 사람이 결정한다.
 
 ---

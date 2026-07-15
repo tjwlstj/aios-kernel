@@ -59,8 +59,22 @@ def _compact_result(profile: str, summary: dict[str, object], matrix_summary_pat
 
     shell = summary.get("shell") or {}
     nodebit = summary.get("nodebit") or {}
+    verdict = summary.get("verdict") or {}
+    skipped = bool(summary.get("skipped"))
+    unsupported = bool(summary.get("unsupported"))
+    if skipped:
+        outcome = "SKIP"
+    elif unsupported:
+        outcome = "UNSUPPORTED"
+    else:
+        outcome = verdict.get("outcome")
     return {
         "profile": profile,
+        "summary_present": True,
+        "skipped": skipped,
+        "unsupported": unsupported,
+        "outcome": outcome,
+        "passed": verdict.get("passed") is True,
         "ready": bool(checkpoints.get("ready", {}).get("seen")),
         "shell_started": bool(shell.get("started")),
         "nodebit_ready": bool(nodebit.get("ready")),
@@ -93,9 +107,22 @@ def _compact_result(profile: str, summary: dict[str, object], matrix_summary_pat
         },
         "required_patterns": summary.get("required_patterns", []),
         "missing_patterns": summary.get("missing_patterns", []),
+        "verdict": verdict,
         "boot_summary_path": str(boot_summary_path("test", profile)),
         "matrix_summary_path": str(matrix_summary_path),
     }
+
+
+def _matrix_result_passed(result: dict[str, object]) -> bool:
+    return (
+        result.get("outcome") == "PASS"
+        and result.get("passed") is True
+        and result.get("skipped") is not True
+        and result.get("unsupported") is not True
+        and result.get("ready") is True
+        and result.get("shell_started") is True
+        and not result.get("missing_patterns")
+    )
 
 
 def run_boot_matrix(profiles: list[str], timeout_sec: int, strict: bool) -> dict[str, object]:
@@ -144,10 +171,7 @@ def run_boot_matrix(profiles: list[str], timeout_sec: int, strict: bool) -> dict
         "profiles_requested": normalized_profiles,
         "profile_count": len(normalized_profiles),
         "baseline_profile": baseline["profile"],
-        "passed": all(
-            result.get("ready") and result.get("shell_started") and not result.get("missing_patterns")
-            for result in compact_results
-        ),
+        "passed": all(_matrix_result_passed(result) for result in compact_results),
         "results": compact_results,
         "comparisons_to_baseline": comparisons,
     }

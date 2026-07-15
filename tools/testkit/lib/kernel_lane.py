@@ -4,6 +4,7 @@ import subprocess
 import time
 
 from lib.boot_log import parse_boot_log_file, write_boot_summary
+from lib.boot_verdict import evaluate_normal_boot
 from lib.common import (
     BUILD_DIR,
     DEFAULT_QEMU_TIMEOUT,
@@ -114,15 +115,18 @@ def collect_smoke_summary(smoke_profile: str) -> dict[str, object]:
     summary = parse_boot_log_file(SERIAL_LOG, smoke_profile)
     log_text = SERIAL_LOG.read_text(encoding="utf-8", errors="replace")
     required_patterns = required_smoke_patterns(smoke_profile)
-    missing = [pattern for pattern in required_patterns if pattern not in log_text]
-    if missing:
-        tail = "\n".join(log_text.splitlines()[-40:])
-        raise ToolError(
-            "Kernel smoke test did not reach expected state. "
-            f"Missing={missing}\nLast log lines:\n{tail}"
-        )
+    verdict = evaluate_normal_boot(log_text, required_patterns)
     summary["required_patterns"] = required_patterns
-    summary["missing_patterns"] = missing
+    summary["missing_patterns"] = verdict["missing_patterns"]
+    summary["verdict"] = verdict
+    if not verdict["passed"]:
+        tail = "\n".join(log_text.splitlines()[-40:])
+        reason_codes = [reason["code"] for reason in verdict["reasons"]]
+        raise ToolError(
+            "Kernel smoke verdict failed. "
+            f"Reasons={reason_codes} FirstFailure={verdict['first_failure']}\n"
+            f"Last log lines:\n{tail}"
+        )
     return summary
 
 

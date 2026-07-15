@@ -138,6 +138,7 @@ function Get-SmokeRequiredPatterns {
         '\[MM\] user leaf isolation selftest PASS',
         '\[MM\] bootstrap user tensor exclusion PASS base=0x4000000 size=2097152 excluded=2097152 managed=1004535808 configured=1006632960 overflow=1 region=1 align=1 boundary=1 coalesce=1',
         '\[PROC\] bootstrap ownership selftest PASS slots=2 owned=2 stack_bytes=16384 unique_cr3=1 unique_backing=1 unique_stack=1',
+        '\[TIMER\] PIT IRQ ready',
         '\[DEV\] Peripheral probe ready',
         '\[USER\] Ring3 scaffold ready=1',
         '\[ROOM\] snapshot stability=',
@@ -174,6 +175,322 @@ function Get-SmokeRequiredPatterns {
     }
 
     return $patterns
+}
+
+function Test-NormalSmokeVerdict {
+    param([string]$SerialLog)
+
+    function Get-PatternOccurrences {
+        param(
+            [string]$Pattern,
+            [switch]$ValuePrefix,
+            [switch]$AllowInline
+        )
+
+        $suffix = if ($ValuePrefix) { '\S+' } else { '(?=$|\s)' }
+        $boundedRegex = [regex]::new("(?<!\S)(?:$Pattern)$suffix")
+        $anchorRegex = [regex]::new("^(?:$Pattern)$suffix")
+        $allOccurrences = @()
+        $anchorLines = @()
+        for ($lineIndex = 0; $lineIndex -lt $lines.Count; $lineIndex++) {
+            $line = [string]$lines[$lineIndex]
+            if ($anchorRegex.IsMatch($line)) {
+                $anchorLines += ($lineIndex + 1)
+            }
+            foreach ($match in $boundedRegex.Matches($line)) {
+                $allOccurrences += [pscustomobject]@{
+                    LineNumber = $lineIndex + 1
+                    Column     = $match.Index + 1
+                    Text       = $line
+                }
+            }
+        }
+        if ($AllowInline) {
+            return $allOccurrences
+        }
+        if ($anchorLines.Count -eq 0) {
+            return @()
+        }
+        $firstAnchorLine = $anchorLines[0]
+        return @($allOccurrences | Where-Object { $_.LineNumber -ge $firstAnchorLine })
+    }
+
+    $lines = @(Get-Content -Path $SerialLog -ErrorAction SilentlyContinue)
+    $reasons = @()
+    $missingPatterns = @()
+    $requiredOccurrences = @{}
+    $duplicateFieldLines = [System.Collections.Generic.HashSet[int]]::new()
+    foreach ($pattern in (Get-SmokeRequiredPatterns)) {
+        $occurrenceArgs = @{ Pattern = $pattern }
+        if ($pattern.EndsWith('=')) {
+            $occurrenceArgs.ValuePrefix = $true
+        }
+        if ($pattern -eq 'AIOS Kernel Ready' -or $pattern -eq 'label=storage-bootstrap') {
+            $occurrenceArgs.AllowInline = $true
+        }
+        $matches = @(Get-PatternOccurrences @occurrenceArgs)
+        if ($pattern -eq 'AIOS Kernel Ready') {
+            $matches = @($matches | Where-Object { $_.Text.StartsWith('=== ') })
+        } elseif ($pattern -eq 'label=storage-bootstrap') {
+            $matches = @($matches | Where-Object { $_.Text.StartsWith('[SLM] Seeded plan ') })
+        }
+        $requiredOccurrences[$pattern] = $matches
+        if ($matches.Count -eq 0) {
+            $missingPatterns += $pattern
+        }
+        foreach ($match in $matches) {
+            $null = $duplicateFieldLines.Add([int]$match.LineNumber)
+        }
+    }
+    if ($missingPatterns.Count -gt 0) {
+        $reasons += "missing-required-patterns:$($missingPatterns -join ',')"
+    }
+
+    $fatalPattern = '\*\*\* KERNEL PANIC \*\*\*|!!! EXCEPTION|\bFAIL\b|\bFATAL\b'
+    $fatalEvents = @()
+    for ($lineIndex = 0; $lineIndex -lt $lines.Count; $lineIndex++) {
+        if ([regex]::IsMatch([string]$lines[$lineIndex], $fatalPattern)) {
+            $fatalEvents += [pscustomobject]@{
+                LineNumber = $lineIndex + 1
+                Text       = [string]$lines[$lineIndex]
+            }
+        }
+    }
+    if ($fatalEvents.Count -gt 0) {
+        $firstFatal = $fatalEvents[0]
+        $reasons += "fatal-event:line=$($firstFatal.LineNumber):$($firstFatal.Text.Trim())"
+    }
+
+    $terminalCheckpoints = @(
+        [pscustomobject]@{ Name = 'ring3-scaffold'; Pattern = '\[USER\] Ring3 scaffold ready=1'; ValuePrefix = $false },
+        [pscustomobject]@{ Name = 'bootstrap-process'; Pattern = '\[PROC\] bootstrap ownership selftest PASS'; ValuePrefix = $false },
+        [pscustomobject]@{ Name = 'ring3-exec'; Pattern = '\[USER\] ring3 exec PASS'; ValuePrefix = $false },
+        [pscustomobject]@{ Name = 'private-address-space-exec'; Pattern = '\[USER\] private address space exec PASS'; ValuePrefix = $false },
+        [pscustomobject]@{ Name = 'bootstrap-process-stack'; Pattern = '\[USER\] bootstrap process stack PASS'; ValuePrefix = $false },
+        [pscustomobject]@{ Name = 'kernel-room'; Pattern = '\[ROOM\] snapshot stability=stable'; ValuePrefix = $false },
+        [pscustomobject]@{ Name = 'health'; Pattern = '\[HEALTH\] stability='; ValuePrefix = $true },
+        [pscustomobject]@{ Name = 'kernel-ready'; Pattern = '=== AIOS Kernel Ready ==='; ValuePrefix = $false },
+        [pscustomobject]@{ Name = 'boot-complete'; Pattern = '\[KERNEL\] Boot complete\. Launching interactive shell\.\.\.'; ValuePrefix = $false },
+        [pscustomobject]@{ Name = 'shell-started'; Pattern = '\[SHELL\] Interactive shell started'; ValuePrefix = $false }
+    )
+    $terminalOccurrences = @{}
+    $missingCheckpoints = @()
+    $duplicateCheckpoints = @()
+    $orderViolations = @()
+    $previousName = $null
+    $previousLine = 0
+    foreach ($checkpoint in $terminalCheckpoints) {
+        $checkpointArgs = @{ Pattern = $checkpoint.Pattern }
+        if ($checkpoint.ValuePrefix) {
+            $checkpointArgs.ValuePrefix = $true
+        }
+        $matches = @(Get-PatternOccurrences @checkpointArgs)
+        $terminalOccurrences[$checkpoint.Name] = $matches
+        foreach ($match in $matches) {
+            $null = $duplicateFieldLines.Add([int]$match.LineNumber)
+        }
+        if ($matches.Count -eq 0) {
+            $missingCheckpoints += $checkpoint.Name
+            $reasons += "terminal-missing:$($checkpoint.Name)"
+            continue
+        }
+        if ($matches.Count -gt 1) {
+            $duplicateLinesText = ($matches | ForEach-Object { $_.LineNumber }) -join ','
+            $duplicateCheckpoints += [pscustomobject]@{
+                Checkpoint = $checkpoint.Name
+                Lines      = @($matches | ForEach-Object { $_.LineNumber })
+            }
+            $reasons += "terminal-duplicate:$($checkpoint.Name):lines=$duplicateLinesText"
+        }
+
+        $lineNumber = $matches[0].LineNumber
+        if ($previousLine -gt 0 -and $lineNumber -le $previousLine) {
+            $orderViolations += [pscustomobject]@{
+                Checkpoint        = $checkpoint.Name
+                Line              = $lineNumber
+                ExpectedAfter     = $previousName
+                ExpectedAfterLine = $previousLine
+            }
+            $reasons += "terminal-order:$($checkpoint.Name):line=${lineNumber}:expected-after=${previousName}:$previousLine"
+        }
+        $previousName = $checkpoint.Name
+        $previousLine = $lineNumber
+    }
+
+    $healthMatches = @($terminalOccurrences['health'])
+    $health = [ordered]@{
+        parsed       = $false
+        line         = $null
+        text         = $null
+        stability    = $null
+        degraded     = $null
+        failed       = $null
+        field_counts = [ordered]@{ stability = 0; degraded = 0; failed = 0 }
+        passed       = $false
+    }
+    if ($healthMatches.Count -eq 1) {
+        $healthLine = [string]$healthMatches[0].Text
+        $health.line = $healthMatches[0].LineNumber
+        $health.text = $healthLine
+        $fieldValues = @{}
+        foreach ($fieldMatch in [regex]::Matches($healthLine, '(?<!\S)(?<key>[a-z_]+)=(?<value>\S+)')) {
+            $key = $fieldMatch.Groups['key'].Value
+            $value = $fieldMatch.Groups['value'].Value
+            if (-not $fieldValues.ContainsKey($key)) {
+                $fieldValues[$key] = @()
+            }
+            $fieldValues[$key] = @($fieldValues[$key]) + $value
+        }
+        foreach ($fieldName in @('stability', 'degraded', 'failed')) {
+            $health.field_counts[$fieldName] = @($fieldValues[$fieldName]).Count
+        }
+        if ($health.field_counts.stability -eq 1) {
+            $health.stability = @($fieldValues['stability'])[0]
+        }
+        $degradedText = if ($health.field_counts.degraded -eq 1) { @($fieldValues['degraded'])[0] } else { $null }
+        $failedText = if ($health.field_counts.failed -eq 1) { @($fieldValues['failed'])[0] } else { $null }
+        $degradedNumber = 0L
+        $failedNumber = 0L
+        $degradedParsed = ($null -ne $degradedText -and $degradedText -match '^[0-9]+$' -and [long]::TryParse($degradedText, [ref]$degradedNumber))
+        $failedParsed = ($null -ne $failedText -and $failedText -match '^[0-9]+$' -and [long]::TryParse($failedText, [ref]$failedNumber))
+        if ($degradedParsed) { $health.degraded = $degradedNumber }
+        if ($failedParsed) { $health.failed = $failedNumber }
+        $health.parsed = (
+            $health.field_counts.stability -eq 1 -and
+            $health.field_counts.degraded -eq 1 -and
+            $health.field_counts.failed -eq 1 -and
+            $degradedParsed -and
+            $failedParsed
+        )
+        $health.passed = (
+            $health.parsed -and
+            $health.stability -ceq 'stable' -and
+            $degradedText -ceq '0' -and
+            $failedText -ceq '0'
+        )
+    }
+    if (-not $health.passed) {
+        $reasons += "health-invalid:matches=$($healthMatches.Count),stability=$($health.stability),degraded=$($health.degraded),failed=$($health.failed)"
+    }
+
+    $duplicateEvidenceFields = @()
+    $invalidEvidenceRecords = @()
+    foreach ($lineNumber in @($duplicateFieldLines | Sort-Object)) {
+        $lineText = [string]$lines[$lineNumber - 1]
+        $fieldValues = @{}
+        foreach ($fieldMatch in [regex]::Matches($lineText, '(?<!\S)(?<key>[A-Za-z_][A-Za-z0-9_]*)=(?<value>\S+)')) {
+            $key = $fieldMatch.Groups['key'].Value
+            $value = $fieldMatch.Groups['value'].Value
+            if (-not $fieldValues.ContainsKey($key)) {
+                $fieldValues[$key] = @()
+            }
+            $fieldValues[$key] = @($fieldValues[$key]) + $value
+        }
+        if ($lineText.StartsWith('[STO] IDE channels')) {
+            $primaryValues = @($fieldValues['primary'])
+            $secondaryValues = @($fieldValues['secondary'])
+            $statusValues = @($fieldValues['status'])
+            $liveValues = @($fieldValues['live'])
+            $ideRecordValid = (
+                $primaryValues.Count -eq 1 -and
+                $secondaryValues.Count -eq 1 -and
+                $statusValues.Count -eq 2 -and
+                $liveValues.Count -eq 2 -and
+                $primaryValues[0] -match '^0x[0-9A-Fa-f]+/0x[0-9A-Fa-f]+$' -and
+                $secondaryValues[0] -match '^0x[0-9A-Fa-f]+/0x[0-9A-Fa-f]+$' -and
+                $primaryValues[0] -ne $secondaryValues[0] -and
+                @($statusValues | Where-Object { $_ -notmatch '^0x[0-9A-Fa-f]+$' }).Count -eq 0 -and
+                @($liveValues | Where-Object { $_ -notin @('0', '1') }).Count -eq 0
+            )
+            if (-not $ideRecordValid) {
+                $invalidEvidenceRecords += [pscustomobject]@{
+                    Line   = $lineNumber
+                    Text   = $lineText
+                    Record = 'ide_channels'
+                }
+            }
+        }
+        $duplicatedFields = [ordered]@{}
+        foreach ($key in $fieldValues.Keys) {
+            if (@($fieldValues[$key]).Count -gt 1) {
+                if ($lineText.StartsWith('[STO] IDE channels') -and $key -in @('status', 'live')) {
+                    continue
+                }
+                $duplicatedFields[$key] = @($fieldValues[$key])
+            }
+        }
+        if ($duplicatedFields.Count -gt 0) {
+            $duplicateEvidenceFields += [pscustomobject]@{
+                Line   = $lineNumber
+                Text   = $lineText
+                Fields = $duplicatedFields
+            }
+        }
+    }
+    if ($duplicateEvidenceFields.Count -gt 0) {
+        $reasons += "evidence-fields-duplicated:line=$($duplicateEvidenceFields[0].Line)"
+    }
+    if ($invalidEvidenceRecords.Count -gt 0) {
+        $reasons += "evidence-record-invalid:line=$($invalidEvidenceRecords[0].Line):ide_channels"
+    }
+
+    $firstFailure = $null
+    $lineFailures = @()
+    foreach ($fatalEvent in $fatalEvents) {
+        $lineFailures += [pscustomobject]@{ Kind = 'FATAL_EVENT'; Line = $fatalEvent.LineNumber; Text = $fatalEvent.Text }
+    }
+    if (-not $health.passed -and $null -ne $health.line) {
+        $lineFailures += [pscustomobject]@{ Kind = 'HEALTH_INVALID'; Line = $health.line; Text = $health.text }
+    }
+    foreach ($event in $duplicateEvidenceFields) {
+        $lineFailures += [pscustomobject]@{ Kind = 'EVIDENCE_FIELDS_DUPLICATED'; Line = $event.Line; Text = $event.Text }
+    }
+    foreach ($event in $invalidEvidenceRecords) {
+        $lineFailures += [pscustomobject]@{ Kind = 'EVIDENCE_RECORD_INVALID'; Line = $event.Line; Text = $event.Text }
+    }
+    foreach ($duplicate in $duplicateCheckpoints) {
+        if ($duplicate.Lines.Count -gt 1) {
+            $lineFailures += [pscustomobject]@{ Kind = 'TERMINAL_CHECKPOINT_DUPLICATED'; Line = $duplicate.Lines[1]; Checkpoint = $duplicate.Checkpoint }
+        }
+    }
+    foreach ($violation in $orderViolations) {
+        $lineFailures += [pscustomobject]@{ Kind = 'TERMINAL_CHECKPOINT_ORDER_INVALID'; Line = $violation.Line; Checkpoint = $violation.Checkpoint }
+    }
+    if ($lineFailures.Count -gt 0) {
+        $firstFailure = $lineFailures | Sort-Object Line | Select-Object -First 1
+    } elseif ($missingPatterns.Count -gt 0) {
+        $firstFailure = [pscustomobject]@{ Kind = 'MISSING_REQUIRED_PATTERN'; Line = $null; Pattern = $missingPatterns[0] }
+    } elseif ($missingCheckpoints.Count -gt 0) {
+        $firstFailure = [pscustomobject]@{ Kind = 'TERMINAL_CHECKPOINT_MISSING'; Line = $null; Checkpoint = $missingCheckpoints[0] }
+    }
+
+    $passed = ($reasons.Count -eq 0)
+    return [pscustomobject]@{
+        schema_version            = 1
+        outcome                   = if ($passed) { 'PASS' } else { 'FAIL' }
+        passed                    = $passed
+        reasons                   = $reasons
+        first_failure             = $firstFailure
+        missing_patterns          = $missingPatterns
+        fatal_events              = $fatalEvents
+        duplicate_evidence_fields = $duplicateEvidenceFields
+        invalid_evidence_records  = $invalidEvidenceRecords
+        health                    = [pscustomobject]$health
+        checkpoints               = [pscustomobject]@{
+            expected_order   = @($terminalCheckpoints | ForEach-Object { $_.Name })
+            occurrences      = $terminalOccurrences
+            missing          = $missingCheckpoints
+            duplicates       = $duplicateCheckpoints
+            order_violations = $orderViolations
+            passed           = ($missingCheckpoints.Count -eq 0 -and $duplicateCheckpoints.Count -eq 0 -and $orderViolations.Count -eq 0)
+        }
+        termination               = [pscustomobject]@{
+            reason      = 'not-evaluated'
+            exit_code   = $null
+            timed_out   = $null
+            duration_ms = $null
+        }
+    }
 }
 
 function Enter-TestkitLock {
@@ -431,17 +748,11 @@ try {
             if ((Get-Item $serialLog).Length -eq 0) {
                 throw 'Smoke test produced an empty serial log'
             }
-            $missingPatterns = @()
-            foreach ($pattern in (Get-SmokeRequiredPatterns)) {
-                $matched = Select-String -Path $serialLog -Pattern $pattern -Quiet -ErrorAction SilentlyContinue
-                if (-not $matched) {
-                    $missingPatterns += $pattern
-                }
-            }
-            if ($missingPatterns.Count -eq 0) {
+            $verdict = Test-NormalSmokeVerdict -SerialLog $serialLog
+            if ($verdict.Passed) {
                 Write-Host '[OK] Smoke test PASSED - kernel booted successfully'
             } else {
-                Write-Host "[ERR] Smoke test did not reach expected state. Missing=$($missingPatterns -join ', ')"
+                Write-Host "[ERR] Smoke verdict failed. Reasons=$($verdict.Reasons -join '; ')"
                 Get-Content $serialLog -Tail 40 -ErrorAction SilentlyContinue
                 throw 'Smoke test failed'
             }

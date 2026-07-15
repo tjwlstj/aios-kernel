@@ -1,5 +1,9 @@
 # AIOS 부팅 커널 테스트 확장안
 
+> **OLD/REVIEW (2026-07-15):** 이 문서는 2026-04 시점의 초기 확장 기록이다.
+> 현재 구현 상태와 검증 계약은
+> `docs/tools/verification_tooling_evolution_design_ko.md`를 정본으로 사용한다.
+
 작성일: 2026-04-11
 
 ## 현재 상태

@@ -1,9 +1,15 @@
 from __future__ import annotations
 
 import json
+import math
 import time
 from pathlib import Path
 
+from lib.baseline_guard import (
+    require_exact_profile_request,
+    require_strict_baseline_write,
+    require_trusted_matrix_source,
+)
 from lib.boot_log import boot_summary_path
 from lib.boot_matrix_lane import run_boot_matrix
 from lib.common import BUILD_DIR, ToolError, ensure_dir, print_step
@@ -102,9 +108,72 @@ def build_perf_record(profile: str, summary: dict[str, object]) -> dict[str, obj
     return record
 
 
+def _is_valid_perf_metric(value: object) -> bool:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    try:
+        return math.isfinite(value) and value > 0
+    except (OverflowError, TypeError, ValueError):
+        return False
+
+
+def require_complete_perf_record(profile: str, record: dict[str, object]) -> None:
+    errors: list[str] = []
+    if record.get("profile") != profile:
+        errors.append("profile mismatch")
+    if record.get("selftest_status") != "PASS":
+        errors.append("selftest PASS proof missing")
+    for key in ("size_kib", "iterations"):
+        value = record.get(key)
+        if type(value) is not int or value <= 0:
+            errors.append(f"{key} missing")
+    if not isinstance(record.get("tier"), str) or not record.get("tier"):
+        errors.append("tier missing")
+
+    metrics = record.get("metrics")
+    if not isinstance(metrics, dict):
+        errors.append("metrics missing")
+    else:
+        for metric_name in PERF_RULES:
+            value = metrics.get(metric_name)
+            if not _is_valid_perf_metric(value):
+                errors.append(
+                    f"metrics.{metric_name} must be a finite positive number"
+                )
+
+    if errors:
+        raise ToolError(
+            f"Boot perf baseline source for `{profile}` is incomplete: "
+            + "; ".join(errors)
+        )
+
+
 def _write_json(path: Path, payload: dict[str, object]) -> None:
     ensure_dir(path.parent)
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def _metric_validation_mismatch(
+    name: str,
+    rule: dict[str, object],
+    baseline_value: object,
+    current_value: object,
+) -> dict[str, object] | None:
+    invalid_sources: list[str] = []
+    if not _is_valid_perf_metric(baseline_value):
+        invalid_sources.append("baseline")
+    if not _is_valid_perf_metric(current_value):
+        invalid_sources.append("current")
+    if not invalid_sources:
+        return None
+    return {
+        "label": rule.get("label", name),
+        "baseline": baseline_value,
+        "current": current_value,
+        "reason": "invalid-metric",
+        "requirement": "finite-positive-number",
+        "invalid_sources": invalid_sources,
+    }
 
 
 def _compare_metric(
@@ -113,22 +182,19 @@ def _compare_metric(
     baseline_value: object,
     current_value: object,
 ) -> dict[str, object] | None:
-    if not isinstance(baseline_value, (int, float)) or not isinstance(current_value, (int, float)):
-        return {
-            "label": rule.get("label", name),
-            "baseline": baseline_value,
-            "current": current_value,
-            "reason": "missing-or-non-numeric",
-        }
+    validation_mismatch = _metric_validation_mismatch(
+        name,
+        rule,
+        baseline_value,
+        current_value,
+    )
+    if validation_mismatch is not None:
+        return validation_mismatch
 
     max_regression_pct = float(rule.get("max_regression_pct", 0))
     kind = str(rule.get("kind", "max"))
 
-    if baseline_value == 0:
-        breached = current_value != 0
-        threshold = 0
-        delta_pct = None
-    elif kind == "min":
+    if kind == "min":
         threshold = baseline_value * (1 - max_regression_pct / 100.0)
         breached = current_value < threshold
         delta_pct = ((baseline_value - current_value) / baseline_value) * 100.0
@@ -154,10 +220,37 @@ def _compare_metric(
 def compare_perf_records(baseline: dict[str, object], current: dict[str, object]) -> dict[str, object]:
     mismatches: dict[str, object] = {}
 
-    if baseline.get("selftest_status") != current.get("selftest_status"):
+    comparability_failed = False
+    comparability_validators = {
+        "profile": lambda value: isinstance(value, str) and bool(value),
+        "size_kib": lambda value: type(value) is int and value > 0,
+        "iterations": lambda value: type(value) is int and value > 0,
+        "tier": lambda value: isinstance(value, str) and bool(value),
+    }
+    for scalar_key in ("profile", "size_kib", "iterations", "tier"):
+        baseline_value = baseline.get(scalar_key)
+        current_value = current.get(scalar_key)
+        if (
+            not comparability_validators[scalar_key](baseline_value)
+            or not comparability_validators[scalar_key](current_value)
+            or type(baseline_value) is not type(current_value)
+            or baseline_value != current_value
+        ):
+            mismatches[scalar_key] = {
+                "baseline": baseline_value,
+                "current": current_value,
+            }
+            comparability_failed = True
+
+    baseline_selftest = baseline.get("selftest_status")
+    current_selftest = current.get("selftest_status")
+    selftest_failed = baseline_selftest != "PASS" or current_selftest != "PASS"
+    if selftest_failed:
         mismatches["selftest_status"] = {
-            "baseline": baseline.get("selftest_status"),
-            "current": current.get("selftest_status"),
+            "baseline": baseline_selftest,
+            "current": current_selftest,
+            "expected": "PASS",
+            "reason": "selftest-not-pass",
         }
 
     baseline_metrics = baseline.get("metrics", {})
@@ -167,13 +260,34 @@ def compare_perf_records(baseline: dict[str, object], current: dict[str, object]
     if not isinstance(current_metrics, dict):
         current_metrics = {}
 
-    metric_breaches: dict[str, object] = {}
+    metric_mismatches: dict[str, object] = {}
+    invalid_metrics = False
+    for name, rule in PERF_RULES.items():
+        validation_mismatch = _metric_validation_mismatch(
+            name,
+            rule,
+            baseline_metrics.get(name),
+            current_metrics.get(name),
+        )
+        if validation_mismatch is not None:
+            metric_mismatches[name] = validation_mismatch
+            invalid_metrics = True
+    if metric_mismatches:
+        mismatches["metrics"] = metric_mismatches
+
+    # Thresholds are meaningful only when both records contain valid PASS
+    # evidence for the same test shape and classification. TSC frequency stays
+    # contextual because host/QEMU calibration varies between otherwise
+    # comparable runs, so it is intentionally not an exact gate.
+    if comparability_failed or selftest_failed or invalid_metrics:
+        return mismatches
+
     for name, rule in PERF_RULES.items():
         breach = _compare_metric(name, rule, baseline_metrics.get(name), current_metrics.get(name))
         if breach is not None:
-            metric_breaches[name] = breach
-    if metric_breaches:
-        mismatches["metrics"] = metric_breaches
+            metric_mismatches[name] = breach
+    if metric_mismatches:
+        mismatches["metrics"] = metric_mismatches
 
     return mismatches
 
@@ -184,8 +298,26 @@ def run_boot_perf(
     strict: bool,
     write_baseline: bool = False,
 ) -> dict[str, object]:
+    requested_profiles = list(profiles)
     normalized_profiles = _normalize_profiles(profiles)
-    run_boot_matrix(normalized_profiles, timeout_sec, strict)
+    if write_baseline:
+        require_strict_baseline_write(strict)
+        require_exact_profile_request(requested_profiles, normalized_profiles)
+    matrix_summary = run_boot_matrix(normalized_profiles, timeout_sec, strict)
+    if write_baseline:
+        require_trusted_matrix_source(matrix_summary, normalized_profiles)
+
+    boot_summaries = {
+        profile: _load_boot_summary(profile)
+        for profile in normalized_profiles
+    }
+    current_records = {
+        profile: build_perf_record(profile, boot_summaries[profile])
+        for profile in normalized_profiles
+    }
+    if write_baseline:
+        for profile, current_record in current_records.items():
+            require_complete_perf_record(profile, current_record)
 
     ensure_dir(BOOT_PERF_CURRENT_DIR)
     if write_baseline:
@@ -195,15 +327,14 @@ def run_boot_perf(
     failures: list[str] = []
 
     for profile in normalized_profiles:
-        summary = _load_boot_summary(profile)
-        current_record = build_perf_record(profile, summary)
+        current_record = current_records[profile]
         current_path = perf_current_path(profile)
         _write_json(current_path, current_record)
 
         baseline_path = perf_baseline_path(profile)
         baseline_before = None
         baseline_exists_before = baseline_path.exists()
-        if baseline_exists_before:
+        if baseline_exists_before and not write_baseline:
             baseline_before = json.loads(baseline_path.read_text(encoding="utf-8"))
 
         if write_baseline:
@@ -253,7 +384,4 @@ def run_boot_perf(
     if failures and strict and not write_baseline:
         joined = ", ".join(failures)
         raise ToolError(f"Boot perf regression detected: {joined}")
-    if failures and strict and write_baseline:
-        print_step("Boot perf strict check accepted because baselines were refreshed in this run")
-
     return summary_payload

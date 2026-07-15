@@ -2,6 +2,8 @@
 
 작성일: 2026-04-10
 
+최종 갱신: 2026-07-15 (normal verdict v1)
+
 ## 목적
 
 기존 테스트 도구는 `scripts/` 아래에 커널/OS smoke 엔트리포인트가 섞여 있었고,
@@ -31,8 +33,17 @@
   - host-local perf baseline과 threshold 기반 비교
 - `tools/testkit/lib/boot_log.py`
   - serial log를 checkpoint / health / inventory / selftest 요약 JSON으로 파싱
+- `tools/testkit/lib/boot_verdict.py`
+  - 전체 serial log의 fatal, health, terminal checkpoint 순서·중복을 fail-closed로 판정
+- `tools/testkit/lib/baseline_guard.py`
+  - inventory/perf baseline 쓰기의 strict matrix·profile·verdict 출처를 검증
+- `tools/testkit/lib/shell_lane.py`
+  - 같은 response record의 커널 shell 교환, 전체 transcript boot verdict,
+    reader drain, reboot acknowledgement와 QEMU termination을 검증
 - `tools/testkit/lib/os_lane.py`
   - `os/tools` smoke와 샘플 기반 검증
+- `tools/testkit/tests/`
+  - QEMU 없이 실행하는 verdict/baseline/matrix/shell host unit test
 - `tools/testkit/kernel/build-windows.ps1`
   - Windows 전용 커널 빌드/부팅 엔트리포인트
 
@@ -66,6 +77,16 @@
 이 정책은 "병렬 처리 최적화"보다 "빌드 산출물 무결성"을 우선한다.
 
 ## 권장 명령
+
+### Testkit host unit test
+
+```powershell
+py -3 -m unittest discover -s tools/testkit/tests -t tools/testkit -p "test_*.py" -v
+```
+
+이 검사는 QEMU보다 먼저 실행하며 PASS 뒤 panic, health 실패, checkpoint 역순·중복,
+인용/접두사 마커, 중복 key, 불완전 baseline/perf 출처, stale shell artifact와
+clean-exit 누락을 44개 합성 반례로 고정한다.
 
 ### 전체
 
@@ -139,13 +160,13 @@ optional 하드웨어 구성을 나눌 수 있다.
 이 프로파일은 "고장난 장치 시뮬레이션"이 아니라 "optional 장치가 없는 상태"를 검증하는 용도다.
 그래서 부팅 기준선과 optional 초기화 경로를 분리해 회귀를 찾기 좋다.
 
-현재 smoke 검증은 두 프로파일을 로그 패턴으로도 구분한다.
+현재 smoke 검증은 세 프로파일을 로그 패턴으로도 구분한다.
 
 - `공통`
   - `[DEV] Peripheral probe ready`
   - `[USER] Ring3 scaffold ready=1`
-  - `[ROOM] snapshot stability=...`
-  - `[HEALTH] stability=...`
+  - `[ROOM] snapshot stability=stable`
+  - `[HEALTH] stability=stable ... degraded=0 failed=0`
 - `full`
   - `[NET] E1000 ready`
   - `[USB] XHCI ready=1`
@@ -158,6 +179,17 @@ optional 하드웨어 구성을 나눌 수 있다.
   - `[STO] IDE ready=1`
   - `[STO] IDE channels`
   - `label=storage-bootstrap`
+
+`[STO] IDE channels`는 marker-only 증거로 인정하지 않는다. `primary`와 `secondary`가
+서로 다른 command/control 주소 쌍으로 한 번씩 나타나고, 각 채널의 `status`와 `live`가
+완전한 레코드 안에 있어야 한다.
+
+필수 문자열 존재만으로 PASS하지 않는다. 정상 verdict v1은 전체 로그에서 panic, exception,
+대문자 단어 `FAIL`/`FATAL`을 금지하고, ring3 scaffold부터 shell 시작까지의 terminal checkpoint가
+각각 정확히 한 번 순서대로 나타나는지 검증한다. 증거는 정해진 행 시작점과 토큰 경계에서만
+인정하므로 `PASSFAIL`, `ready=10`, 인용된 과거 마커는 통과하지 않는다. contract-bearing 행의
+중복 key도 거부하고, verdict line number는 raw serial artifact와 일치한다. `failed=0`,
+`apply_failed=0` 같은 소문자 상태 필드는 fatal로 오인하지 않는다.
 
 ## 부팅 요약 export
 
@@ -232,7 +264,9 @@ repo 안의 baseline fixture와 비교하는 lane이다.
 - 기본 실행
   - baseline과 비교만 수행
 - `--write-baseline`
-  - 현재 inventory를 fixture로 저장 또는 갱신
+  - `--strict`가 반드시 필요하다
+  - 전체 matrix가 PASS하고 요청 profile과 결과 순서가 정확히 일치해야 한다
+  - canonical verdict와 profile별 controller/process/numeric proof가 정확할 때만 fixture를 갱신한다
 
 현재 단계의 baseline은 QEMU `full/minimal/storage-only` 프로파일용 정적 fixture다.
 즉, 성능 수치가 아니라 장치 수, health 요약, controller state, seeded plan 수,
@@ -270,6 +304,8 @@ repo 안의 baseline fixture와 비교하는 lane이다.
 - `boot-perf` baseline은 기본적으로 로컬 `kernel/build/` 아래에만 둔다
 - 즉, inventory처럼 팀 공용 fixture를 기본값으로 삼지 않는다
 - 이유는 QEMU와 호스트 환경 차이로 성능 수치가 장치/OS마다 크게 흔들릴 수 있기 때문이다
+- 비교는 같은 profile/size/iterations/tier끼리만 허용하고 필수 metric 양쪽이 finite positive여야 한다
+- `--write-baseline`은 inventory와 같은 strict source guard와 perf 필수 metric 완전성을 통과해야 한다
 
 ## 확장 규칙
 
@@ -290,23 +326,33 @@ repo 안의 baseline fixture와 비교하는 lane이다.
 - OS tool smoke
 - host/tool info
 - shared build lock
+- boot summary parser와 normal verdict v1
+- full/minimal/storage-only matrix
+- checked-in boot inventory와 host-local boot perf baseline
+- interactive shell state lane, 같은 response record 판정, 전체 transcript verdict,
+  reader drain과 clean reboot/exit termination gate
+- QEMU 없는 host unit test와 CI 선행 gate
 
 아직 하지 않은 것:
 
-- CI matrix용 세부 job preset
-- artifact archive/export 도구
+- 일반 kernel/matrix의 timeout/guest-exit/host-kill을 분리하는 streaming collector
+- profile별 raw log와 provenance를 보존하는 run bundle
+- shared Python/PowerShell marker manifest
+- post-link ELF structural verifier
+- fault injection과 expected outcome lane
+- `-cpu max` 정규 CI profile
 - trace dataset 전용 lane
 - per-lane config file
 
-즉, 이번 단계는 "확장 가능한 뼈대 + 병렬 충돌 방지"까지를 목표로 한다.
+즉, 현재는 정상 bootstrap의 fail-closed verdict와 기본 회귀 lane까지 구현됐고,
+shell 종료 의미는 구현됐다. 일반 kernel/matrix 종료 의미·재현 artifact·fault/stress
+검증은 후속 단계다.
 
 ## 추가 구상 문서
 
 부팅 커널 테스트를 더 세분화하는 다음 구상은 아래 문서에 정리한다.
 
-- `docs/boot_kernel_testkit_expansion_plan_ko.md`
-  - boot-matrix
-  - boot-checkpoint parser
-  - boot-inventory baseline
-  - boot-perf snapshot
-  - boot-fault lane
+- `docs/tools/verification_tooling_evolution_design_ko.md`
+  - 현재 검증 계약과 V0~V5 진화 로드맵의 정본
+- `docs/tools/boot_kernel_testkit_expansion_plan_ko.md`
+  - 2026-04 초기 확장 기록(OLD/REVIEW)

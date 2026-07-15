@@ -128,7 +128,7 @@ def parse_args() -> argparse.Namespace:
     inventory_cmd.add_argument(
         "--write-baseline",
         action="store_true",
-        help="Write or refresh testkit/fixtures/boot-baseline/<profile>.json from the current run.",
+        help="Write or refresh testkit/fixtures/boot-baseline/<profile>.json from a complete strict run (requires --strict).",
     )
     inventory_cmd.add_argument("--timeout", type=int, default=DEFAULT_QEMU_TIMEOUT)
     inventory_cmd.add_argument("--strict", action="store_true")
@@ -147,7 +147,7 @@ def parse_args() -> argparse.Namespace:
     perf_cmd.add_argument(
         "--write-baseline",
         action="store_true",
-        help="Write or refresh build/boot-perf/baseline/<profile>.json from the current run.",
+        help="Write or refresh build/boot-perf/baseline/<profile>.json from a complete strict run (requires --strict).",
     )
     perf_cmd.add_argument("--timeout", type=int, default=DEFAULT_QEMU_TIMEOUT)
     perf_cmd.add_argument("--strict", action="store_true")

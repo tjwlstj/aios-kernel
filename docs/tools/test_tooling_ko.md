@@ -1,5 +1,9 @@
 # AIOS 테스트 툴링 구조와 올인원 도구
 
+> **OLD/REVIEW (2026-07-15):** 이 문서는 testkit 통합 초기 구조를 설명하는 기록이다.
+> 현재 명령은 `docs/tools/testkit_guide_ko.md`, 판정 계약과 로드맵은
+> `docs/tools/verification_tooling_evolution_design_ko.md`를 따른다.
+
 작성일: 2026-03-29
 
 추가 갱신: 2026-04-10

@@ -35,6 +35,7 @@ The Windows build uses the cross-compiler at `../tools/x86_64-elf/bin/x86_64-elf
 
 ### Python Testkit (tools/)
 ```bash
+python -m unittest discover -s tools/testkit/tests -t tools/testkit -p "test_*.py" -v
 python tools/testkit/aios-testkit.py all --strict
 python tools/testkit/aios-testkit.py kernel --target test --strict
 python tools/testkit/aios-testkit.py boot-matrix --profiles full minimal storage-only --strict
@@ -162,6 +163,15 @@ A successful boot must emit all of:
 [ROOM] snapshot stability=...
 ```
 
+Required-marker presence alone is not a PASS. Normal verdict v1 scans the whole
+serial log for panic/exception/uppercase `FAIL` or `FATAL`, requires stable health,
+anchors evidence to line/token boundaries, rejects duplicate keys, and enforces
+the terminal checkpoint chain exactly once and in order. The shell lane also
+requires same-record state evidence, a drained reader, reboot acknowledgement,
+the whole-transcript boot verdict, and QEMU exit code 0. Run the host unit tests
+before QEMU; the authoritative contract and remaining limitations are in
+`docs/tools/verification_tooling_evolution_design_ko.md`.
+
 ### Compiler Flags (non-obvious)
 C sources are compiled with `-ffreestanding -nostdlib -mno-sse -mno-mmx -mno-red-zone -mcmodel=kernel -fno-pic -fno-pie`. Do not add `-msse` or enable SSE implicitly — the kernel manually enables SIMD after CPU init.
 
@@ -189,7 +199,8 @@ M4 virtio-blk storage read → M5 load programs from disk) and the per-step
 working conventions (selftest marker + smoke pattern + `state` topic + shell
 lane exchange + cppcheck clean) are pinned in
 `docs/meta/minimal_io_and_maturity_workflow_ko.md`. Follow it when picking up
-the next task.
+the next task. Before M3-b-3b2c or another high-risk kernel slice, also apply the
+entry gate in `docs/tools/verification_tooling_evolution_design_ko.md`.
 
 ## Directory Map (domains)
 

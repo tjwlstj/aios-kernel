@@ -16,10 +16,12 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import threading
 import time
 
+from lib.boot_verdict import evaluate_normal_boot
 from lib.common import (
     BUILD_DIR,
     DEFAULT_QEMU_TIMEOUT,
@@ -33,12 +35,14 @@ from lib.common import (
 )
 from lib.kernel_lane import (
     build_qemu_smoke_command,
+    required_smoke_patterns,
     run_kernel_make,
     run_windows_kernel,
 )
 
 SHELL_SMOKE_DIR = BUILD_DIR / "shell-smoke"
 SHELL_READY_MARKER = "[SHELL] Interactive shell started"
+SHELL_REBOOT_MARKER = "[SHELL] reboot requested"
 
 # Well-known Windows install locations (mirrors build-windows.ps1).
 QEMU_FALLBACK_PATHS = [
@@ -58,12 +62,76 @@ def find_qemu() -> str | None:
 COMMAND_TIMEOUT_SEC = 15
 REBOOT_EXIT_TIMEOUT_SEC = 10
 
-# Each exchange: send `command`, then require every `expect` substring to
-# appear in output produced *after* the command was sent.
+
+def shell_result_passed(
+    ready: bool,
+    failures: list[str],
+    reboot_ack: bool,
+    clean_exit: bool,
+    boot_verdict_passed: bool = True,
+) -> bool:
+    return ready and not failures and reboot_ack and clean_exit and boot_verdict_passed
+
+
+def expectation_matches(text: str, expectation: str) -> bool:
+    """Match one shell expectation at whitespace-delimited token boundaries."""
+
+    if not expectation:
+        return False
+    if expectation.startswith("[SHELL]"):
+        pattern = r"(?m)^" + re.escape(expectation) + r"\r?$"
+        return re.search(pattern, text) is not None
+
+    if expectation.startswith("[STATE]"):
+        pattern = r"(?m)^" + re.escape(expectation)
+    else:
+        pattern = r"(?<!\S)" + re.escape(expectation)
+    if expectation.endswith("="):
+        pattern += r"\S+"
+    else:
+        pattern += r"(?=\s|$)"
+    return re.search(pattern, text) is not None
+
+
+def expectations_match(text: str, expectations: list[str]) -> bool:
+    lines = text.splitlines()
+    record_lines: list[str] | None = None
+    for expectation in expectations:
+        if expectation.startswith(("[STATE]", "[SHELL]")):
+            matches = [
+                line for line in lines
+                if expectation_matches(line, expectation)
+            ]
+            if len(matches) != 1 or _record_has_duplicate_fields(matches[0]):
+                return False
+            record_lines = matches
+            continue
+
+        candidates = record_lines if record_lines is not None else lines
+        matches = [
+            line for line in candidates
+            if expectation_matches(line, expectation)
+        ]
+        if not matches:
+            return False
+        record_lines = matches
+    return True
+
+
+def _record_has_duplicate_fields(record: str) -> bool:
+    field_names = re.findall(
+        r"(?<!\S)([A-Za-z_][A-Za-z0-9_]*)=\S+",
+        record,
+    )
+    return len(field_names) != len(set(field_names))
+
+
+# Each exchange: send `command`, then require every expectation to match its
+# whitespace-delimited token on the anchored response record.
 DEFAULT_EXCHANGES: list[dict[str, object]] = [
     {"command": "ping", "expect": ["[STATE] pong ticks="]},
     {"command": "state list", "expect": ["[STATE] topics list="]},
-    {"command": "state health", "expect": ["[STATE] health stability=", "autonomy="]},
+    {"command": "state health", "expect": ["[STATE] health stability=stable", "degraded=0", "failed=0", "io_degraded=0", "autonomy="]},
     {"command": "state mem", "expect": ["[STATE] mem heap_total=", "heap_free=", "lock_acquires="]},
     {"command": "state sched", "expect": ["[STATE] sched kthread_switches=", "preempt_ticks=", "address_space_switches=", "address_space_ready=1", "user_leaf_slots=2", "user_leaf_isolated=1", "bootstrap_process_ready=1", "bootstrap_owned_processes=2", "completed_process_runs=1", "current_pid=0", "last_pid=1", "tss_rsp0_publishes=1", "tss_rsp0_restores=1", "tss_rsp0_baseline=1", "total_tasks="]},
     {"command": "state pipeline", "expect": ["[STATE] pipeline active=", "executions="]},
@@ -111,11 +179,15 @@ class SerialSession:
         deadline = time.time() + timeout_sec
         while True:
             window = self.text()[start_at:]
-            if all(needle in window for needle in needles):
+            if expectations_match(window, needles):
                 return True
             if self.proc.poll() is not None or time.time() >= deadline:
                 return False
             time.sleep(0.05)
+
+    def drain(self, timeout_sec: float = 1.0) -> bool:
+        self._reader.join(timeout=timeout_sec)
+        return not self._reader.is_alive()
 
     def send_line(self, line: str) -> None:
         # Pace bytes out one at a time: the guest drains its 16-byte UART
@@ -140,23 +212,88 @@ def run_shell_lane(
     strict: bool = False,
     skip_build: bool = False,
 ) -> dict[str, object]:
-    qemu = find_qemu()
-    if not qemu:
-        if strict:
-            raise ToolError("`qemu-system-x86_64` is required for the shell lane.")
-        print_step("SKIP shell lane: qemu-system-x86_64 not found")
-        return {"skipped": True, "reason": "qemu-system-x86_64 not found"}
-
-    if not skip_build:
-        build_kernel_iso(timeout_sec)
-
-    iso = BUILD_DIR / "aios-kernel.iso"
-    if not iso.exists():
-        raise ToolError(f"Kernel ISO not found: {iso}")
-
     ensure_dir(SHELL_SMOKE_DIR)
     transcript_path = SHELL_SMOKE_DIR / "transcript.log"
     summary_path = SHELL_SMOKE_DIR / "summary.json"
+    transcript_path.unlink(missing_ok=True)
+    summary_path.unlink(missing_ok=True)
+
+    started_at = time.monotonic()
+    termination: dict[str, object] = {
+        "reason": "not-started",
+        "exit_code": None,
+        "timed_out": False,
+        "duration_ms": None,
+        "host_killed": False,
+    }
+    summary: dict[str, object] = {
+        "lane": "shell",
+        "qemu": None,
+        "ready": False,
+        "exchanges": [],
+        "reboot_ack": False,
+        "reader_drained": False,
+        "clean_exit": False,
+        "exit_code": None,
+        "termination": termination,
+        "boot_verdict": None,
+        "failures": [],
+        "passed": False,
+    }
+    failures: list[str] = []
+
+    def persist_artifacts(transcript: str) -> None:
+        termination["duration_ms"] = int((time.monotonic() - started_at) * 1000)
+        summary["exit_code"] = termination["exit_code"]
+        summary["failures"] = list(failures)
+        boot_verdict = evaluate_normal_boot(
+            transcript,
+            required_smoke_patterns("minimal"),
+            termination=termination,
+        )
+        summary["boot_verdict"] = boot_verdict
+        summary["passed"] = shell_result_passed(
+            bool(summary["ready"]),
+            failures,
+            bool(summary["reboot_ack"]),
+            bool(summary["clean_exit"]),
+            bool(boot_verdict["passed"]),
+        )
+        transcript_path.write_text(transcript, encoding="utf-8")
+        summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+
+    # Establish current-run artifacts before any external operation so an
+    # early failure cannot leave a stale PASS summary from a prior run.
+    transcript_path.write_text("", encoding="utf-8")
+    summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+
+    qemu = find_qemu()
+    summary["qemu"] = qemu
+    if not qemu:
+        termination["reason"] = "qemu-not-found"
+        summary["skipped"] = not strict
+        persist_artifacts("")
+        if strict:
+            raise ToolError("`qemu-system-x86_64` is required for the shell lane.")
+        print_step("SKIP shell lane: qemu-system-x86_64 not found")
+        return summary
+
+    try:
+        if not skip_build:
+            build_kernel_iso(timeout_sec)
+    except Exception as exc:
+        termination["reason"] = "kernel-build-error"
+        summary["error"] = {"type": type(exc).__name__, "message": str(exc)}
+        persist_artifacts("")
+        raise
+
+    iso = BUILD_DIR / "aios-kernel.iso"
+    if not iso.exists():
+        termination["reason"] = "kernel-iso-missing"
+        error = ToolError(f"Kernel ISO not found: {iso}")
+        summary["error"] = {"type": type(error).__name__, "message": str(error)}
+        persist_artifacts("")
+        raise error
 
     # Minimal hardware profile: the lane exercises the shell, not drivers.
     # Drop -no-shutdown so the final `reboot` (with -no-reboot) makes QEMU
@@ -165,33 +302,39 @@ def run_shell_lane(
            if arg != "-no-shutdown"]
     print_step(f"RUN {shell_join(cmd)}")
 
-    proc = subprocess.Popen(
-        cmd,
-        cwd=str(REPO_ROOT),
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-    )
-    session = SerialSession(proc)
-
-    summary: dict[str, object] = {
-        "lane": "shell",
-        "qemu": qemu,
-        "ready": False,
-        "exchanges": [],
-        "clean_exit": False,
-        "passed": False,
-    }
-    failures: list[str] = []
+    proc: subprocess.Popen | None = None
+    session: SerialSession | None = None
+    reboot_cursor = 0
+    reboot_sent = False
+    stage = "qemu-launch"
 
     try:
+        proc = subprocess.Popen(
+            cmd,
+            cwd=str(REPO_ROOT),
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+        )
+        termination["reason"] = "running"
+        session = SerialSession(proc)
+        stage = "shell-ready"
+
         if not session.wait_for([SHELL_READY_MARKER], timeout_sec):
+            exit_code = proc.poll()
+            if exit_code is None:
+                termination["reason"] = "shell-ready-timeout"
+                termination["timed_out"] = True
+            else:
+                termination["reason"] = "qemu-exit-before-shell-ready"
+                termination["exit_code"] = exit_code
             raise ToolError(
-                f"Kernel shell did not come up within {timeout_sec}s "
+                f"Kernel shell did not become ready within {timeout_sec}s "
                 f"(missing marker: {SHELL_READY_MARKER})"
             )
         summary["ready"] = True
 
+        stage = "shell-exchanges"
         for exchange in DEFAULT_EXCHANGES:
             command = str(exchange["command"])
             expect = list(exchange["expect"])  # type: ignore[arg-type]
@@ -214,19 +357,73 @@ def run_shell_lane(
                 print_step(f"shell exchange FAIL `{command}` (missing {expect})")
 
         # `reboot` + QEMU -no-reboot => guest reset exits QEMU: clean teardown.
+        if proc.poll() is not None:
+            termination["reason"] = "qemu-exit-before-reboot"
+            termination["exit_code"] = proc.returncode
+            raise ToolError("QEMU exited before the shell reboot request.")
+
+        stage = "shell-reboot"
+        reboot_cursor = session.cursor()
         session.send_line("reboot")
+        reboot_sent = True
         deadline = time.time() + REBOOT_EXIT_TIMEOUT_SEC
         while proc.poll() is None and time.time() < deadline:
             time.sleep(0.1)
-        summary["clean_exit"] = proc.poll() is not None
+        exit_code = proc.poll()
+        if exit_code is None:
+            termination["reason"] = "reboot-exit-timeout"
+            termination["timed_out"] = True
+        else:
+            termination["reason"] = (
+                "guest-reboot-exit" if exit_code == 0 else "qemu-exit-after-reboot"
+            )
+            termination["exit_code"] = exit_code
+    except Exception as exc:
+        summary["error"] = {"type": type(exc).__name__, "message": str(exc)}
+        if termination["reason"] in {"not-started", "running"}:
+            if proc is not None and proc.poll() is not None:
+                termination["reason"] = f"qemu-exit-during-{stage}"
+                termination["exit_code"] = proc.returncode
+            else:
+                termination["reason"] = f"{stage}-error"
+        raise
     finally:
-        if proc.poll() is None:
+        if proc is not None and proc.poll() is None:
+            termination["host_killed"] = True
+            reason = str(termination["reason"])
+            if reason == "running":
+                termination["reason"] = f"host-kill-during-{stage}"
+            elif not reason.endswith("host-kill"):
+                termination["reason"] = f"{reason}-host-kill"
             proc.kill()
             proc.wait()
-        transcript_path.write_text(session.text(), encoding="utf-8")
+        if proc is not None:
+            termination["exit_code"] = proc.returncode
 
-    summary["passed"] = summary["ready"] and not failures
-    summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+        transcript = ""
+        if session is not None:
+            summary["reader_drained"] = session.drain()
+            transcript = session.text()
+            if not summary["reader_drained"]:
+                failures.append("reader-drain")
+
+        if reboot_sent:
+            summary["reboot_ack"] = expectation_matches(
+                transcript[reboot_cursor:],
+                SHELL_REBOOT_MARKER,
+            )
+            if not summary["reboot_ack"]:
+                failures.append("reboot-ack")
+
+        summary["clean_exit"] = bool(
+            reboot_sent
+            and summary["reboot_ack"]
+            and summary["reader_drained"]
+            and termination["exit_code"] == 0
+            and not termination["host_killed"]
+        )
+        persist_artifacts(transcript)
+
     print_step(f"Shell lane artifacts -> {SHELL_SMOKE_DIR}")
 
     if failures:
@@ -234,7 +431,16 @@ def run_shell_lane(
             f"Shell lane failed exchanges: {failures} (see {transcript_path})"
         )
     if not summary["clean_exit"]:
-        print_step("WARN shell lane: QEMU did not exit on reboot; killed instead")
+        raise ToolError(
+            "Shell lane did not complete a clean QEMU exit after reboot "
+            f"(exit_code={summary['exit_code']}; see {transcript_path})"
+        )
+    boot_verdict = summary["boot_verdict"]
+    if not isinstance(boot_verdict, dict) or not boot_verdict.get("passed"):
+        raise ToolError(
+            "Shell lane boot verdict failed "
+            f"(reasons={(boot_verdict or {}).get('reasons')}; see {transcript_path})"
+        )
 
     print_step("Shell lane PASSED")
     return summary
