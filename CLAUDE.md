@@ -50,12 +50,14 @@ python tools/testkit/aios-testkit.py os   # OS tool smoke test
 The kernel shell reads from both the PS/2 keyboard and COM1 serial, so QEMU
 `-serial stdio` gives a scriptable REPL into the running kernel. Machine-oriented
 commands answer with single-line `[STATE] <topic> key=value...` responses:
-`ping`, `state list|health|mem|nodes|pipeline|slm|user|sec|time|version`. List-shaped topics
+`ping`, `state list|health|mem|sched|nodes|pipeline|slm|autonomy|user|sec|time|version`. List-shaped topics
 (`state nodes`) emit one summary line plus one `[STATE] node id=...` line per item;
-every line still follows the key=value convention. Each observation surface is
-mirrored as a syscall for userspace (`SYS_PIPE_STATS`, `SYS_NODEBIT_STATS`,
-`SYS_SLM_PLAN_OBSERVE`), and a post-init selftest drives them through the real
-dispatcher (`[SYSCALL] observe dispatch selftest PASS`). The `shell` testkit lane boots
+every line still follows the key=value convention. Core pipeline/node/SLM
+observation surfaces are mirrored as userspace syscalls (`SYS_PIPE_STATS`,
+`SYS_NODEBIT_STATS`, `SYS_SLM_PLAN_OBSERVE`), and a post-init selftest drives
+them through the real dispatcher (`[SYSCALL] observe dispatch selftest PASS`).
+The autonomy support matrix and last event do not yet have one versioned snapshot
+syscall. The `shell` testkit lane boots
 QEMU, drives these commands, asserts on the responses, and stores
 `kernel/build/shell-smoke/{transcript.log,summary.json}`. When adding a new
 `state` topic keep the response a single line with no spaces inside values, and
@@ -119,7 +121,11 @@ kernel/boot/boot.asm  (Multiboot2 entry, GDT, paging, SSE/AVX setup, long mode)
 **Runtime & Syscall Interface (`kernel/runtime/`)**
 - `ai_syscall.c` — syscall dispatcher; syscall number ranges are ABI-stable, do not renumber.
 - Groups: Model, Tensor, Inference, Training, Accelerator, Pipeline, Info, Autonomy, SLM/NodeBit.
-- `autonomy.c` — autonomy levels L0 (observe) → L3 (learning).
+- `autonomy.c` — bounded autonomy control plane. The shell's read-only `state autonomy`
+  schema 1 exposes the current mode, target support matrix, counters, and last decision/reason;
+  it does not add a new action or bypass the default observation-only gate. The agent-facing
+  contract and intentional M6 authorization gap are in
+  `docs/autonomy/agent_operating_contract_ko.md`.
 - `slm_orchestrator.c` — 84 KB hardware + SLM snapshot, plan submit/validate/rollback. Plan *apply* is TSC-timed into a high-precision observation rollup (apply ok/failed/rejected, last/min/avg/max latency ns); read via `slm_plan_observation_read` or the shell's `state slm`. A boot selftest applies one read-only CORE_AUDIT plan — the only automated coverage of the apply path.
 - `nodebit.c` — fast per-node policy bitmap lookup (`SYS_SLM_NODEBIT_LOOKUP`). Every gate decision is timed with the TSC-backed monotonic clock into per-node stats (permits/denies/health blocks, gate latency min/avg/max ns, attributed work via `nodebit_observe_work`); read them with `SYS_NODEBIT_STATS` or the shell's `state nodes`.
 - `node_pipeline.c` — node-owned pipeline registry backing `SYS_PIPE_*` (0x600-0x603); every create/add-stage/execute/destroy needs a NodeBit PERMIT with `NODEBIT_CAP_PIPELINE`, and execute/destroy require the caller's node to own the pipeline. Stage execution is a control-plane accounting walk until the model runtime lands.

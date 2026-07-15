@@ -94,6 +94,30 @@ const char *autonomy_target_support_name(autonomy_target_support_t support) {
     }
 }
 
+const char *autonomy_action_state_name(uint32_t state) {
+    switch (state) {
+        case ACTION_STATE_PROPOSED:    return "proposed";
+        case ACTION_STATE_APPROVED:    return "approved";
+        case ACTION_STATE_COMMITTED:   return "committed";
+        case ACTION_STATE_ROLLED_BACK: return "rolled-back";
+        case ACTION_STATE_REJECTED:    return "rejected";
+        default:                       return "unknown";
+    }
+}
+
+const char *autonomy_reason_name(uint32_t reason) {
+    switch (reason) {
+        case AUTONOMY_REASON_OK:                 return "ok";
+        case AUTONOMY_REASON_BAD_TARGET:         return "bad-target";
+        case AUTONOMY_REASON_BAD_RISK:           return "bad-risk";
+        case AUTONOMY_REASON_BAD_DELTA:          return "bad-delta";
+        case AUTONOMY_REASON_MODE_BLOCKED:       return "mode-blocked";
+        case AUTONOMY_REASON_UNSUPPORTED_TARGET: return "unsupported-target";
+        case AUTONOMY_REASON_QUEUE_FULL:         return "queue-full";
+        default:                                 return "unknown";
+    }
+}
+
 static void log_event(const policy_action_t *action) {
     if (!action) return;
 
@@ -239,7 +263,6 @@ aios_status_t autonomy_get_latest_telemetry(telemetry_frame_t *out) {
 
 aios_status_t autonomy_action_propose(const policy_action_t *action) {
     if (!action) return AIOS_ERR_INVAL;
-    if (action_count >= AUTONOMY_ACTION_CAP) return AIOS_ERR_BUSY;
 
     stats.actions_proposed++;
 
@@ -247,6 +270,14 @@ aios_status_t autonomy_action_propose(const policy_action_t *action) {
     copy.ts_ns = autonomy_now_ns();
     copy.state = ACTION_STATE_PROPOSED;
     copy.reason = AUTONOMY_REASON_OK;
+
+    if (action_count >= AUTONOMY_ACTION_CAP) {
+        copy.state = ACTION_STATE_REJECTED;
+        copy.reason = AUTONOMY_REASON_QUEUE_FULL;
+        stats.actions_rejected++;
+        log_event(&copy);
+        return AIOS_ERR_BUSY;
+    }
 
     if (!risk_level_valid(copy.risk_level)) {
         copy.state = ACTION_STATE_REJECTED;

@@ -133,6 +133,8 @@ void autonomy_set_safe_mode(bool enabled);
 autonomy_target_support_t autonomy_target_support(uint32_t target_subsys);
 const char *autonomy_target_name(uint32_t target_subsys);
 const char *autonomy_target_support_name(autonomy_target_support_t support);
+const char *autonomy_action_state_name(uint32_t state);
+const char *autonomy_reason_name(uint32_t reason);
 void autonomy_stats(autonomy_stats_t *out);
 void autonomy_dump(void);
 

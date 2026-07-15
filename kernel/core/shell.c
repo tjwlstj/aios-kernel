@@ -30,6 +30,7 @@
  *                      one `[STATE] node id=...` line per active node)
  *   state pipeline   — node pipeline registry statistics
  *   state slm        — SLM plan apply observation (high-precision timing)
+ *   state autonomy   — autonomy mode, support matrix, counters, last decision
  *   state user       — first ring3 execution round-trip result
  *   state sec        — hardening status (nx/smep/umip/smap/canary)
  *   state time       — timer/TSC status
@@ -43,6 +44,7 @@
 #include <kernel/stack_guard.h>
 #include <runtime/node_pipeline.h>
 #include <runtime/nodebit.h>
+#include <runtime/autonomy.h>
 #include <runtime/slm_orchestrator.h>
 #include <kernel/user_exec.h>
 #include <kernel/process.h>
@@ -61,6 +63,7 @@
 
 #define SHELL_RELEASE  "0.2.0-beta.6"
 #define SHELL_VERSION  SHELL_RELEASE " \"Genesis\""
+#define SHELL_AUTONOMY_STATE_SCHEMA 1
 
 /* -------------------------------------------------------------------------
  * Line-editing state
@@ -107,7 +110,7 @@ static void cmd_ping(void) {
 }
 
 static void state_list(void) {
-    STATE_EMIT("[STATE] topics list=health,mem,sched,nodes,pipeline,slm,user,sec,time,version\n");
+    STATE_EMIT("[STATE] topics list=health,mem,sched,nodes,pipeline,slm,autonomy,user,sec,time,version\n");
 }
 
 static void state_sched(void) {
@@ -185,6 +188,41 @@ static void state_slm(void) {
         avg_ns,
         o.max_latency_ns,
         o.tsc_khz);
+}
+
+static void state_autonomy(void) {
+    autonomy_stats_t stats;
+    autonomy_event_t last_event = {0};
+    bool has_last = (autonomy_get_last_event(&last_event) == AIOS_OK);
+    const char *last_target = has_last
+        ? autonomy_target_name(last_event.target_subsys) : "none";
+    const char *last_state = has_last
+        ? autonomy_action_state_name(last_event.state) : "none";
+    const char *last_reason = has_last
+        ? autonomy_reason_name(last_event.reason) : "none";
+
+    autonomy_stats(&stats);
+    STATE_EMIT("[STATE] autonomy schema=%u observation_only=%u safe_mode=%u support_mem=%s support_sched=%s support_accel=%s support_infer=%s telemetry=%u proposed=%u approved=%u committed=%u rejected=%u rollbacks=%u queue_depth=%u event_depth=%u last_valid=%u last_action=%u last_target=%s last_state=%s last_reason=%s\n",
+        (uint64_t)SHELL_AUTONOMY_STATE_SCHEMA,
+        (uint64_t)stats.observation_only,
+        (uint64_t)stats.safe_mode,
+        autonomy_target_support_name(autonomy_target_support(AUTONOMY_TARGET_MEM)),
+        autonomy_target_support_name(autonomy_target_support(AUTONOMY_TARGET_SCHED)),
+        autonomy_target_support_name(autonomy_target_support(AUTONOMY_TARGET_ACCEL)),
+        autonomy_target_support_name(autonomy_target_support(AUTONOMY_TARGET_INFER)),
+        stats.telemetry_samples,
+        stats.actions_proposed,
+        stats.actions_approved,
+        stats.actions_committed,
+        stats.actions_rejected,
+        stats.rollbacks,
+        (uint64_t)stats.action_queue_depth,
+        (uint64_t)stats.event_log_depth,
+        has_last ? 1ULL : 0ULL,
+        has_last ? (uint64_t)last_event.action_id : 0ULL,
+        last_target,
+        last_state,
+        last_reason);
 }
 
 static void state_nodes(void) {
@@ -296,6 +334,7 @@ static void cmd_state(const char *arg, uint32_t arg_len) {
     if (topic_is(arg, arg_len, "nodes"))                { state_nodes();   return; }
     if (topic_is(arg, arg_len, "pipeline"))             { state_pipeline(); return; }
     if (topic_is(arg, arg_len, "slm"))                  { state_slm();     return; }
+    if (topic_is(arg, arg_len, "autonomy"))             { state_autonomy(); return; }
     if (topic_is(arg, arg_len, "user"))                 { state_user();    return; }
     if (topic_is(arg, arg_len, "sec"))                  { state_sec();     return; }
     if (topic_is(arg, arg_len, "time"))                 { state_time();    return; }

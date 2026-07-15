@@ -130,13 +130,14 @@ def _record_has_duplicate_fields(record: str) -> bool:
 # whitespace-delimited token on the anchored response record.
 DEFAULT_EXCHANGES: list[dict[str, object]] = [
     {"command": "ping", "expect": ["[STATE] pong ticks="]},
-    {"command": "state list", "expect": ["[STATE] topics list="]},
+    {"command": "state list", "expect": ["[STATE] topics list=health,mem,sched,nodes,pipeline,slm,autonomy,user,sec,time,version"]},
     {"command": "state health", "expect": ["[STATE] health stability=stable", "degraded=0", "failed=0", "io_degraded=0", "autonomy="]},
     {"command": "state mem", "expect": ["[STATE] mem heap_total=", "heap_free=", "lock_acquires="]},
     {"command": "state sched", "expect": ["[STATE] sched kthread_switches=", "preempt_ticks=", "address_space_switches=", "address_space_ready=1", "user_leaf_slots=2", "user_leaf_isolated=1", "bootstrap_process_ready=1", "bootstrap_owned_processes=2", "completed_process_runs=1", "current_pid=0", "last_pid=1", "tss_rsp0_publishes=1", "tss_rsp0_restores=1", "tss_rsp0_baseline=1", "total_tasks="]},
     {"command": "state pipeline", "expect": ["[STATE] pipeline active=", "executions="]},
     {"command": "state nodes", "expect": ["[STATE] nodes active=", "[STATE] node id=40"]},
     {"command": "state slm", "expect": ["[STATE] slm apply_ok=1", "tsc_khz="]},
+    {"command": "state autonomy", "expect": ["[STATE] autonomy schema=1", "observation_only=1", "safe_mode=0", "support_mem=observe-only", "support_sched=apply", "support_accel=observe-only", "support_infer=observe-only", "telemetry=", "proposed=0", "approved=0", "committed=0", "rejected=0", "rollbacks=0", "queue_depth=0", "event_depth=0", "last_valid=0", "last_action=0", "last_target=none", "last_state=none", "last_reason=none"]},
     {"command": "state user", "expect": ["[STATE] user attempted=1", "elf_loaded=1", "entered=1 returned=1 syscall_ok=1", "boundary_ok=1", "exit_code=42", "private_cr3=1", "slot=0", "cr3_restored=1", "if_restored=1", "leaf_sealed=1", "nx_enforced=1", "tensor_excluded=1", "pid=1", "process_bound=1", "kstack_bytes=16384", "rsp0_changed=1", "rsp0_published=1", "int80_entries=3", "all_int80_entries_in_stack=1", "rsp0_restored=1", "kstack_floor_canary=1"]},
     {"command": "state sec", "expect": ["[STATE] sec nx=", "canary=1"]},
     {"command": "state time", "expect": ["[STATE] time ticks=", "hz="]},

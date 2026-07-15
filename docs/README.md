@@ -34,6 +34,7 @@
 - [kernel-room/orbit_cell_node_feasibility_ko.md](kernel-room/orbit_cell_node_feasibility_ko.md)
 
 ## autonomy/ — 자율 제어 · SLM · 정책
+- [agent_operating_contract_ko.md](autonomy/agent_operating_contract_ko.md)
 - [autonomous_os_execution_roadmap_ko.md](autonomy/autonomous_os_execution_roadmap_ko.md)
 - [slm_autonomous_kernel_plan.md](autonomy/slm_autonomous_kernel_plan.md)
 - [slm_hardware_onboarding_ko.md](autonomy/slm_hardware_onboarding_ko.md)

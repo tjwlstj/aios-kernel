@@ -143,11 +143,13 @@ class NormalBootVerdictTests(unittest.TestCase):
             "[STO] IDE channels primary=0x1f0/0x3f6 status=0x0 live=1 "
             "secondary=0x170/0x376 status=0x50 live=1"
         )
-        valid = evaluate_normal_boot(
-            "\n".join([*normal_lines(), ide_line]),
-            ["[STO] IDE channels"],
-        )
-        self.assertTrue(valid["passed"])
+        for valid_record in (ide_line, f"{ide_line} \t"):
+            with self.subTest(valid_record=valid_record):
+                valid = evaluate_normal_boot(
+                    "\n".join([*normal_lines(), valid_record]),
+                    ["[STO] IDE channels"],
+                )
+                self.assertTrue(valid["passed"])
 
         conflicting = ide_line.replace(
             "primary=0x1f0/0x3f6",
@@ -163,6 +165,26 @@ class NormalBootVerdictTests(unittest.TestCase):
         for malformed in (
             "[STO] IDE channels",
             "[STO] IDE channels primary=0x1f0/0x3f6 status=0x0 live=1",
+            (
+                "[STO] IDE channels primary=0x1f0/0x3f6 status=0x0 live=1 "
+                "secondary=0x01f0/0x03f6 status=0x50 live=1"
+            ),
+            (
+                "[STO] IDE channels primary=0x1f0/0x3f6 "
+                "secondary=0x170/0x376 status=0x0 status=0x50 live=1 live=1"
+            ),
+            (
+                "[STO] IDE channels primary=0x1f0/0x3f6 status=0x100 live=1 "
+                "secondary=0x170/0x376 status=0x50 live=1"
+            ),
+            (
+                "[STO] IDE channels primary=0x1f0/0x3f6 status=0x0 live=1 "
+                "secondary=0x1f0/0x376 status=0x50 live=1"
+            ),
+            (
+                "[STO] IDE channels Primary=0x1f0/0x3f6 Status=0x0 Live=1 "
+                "Secondary=0x170/0x376 Status=0x50 Live=1"
+            ),
         ):
             with self.subTest(malformed=malformed):
                 verdict = evaluate_normal_boot(

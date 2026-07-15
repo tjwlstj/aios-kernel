@@ -387,21 +387,37 @@ function Test-NormalSmokeVerdict {
             $fieldValues[$key] = @($fieldValues[$key]) + $value
         }
         if ($lineText.StartsWith('[STO] IDE channels')) {
-            $primaryValues = @($fieldValues['primary'])
-            $secondaryValues = @($fieldValues['secondary'])
-            $statusValues = @($fieldValues['status'])
-            $liveValues = @($fieldValues['live'])
-            $ideRecordValid = (
-                $primaryValues.Count -eq 1 -and
-                $secondaryValues.Count -eq 1 -and
-                $statusValues.Count -eq 2 -and
-                $liveValues.Count -eq 2 -and
-                $primaryValues[0] -match '^0x[0-9A-Fa-f]+/0x[0-9A-Fa-f]+$' -and
-                $secondaryValues[0] -match '^0x[0-9A-Fa-f]+/0x[0-9A-Fa-f]+$' -and
-                $primaryValues[0] -ne $secondaryValues[0] -and
-                @($statusValues | Where-Object { $_ -notmatch '^0x[0-9A-Fa-f]+$' }).Count -eq 0 -and
-                @($liveValues | Where-Object { $_ -notin @('0', '1') }).Count -eq 0
-            )
+            $ideRecordPattern = '^\[STO\] IDE channels ' +
+                'primary=(?<primaryCommand>0x[0-9A-Fa-f]+)/(?<primaryControl>0x[0-9A-Fa-f]+) ' +
+                'status=(?<primaryStatus>0x[0-9A-Fa-f]+) live=(?<primaryLive>[01]) ' +
+                'secondary=(?<secondaryCommand>0x[0-9A-Fa-f]+)/(?<secondaryControl>0x[0-9A-Fa-f]+) ' +
+                'status=(?<secondaryStatus>0x[0-9A-Fa-f]+) live=(?<secondaryLive>[01])$'
+            # Match Python's serial sanitizer: trailing transport whitespace is
+            # ignored, while leading whitespace remains contract-significant.
+            $ideText = $lineText.TrimEnd()
+            $ideMatch = [regex]::Match($ideText, $ideRecordPattern)
+            $ideRecordValid = $ideMatch.Success
+            if ($ideRecordValid) {
+                $endpointNames = @('primaryCommand', 'primaryControl', 'secondaryCommand', 'secondaryControl')
+                $canonicalEndpoints = @()
+                foreach ($endpointName in $endpointNames) {
+                    $digits = $ideMatch.Groups[$endpointName].Value.Substring(2).TrimStart('0').ToLowerInvariant()
+                    if ($digits.Length -eq 0) { $digits = '0' }
+                    $canonicalEndpoints += $digits
+                }
+                $statusNames = @('primaryStatus', 'secondaryStatus')
+                $canonicalStatuses = @()
+                foreach ($statusName in $statusNames) {
+                    $digits = $ideMatch.Groups[$statusName].Value.Substring(2).TrimStart('0').ToLowerInvariant()
+                    if ($digits.Length -eq 0) { $digits = '0' }
+                    $canonicalStatuses += $digits
+                }
+                $ideRecordValid = (
+                    @($canonicalEndpoints | Select-Object -Unique).Count -eq 4 -and
+                    @($canonicalEndpoints | Where-Object { $_ -eq '0' -or $_.Length -gt 4 }).Count -eq 0 -and
+                    @($canonicalStatuses | Where-Object { $_.Length -gt 2 }).Count -eq 0
+                )
+            }
             if (-not $ideRecordValid) {
                 $invalidEvidenceRecords += [pscustomobject]@{
                     Line   = $lineNumber

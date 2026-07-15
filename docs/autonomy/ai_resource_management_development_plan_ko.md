@@ -26,6 +26,7 @@ AI workload와 agent runtime에 맞는 리소스 관리를 어떤 순서로 확�
 - `mm/heap.c`의 2 MiB static kernel heap
 - `sched/ai_sched.c`의 AI task metadata, run queue, PIT tick accounting
 - `runtime/ai_syscall.c`의 AI syscall dispatcher와 bootstrap snapshot surface
+- `state autonomy` schema 1의 read-only mode/support/counter/last-decision 관측면
 - `kernel/health.c`, `kernel/kernel_room.c`의 health / room snapshot
 - `runtime/nodebit.c`의 capability policy gate
 - `runtime/slm_orchestrator.c`의 boot-time SLM/hardware snapshot

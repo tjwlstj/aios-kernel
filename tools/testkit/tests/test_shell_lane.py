@@ -52,7 +52,7 @@ class ShellExpectationTests(unittest.TestCase):
             )
         )
 
-    def test_state_health_requires_stable_zero_counters(self) -> None:
+    def test_state_health_and_autonomy_contracts_are_fail_closed(self) -> None:
         exchange = next(item for item in DEFAULT_EXCHANGES if item["command"] == "state health")
         expectations = list(exchange["expect"])
         healthy = (
@@ -77,6 +77,36 @@ class ShellExpectationTests(unittest.TestCase):
             "[DEBUG] prior counters degraded=0 failed=0 autonomy=1\n"
         )
         self.assertFalse(expectations_match(split_evidence, expectations))
+
+        autonomy_exchange = next(
+            item for item in DEFAULT_EXCHANGES
+            if item["command"] == "state autonomy"
+        )
+        autonomy_expectations = list(autonomy_exchange["expect"])
+        autonomy = (
+            "[STATE] autonomy schema=1 observation_only=1 safe_mode=0 "
+            "support_mem=observe-only support_sched=apply "
+            "support_accel=observe-only support_infer=observe-only "
+            "telemetry=0 proposed=0 approved=0 committed=0 rejected=0 "
+            "rollbacks=0 queue_depth=0 event_depth=0 last_valid=0 "
+            "last_action=0 last_target=none last_state=none last_reason=none\n"
+        )
+        self.assertTrue(expectations_match(autonomy, autonomy_expectations))
+
+        for invalid in (
+            autonomy.replace("observation_only=1", "observation_only=0"),
+            autonomy.replace("support_sched=apply", "support_sched=observe-only"),
+            autonomy.replace("support_mem=observe-only", "support_mem=apply"),
+            autonomy.replace("last_valid=0", "last_valid=1"),
+            autonomy.replace(
+                "support_sched=apply",
+                "support_sched=observe-only support_sched=apply",
+            ),
+        ):
+            with self.subTest(invalid_autonomy=invalid):
+                self.assertFalse(
+                    expectations_match(invalid, autonomy_expectations)
+                )
 
 
 class ShellVerdictTests(unittest.TestCase):

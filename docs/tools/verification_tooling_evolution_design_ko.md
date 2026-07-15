@@ -337,8 +337,9 @@ kernel/build/test-runs/<run-id>/<profile>/
 
 - `tools/testkit/lib/boot_verdict.py`, `baseline_guard.py`
 - `tools/testkit/tests/` host unit test 44개
+- PowerShell 직접 verdict host selftest 9개와 CI 선행 gate
 - Python과 직접 PowerShell 정상 verdict 모두 QEMU `full/minimal/storage-only` 통과
-- shell 13개 교환과 `reader_drained=true reboot_ack=true clean_exit=true exit_code=0`,
+- shell 14개 교환(`state autonomy` 포함)과 `reader_drained=true reboot_ack=true clean_exit=true exit_code=0`,
   `termination.reason=guest-reboot-exit`, 전체 transcript boot verdict PASS
 - strict boot inventory 3프로필 baseline 일치
 

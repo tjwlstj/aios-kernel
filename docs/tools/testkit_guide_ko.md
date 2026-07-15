@@ -82,11 +82,14 @@
 
 ```powershell
 py -3 -m unittest discover -s tools/testkit/tests -t tools/testkit -p "test_*.py" -v
+pwsh -NoProfile -File .\tools\testkit\tests\test_build_windows_verdict.ps1
 ```
 
 이 검사는 QEMU보다 먼저 실행하며 PASS 뒤 panic, health 실패, checkpoint 역순·중복,
 인용/접두사 마커, 중복 key, 불완전 baseline/perf 출처, stale shell artifact와
-clean-exit 누락을 44개 합성 반례로 고정한다.
+clean-exit 누락을 44개 Python unit으로 고정한다. 별도의
+`test_build_windows_verdict.ps1` 9개 반례가 Windows 직접 판정기의 IDE evidence 문법을
+같은 의미론으로 검증한다.
 
 ### 전체
 
@@ -331,6 +334,7 @@ repo 안의 baseline fixture와 비교하는 lane이다.
 - checked-in boot inventory와 host-local boot perf baseline
 - interactive shell state lane, 같은 response record 판정, 전체 transcript verdict,
   reader drain과 clean reboot/exit termination gate
+- `state autonomy` schema 1의 read-only mode/support/counter/last-decision 계약
 - QEMU 없는 host unit test와 CI 선행 gate
 
 아직 하지 않은 것:
