@@ -46,24 +46,25 @@ QEMU 기본 `-hda`와 즉시 호환되고 수십 줄로 섹터를 읽을 수 있
 각 단계는 이번에 확립한 작업 규약(§4)을 따른다. 순서는 의존 관계로 고정되어 있다.
 
 ### M1. uaccess 유저/커널 주소 경계 + SMAP  ✅ 완료 (2026-07-03)
-- **왜 지금:** ring3 유저 페이지(64MB 고정 영역)가 생겨 "유저 포인터는 유저 영역만"이 처음으로 정의 가능해짐.
+- **왜 지금:** ring3 유저 페이지(64MiB 주소의 고정 영역)가 생겨 "유저 포인터는 유저 영역만"이 처음으로 정의 가능해짐.
 - **반영:** `user_access.c`에 유저 주소 윈도우(ring3 실행 중에만 활성 — 커널 내부 uaccess는 윈도우 미설정이라 무영향) + `OUT_OF_WINDOW` 거부. `copy_*_user`와 `user_access_fence_begin/end`(프로그램 스테이징 등 직접 유저 페이지 접근용)에 SMAP 조건부 `stac`/`clac`. `cpu_sec.c`가 SMAP 지원 시 CR4.SMAP 활성화 후 uaccess에 통지.
 - **검증 완료:** `[UACCESS] selftest ... window=1`, ring3 데모가 커널 주소로 시도한 시스콜이 거부됨(`[USER] ring3 exec PASS ... boundary_ok=1`), `-cpu max`에서 `[SEC] ... smap=1`로 SMAP 경로까지 통과. 기본 CPU(smap=0)/`-cpu max`(smap=1) + 스모크 3종 + shell 레인 + cppcheck 클린.
 - **교훈:** SMAP을 켜자 `user_exec`의 스테이징 memcpy가 즉시 #PF — SMAP이 브래킷 밖 유저 페이지 접근을 실제로 잡는다는 증거. 앞으로 커널이 유저 페이지를 직접 만지는 모든 경로는 fence 필수.
 
 ### M2. static ELF64 로더 (Phase 1 핵심)  ✅ 완료 (2026-07-03)
 - **반영:** `kernel/core/elf_loader.c` — Elf64_Ehdr/Phdr 검증(magic/class/machine=x86_64/type=EXEC), PT_LOAD 세그먼트를 `p_vaddr`로 복사 + `.bss`(memsz-filesz) 제로화 + image/region 경계 검사. 데모 프로그램을 `user_entry.asm`에 손수 조립한 **유효 ELF64 이미지**(`user_elf_image_start/end`)로 교체 — 별도 링크 단계 없이 make/PS1 동일 동작. `user_exec`가 blob memcpy 대신 `elf_load` 사용, `e_entry`로 ring3 진입.
-- **검증 완료:** `[ELF] loaded entry=0x4000078 segments=1 filesz=44 memsz=108`(.bss 제로화 포함), `[USER] ring3 exec PASS elf_entry=... boundary_ok=1 exit_code=42`. 기본/`-cpu max`(SMAP) + 스모크 3종 + shell 레인 + cppcheck 클린.
-- **스코프 조정 근거:** "프로세스별 CR3 전용 주소공간 복제"는 동시 유저 태스크가 2개 이상 필요한 **M3(선점)와 병합**한다 — 태스크 하나뿐이면 별도 주소공간이 불필요하고, CR3 스위칭은 문맥전환 로직과 함께 만드는 게 자연스럽다. M2는 세그먼트 기반 ELF 로더 + 유저 매핑(공유 페이지 테이블)까지로 완결.
-- **잔여:** per-segment 4K W^X(M6), 디스크에서 ELF 적재(M5).
+- **검증 완료:** `[ELF] loaded entry=0x4000078 segments=1 filesz=44 memsz=108`(.bss 제로화 포함), `[USER] ring3 exec PASS ... private_cr3=1 slot=0 cr3_restored=1 if_restored=1 leaf_sealed=1 nx_enforced=1 tensor_excluded=1`. 기본/`-cpu max`(SMAP) + 스모크 3종 + shell 레인 + cppcheck 클린.
+- **스코프 진화:** M2의 최초 ELF 왕복은 공유 부트 page table로 시작했지만 M3-b-3b2a에서 정적 private CR3 실행으로 교체했다. 아직 process 객체나 동시 유저 태스크를 뜻하지 않는다.
+- **잔여:** per-segment 4KiB W^X(M6), 디스크에서 ELF 적재(M5).
 
 ### M3. 타이머 선점 + 문맥전환 + 프로세스별 주소공간 (+ 힙 스핀락)
 - **M3-a 힙 스핀락 ✅ 완료 (2026-07-04):** `mm/heap.c`의 kmalloc/kfree/get_stats를 `spinlock_irqsave`로 보호(향후 IRQ 컨텍스트 할당 대비 IRQ 마스킹), 락 획득 카운터 + `heap_lock_selftest`(락 유휴·정확히 1회 획득·해제 불변식 검증) + `[HEAP] lock selftest PASS acquires=4` 마커, `state mem`에 `lock_acquires` 노출. 선점의 독립 선행 조각으로 먼저 반영.
 - **M3-b-1 협력적 컨텍스트 스위치 ✅ 완료 (2026-07-04):** `sched/kthread_switch.asm`(callee-saved+rsp 저장/복원) + `sched/kthread.c`(초기 스택 프레임 조립, 핑퐁 2스레드 셀프테스트). AI 워크로드 스케줄러(vruntime 장부질)와 분리된 진짜 CPU 컨텍스트 스위치. 각 스레드 스택의 루프변수가 전환을 넘어 보존됨을 검증 → `[SCHED] context switch selftest PASS switches=8 ping=3 pong=3`, `state sched`에 `kthread_switches` 노출. **함정 발견:** 셀프테스트에서 무조건 `sti` 시 PIC 리매핑 이전이라 IRQ0가 벡터 8(#DF)로 진입 → 이전 IF 보존 방식으로 수정(#PF/#DF 봉쇄가 즉시 원인 지목).
 - **M3-b-2 타이머 선점 ✅ 완료 (2026-07-14):** 타이머 IRQ 핸들러가 EOI 후 `kthread_preempt_tick`을 호출해 러너블 커널 스레드를 라운드로빈 `kthread_switch`. 자발적 양보를 절대 안 하는 두 워커가 둘 다 진행함을 검증(= 타이머 강제 전환 증명) → `[SCHED] preempt selftest PASS ticks=2 switches=3`, `state sched`에 `preempt_ticks` 노출. **핵심 불변식(설계에 선반영해 #DF 없이 1트 통과):** ① 선점 스위치 전 EOI 전송, ② 갓 스위치된 스레드는 IF=0 상속이라 진입점에서 `sti` 필수(안 하면 선점 불가 무한루프), ③ PIC 리매핑(subsystem 7) 전 `sti` 금지(IRQ0=벡터8=#DF). tick 안전 상한으로 행 방지.
 - **M3-b-3a 주소공간 전환 primitive ✅ 완료 (2026-07-14):** 부트 PML4의 정렬된 top-level 복제본을 만들고, IRQ 상태를 보존한 bounded 구간에서 `boot CR3 → clone CR3 → boot CR3` 왕복. 복제 주소공간에서도 실행 중 커널 스택/전역 매핑이 유지되고 원본 CR3로 복귀했음을 `[MM] address space selftest PASS`로 검증하며 `state sched`에 전환 수/준비 상태를 노출. 이 조각은 lower-level 커널 매핑을 공유하며 아직 프로세스 격리를 의미하지 않는다.
-- **M3-b-3b1 private user leaf 격리 ✅ 완료 (2026-07-14):** 정적 2슬롯 각각에 2MiB 정렬 backing과 private PML4/PDPT/첫 PD를 두고, 같은 유저 VA(64MiB)의 huge PDE만 서로 다른 물리 backing으로 연결. IRQ-off CR3 교대 중 A/B canary가 교차 오염되지 않고 부트 CR3로 복귀함을 `[MM] user leaf isolation selftest PASS`로 검증하며 `state sched`에 `user_leaf_slots=2 user_leaf_isolated=1` 노출. 범용 주소공간 객체나 PMM 없는 현재 단계의 QEMU-bounded proof이며 기존 단일 ring3 runner는 아직 이 private backing을 사용하지 않는다.
-- **잔여 작업(M3-b-3b2):** process 소유 구조와 프로세스별 커널 스택/TSS `rsp0` 게시, 기존 ring3 runner의 private 주소공간 연결, 이후 ring3 프로세스 2개 선점 실행과 `ai_sched_tick()`의 reschedule 요청 연결.
+- **M3-b-3b1 private user leaf 격리 ✅ 완료 (2026-07-14):** 정적 2슬롯 각각에 2MiB 정렬 backing과 private PML4/PDPT/첫 PD를 두고, 같은 유저 VA(64MiB)의 huge PDE만 서로 다른 물리 backing으로 연결. IRQ-off CR3 교대 중 A/B canary가 교차 오염되지 않고 부트 CR3로 복귀함을 `[MM] user leaf isolation selftest PASS`로 검증하며 `state sched`에 `user_leaf_slots=2 user_leaf_isolated=1` 노출. 범용 주소공간 객체나 PMM 없는 현재 단계의 QEMU-bounded proof다.
+- **M3-b-3b2a private CR3 단일 runner ✅ 완료 (2026-07-15):** 기존 ring3 ELF runner가 더 이상 부트 page table의 64MiB identity leaf를 U/RWX로 바꾸지 않고 static slot 0을 guarded activate/restore하여 실행한다. ELF staging·syscall·결과 판독은 private CR3 안에서 끝내고, exact raw CR3와 이전 IF bit의 readback을 확인한 뒤에만 slot 실행 정책을 reset하고 backing을 scrub한다. `leaf_sealed`(software policy reset+scrub)와 `nx_enforced`(hardware NX)는 별도 관측한다. private CR3에서 가려지는 물리 `[64MiB,66MiB)`는 tensor free list와 활성 tensor record에서 제외하며 `[MM] bootstrap user tensor exclusion PASS ... excluded=2097152 managed=1004535808 configured=1006632960 ... boundary=1 coalesce=1`과 `[USER] private address space exec PASS slot=0 cr3_restored=1 if_restored=1 leaf_sealed=1 nx_enforced=1 tensor_excluded=1`로 검증한다. 이는 tensor allocator의 2MiB 제외(설정 960MiB 중 관리 958MiB)이지 전역 PMM 예약이나 물리 메모리 소유권 주장이 아니다. 여전히 동기 단일 runner이며 process 객체나 PMM은 아니다.
+- **잔여 작업(M3-b-3b2b+):** bootstrap process 소유 구조와 프로세스별 16KiB 커널 스택, 단일 per-CPU TSS의 `rsp0` 게시/복원 증명. 이후 전역 `g_kernel_resume_rsp`/유저 실행 상태를 process 소유로 옮긴 뒤 ring3 프로세스 2개 선점 실행과 `ai_sched_tick()`의 reschedule 요청을 연결한다.
 - **완료 기준:** ring3 프로세스 2개가 각자 주소공간에서 선점 교대, 힙 동시성 셀프테스트(M3-a로 충족).
 
 ### M4. storage read — virtio-blk 최소 데이터 경로

@@ -67,6 +67,7 @@ def required_smoke_patterns(smoke_profile: str) -> list[str]:
         "[SCHED] preempt selftest PASS",
         "[MM] address space selftest PASS",
         "[MM] user leaf isolation selftest PASS",
+        "[MM] bootstrap user tensor exclusion PASS base=0x4000000 size=2097152 excluded=2097152 managed=1004535808 configured=1006632960 overflow=1 region=1 align=1 boundary=1 coalesce=1",
         "[TIMER] PIT IRQ ready",
         "[DEV] Peripheral probe ready",
         "[USER] Ring3 scaffold ready=1",
@@ -78,6 +79,7 @@ def required_smoke_patterns(smoke_profile: str) -> list[str]:
         "[SLM] plan apply selftest PASS",
         "[SYSCALL] observe dispatch selftest PASS",
         "[USER] ring3 exec PASS",
+        "[USER] private address space exec PASS slot=0 cr3_restored=1 if_restored=1 leaf_sealed=1 nx_enforced=1 tensor_excluded=1",
         "[SHELL] Interactive shell started",
     ]
     if smoke_profile == "storage-only":

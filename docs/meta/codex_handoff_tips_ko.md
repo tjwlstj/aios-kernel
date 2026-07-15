@@ -1,4 +1,4 @@
-# Codex 작업 핸드오프 팁 (2026-07-14)
+# Codex 작업 핸드오프 팁 (2026-07-15)
 
 이 커널에서 Claude가 M1~M3 작업 중 실제로 밟은 지뢰와 관례를 모았다. 다음 작업자(Codex)가 같은 함정에 빠지지 않도록 하는 실전 노트다. **CLAUDE.md의 규칙이 정본이고, 이 문서는 "왜 그런지"와 "어떻게 디버깅했는지"를 보완한다.**
 
@@ -52,13 +52,16 @@ M3-b-3a(주소공간 전환 primitive) 작업은 우리 규약을 정확히 따�
 M1에서 SMAP을 켠 뒤, `user_exec`의 스테이징 `memcpy`가 즉시 #PF 났다 — SMAP이 브래킷 밖 유저 페이지 접근을 실제로 잡는 것. 커널이 유저 페이지(U=1)를 직접 read/write하는 모든 구간은 `user_access_fence_begin()`/`user_access_fence_end()`로 감싼다(SMAP 미지원 CPU에선 no-op). `copy_to_user`/`copy_from_user`는 이미 내부에서 감싸므로 그대로 쓰면 된다.
 
 ### 2.5 유저 접근은 4단계 페이지 전부 U/S=1이어야
-ring3에서 유저 페이지 접근 시 PML4→PDPT→PD→PT의 **모든** 레벨에 User 비트가 있어야 한다(최종 권한은 AND). PDE에만 U를 세우고 상위를 빼먹으면 #PF(error code에 instruction-fetch/user 비트). `user_exec.c`의 `map_user_region`이 p4/p3/p2에 모두 세우는 이유다.
+ring3에서 유저 페이지 접근 시 PML4→PDPT→PD→PT의 **모든** 레벨에 User 비트가 있어야 한다(최종 권한은 AND). PDE에만 U를 세우고 상위를 빼먹으면 #PF(error code에 instruction-fetch/user 비트). M3-b-3b2a부터 `address_space.c`가 private PML4/PDPT/PD의 해당 경로에만 U/S를 설정하며, `user_exec.c`는 부트 page table을 직접 변경하지 않는다.
 
 ### 2.6 #DF 프레임의 레지스터 값은 신뢰하지 말 것
 #DF는 첫 폴트가 이미 스택을 손상시킨 뒤라 캡처된 RIP/RSP가 쓰레기일 수 있다(0x8 등). #DF가 뜨면 **원인은 직전의 다른 폴트**다. 이럴 땐 시리얼 디버그(`serial_printf`)로 실패 지점을 좁혀라 — 이 커널은 예외 시 CR2 덤프(#PF)와 전 예외 panic 봉쇄가 있어, 조용한 폴트 루프 대신 즉시 로그가 남는다.
 
 ### 2.7 Multiboot info 포인터는 EBP 보존값에서 복구한다
 `_start`는 GRUB의 EBX(Multiboot info)를 EBP에 보존하지만 `setup_page_tables`가 EDI를 page-directory cursor로 덮는다. 과거 `long_mode_start`가 이 EDI를 C에 넘겨 부팅 로그의 info 주소가 항상 `p2_table_3`과 같았고, ACPI는 BIOS scan fallback 덕분에 통과했다. M3-b-3b1에서 `r13d = ebp`로 바로잡고, header/정렬/전체 tag chain/terminating tag를 bounded walk로 검증해 `[BOOT] Multiboot2 handoff PASS`로 남긴다. 실패한 handoff는 ACPI 같은 소비자에게 전달하지 않는다. 다시 EDI를 handoff 포인터로 사용하지 말 것. 실제 PMM 전에는 복구된 MBI의 memory-map tag 의미/예약 범위 셀프테스트와 Linux GRUB 교차검증이 별도로 필요하다.
+
+### 2.8 private 유저 VA가 low identity direct-map을 가린다
+현재 커널은 첫 4GiB를 identity mapping하고 유저 VA 64MiB도 그 안에 있다. private CR3에서 이 leaf를 별도 backing으로 바꾸면 커널 VA 64–66MiB가 더는 물리 64–66MiB를 가리키지 않는다. 따라서 그 물리 구간을 tensor allocator가 반환하면 private CR3 체류 중 잘못된 backing을 접근한다. M3-b-3b2a는 해당 구간을 모든 tensor free list와 활성 tensor record에서 live 검사로 제외하고 `[MM] bootstrap user tensor exclusion PASS ... excluded=2097152 ... boundary=1 coalesce=1`를 필수화했다. 이건 tensor allocator의 관리 범위를 설정 960MiB에서 958MiB로 줄이는 bootstrap 안전장치일 뿐, 전역 PMM 예약이나 물리 메모리 소유권 증명은 아니다. 장기 해법은 high-half kernel direct map 또는 PMM 기반 유저 VA 배치다.
 
 ---
 
@@ -83,9 +86,10 @@ ring3에서 유저 페이지 접근 시 PML4→PDPT→PD→PT의 **모든** 레�
 ## 5. 다음 작업: M3-b-3b
 
 `address_space_selftest`는 부트 PML4 복제 + CR3 왕복까지 증명했다(공유 매핑). 다음은:
-1. **정적 주소공간 슬롯별 private user leaf proof ✅ M3-b-3b1 완료 (2026-07-14)** — 정적 2슬롯에서 유저 영역(현재 고정 64MB)을 서로 다른 2MiB backing에 매핑하고 canary 격리를 검증했다. 범용 주소공간 객체, PMM, 실제 프로세스 실행 연결은 아직 아니다.
-2. **프로세스 소유 구조** — `process { address_space(CR3), registers, kernel_stack, capabilities }` (외부 평가 §6의 `struct process` 참고).
-3. **ring3 프로세스 2개 선점 교대** — kthread 선점(M3-b-2) + CR3 스위치(M3-b-3a)를 결합. 타이머 틱에서 다음 프로세스로 CR3까지 전환.
-4. 완료 기준: 두 ring3 프로세스가 각자 주소공간에서 시스콜을 왕복하며 선점 교대, `[SCHED]`/`[MM]`/`state user` 마커로 검증.
+1. **정적 주소공간 슬롯별 private user leaf proof ✅ M3-b-3b1 완료 (2026-07-14)** — 정적 2슬롯에서 유저 영역(현재 고정 64MiB)을 서로 다른 2MiB backing에 매핑하고 canary 격리를 검증했다. 범용 주소공간 객체, PMM, 실제 프로세스 실행 연결은 아직 아니다.
+2. **private CR3 단일 runner ✅ M3-b-3b2a 완료 (2026-07-15)** — slot 0에서 기존 ELF를 동기 실행한다. exact raw boot CR3와 IF bit를 readback한 뒤에만 leaf policy reset/backing scrub을 수행하고, `leaf_sealed`와 hardware `nx_enforced`를 분리해 관측한다. 물리 64–66MiB는 tensor free/active set에서 제외하지만 PMM 예약으로 과장하지 않는다.
+3. **프로세스 소유 구조** — `process { address_space(CR3), registers, kernel_stack, capabilities }`와 프로세스별 커널 스택을 만들고, 단일 per-CPU TSS의 `rsp0`를 다음 프로세스 스택으로 게시한다.
+4. **ring3 프로세스 2개 선점 교대** — kthread 선점(M3-b-2) + CR3 스위치(M3-b-3a)를 결합. 타이머 틱에서 다음 프로세스로 CR3까지 전환.
+5. 완료 기준: 두 ring3 프로세스가 각자 주소공간에서 시스콜을 왕복하며 선점 교대, `[SCHED]`/`[MM]`/`state user` 마커로 검증.
 
 주의: ring3 프로세스 선점은 **유저→커널 진입 시 rsp0 스택**(현재 `syscall_stack`, 단일)이 프로세스마다 별도여야 한다. 지금은 단일 유저 슬라이스라 공유지만, 2개 이상이면 프로세스별 커널 스택이 필요하다.

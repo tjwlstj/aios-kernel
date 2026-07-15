@@ -100,20 +100,20 @@ kernel/boot/boot.asm  (Multiboot2 entry, GDT, paging, SSE/AVX setup, long mode)
 - `kthread_selftest` runs a cooperative ping-pong (two threads, each with its own stack) whose per-stack loop counters prove correct save/restore — `[SCHED] context switch selftest PASS`.
 - **Preemption**: the timer IRQ handler calls `kthread_preempt_tick` (after EOI) which round-robins between runnable kernel threads via `kthread_switch`. `kthread_preempt_selftest` proves it: two workers that never yield both make progress — `[SCHED] preempt selftest PASS`. Observable via `state sched` (`kthread_switches`, `preempt_ticks`).
 - Invariants for this path: send the timer EOI **before** any preemptive switch; a freshly-switched thread inherits IF=0, so worker/thread entries must `sti` themselves to be preemptible; never `sti` before the PIC is remapped (subsystem 7) — IRQ0 would arrive as vector 8 (#DF).
-- Per-process CR3/address-space switching is the next M3-b sub-slice (needed for userspace processes, not kernel threads).
+- Static private-CR3 residency now exists for the synchronous ring3 runner; process-owned CR3 + kernel-stack switching remains the next M3-b sub-slice.
 
 **Hardware Abstraction (`kernel/hal/accel_hal.c`)**
 - PCI enumeration + accelerator abstraction (GPU/TPU/NPU/FPGA/CPU-SIMD).
 - 16-device slots; CPU SIMD fallback via SSE/AVX.
 
 **Ring3 Execution (`kernel/core/user_exec.c`, `kernel/core/user_entry.asm`, `kernel/core/elf_loader.c`)**
-- First real userspace slice: promotes a fixed 2MB region at 64MB to a user page (U/S bit set at PML4/PDPT/PDE — user access is the AND across all levels), loads a static ELF64 image into it via `elf_load` (validates the header, maps PT_LOAD segments to their `p_vaddr`, zeroes the `.bss` tail), enters CPL3 via `iretq` at `e_entry`, and runs a tiny program that calls back through `int 0x80`.
+- First real userspace slice: activates static private address-space slot 0 for a fixed 2MiB region at 64MiB (U/S bit set at private PML4/PDPT/PDE — user access is the AND across all levels), loads a static ELF64 image into it via `elf_load` (validates the header, maps PT_LOAD segments to their `p_vaddr`, zeroes the `.bss` tail), enters CPL3 via `iretq` at `e_entry`, and runs a tiny program that calls back through `int 0x80`.
 - The demo user program is a real ELF64 image hand-assembled in `user_entry.asm` (`user_elf_image_start/end`) — no second link step, works identically under `make` and the Windows build.
-- Per-process page tables / CR3 switching are deferred to M3 (needed once >1 user task runs concurrently); this slice runs on the shared boot page tables. Per-segment 4K W^X is a later step (the user region is one W^X+U huge page).
+- The synchronous run uses a guarded private CR3 and verifies the exact raw boot CR3 and caller IF bit before sealing and scrubbing the slot. It is not yet a process-owned address space or concurrent runner. Per-segment 4KiB W^X is a later step (the active user region is temporarily one W^X+U huge page).
 - `int 0x80` gate is DPL=3 (`idt.c`, vector 0x80) routed to `isr_syscall`, which re-maps ring3 args (rax=num, rdi/rsi/rdx/r10/r8) to `ai_syscall_dispatch`; `rax==0` is exit and restores the saved kernel stack.
 - Ring3->ring0 entry uses a dedicated TSS `rsp0` stack (`syscall_stack_top` in boot.asm), separate from the boot stack, so a syscall can't clobber the launcher's frame.
 - The demo program calls `SYS_PIPE_STATS` into a user buffer then `exit(42)`; the kernel verifies the buffer holds the real registry capacity — proof of a full round trip. Result is observable via `state user`.
-- The user page is the one intentional W^X+U page; keep it a single fixed region.
+- The active user page is the one intentional W^X+U exception; keep it temporary and single-region, then reset the executable policy, scrub it, and enforce NX when the CPU supports it.
 
 **Runtime & Syscall Interface (`kernel/runtime/`)**
 - `ai_syscall.c` — syscall dispatcher; syscall number ranges are ABI-stable, do not renumber.
@@ -146,6 +146,7 @@ A successful boot must emit all of:
 [SCHED] preempt selftest PASS
 [MM] address space selftest PASS
 [MM] user leaf isolation selftest PASS
+[MM] bootstrap user tensor exclusion PASS
 [DEV] Peripheral probe ready
 [HEALTH] stability=...
 [PIPE] Node pipeline ready
@@ -153,6 +154,7 @@ A successful boot must emit all of:
 [SLM] plan apply selftest PASS
 [SYSCALL] observe dispatch selftest PASS
 [USER] ring3 exec PASS
+[USER] private address space exec PASS slot=0 cr3_restored=1 if_restored=1 leaf_sealed=1 nx_enforced=1 tensor_excluded=1
 [SHELL] Interactive shell started
 [USER] Ring3 scaffold ready=1
 [ROOM] snapshot stability=...
@@ -164,7 +166,7 @@ C sources are compiled with `-ffreestanding -nostdlib -mno-sse -mno-mmx -mno-red
 Stack protector is ON (`-fstack-protector-strong -mstack-protector-guard=global`); the runtime lives in `kernel/core/stack_guard.c`. Functions that swap the live canary must carry `__attribute__((no_stack_protector))`.
 
 ### Hardening Baseline (do not regress)
-- NX/W^X: boot.asm marks every 2MB identity-map page outside kernel `.text` as NX (EFER.NXE). New executable regions require explicit page-table changes.
+- NX/W^X: boot.asm marks every 2MiB identity-map page outside kernel `.text` as NX (EFER.NXE). New executable regions require explicit page-table changes. `leaf_sealed=1` means the bootstrap slot policy was reset and its backing scrubbed; `nx_enforced` separately reports hardware enforcement. Runtime remains honest on a CPU without active NX (`nx_enforced=0`), while the supported QEMU smoke baseline requires `nx_enforced=1`.
 - SMEP/UMIP/SMAP enabled when the CPU supports them (`kernel/core/cpu_sec.c`, `[SEC]` boot lines). SMAP is backed by STAC/CLAC in the uaccess copies and `user_access_fence_begin/end` for deliberate user-page staging; QEMU's default CPU has no SMAP (`smap=0`), use `-cpu max` to exercise it (`smap=1`).
 - uaccess user window: during a ring3 run, `access_ok` requires buffers to lie inside the registered user window, so a ring3-supplied pointer into kernel memory is denied (`[USER] ... boundary_ok=1`). Kernel-internal uaccess runs with no window and is unaffected. Any direct kernel touch of a user page outside `copy_*_user` must be wrapped in `user_access_fence_begin/end`.
 - All CPU exceptions except `#BP` panic; `#PF` dumps CR2; `#DF` runs on TSS IST1.
@@ -218,4 +220,4 @@ the next task.
 - Health snapshot ABI must remain stable across builds (consumed by SLM orchestrator).
 - `store/` downloads and autonomy actions must pass the NodeBit + Kernel Room gates.
 - GPU/NPU driver code is scaffolding only; no real hardware interaction yet.
-- Ring3 execution exists as a first slice (fixed in-kernel demo program, single user page); a full userspace ELF loader, per-process address spaces, and the learning promotion loop are planned, not implemented.
+- Ring3 execution and a bounded static ELF64 loader exist as a first slice (fixed in-kernel demo image, one private 2MiB slot). Filesystem/disk-backed program loading, per-process address spaces, and the learning promotion loop are planned, not implemented.

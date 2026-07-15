@@ -125,6 +125,10 @@ typedef struct {
 /* Initialization */
 aios_status_t tensor_mm_init(void);
 
+/* Live check that neither tensor free-list blocks nor active tensor records
+ * overlap the physical interval hidden by the bootstrap private user leaf. */
+bool tensor_mm_bootstrap_user_range_excluded(void);
+
 /* Tensor allocation */
 aios_status_t tensor_alloc(tensor_shape_t *shape, mem_region_type_t region,
                            tensor_alloc_t *out);

@@ -11,6 +11,8 @@
  */
 
 #include <mm/tensor_mm.h>
+#include <kernel/user_layout.h>
+#include <drivers/serial.h>
 #include <drivers/vga.h>
 
 /* UINT64_MAX not available in freestanding mode */
@@ -44,6 +46,8 @@ static mem_block_t *free_lists[8] = { NULL };
 
 /* Memory statistics */
 static mem_stats_t global_stats;
+static bool g_bootstrap_user_exclusion_ready;
+static uint64_t g_bootstrap_user_excluded_bytes;
 
 /* Memory pool base addresses and sizes */
 static struct {
@@ -162,6 +166,153 @@ static void free_list_insert(mem_block_t *block, mem_region_type_t type) {
     curr->next = block;
 }
 
+static bool ranges_overlap(uint64_t a_base, uint64_t a_end,
+                           uint64_t b_base, uint64_t b_end) {
+    return a_base < b_end && b_base < a_end;
+}
+
+static aios_status_t add_initial_pool_block(uint64_t base, uint64_t size,
+                                            mem_region_type_t type) {
+    mem_block_t *block;
+
+    if (size == 0) {
+        return AIOS_OK;
+    }
+    block = alloc_block();
+    if (!block) {
+        return AIOS_ERR_NOMEM;
+    }
+
+    block->base = base;
+    block->size = size;
+    block->type = type;
+    block->is_free = true;
+    block->is_huge = size >= HUGE_PAGE_SIZE;
+    block->align = TENSOR_ALIGN;
+    free_list_insert(block, type);
+
+    global_stats.total_memory += size;
+    global_stats.free_memory += size;
+    return AIOS_OK;
+}
+
+static bool free_lists_exclude_bootstrap_user_hole(void) {
+    for (uint32_t type = 0; type < ARRAY_SIZE(free_lists); type++) {
+        const mem_block_t *block = free_lists[type];
+        while (block) {
+            uint64_t end = block->base + block->size;
+            if (block->size == 0 || end < block->base ||
+                ranges_overlap(block->base, end,
+                    AIOS_BOOTSTRAP_USER_BASE, AIOS_BOOTSTRAP_USER_END)) {
+                return false;
+            }
+            block = block->next;
+        }
+    }
+    return true;
+}
+
+static bool active_tensors_exclude_bootstrap_user_hole(void) {
+    for (uint32_t i = 0; i < tensor_count; i++) {
+        uint64_t end;
+
+        if (tensor_table[i].size == 0 ||
+            tensor_table[i].phys_addr > UINT64_MAX - tensor_table[i].size) {
+            return false;
+        }
+        end = tensor_table[i].phys_addr + tensor_table[i].size;
+        if (ranges_overlap(tensor_table[i].phys_addr, end,
+                           AIOS_BOOTSTRAP_USER_BASE,
+                           AIOS_BOOTSTRAP_USER_END)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool allocation_excludes_bootstrap_user_hole(uint64_t base,
+                                                     uint64_t size) {
+    uint64_t end;
+
+    if (size == 0 || base > UINT64_MAX - size) {
+        return false;
+    }
+    end = base + size;
+    return !ranges_overlap(base, end, AIOS_BOOTSTRAP_USER_BASE,
+                           AIOS_BOOTSTRAP_USER_END);
+}
+
+static bool tensor_free_list_has_bootstrap_boundaries(void) {
+    const mem_block_t *block = free_lists[MEM_REGION_TENSOR];
+    bool prefix_boundary =
+        memory_pools[0].base == AIOS_BOOTSTRAP_USER_BASE;
+    bool suffix_boundary = false;
+
+    while (block) {
+        if (block->base <= UINT64_MAX - block->size &&
+            block->base + block->size == AIOS_BOOTSTRAP_USER_BASE) {
+            prefix_boundary = true;
+        }
+        if (block->base == AIOS_BOOTSTRAP_USER_END) {
+            suffix_boundary = true;
+        }
+        block = block->next;
+    }
+    return prefix_boundary && suffix_boundary;
+}
+
+static aios_status_t bootstrap_user_tensor_exclusion_selftest(void) {
+    const mem_stats_t stats_before = global_stats;
+    const tensor_id_t next_id_before = next_tensor_id;
+    tensor_alloc_t prefix = {0};
+    tensor_alloc_t suffix = {0};
+    uint64_t prefix_size;
+    bool prefix_live = false;
+    bool suffix_live = false;
+    bool passed = false;
+
+    if (memory_pools[0].type != MEM_REGION_TENSOR ||
+        memory_pools[0].base > AIOS_BOOTSTRAP_USER_BASE) {
+        return AIOS_ERR_IO;
+    }
+    prefix_size = AIOS_BOOTSTRAP_USER_BASE - memory_pools[0].base;
+
+    if (prefix_size > 0) {
+        if (tensor_alloc_aligned(prefix_size, TENSOR_ALIGN,
+                MEM_REGION_TENSOR, &prefix) != AIOS_OK) {
+            goto cleanup;
+        }
+        prefix_live = true;
+        if (prefix.phys_addr != memory_pools[0].base ||
+            prefix.size != prefix_size) {
+            goto cleanup;
+        }
+    }
+    if (tensor_alloc_aligned(PAGE_SIZE, PAGE_SIZE,
+            MEM_REGION_TENSOR, &suffix) != AIOS_OK) {
+        goto cleanup;
+    }
+    suffix_live = true;
+    passed = suffix.phys_addr >= AIOS_BOOTSTRAP_USER_END &&
+             allocation_excludes_bootstrap_user_hole(
+                 suffix.phys_addr, suffix.size);
+
+cleanup:
+    if (suffix_live && tensor_free(suffix.id) != AIOS_OK) {
+        passed = false;
+    }
+    if (prefix_live && tensor_free(prefix.id) != AIOS_OK) {
+        passed = false;
+    }
+    passed = passed && tensor_mm_bootstrap_user_range_excluded() &&
+             tensor_free_list_has_bootstrap_boundaries();
+
+    /* The probe is allocator-internal verification, not workload activity. */
+    global_stats = stats_before;
+    next_tensor_id = next_id_before;
+    return passed ? AIOS_OK : AIOS_ERR_IO;
+}
+
 /* Remove block from free list */
 static void free_list_remove(mem_block_t *block, mem_region_type_t type) {
     if (block->prev) {
@@ -209,9 +360,17 @@ static mem_block_t *find_best_fit(mem_region_type_t type, uint64_t size,
     while (curr) {
         if (curr->is_free && curr->size >= size) {
             /* Check alignment */
-            uint64_t aligned_base = ALIGN_UP(curr->base, alignment);
-            uint64_t waste = aligned_base - curr->base;
-            if (curr->size >= size + waste) {
+            uint64_t aligned_base;
+            uint64_t waste;
+
+            if (curr->base > UINT64_MAX - ((uint64_t)alignment - 1ULL)) {
+                curr = curr->next;
+                continue;
+            }
+            aligned_base = ALIGN_UP(curr->base, alignment);
+            waste = aligned_base - curr->base;
+            if (waste <= curr->size && size <= curr->size - waste &&
+                allocation_excludes_bootstrap_user_hole(aligned_base, size)) {
                 uint64_t effective_size = curr->size;
                 if (effective_size < best_size) {
                     best = curr;
@@ -277,30 +436,98 @@ aios_status_t tensor_mm_init(void) {
     global_stats.peak_usage = 0;
     global_stats.alloc_count = 0;
     global_stats.free_count = 0;
+    g_bootstrap_user_exclusion_ready = false;
+    g_bootstrap_user_excluded_bytes = 0;
 
     /* Calculate pool base addresses starting from tensor pool start */
     uint64_t pool_base = (uint64_t)&__tensor_pool_start;
 
     for (uint32_t i = 0; i < NUM_POOLS; i++) {
+        aios_status_t status;
+        uint64_t pool_end;
+
+        if (pool_base > UINT64_MAX - (HUGE_PAGE_SIZE - 1ULL)) {
+            return AIOS_ERR_OVERFLOW;
+        }
         memory_pools[i].base = ALIGN_UP(pool_base, HUGE_PAGE_SIZE);
-        pool_base = memory_pools[i].base + memory_pools[i].size;
+        if (memory_pools[i].base > UINT64_MAX - memory_pools[i].size) {
+            return AIOS_ERR_OVERFLOW;
+        }
+        pool_end = memory_pools[i].base + memory_pools[i].size;
+        pool_base = pool_end;
 
-        /* Create initial free block for this pool */
-        mem_block_t *block = alloc_block();
-        if (!block) return AIOS_ERR_NOMEM;
+        /* A private user mapping replaces the boot identity leaf at the same
+         * virtual address. Exclude that physical interval from every tensor
+         * free list so kernel identity accesses cannot alias user backing
+         * while the private CR3 is active. */
+        if (ranges_overlap(memory_pools[i].base, pool_end,
+                           AIOS_BOOTSTRAP_USER_BASE,
+                           AIOS_BOOTSTRAP_USER_END)) {
+            uint64_t prefix_end = MIN(pool_end, AIOS_BOOTSTRAP_USER_BASE);
+            uint64_t suffix_base = MAX(memory_pools[i].base,
+                                       AIOS_BOOTSTRAP_USER_END);
+            uint64_t overlap_base = MAX(memory_pools[i].base,
+                                        AIOS_BOOTSTRAP_USER_BASE);
+            uint64_t overlap_end = MIN(pool_end,
+                                       AIOS_BOOTSTRAP_USER_END);
 
-        block->base = memory_pools[i].base;
-        block->size = memory_pools[i].size;
-        block->type = memory_pools[i].type;
-        block->is_free = true;
-        block->is_huge = (memory_pools[i].size >= HUGE_PAGE_SIZE);
-        block->align = TENSOR_ALIGN;
+            g_bootstrap_user_excluded_bytes += overlap_end - overlap_base;
 
-        free_list_insert(block, memory_pools[i].type);
-
-        global_stats.total_memory += memory_pools[i].size;
-        global_stats.free_memory += memory_pools[i].size;
+            status = add_initial_pool_block(memory_pools[i].base,
+                prefix_end > memory_pools[i].base
+                    ? prefix_end - memory_pools[i].base : 0,
+                memory_pools[i].type);
+            if (status != AIOS_OK) {
+                return status;
+            }
+            status = add_initial_pool_block(suffix_base,
+                pool_end > suffix_base ? pool_end - suffix_base : 0,
+                memory_pools[i].type);
+        } else {
+            status = add_initial_pool_block(memory_pools[i].base,
+                memory_pools[i].size, memory_pools[i].type);
+        }
+        if (status != AIOS_OK) {
+            return status;
+        }
     }
+
+    g_bootstrap_user_exclusion_ready = true;
+    if (g_bootstrap_user_excluded_bytes != AIOS_BOOTSTRAP_USER_SIZE ||
+        !tensor_mm_bootstrap_user_range_excluded()) {
+        g_bootstrap_user_exclusion_ready = false;
+        serial_write("[MM] bootstrap user tensor exclusion FAIL\n");
+        return AIOS_ERR_IO;
+    }
+
+    /* Regression probes for the two inputs that can bypass ALIGN_UP/free-list
+     * assumptions if unchecked. Neither call may mutate allocator state. */
+    tensor_alloc_t invalid_probe;
+    if (tensor_alloc_aligned(UINT64_MAX, (uint32_t)MB(64),
+                             MEM_REGION_TENSOR, &invalid_probe) !=
+            AIOS_ERR_OVERFLOW ||
+        tensor_alloc_aligned(PAGE_SIZE, PAGE_SIZE,
+                             (mem_region_type_t)ARRAY_SIZE(free_lists),
+                             &invalid_probe) != AIOS_ERR_INVAL ||
+        tensor_alloc_aligned(PAGE_SIZE, 96U, MEM_REGION_TENSOR,
+                             &invalid_probe) != AIOS_ERR_INVAL) {
+        g_bootstrap_user_exclusion_ready = false;
+        serial_write("[MM] bootstrap user tensor exclusion FAIL guards\n");
+        return AIOS_ERR_IO;
+    }
+    if (bootstrap_user_tensor_exclusion_selftest() != AIOS_OK) {
+        g_bootstrap_user_exclusion_ready = false;
+        serial_write("[MM] bootstrap user tensor exclusion FAIL boundary\n");
+        return AIOS_ERR_IO;
+    }
+
+    serial_printf("[MM] bootstrap user tensor exclusion PASS base=%x size=%u excluded=%u managed=%u configured=%u overflow=1 region=1 align=1 boundary=1 coalesce=1\n",
+        (uint64_t)AIOS_BOOTSTRAP_USER_BASE,
+        (uint64_t)AIOS_BOOTSTRAP_USER_SIZE,
+        g_bootstrap_user_excluded_bytes,
+        global_stats.total_memory,
+        (uint64_t)(TENSOR_POOL_SIZE + MODEL_POOL_SIZE +
+                   INFERENCE_POOL_SIZE + DMA_POOL_SIZE));
 
     kprintf("\n");
     kprintf("    Tensor Memory Manager initialized:\n");
@@ -357,18 +584,30 @@ aios_status_t tensor_alloc_aligned_profiled(uint64_t size, uint32_t alignment,
                                             bool stochastic,
                                             tensor_alloc_t *out) {
     if (!out || size == 0) return AIOS_ERR_INVAL;
+    if ((uint32_t)region >= ARRAY_SIZE(free_lists)) return AIOS_ERR_INVAL;
     if (tensor_count >= MAX_TENSORS) return AIOS_ERR_NOMEM;
 
     /* Ensure minimum alignment */
     if (alignment < TENSOR_ALIGN) alignment = TENSOR_ALIGN;
+    if ((alignment & (alignment - 1U)) != 0) return AIOS_ERR_INVAL;
+    if (size > UINT64_MAX - ((uint64_t)alignment - 1ULL)) {
+        return AIOS_ERR_OVERFLOW;
+    }
     size = ALIGN_UP(size, alignment);
+    if (size == 0) return AIOS_ERR_OVERFLOW;
 
     /* Find best-fit block */
     mem_block_t *block = find_best_fit(region, size, alignment);
     if (!block) return AIOS_ERR_NOMEM;
 
     /* Calculate aligned base */
+    if (block->base > UINT64_MAX - ((uint64_t)alignment - 1ULL)) {
+        return AIOS_ERR_OVERFLOW;
+    }
     uint64_t aligned_base = ALIGN_UP(block->base, alignment);
+    if (!allocation_excludes_bootstrap_user_hole(aligned_base, size)) {
+        return AIOS_ERR_IO;
+    }
     uint64_t prefix_size = aligned_base - block->base;
 
     /* Split block if there's space before aligned region */
@@ -388,7 +627,7 @@ aios_status_t tensor_alloc_aligned_profiled(uint64_t size, uint32_t alignment,
     }
 
     /* Split block if there's remaining space after allocation */
-    if (block->size > size + TENSOR_ALIGN) {
+    if (block->size - size > TENSOR_ALIGN) {
         mem_block_t *remainder = alloc_block();
         if (remainder) {
             remainder->base = block->base + size;
@@ -569,6 +808,12 @@ aios_status_t tensor_unref(tensor_id_t id) {
         return tensor_free(id);
     }
     return AIOS_OK;
+}
+
+bool tensor_mm_bootstrap_user_range_excluded(void) {
+    return g_bootstrap_user_exclusion_ready &&
+           free_lists_exclude_bootstrap_user_hole() &&
+           active_tensors_exclude_bootstrap_user_hole();
 }
 
 aios_status_t tensor_info(tensor_id_t id, tensor_alloc_t *out) {

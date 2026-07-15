@@ -69,7 +69,7 @@ DEFAULT_EXCHANGES: list[dict[str, object]] = [
     {"command": "state pipeline", "expect": ["[STATE] pipeline active=", "executions="]},
     {"command": "state nodes", "expect": ["[STATE] nodes active=", "[STATE] node id=40"]},
     {"command": "state slm", "expect": ["[STATE] slm apply_ok=1", "tsc_khz="]},
-    {"command": "state user", "expect": ["[STATE] user attempted=1", "elf_loaded=1", "entered=1 returned=1 syscall_ok=1", "boundary_ok=1", "exit_code=42"]},
+    {"command": "state user", "expect": ["[STATE] user attempted=1", "elf_loaded=1", "entered=1 returned=1 syscall_ok=1", "boundary_ok=1", "exit_code=42", "private_cr3=1", "slot=0", "cr3_restored=1", "if_restored=1", "leaf_sealed=1", "nx_enforced=1", "tensor_excluded=1"]},
     {"command": "state sec", "expect": ["[STATE] sec nx=", "canary=1"]},
     {"command": "state time", "expect": ["[STATE] time ticks=", "hz="]},
     {"command": "state version", "expect": ["[STATE] version release="]},

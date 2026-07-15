@@ -2,8 +2,9 @@
  * AIOS Kernel - First Ring3 User Execution Slice
  * AI-Native Operating System
  *
- * Maps a user page, enters CPL3, and runs a tiny demo program that calls
- * back into the kernel via int 0x80 before exiting. This proves the full
+ * Activates a private bootstrap user slot, enters CPL3, and runs a tiny demo
+ * program that calls back into the kernel via int 0x80 before exiting. This
+ * proves the full
  * ring0<->ring3 round trip: privilege transition, user-issued syscall,
  * copy_to_user into a user buffer, and a clean return to the kernel.
  */
@@ -26,6 +27,13 @@ typedef struct {
     bool     elf_loaded;      /* image parsed and mapped as ELF64 */
     uint64_t elf_entry;       /* e_entry of the loaded image */
     uint32_t elf_segments;    /* PT_LOAD segments mapped */
+    bool     private_cr3;     /* execution used a static private user slot */
+    bool     cr3_restored;    /* exact pre-run CR3 was restored */
+    bool     if_restored;     /* caller IF state matched after restoration */
+    bool     leaf_sealed;     /* slot policy reset and backing scrubbed */
+    bool     nx_enforced;     /* sealed leaf has hardware NX enforcement */
+    bool     tensor_range_excluded; /* absent from tensor free/active sets */
+    uint32_t address_space_slot;   /* static slot used by the run */
 } user_exec_info_t;
 
 /* Run the first ring3 slice. Returns AIOS_OK only on a fully verified
