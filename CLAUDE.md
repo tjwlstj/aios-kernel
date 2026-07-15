@@ -193,6 +193,14 @@ the two-scheduler and two-NodeBit splits) are collected in
 `docs/meta/codex_handoff_tips_ko.md`. Read it before touching the ring3 /
 scheduler / paging / syscall paths.
 
+### Maturity Levers Backlog
+Cross-cutting quality levers (versioned machine-readable events, structural
+subsystem-count guard, fault-injection gate, UBSan lane, 4K W^X) with priority,
+owner, and Claude/Codex alignment points are in
+`docs/meta/maturity_levers_backlog_ko.md`. Check it before proposing new
+verification or hardening work so it stays deduplicated against the verdict
+design doc (V0-V5) and the workflow guide (M-levels).
+
 ### Current Workflow Plan
 The maturity-first roadmap (M1 uaccess/SMAP → M2 ELF loader → M3 preemption →
 M4 virtio-blk storage read → M5 load programs from disk) and the per-step
