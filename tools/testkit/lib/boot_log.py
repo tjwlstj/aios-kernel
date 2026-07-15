@@ -33,6 +33,8 @@ CHECKPOINT_PATTERNS = {
     "nodebit": "[INIT] NodeBit Policy Gate... OK",
     "keyboard": "[INIT] PS/2 Keyboard... OK",
     "ring3_scaffold": "[USER] Ring3 scaffold ready=1",
+    "bootstrap_process": "[PROC] bootstrap ownership selftest PASS",
+    "bootstrap_process_stack": "[USER] bootstrap process stack PASS",
     "kernel_room": "[ROOM] snapshot stability=",
     "health": "[HEALTH] stability=",
     "ready": "AIOS Kernel Ready",
@@ -94,6 +96,12 @@ USER_SCAFFOLD_RE = re.compile(
 )
 USER_ACCESS_RE = re.compile(
     r"\[UACCESS\] selftest (?P<status>\w+) structural=(?P<structural>\d+) copy=(?P<copy>\d+) zero_copy=(?P<zero_copy>\d+)(?: string=(?P<string>\d+))?"
+)
+PROCESS_OWNERSHIP_RE = re.compile(
+    r"\[PROC\] bootstrap ownership selftest (?P<status>\w+) slots=(?P<slots>\d+) owned=(?P<owned>\d+) stack_bytes=(?P<stack_bytes>\d+) unique_cr3=(?P<unique_cr3>\d+) unique_backing=(?P<unique_backing>\d+) unique_stack=(?P<unique_stack>\d+)"
+)
+PROCESS_STACK_RE = re.compile(
+    r"\[USER\] bootstrap process stack (?P<status>\w+) pid=(?P<pid>\d+) slot=(?P<slot>\d+) process_bound=(?P<process_bound>\d+) kstack_bytes=(?P<kstack_bytes>\d+) rsp0_changed=(?P<rsp0_changed>\d+) rsp0_published=(?P<rsp0_published>\d+) int80_entries=(?P<int80_entries>\d+) all_int80_entries_in_stack=(?P<all_int80_entries_in_stack>\d+) rsp0_restored=(?P<rsp0_restored>\d+) kstack_floor_canary=(?P<kstack_floor_canary>\d+)"
 )
 ROOM_SNAPSHOT_RE = re.compile(
     r"\[ROOM\] snapshot stability=(?P<stability>\w+) ok=(?P<ok>\d+) degraded=(?P<degraded>\d+) failed=(?P<failed>\d+) unknown=(?P<unknown>\d+) topology=(?P<topology>[\w\-]+) domains=(?P<domains>\d+) windows=(?P<windows>\d+) drivers=(?P<drivers_ready>\d+)/(?P<drivers>\d+) plans=(?P<plans>\d+) nodes=(?P<nodes>\d+) rings=(?P<rings>\d+) active=(?P<active>\d+) user=(?P<user>\d+)"
@@ -428,6 +436,35 @@ def parse_boot_log_text(log_text: str, smoke_profile: str, serial_log_path: str 
             }
         )
 
+    process_stack: dict[str, object] = {
+        "ready": checkpoints["bootstrap_process"]["seen"] and
+                 checkpoints["bootstrap_process_stack"]["seen"]
+    }
+    index, line, match = _search_match(lines, PROCESS_OWNERSHIP_RE)
+    if match:
+        process_stack["ownership"] = {
+            "line": index,
+            "text": line,
+            "status": match.group("status"),
+            **_int_groupdict(
+                match, "slots", "owned", "stack_bytes", "unique_cr3",
+                "unique_backing", "unique_stack"
+            ),
+        }
+    index, line, match = _search_match(lines, PROCESS_STACK_RE)
+    if match:
+        process_stack["execution"] = {
+            "line": index,
+            "text": line,
+            "status": match.group("status"),
+            **_int_groupdict(
+                match, "pid", "slot", "process_bound", "kstack_bytes",
+                "rsp0_changed", "rsp0_published", "int80_entries",
+                "all_int80_entries_in_stack", "rsp0_restored",
+                "kstack_floor_canary"
+            ),
+        }
+
     kernel_room: dict[str, object] = {"ready": checkpoints["kernel_room"]["seen"]}
     index, line, match = _search_match(lines, ROOM_SNAPSHOT_RE)
     if match:
@@ -497,6 +534,7 @@ def parse_boot_log_text(log_text: str, smoke_profile: str, serial_log_path: str 
         "slm": slm,
         "user_mode": user_mode,
         "user_access": user_access,
+        "process_stack": process_stack,
         "kernel_room": kernel_room,
         "shell": shell_info,
         "nodebit": nodebit_info,

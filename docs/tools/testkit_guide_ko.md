@@ -201,7 +201,7 @@ optional 하드웨어 구성을 나눌 수 있다.
 
 - 요청한 프로파일 순서
 - baseline profile
-- profile별 ready / stability / device summary / controller state / SLM seeded plan count
+- profile별 ready / stability / device summary / controller state / SLM seeded plan count / process stack proof
 - baseline 대비 device delta
 - baseline 대비 controller state delta
 - baseline 대비 seeded plan 수 차이
@@ -219,6 +219,7 @@ repo 안의 baseline fixture와 비교하는 lane이다.
 - `health_summary`
 - `controller_states`
 - `slm_seeded_plan_count`
+- `process_stack` (정적 owner/CR3/backing/16KiB stack 고유성 + PID 1의 BSP `rsp0` 게시·`int 0x80` entry·복원 증거)
 
 출력 위치:
 
@@ -234,8 +235,8 @@ repo 안의 baseline fixture와 비교하는 lane이다.
   - 현재 inventory를 fixture로 저장 또는 갱신
 
 현재 단계의 baseline은 QEMU `full/minimal/storage-only` 프로파일용 정적 fixture다.
-즉, 성능 수치가 아니라 장치 수, health 요약, controller state, seeded plan 수 같은
-비교적 안정적인 항목만 포함한다.
+즉, 성능 수치가 아니라 장치 수, health 요약, controller state, seeded plan 수,
+정적 process/entry-stack 불변식 같은 비교적 안정적인 항목만 포함한다.
 
 ## boot-perf
 

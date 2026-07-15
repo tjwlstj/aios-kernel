@@ -34,6 +34,15 @@ typedef struct {
     bool     nx_enforced;     /* sealed leaf has hardware NX enforcement */
     bool     tensor_range_excluded; /* absent from tensor free/active sets */
     uint32_t address_space_slot;   /* static slot used by the run */
+    bool     process_bound;   /* run used a static bootstrap process owner */
+    uint32_t process_id;      /* bootstrap process identifier */
+    uint32_t kernel_stack_bytes; /* process-bound ring0 entry stack size */
+    bool     rsp0_changed;    /* process stack differed from boot rsp0 */
+    bool     rsp0_published;  /* TSS rsp0 exact publish readback passed */
+    uint32_t int80_entries;   /* all int 0x80 entries, including exit */
+    bool     all_int80_entries_in_stack; /* every int80 raw RSP on stack */
+    bool     rsp0_restored;   /* exact boot rsp0 readback after run */
+    bool     kernel_stack_floor_canary_ok; /* static floor canary survived */
 } user_exec_info_t;
 
 /* Run the first ring3 slice. Returns AIOS_OK only on a fully verified

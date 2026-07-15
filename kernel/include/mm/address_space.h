@@ -25,6 +25,7 @@ typedef struct address_space_guard {
     uint32_t active_slot;
     bool cr3_restored;
     bool if_restored;
+    bool irq_restore_pending;
     bool active;
 } address_space_guard_t;
 
@@ -53,6 +54,14 @@ aios_status_t address_space_bootstrap_slot_prepare(
  * Guards are non-nestable and must be zero-initialized by the caller. */
 aios_status_t address_space_activate(
     const address_space_bootstrap_slot_t *space,
+    address_space_guard_t *guard);
+
+/* Split restore used by process teardown: restore/verify CR3 while keeping
+ * IF=0, seal inactive private mappings, then restore the caller's IF bit.
+ * The combined address_space_restore() remains the simple wrapper. */
+aios_status_t address_space_restore_deferred_irq(
+    address_space_guard_t *guard);
+aios_status_t address_space_restore_interrupts(
     address_space_guard_t *guard);
 aios_status_t address_space_restore(address_space_guard_t *guard);
 

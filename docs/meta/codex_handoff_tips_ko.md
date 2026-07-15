@@ -2,7 +2,7 @@
 
 이 커널에서 Claude가 M1~M3 작업 중 실제로 밟은 지뢰와 관례를 모았다. 다음 작업자(Codex)가 같은 함정에 빠지지 않도록 하는 실전 노트다. **CLAUDE.md의 규칙이 정본이고, 이 문서는 "왜 그런지"와 "어떻게 디버깅했는지"를 보완한다.**
 
-M3-b-3a(주소공간 전환 primitive) 작업은 우리 규약을 정확히 따랐다(셀프테스트 마커 + `state` 노출 + 스모크 3곳 + shell 레인 + 문서). 이 형식을 계속 유지하면 된다.
+M3-b-3a부터 M3-b-3b2b까지(주소공간 전환 → private leaf → process-owned 동기 runner) 작업은 우리 규약을 정확히 따랐다(셀프테스트 마커 + `state` 노출 + 스모크 3곳 + shell 레인 + 문서). 이 형식을 계속 유지하면 된다.
 
 ---
 
@@ -20,9 +20,10 @@ M3-b-3a(주소공간 전환 primitive) 작업은 우리 규약을 정확히 따�
    cppcheck --std=c11 --platform=unix64 --enable=warning,performance,portability \
      --inline-suppr --suppress=missingIncludeSystem --error-exitcode=1 -Ikernel/include kernel/
    pwsh -File tools/testkit/kernel/build-windows.ps1 -Target test                       # full
-   pwsh -File tools/testkit/kernel/build-windows.ps1 -Target test -SmokeProfile minimal
-   pwsh -File tools/testkit/kernel/build-windows.ps1 -Target test -SmokeProfile storage-only
-   py -3 tools/testkit/aios-testkit.py shell --strict --skip-build                      # shell 레인
+    pwsh -File tools/testkit/kernel/build-windows.ps1 -Target test -SmokeProfile minimal
+    pwsh -File tools/testkit/kernel/build-windows.ps1 -Target test -SmokeProfile storage-only
+    py -3 tools/testkit/aios-testkit.py shell --strict --skip-build                      # shell 레인
+    py -3 tools/testkit/aios-testkit.py boot-inventory --profiles full minimal storage-only --strict
    ```
    Windows에서 `python`이 Store alias로 잡히면 `py -3`를 쓴다.
 6. **작업 브랜치는 `beta`.** main으로의 병합/PR은 사람이 결정한다.
@@ -63,6 +64,12 @@ ring3에서 유저 페이지 접근 시 PML4→PDPT→PD→PT의 **모든** 레�
 ### 2.8 private 유저 VA가 low identity direct-map을 가린다
 현재 커널은 첫 4GiB를 identity mapping하고 유저 VA 64MiB도 그 안에 있다. private CR3에서 이 leaf를 별도 backing으로 바꾸면 커널 VA 64–66MiB가 더는 물리 64–66MiB를 가리키지 않는다. 따라서 그 물리 구간을 tensor allocator가 반환하면 private CR3 체류 중 잘못된 backing을 접근한다. M3-b-3b2a는 해당 구간을 모든 tensor free list와 활성 tensor record에서 live 검사로 제외하고 `[MM] bootstrap user tensor exclusion PASS ... excluded=2097152 ... boundary=1 coalesce=1`를 필수화했다. 이건 tensor allocator의 관리 범위를 설정 960MiB에서 958MiB로 줄이는 bootstrap 안전장치일 뿐, 전역 PMM 예약이나 물리 메모리 소유권 증명은 아니다. 장기 해법은 high-half kernel direct map 또는 PMM 기반 유저 VA 배치다.
 
+### 2.9 process CR3/TSS 전환은 IF=0 순서를 깨지 않는다
+M3-b-3b2b의 활성화 순서는 `caller IF 저장+cli → private CR3 activate → BSP boot-TSS rsp0에 process stack top 게시 → CPL3`다. 복귀는 `process rsp0 → boot rsp0 exact 복원 → boot CR3 exact 복원 → private leaf seal/backing scrub → current owner 해제 → caller IF 복원` 순서다. IF를 먼저 열면 IRQ가 boot CR3/rsp0와 stale current process의 모순을 관측한다. IF readback 실패는 pending guard를 유지하고 다시 `cli`; int80 raw entry RSP의 stack 범위 이탈, stack floor canary 손상, TSS baseline 불일치, leaf seal 실패도 계속 부팅하지 않고 fail-stop한다. `syscall_stack_top`은 이제 BSP baseline/fallback일 뿐 실제 PID 1 실행 스택이 아니다. 현재는 BSP 단일 boot TSS만 갱신하며 SMP/per-CPU TSS 구현이 아니다. `kstack_floor_canary=1`도 guard page가 아니라 8바이트 floor canary 생존 증거다.
+
+### 2.10 interrupt gate는 DF를 자동으로 지우지 않는다
+ring3가 `std`를 실행한 뒤 인터럽트/시스콜로 들어오면 live DF=1이 커널 C 경계까지 따라온다. `interrupt/isr_stub.asm`의 common C call과 `core/user_entry.asm`의 syscall C call 앞 `cld`를 제거하지 말 것. CPU가 저장한 user RFLAGS frame은 그대로라 `iretq`는 사용자 DF를 복원한다. exit처럼 `iretq` 없이 커널로 돌아오는 경로도 이 `cld` 덕분에 DF=0을 유지한다.
+
 ---
 
 ## 3. 알아두면 좋은 구조
@@ -72,6 +79,7 @@ ring3에서 유저 페이지 접근 시 PML4→PDPT→PD→PT의 **모든** 레�
 - **Kernel Room 게이트 테이블은 분류 메타데이터**다. 디스패처가 per-call로 검사하지 않는다. 실제 강제는 NodeBit 게이트/autonomy safe-mode/health 플래그가 한다. "모든 시스콜 전에 검사한다"고 서술하지 말 것.
 - **시스콜 추가 시:** 번호는 추가만(재번호 금지), 그리고 **커버하는 Kernel Room 게이트의 `syscall_end`를 확장**해야 한다(`kernel/core/kernel_room.c`). 이걸 빼먹으면 ROOM 스냅샷이 새 시스콜을 분류에서 누락한다(체크포인트 때 실제로 드리프트가 났던 부분).
 - **ABI 불변식:** SLM 스냅샷 구조체(`slm_hw_snapshot_t`)나 health 구조체 레이아웃을 바꾸면 소비자와 baseline이 깨진다. 관측 필드는 스냅샷 안이 아니라 별도 접근자로 노출하는 패턴을 따랐다(예: `slm_plan_observation_read`).
+- **bootstrap run-state C/NASM ABI:** `kernel/include/kernel/process.h`의 explicit offset + size static assert와 `kernel/core/user_entry.asm`의 `RUN_STATE_*`가 한 쌍이다. 기존 offset은 재번호하지 말고 append-only로 늘린다. 실제 값은 process-local이지만 `g_active_user_run_state`는 현재 동기 runner 한 개를 가리키는 단일 active pointer다.
 
 ---
 
@@ -83,13 +91,13 @@ ring3에서 유저 페이지 접근 시 PML4→PDPT→PD→PT의 **모든** 레�
 
 ---
 
-## 5. 다음 작업: M3-b-3b
+## 5. 다음 작업: M3-b-3b2c
 
 `address_space_selftest`는 부트 PML4 복제 + CR3 왕복까지 증명했다(공유 매핑). 다음은:
 1. **정적 주소공간 슬롯별 private user leaf proof ✅ M3-b-3b1 완료 (2026-07-14)** — 정적 2슬롯에서 유저 영역(현재 고정 64MiB)을 서로 다른 2MiB backing에 매핑하고 canary 격리를 검증했다. 범용 주소공간 객체, PMM, 실제 프로세스 실행 연결은 아직 아니다.
 2. **private CR3 단일 runner ✅ M3-b-3b2a 완료 (2026-07-15)** — slot 0에서 기존 ELF를 동기 실행한다. exact raw boot CR3와 IF bit를 readback한 뒤에만 leaf policy reset/backing scrub을 수행하고, `leaf_sealed`와 hardware `nx_enforced`를 분리해 관측한다. 물리 64–66MiB는 tensor free/active set에서 제외하지만 PMM 예약으로 과장하지 않는다.
-3. **프로세스 소유 구조** — `process { address_space(CR3), registers, kernel_stack, capabilities }`와 프로세스별 커널 스택을 만들고, 단일 per-CPU TSS의 `rsp0`를 다음 프로세스 스택으로 게시한다.
-4. **ring3 프로세스 2개 선점 교대** — kthread 선점(M3-b-2) + CR3 스위치(M3-b-3a)를 결합. 타이머 틱에서 다음 프로세스로 CR3까지 전환.
+3. **static bootstrap process + BSP TSS entry stack ✅ M3-b-3b2b 완료 (2026-07-15)** — 정적 descriptor 2개가 unique CR3/backing, process-local run state, unique 16KiB ring0 entry stack을 소유한다. PID 1/slot 0에서 `rsp0` exact publish/restore와 3회 `int 0x80`의 `stack_top-40` 진입을 증명했다. 전체 registers/capabilities, slot 1 실행, guard page, 동적 PMM/VMM, SMP per-CPU TSS는 포함하지 않는다.
+4. **full trapframe + ring3 프로세스 2개 선점 교대** — process에 전체 saved-register/trapframe과 runnable state를 추가하고 slot 1을 실제 실행한 뒤, kthread 선점(M3-b-2) + CR3 스위치(M3-b-3a) + BSP TSS `rsp0` 교대를 결합한다.
 5. 완료 기준: 두 ring3 프로세스가 각자 주소공간에서 시스콜을 왕복하며 선점 교대, `[SCHED]`/`[MM]`/`state user` 마커로 검증.
 
-주의: ring3 프로세스 선점은 **유저→커널 진입 시 rsp0 스택**(현재 `syscall_stack`, 단일)이 프로세스마다 별도여야 한다. 지금은 단일 유저 슬라이스라 공유지만, 2개 이상이면 프로세스별 커널 스택이 필요하다.
+주의: 두 static process에 각자 16KiB ring0 entry stack은 생겼지만 실제 실행은 PID 1 하나뿐이고, 현재 resume 모델은 동기 C 호출 프레임이다. 다음 단계는 이 스택을 schedulable continuation으로 과장하지 말고 full interrupt trapframe을 먼저 정의한 뒤 current process·CR3·BSP `rsp0`를 IF=0에서 함께 교대해야 한다.

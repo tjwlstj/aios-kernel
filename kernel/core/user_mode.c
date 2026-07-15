@@ -4,6 +4,7 @@
  */
 
 #include <kernel/user_mode.h>
+#include <kernel/user_layout.h>
 #include <drivers/serial.h>
 #include <drivers/vga.h>
 
@@ -21,6 +22,7 @@ static user_mode_scaffold_info_t g_user_mode = {
     .user_ds = AIOS_USER_DS_RPL3,
     .tss_selector = AIOS_GDT_TSS,
 };
+static bool g_rsp0_guard_active;
 
 static inline void read_gdt(descriptor_table_ptr_t *out) {
     __asm__ volatile ("sgdt %0" : "=m"(*out));
@@ -30,6 +32,23 @@ static inline uint16_t read_task_register(void) {
     uint16_t selector;
     __asm__ volatile ("str %0" : "=r"(selector));
     return selector;
+}
+
+static inline uint64_t read_rflags(void) {
+    uint64_t flags;
+    __asm__ volatile ("pushfq; popq %0" : "=r"(flags) : : "memory");
+    return flags;
+}
+
+static bool canonical_address(uint64_t address) {
+    uint64_t upper = address >> 48;
+    bool sign = (address & BIT(47)) != 0;
+    return sign ? upper == 0xFFFFULL : upper == 0;
+}
+
+static bool range_overlaps_bootstrap_user(uint64_t base, uint64_t end) {
+    return base < AIOS_BOOTSTRAP_USER_END &&
+           AIOS_BOOTSTRAP_USER_BASE < end;
 }
 
 static uint64_t gdt_read_entry(uint64_t gdt_base, uint16_t selector) {
@@ -133,6 +152,74 @@ aios_status_t user_mode_scaffold_info(user_mode_scaffold_info_t *out) {
 
 bool user_mode_scaffold_ready(void) {
     return g_user_mode.ready;
+}
+
+uint64_t user_mode_rsp0_read(void) {
+    volatile tss64_t *const tss = &aios_boot_tss64;
+    return tss->rsp0;
+}
+
+aios_status_t user_mode_rsp0_publish(
+    uint64_t stack_base, uint64_t stack_size,
+    user_mode_rsp0_guard_t *guard) {
+    volatile tss64_t *const tss = &aios_boot_tss64;
+    uint64_t stack_top;
+
+    if (!guard || guard->active || g_rsp0_guard_active ||
+        !g_user_mode.ready || (read_rflags() & BIT(9)) != 0 ||
+        stack_size != AIOS_USER_KERNEL_STACK_SIZE ||
+        stack_base == 0 || stack_base > (~0ULL) - stack_size) {
+        return AIOS_ERR_INVAL;
+    }
+    stack_top = stack_base + stack_size;
+    if (tss->rsp0 == 0 || (tss->rsp0 & 0xFULL) != 0 ||
+        !canonical_address(tss->rsp0 - 1ULL) ||
+        (stack_top & 0xFULL) != 0 ||
+        !canonical_address(stack_base) ||
+        !canonical_address(stack_top - 1ULL) ||
+        range_overlaps_bootstrap_user(stack_base, stack_top)) {
+        return AIOS_ERR_INVAL;
+    }
+
+    guard->previous_rsp0 = tss->rsp0;
+    guard->published_rsp0 = stack_top;
+    guard->published = false;
+    guard->restored = false;
+    guard->active = true;
+    g_rsp0_guard_active = true;
+
+    tss->rsp0 = stack_top;
+    __asm__ volatile ("" : : : "memory");
+    guard->published = tss->rsp0 == stack_top;
+    if (!guard->published) {
+        return AIOS_ERR_IO;
+    }
+    g_user_mode.rsp0 = stack_top;
+    return AIOS_OK;
+}
+
+aios_status_t user_mode_rsp0_restore(user_mode_rsp0_guard_t *guard) {
+    volatile tss64_t *const tss = &aios_boot_tss64;
+
+    if (!guard || !guard->active || !guard->published ||
+        !g_rsp0_guard_active || (read_rflags() & BIT(9)) != 0) {
+        return AIOS_ERR_INVAL;
+    }
+    if (tss->rsp0 != guard->published_rsp0) {
+        return AIOS_ERR_IO;
+    }
+
+    tss->rsp0 = guard->previous_rsp0;
+    __asm__ volatile ("" : : : "memory");
+    guard->restored = tss->rsp0 == guard->previous_rsp0;
+    if (!guard->restored) {
+        return AIOS_ERR_IO;
+    }
+
+    g_user_mode.rsp0 = guard->previous_rsp0;
+    guard->active = false;
+    g_rsp0_guard_active = false;
+    return AIOS_OK;
 }
 
 __asm__(".section .note.GNU-stack,\"\",@progbits\n\t.previous");

@@ -137,6 +137,7 @@ function Get-SmokeRequiredPatterns {
         '\[MM\] address space selftest PASS',
         '\[MM\] user leaf isolation selftest PASS',
         '\[MM\] bootstrap user tensor exclusion PASS base=0x4000000 size=2097152 excluded=2097152 managed=1004535808 configured=1006632960 overflow=1 region=1 align=1 boundary=1 coalesce=1',
+        '\[PROC\] bootstrap ownership selftest PASS slots=2 owned=2 stack_bytes=16384 unique_cr3=1 unique_backing=1 unique_stack=1',
         '\[DEV\] Peripheral probe ready',
         '\[USER\] Ring3 scaffold ready=1',
         '\[ROOM\] snapshot stability=',
@@ -148,6 +149,7 @@ function Get-SmokeRequiredPatterns {
         '\[SYSCALL\] observe dispatch selftest PASS',
         '\[USER\] ring3 exec PASS',
         '\[USER\] private address space exec PASS slot=0 cr3_restored=1 if_restored=1 leaf_sealed=1 nx_enforced=1 tensor_excluded=1',
+        '\[USER\] bootstrap process stack PASS pid=1 slot=0 process_bound=1 kstack_bytes=16384 rsp0_changed=1 rsp0_published=1 int80_entries=3 all_int80_entries_in_stack=1 rsp0_restored=1 kstack_floor_canary=1',
         '\[SHELL\] Interactive shell started'
     )
 

@@ -105,6 +105,10 @@ isr_common_stub:
     push r14
     push r15
 
+    ; User RFLAGS may carry DF=1 across a privilege-changing interrupt.
+    ; Clear live DF before entering C; iretq restores the saved flag.
+    cld
+
     ; Pass pointer to interrupt frame as first argument
     mov rdi, rsp
     call exception_handler

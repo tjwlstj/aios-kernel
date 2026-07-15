@@ -16,6 +16,7 @@
 #include <kernel/selftest.h>
 #include <kernel/time.h>
 #include <kernel/user_mode.h>
+#include <kernel/process.h>
 #include <lib/string.h>
 #include <drivers/e1000.h>
 #include <drivers/pci_core.h>
@@ -87,6 +88,7 @@ static void init_subsystem(kernel_subsystem_id_t id, const char *name, aios_stat
  */
 void kernel_main(uint64_t multiboot_magic, uint64_t multiboot_info) {
     bool multiboot2_handoff_ok;
+    aios_status_t user_status;
 
     /* Initialize console first for output */
     console_init();
@@ -126,14 +128,25 @@ void kernel_main(uint64_t multiboot_magic, uint64_t multiboot_info) {
     }
 
     run_observe_dispatch_selftest();
-    user_mode_scaffold_init();
+    user_status = user_mode_scaffold_init();
+    if (user_status == AIOS_OK) {
+        user_status = bootstrap_process_init();
+    }
+    if (user_status != AIOS_OK) {
+        kernel_health_mark(KERNEL_SUBSYSTEM_SCHED,
+            KERNEL_HEALTH_DEGRADED, user_status);
+    }
 
     /* First ring3 slice: enter CPL3 and round-trip a syscall. Requires the
-     * TSS/GDT scaffold above and the int 0x80 gate from idt_init. */
-    if (user_mode_scaffold_ready()) {
-        user_exec_run_first();
+     * TSS/GDT scaffold, a bound bootstrap process, and int 0x80. */
+    if (user_mode_scaffold_ready() && bootstrap_process_ready()) {
+        user_status = user_exec_run_first();
+        if (user_status != AIOS_OK) {
+            kernel_health_mark(KERNEL_SUBSYSTEM_SCHED,
+                KERNEL_HEALTH_DEGRADED, user_status);
+        }
     } else {
-        serial_write("[USER] ring3 exec SKIP: scaffold not ready\n");
+        serial_write("[USER] ring3 exec SKIP: process scaffold not ready\n");
     }
 
     kernel_room_dump();

@@ -45,6 +45,7 @@
 #include <runtime/nodebit.h>
 #include <runtime/slm_orchestrator.h>
 #include <kernel/user_exec.h>
+#include <kernel/process.h>
 #include <sched/kthread.h>
 #include <sched/ai_sched.h>
 #include <drivers/keyboard.h>
@@ -112,15 +113,25 @@ static void state_list(void) {
 static void state_sched(void) {
     sched_stats_t s;
     address_space_stats_t as;
+    bootstrap_process_stats_t process;
     ai_sched_stats(&s);
     address_space_get_stats(&as);
-    STATE_EMIT("[STATE] sched kthread_switches=%u preempt_ticks=%u address_space_switches=%u address_space_ready=%u user_leaf_slots=%u user_leaf_isolated=%u total_tasks=%u active_tasks=%u workload_ctx_switches=%u preemptions=%u\n",
+    bootstrap_process_get_stats(&process);
+    STATE_EMIT("[STATE] sched kthread_switches=%u preempt_ticks=%u address_space_switches=%u address_space_ready=%u user_leaf_slots=%u user_leaf_isolated=%u bootstrap_process_ready=%u bootstrap_owned_processes=%u completed_process_runs=%u current_pid=%u last_pid=%u tss_rsp0_publishes=%u tss_rsp0_restores=%u tss_rsp0_baseline=%u total_tasks=%u active_tasks=%u workload_ctx_switches=%u preemptions=%u\n",
         kthread_switch_count(),
         kthread_preempt_tick_count(),
         as.switches,
         as.selftest_passed ? 1ULL : 0ULL,
         (uint64_t)as.user_leaf_slots,
         as.user_leaf_isolation_passed ? 1ULL : 0ULL,
+        process.ownership_selftest_passed ? 1ULL : 0ULL,
+        (uint64_t)process.owned_processes,
+        process.completed_runs,
+        (uint64_t)process.current_pid,
+        (uint64_t)process.last_pid,
+        process.rsp0_publishes,
+        process.rsp0_restores,
+        process.tss_rsp0_baseline ? 1ULL : 0ULL,
         (uint64_t)s.total_tasks,
         (uint64_t)s.active_tasks,
         (uint64_t)s.context_switches,
@@ -130,7 +141,7 @@ static void state_sched(void) {
 static void state_user(void) {
     user_exec_info_t u;
     user_exec_get_info(&u);
-    STATE_EMIT("[STATE] user attempted=%u elf_loaded=%u elf_entry=%x segments=%u entered=%u returned=%u syscall_ok=%u boundary_ok=%u syscalls=%u exit_code=%u pipe_max=%u dur_ns=%u private_cr3=%u slot=%u cr3_restored=%u if_restored=%u leaf_sealed=%u nx_enforced=%u tensor_excluded=%u\n",
+    STATE_EMIT("[STATE] user attempted=%u elf_loaded=%u elf_entry=%x segments=%u entered=%u returned=%u syscall_ok=%u boundary_ok=%u syscalls=%u exit_code=%u pipe_max=%u dur_ns=%u private_cr3=%u slot=%u cr3_restored=%u if_restored=%u leaf_sealed=%u nx_enforced=%u tensor_excluded=%u pid=%u process_bound=%u kstack_bytes=%u rsp0_changed=%u rsp0_published=%u int80_entries=%u all_int80_entries_in_stack=%u rsp0_restored=%u kstack_floor_canary=%u\n",
         (uint64_t)u.attempted,
         (uint64_t)u.elf_loaded,
         u.elf_entry,
@@ -149,7 +160,16 @@ static void state_user(void) {
         (uint64_t)u.if_restored,
         (uint64_t)u.leaf_sealed,
         (uint64_t)u.nx_enforced,
-        (uint64_t)u.tensor_range_excluded);
+        (uint64_t)u.tensor_range_excluded,
+        (uint64_t)u.process_id,
+        (uint64_t)u.process_bound,
+        (uint64_t)u.kernel_stack_bytes,
+        (uint64_t)u.rsp0_changed,
+        (uint64_t)u.rsp0_published,
+        (uint64_t)u.int80_entries,
+        (uint64_t)u.all_int80_entries_in_stack,
+        (uint64_t)u.rsp0_restored,
+        (uint64_t)u.kernel_stack_floor_canary_ok);
 }
 
 static void state_slm(void) {

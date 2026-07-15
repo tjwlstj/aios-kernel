@@ -23,5 +23,26 @@
     "usb": "ready",
     "storage": "ready"
   },
-  "slm_seeded_plan_count": 8
+  "slm_seeded_plan_count": 8,
+  "process_stack": {
+    "ready": true,
+    "ownership_status": "PASS",
+    "execution_status": "PASS",
+    "slots": 2,
+    "owned_processes": 2,
+    "stack_bytes": 16384,
+    "unique_cr3": 1,
+    "unique_backing": 1,
+    "unique_stack": 1,
+    "pid": 1,
+    "slot": 0,
+    "process_bound": 1,
+    "kstack_bytes": 16384,
+    "rsp0_changed": 1,
+    "rsp0_published": 1,
+    "int80_entries": 3,
+    "all_int80_entries_in_stack": 1,
+    "rsp0_restored": 1,
+    "kstack_floor_canary": 1
+  }
 }

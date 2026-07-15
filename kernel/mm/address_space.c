@@ -88,6 +88,10 @@ static inline void irq_restore(uint64_t flags) {
     }
 }
 
+static inline void irq_disable(void) {
+    __asm__ volatile ("cli" : : : "memory");
+}
+
 aios_status_t address_space_selftest(void) {
     const uint64_t boot_cr3 = read_cr3();
     const uint64_t clone_cr3 = (uint64_t)(uintptr_t)g_selftest_pml4;
@@ -359,7 +363,8 @@ aios_status_t address_space_activate(
         space->executable != g_user_slot_executable[space->slot]) {
         return AIOS_ERR_INVAL;
     }
-    if (guard->active || g_active_slot != ADDRESS_SPACE_NO_SLOT) {
+    if (guard->active || guard->irq_restore_pending ||
+        g_active_slot != ADDRESS_SPACE_NO_SLOT) {
         return AIOS_ERR_BUSY;
     }
 
@@ -370,6 +375,7 @@ aios_status_t address_space_activate(
     guard->active_slot = space->slot;
     guard->cr3_restored = false;
     guard->if_restored = false;
+    guard->irq_restore_pending = false;
     guard->active = true;
     g_active_slot = space->slot;
 
@@ -381,9 +387,8 @@ aios_status_t address_space_activate(
         if (guard->cr3_restored) {
             g_active_slot = ADDRESS_SPACE_NO_SLOT;
             guard->active = false;
-            irq_restore(previous_flags);
-            guard->if_restored =
-                ((read_rflags() ^ previous_flags) & BIT(9)) == 0;
+            guard->irq_restore_pending = true;
+            (void)address_space_restore_interrupts(guard);
         }
         /* If rollback cannot be proven, conservatively retain the guard and
          * IF=0. That prevents callers from sealing a possibly active slot. */
@@ -392,7 +397,8 @@ aios_status_t address_space_activate(
     return AIOS_OK;
 }
 
-aios_status_t address_space_restore(address_space_guard_t *guard) {
+aios_status_t address_space_restore_deferred_irq(
+    address_space_guard_t *guard) {
     if (!guard || !guard->active ||
         guard->active_slot != g_active_slot) {
         return AIOS_ERR_INVAL;
@@ -408,10 +414,36 @@ aios_status_t address_space_restore(address_space_guard_t *guard) {
 
     g_active_slot = ADDRESS_SPACE_NO_SLOT;
     guard->active = false;
+    guard->irq_restore_pending = true;
+    return AIOS_OK;
+}
+
+aios_status_t address_space_restore_interrupts(
+    address_space_guard_t *guard) {
+    if (!guard || guard->active || !guard->cr3_restored ||
+        !guard->irq_restore_pending) {
+        return AIOS_ERR_INVAL;
+    }
+
     irq_restore(guard->previous_flags);
     guard->if_restored =
         ((read_rflags() ^ guard->previous_flags) & BIT(9)) == 0;
-    return guard->if_restored ? AIOS_OK : AIOS_ERR_IO;
+    if (!guard->if_restored) {
+        /* Fail closed: no caller may proceed with an unverified IF state. */
+        irq_disable();
+        return AIOS_ERR_IO;
+    }
+    guard->irq_restore_pending = false;
+    return AIOS_OK;
+}
+
+aios_status_t address_space_restore(address_space_guard_t *guard) {
+    aios_status_t status = address_space_restore_deferred_irq(guard);
+
+    if (status != AIOS_OK) {
+        return status;
+    }
+    return address_space_restore_interrupts(guard);
 }
 
 aios_status_t address_space_bootstrap_slot_seal(uint32_t slot,

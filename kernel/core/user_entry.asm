@@ -14,10 +14,6 @@ global user_mode_run
 global isr_syscall
 global user_elf_image_start
 global user_elf_image_end
-global g_user_syscalls
-global g_user_exit_code
-global g_user_exited
-
 extern ai_syscall_dispatch
 
 ; Selectors (must match kernel/include/kernel/user_mode.h)
@@ -25,10 +21,21 @@ extern ai_syscall_dispatch
 %define USER_DS_RPL3 0x1b
 %define KERNEL_DS    0x10
 
+; bootstrap_user_run_state_t offsets. These are an append-only C/NASM ABI;
+; keep synchronized with kernel/include/kernel/process.h.
+%define RUN_STATE_RESUME_RSP      0
+%define RUN_STATE_SYSCALLS        8
+%define RUN_STATE_INT80_ENTRIES  16
+%define RUN_STATE_EXIT_CODE      24
+%define RUN_STATE_ENTRY_RSP_MIN  32
+%define RUN_STATE_ENTRY_RSP_MAX  40
+%define RUN_STATE_EXITED         48
+
 ; -----------------------------------------------------------------------------
-; void user_mode_run(uint64_t entry_rip, uint64_t user_stack_top)
-;   rdi = entry, rsi = user stack top. Enters ring3; returns here only when
-;   the user program issues the exit syscall (isr_syscall .exit path).
+; void user_mode_run(uint64_t entry_rip, uint64_t user_stack_top,
+;                    bootstrap_user_run_state_t *state)
+;   rdi = entry, rsi = user stack top, rdx = process-owned run state.
+;   Enters ring3; returns here only when the user program issues exit.
 ; -----------------------------------------------------------------------------
 user_mode_run:
     push rbx
@@ -37,7 +44,8 @@ user_mode_run:
     push r13
     push r14
     push r15
-    mov [rel g_kernel_resume_rsp], rsp   ; exit path restores this
+    mov [rel g_active_user_run_state], rdx
+    mov [rdx + RUN_STATE_RESUME_RSP], rsp
 
     ; User data segments for ds/es (ss comes from the iretq frame).
     mov ax, USER_DS_RPL3
@@ -58,10 +66,28 @@ user_mode_run:
 ;   Runs on TSS rsp0 (dedicated syscall stack) after the ring3 transition.
 ; -----------------------------------------------------------------------------
 isr_syscall:
+    mov r11, [rel g_active_user_run_state]
+    test r11, r11
+    jz .fatal_state
+
+    ; Capture the untouched CPU entry frame location. A CPL3->0 int gate
+    ; loads TSS.rsp0 and pushes SS/RSP/RFLAGS/CS/RIP (40 bytes) before here.
+    inc qword [r11 + RUN_STATE_INT80_ENTRIES]
+    cmp rsp, [r11 + RUN_STATE_ENTRY_RSP_MIN]
+    jae .entry_min_done
+    mov [r11 + RUN_STATE_ENTRY_RSP_MIN], rsp
+.entry_min_done:
+    cmp rsp, [r11 + RUN_STATE_ENTRY_RSP_MAX]
+    jbe .entry_max_done
+    mov [r11 + RUN_STATE_ENTRY_RSP_MAX], rsp
+.entry_max_done:
+    ; Interrupt gates preserve DF. Kernel C and the non-iret exit path require
+    ; the System V invariant DF=0; the saved user RFLAGS remains untouched.
+    cld
     test rax, rax
     jz .exit
 
-    inc qword [rel g_user_syscalls]
+    inc qword [r11 + RUN_STATE_SYSCALLS]
 
     ; Re-map ring3 arg registers to the System V order expected by
     ; ai_syscall_dispatch(num, a1, a2, a3, a4, a5). Move low-to-high so
@@ -79,9 +105,10 @@ isr_syscall:
     iretq
 
 .exit:
-    mov [rel g_user_exit_code], rdi
-    mov byte [rel g_user_exited], 1
-    mov rsp, [rel g_kernel_resume_rsp]   ; back to user_mode_run's frame
+    mov [r11 + RUN_STATE_EXIT_CODE], rdi
+    mov byte [r11 + RUN_STATE_EXITED], 1
+    mov rsp, [r11 + RUN_STATE_RESUME_RSP]
+    mov qword [rel g_active_user_run_state], 0
     mov ax, KERNEL_DS
     mov ds, ax
     mov es, ax
@@ -92,6 +119,12 @@ isr_syscall:
     pop rbp
     pop rbx
     ret
+
+.fatal_state:
+    cli
+.fatal_state_halt:
+    hlt
+    jmp .fatal_state_halt
 
 ; -----------------------------------------------------------------------------
 ; Demo user program delivered as a real static ELF64 image, parsed by the
@@ -151,9 +184,6 @@ user_elf_image_end:
 ; -----------------------------------------------------------------------------
 section .bss
 align 8
-g_kernel_resume_rsp: resq 1
-g_user_syscalls:     resq 1
-g_user_exit_code:    resq 1
-g_user_exited:       resb 1
+g_active_user_run_state: resq 1
 
 section .note.GNU-stack noalloc noexec nowrite progbits

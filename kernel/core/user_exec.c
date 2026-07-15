@@ -8,6 +8,7 @@
 #include <kernel/elf.h>
 #include <kernel/time.h>
 #include <kernel/user_layout.h>
+#include <kernel/process.h>
 #include <mm/address_space.h>
 #include <mm/tensor_mm.h>
 #include <runtime/node_pipeline.h>
@@ -16,14 +17,11 @@
 #include <lib/string.h>
 
 /* Ring3 entry / syscall path (kernel/core/user_entry.asm). */
-extern void user_mode_run(uint64_t entry_rip, uint64_t user_stack_top);
+extern void user_mode_run(uint64_t entry_rip, uint64_t user_stack_top,
+                          bootstrap_user_run_state_t *run_state);
 /* Embedded static ELF64 demo image parsed by the ELF loader. */
 extern uint8_t user_elf_image_start[];
 extern uint8_t user_elf_image_end[];
-extern volatile uint64_t g_user_syscalls;
-extern volatile uint64_t g_user_exit_code;
-extern volatile uint8_t  g_user_exited;
-
 #define USER_EXEC_PRIVATE_SLOT 0U
 
 static user_exec_info_t g_user_exec;
@@ -31,22 +29,20 @@ static user_exec_info_t g_user_exec;
 aios_status_t user_exec_run_first(void) {
     node_pipeline_snapshot_t *const user_result =
         (node_pipeline_snapshot_t *)(uintptr_t)AIOS_BOOTSTRAP_USER_BUFFER;
-    address_space_bootstrap_slot_t space = {0};
-    address_space_guard_t guard = {0};
+    bootstrap_process_t *process = NULL;
+    bootstrap_process_guard_t process_guard = {0};
     uint64_t image_size = (uint64_t)((uintptr_t)user_elf_image_end -
                                      (uintptr_t)user_elf_image_start);
     elf_load_result_t elf = {0};
     aios_status_t elf_status;
     aios_status_t status;
-    aios_status_t restore_status;
-    aios_status_t seal_status;
+    aios_status_t finish_status;
     uint64_t enter_ns = 0;
     uint64_t exit_ns = 0;
     uint32_t observed_max = 0;
     int64_t reject_value = 0;
     bool window_active = false;
     bool result_collected = false;
-    bool activation_nx_enforced = false;
     bool ok;
 
     memset(&g_user_exec, 0, sizeof(g_user_exec));
@@ -60,29 +56,36 @@ aios_status_t user_exec_run_first(void) {
         return AIOS_ERR_BUSY;
     }
 
-    /* 1. Prepare and activate static slot 0. Unlike the original runner,
-     *    this never opens the boot page table's identity leaf to ring3. */
-    status = address_space_bootstrap_slot_prepare(
-        USER_EXEC_PRIVATE_SLOT, true, &space);
+    /* 1. Bind static slot 0 and its dedicated ring0 entry stack to one
+     *    bootstrap process, then activate its private CR3 with IF=0. */
+    status = bootstrap_process_prepare(
+        USER_EXEC_PRIVATE_SLOT, true, &process);
     if (status != AIOS_OK) {
-        serial_write("[USER] ring3 exec ABORT: private slot prepare failed\n");
+        serial_write("[USER] ring3 exec ABORT: process prepare failed\n");
         return status;
     }
-    status = address_space_activate(&space, &guard);
+    status = bootstrap_process_activate(process, &process_guard);
     if (status != AIOS_OK) {
-        if (guard.active) {
-            serial_write("[USER] ring3 exec FATAL: private CR3 rollback unproven\n");
-            kernel_panic("Private CR3 activation rollback failed");
+        aios_status_t cancel_status;
+
+        if (process_guard.active) {
+            serial_write("[USER] ring3 exec FATAL: process activation rollback unproven\n");
+            kernel_panic("Bootstrap process activation rollback failed");
         }
-        if (guard.previous_cr3 == 0 ||
-            (guard.cr3_restored && guard.if_restored)) {
-            (void)address_space_bootstrap_slot_seal(
-                USER_EXEC_PRIVATE_SLOT, &activation_nx_enforced);
+        cancel_status = bootstrap_process_cancel(process);
+        if (cancel_status != AIOS_OK) {
+            serial_write("[USER] ring3 exec FATAL: process cancellation unproven\n");
+            kernel_panic("Bootstrap process cancellation failed");
         }
-        serial_write("[USER] ring3 exec ABORT: private CR3 activation failed\n");
+        serial_write("[USER] ring3 exec ABORT: process activation failed\n");
         return status;
     }
     g_user_exec.private_cr3 = true;
+    g_user_exec.process_bound = true;
+    g_user_exec.process_id = process->pid;
+    g_user_exec.kernel_stack_bytes = (uint32_t)process->kernel_stack_size;
+    g_user_exec.rsp0_changed = process_guard.rsp0_changed;
+    g_user_exec.rsp0_published = process_guard.rsp0.published;
 
     /* 2. Load the ELF image into the user region and stage the syscall
      *    scratch buffers. These are deliberate kernel writes to user pages,
@@ -107,10 +110,6 @@ aios_status_t user_exec_run_first(void) {
     g_user_exec.elf_entry = elf.entry;
     g_user_exec.elf_segments = elf.loadable_segments;
 
-    g_user_syscalls = 0;
-    g_user_exit_code = 0;
-    g_user_exited = 0;
-
     /* 3. Constrain uaccess to the user page, then enter ring3 at the ELF
      *    entry point. Any syscall the program issues with a pointer outside
      *    the window is denied. The window is cleared on return so
@@ -119,15 +118,16 @@ aios_status_t user_exec_run_first(void) {
                            AIOS_BOOTSTRAP_USER_SIZE);
     window_active = true;
     enter_ns = kernel_time_monotonic_ns();
-    user_mode_run(elf.entry, AIOS_BOOTSTRAP_USER_STACK_TOP);
+    user_mode_run(elf.entry, AIOS_BOOTSTRAP_USER_STACK_TOP,
+                  &process->run_state);
     exit_ns = kernel_time_monotonic_ns();
 
     /* 4. Collect and verify the round trip. */
-    g_user_exec.user_syscalls = (uint32_t)g_user_syscalls;
-    g_user_exec.exit_code = g_user_exit_code;
+    g_user_exec.user_syscalls = (uint32_t)process->run_state.user_syscalls;
+    g_user_exec.exit_code = process->run_state.exit_code;
     g_user_exec.duration_ns = exit_ns - enter_ns;
-    g_user_exec.entered = g_user_syscalls >= 1;
-    g_user_exec.returned = g_user_exited != 0;
+    g_user_exec.entered = process->run_state.user_syscalls >= 1;
+    g_user_exec.returned = process->run_state.exited != 0;
 
     /* Read the user page's result and rejection stash back (SMAP fenced).
      * SYS_PIPE_STATS must have written the real registry capacity — proof
@@ -149,21 +149,21 @@ cleanup:
     if (window_active) {
         user_access_clear_window();
     }
-    restore_status = address_space_restore(&guard);
-    g_user_exec.cr3_restored = guard.cr3_restored;
-    g_user_exec.if_restored = guard.if_restored;
-    if (guard.active) {
-        serial_write("[USER] ring3 exec FATAL: boot CR3 restoration unproven\n");
-        kernel_panic("Private CR3 restoration failed");
+    finish_status = bootstrap_process_finish(process, &process_guard);
+    if (process_guard.active) {
+        serial_write("[USER] ring3 exec FATAL: process restoration unproven\n");
+        kernel_panic("Bootstrap process restoration failed");
     }
-    if (g_user_exec.cr3_restored && g_user_exec.if_restored &&
-        !guard.active) {
-        seal_status = address_space_bootstrap_slot_seal(
-            USER_EXEC_PRIVATE_SLOT, &g_user_exec.nx_enforced);
-        g_user_exec.leaf_sealed = seal_status == AIOS_OK;
-    } else {
-        seal_status = AIOS_ERR_BUSY;
-    }
+    g_user_exec.cr3_restored = process_guard.address_space.cr3_restored;
+    g_user_exec.if_restored = process_guard.address_space.if_restored;
+    g_user_exec.leaf_sealed = process_guard.leaf_sealed;
+    g_user_exec.nx_enforced = process_guard.nx_enforced;
+    g_user_exec.int80_entries = (uint32_t)process_guard.int80_entries;
+    g_user_exec.all_int80_entries_in_stack =
+        process_guard.all_int80_entries_in_stack;
+    g_user_exec.rsp0_restored = process_guard.rsp0.restored;
+    g_user_exec.kernel_stack_floor_canary_ok =
+        process_guard.kernel_stack_floor_canary_ok;
     g_user_exec.tensor_range_excluded =
         tensor_mm_bootstrap_user_range_excluded();
 
@@ -173,7 +173,15 @@ cleanup:
          g_user_exec.boundary_ok && g_user_exec.exit_code == 42 &&
          g_user_exec.private_cr3 && g_user_exec.cr3_restored &&
          g_user_exec.if_restored && g_user_exec.leaf_sealed &&
-         g_user_exec.tensor_range_excluded;
+         g_user_exec.tensor_range_excluded &&
+         g_user_exec.process_bound && g_user_exec.process_id == 1U &&
+         g_user_exec.kernel_stack_bytes == AIOS_USER_KERNEL_STACK_SIZE &&
+         g_user_exec.rsp0_changed && g_user_exec.rsp0_published &&
+         g_user_exec.int80_entries == 3U &&
+         g_user_exec.all_int80_entries_in_stack &&
+         g_user_exec.rsp0_restored &&
+         g_user_exec.kernel_stack_floor_canary_ok &&
+         finish_status == AIOS_OK;
 
     serial_printf("[USER] ring3 exec %s elf_entry=%x segments=%u entered=%u returned=%u syscalls=%u boundary_ok=%u exit_code=%u pipe_max=%u dur_ns=%u private_cr3=%u slot=%u cr3_restored=%u if_restored=%u leaf_sealed=%u nx_enforced=%u tensor_excluded=%u\n",
         ok ? "PASS" : "FAIL",
@@ -198,6 +206,11 @@ cleanup:
         serial_printf("[USER] private address space exec PASS slot=%u cr3_restored=1 if_restored=1 leaf_sealed=1 nx_enforced=%u tensor_excluded=1\n",
             (uint64_t)g_user_exec.address_space_slot,
             (uint64_t)g_user_exec.nx_enforced);
+        serial_printf("[USER] bootstrap process stack PASS pid=%u slot=%u process_bound=1 kstack_bytes=%u rsp0_changed=1 rsp0_published=1 int80_entries=%u all_int80_entries_in_stack=1 rsp0_restored=1 kstack_floor_canary=1\n",
+            (uint64_t)g_user_exec.process_id,
+            (uint64_t)g_user_exec.address_space_slot,
+            (uint64_t)g_user_exec.kernel_stack_bytes,
+            (uint64_t)g_user_exec.int80_entries);
     }
 
     if (ok) {
@@ -206,8 +219,6 @@ cleanup:
     if (elf_status != AIOS_OK) {
         return elf_status;
     }
-    (void)restore_status;
-    (void)seal_status;
     return AIOS_ERR_IO;
 }
 

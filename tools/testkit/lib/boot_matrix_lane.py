@@ -50,6 +50,7 @@ def _compact_result(profile: str, summary: dict[str, object], matrix_summary_pat
     device_summary = summary.get("device_summary") or {}
     controllers = summary.get("controllers") or {}
     slm = summary.get("slm") or {}
+    process_stack = summary.get("process_stack") or {}
 
     controller_states = {}
     for name, payload in controllers.items():
@@ -76,6 +77,20 @@ def _compact_result(profile: str, summary: dict[str, object], matrix_summary_pat
         },
         "controller_states": controller_states,
         "slm_seeded_plan_count": slm.get("seeded_plan_count"),
+        "process_stack": {
+            "ready": bool(process_stack.get("ready")),
+            "ownership_status": (process_stack.get("ownership") or {}).get("status"),
+            "execution_status": (process_stack.get("execution") or {}).get("status"),
+            "owned_processes": (process_stack.get("ownership") or {}).get("owned"),
+            **{
+                key: (process_stack.get("ownership") or {}).get(key)
+                for key in ("slots", "stack_bytes", "unique_cr3", "unique_backing", "unique_stack")
+            },
+            **{
+                key: (process_stack.get("execution") or {}).get(key)
+                for key in ("pid", "slot", "process_bound", "kstack_bytes", "rsp0_changed", "rsp0_published", "int80_entries", "all_int80_entries_in_stack", "rsp0_restored", "kstack_floor_canary")
+            },
+        },
         "required_patterns": summary.get("required_patterns", []),
         "missing_patterns": summary.get("missing_patterns", []),
         "boot_summary_path": str(boot_summary_path("test", profile)),

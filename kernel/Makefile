@@ -52,6 +52,7 @@ C_SOURCES   = $(KERNEL_DIR)/main.c \
               $(KERNEL_DIR)/time.c \
               $(KERNEL_DIR)/selftest.c \
               $(KERNEL_DIR)/user_mode.c \
+              $(KERNEL_DIR)/process.c \
               $(KERNEL_DIR)/user_access.c \
               $(KERNEL_DIR)/user_exec.c \
               $(KERNEL_DIR)/elf_loader.c \

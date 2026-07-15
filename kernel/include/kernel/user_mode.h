@@ -20,6 +20,8 @@
 #define AIOS_USER_DS_RPL3   (AIOS_GDT_USER_DS | 0x3)
 #define AIOS_USER_CS_RPL3   (AIOS_GDT_USER_CS | 0x3)
 #define AIOS_TSS_IOPB_BASE  104
+#define AIOS_USER_KERNEL_STACK_SIZE KB(16)
+#define AIOS_RING3_ENTRY_FRAME_SIZE (5ULL * sizeof(uint64_t))
 
 typedef struct PACKED {
     uint32_t reserved0;
@@ -58,8 +60,28 @@ typedef struct {
     uint64_t rsp0;
 } user_mode_scaffold_info_t;
 
+/* Non-nestable guard for publishing one static ring3->ring0 entry stack to
+ * the BSP boot TSS. Publish/restore require IF=0 and never change IF. */
+typedef struct {
+    uint64_t previous_rsp0;
+    uint64_t published_rsp0;
+    bool active;
+    bool published;
+    bool restored;
+} user_mode_rsp0_guard_t;
+
+AIOS_STATIC_ASSERT(AIOS_USER_KERNEL_STACK_SIZE == KB(16),
+    "bootstrap process kernel stack contract must stay 16KiB");
+AIOS_STATIC_ASSERT((AIOS_USER_KERNEL_STACK_SIZE % PAGE_SIZE) == 0,
+    "bootstrap process kernel stack must be page-sized");
+
 aios_status_t user_mode_scaffold_init(void);
 aios_status_t user_mode_scaffold_info(user_mode_scaffold_info_t *out);
 bool user_mode_scaffold_ready(void);
+uint64_t user_mode_rsp0_read(void);
+aios_status_t user_mode_rsp0_publish(
+    uint64_t stack_base, uint64_t stack_size,
+    user_mode_rsp0_guard_t *guard);
+aios_status_t user_mode_rsp0_restore(user_mode_rsp0_guard_t *guard);
 
 #endif /* _AIOS_KERNEL_USER_MODE_H */

@@ -43,6 +43,7 @@ def build_inventory_record(result: dict[str, object]) -> dict[str, object]:
         "health_summary": result.get("health_summary", {}),
         "controller_states": result.get("controller_states", {}),
         "slm_seeded_plan_count": result.get("slm_seeded_plan_count"),
+        "process_stack": result.get("process_stack", {}),
     }
 
 
@@ -56,7 +57,7 @@ def compare_inventory_records(baseline: dict[str, object], current: dict[str, ob
                 "current": current.get(scalar_key),
             }
 
-    for group_key in ("device_summary", "health_summary", "controller_states"):
+    for group_key in ("device_summary", "health_summary", "controller_states", "process_stack"):
         baseline_group = baseline.get(group_key, {})
         current_group = current.get(group_key, {})
         if not isinstance(baseline_group, dict):
