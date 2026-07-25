@@ -5,6 +5,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > Repository layout: this is a **monorepo with 6 domains** (`kernel/`, `os/`, `models/`, `store/`,
 > `tools/`, `docs/`). Read [PROJECT.md](PROJECT.md) for the domain map, dependency-direction rules,
 > and the "where do I put X?" guide before adding code.
+>
+> Repository-local AI workflows live in [AGENTS.md](AGENTS.md) and
+> [.agents/README.md](.agents/README.md). Their `aios-*` skills capture kernel,
+> ABI, driver, SLM, verification, documentation, workspace recovery, and
+> beta-first checkpoint rules. Publish to `beta` first; move `main` only by
+> fast-forward to the verified same SHA when explicitly authorized.
 
 ## Build & Test Commands
 
@@ -215,6 +221,15 @@ lane exchange + cppcheck clean) are pinned in
 `docs/meta/minimal_io_and_maturity_workflow_ko.md`. Follow it when picking up
 the next task. Before M3-b-3b2c or another high-risk kernel slice, also apply the
 entry gate in `docs/tools/verification_tooling_evolution_design_ko.md`.
+
+### Browser / Runtime Engine Roadmap
+The browser-facing W1-W5 axis is defined in
+`docs/os/browser_console_and_runtime_engine_roadmap_ko.md`. W1 is a planned
+host-side COM1/WebSocket console and does not imply a kernel TCP/IP or HTTP
+server. The long-term native runtime engine belongs in AIOS userspace after the
+M3-M6 process, storage, disk-ELF, identity, and authorization foundations.
+Browser-local x86 execution remains an optional research track, not a claimed
+replacement for QEMU or the normal verification path.
 
 ## Directory Map (domains)
 

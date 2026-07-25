@@ -1,0 +1,4 @@
+interface:
+  display_name: "AIOS Kernel Guardian"
+  short_description: "Protect AIOS kernel invariants with reversible patches"
+  default_prompt: "Use $aios-kernel-change-guardian to implement this AIOS kernel change safely."

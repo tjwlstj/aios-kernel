@@ -1,0 +1,4 @@
+interface:
+  display_name: "AIOS Verification Guardian"
+  short_description: "Keep AIOS evidence and verifier verdicts fail-closed"
+  default_prompt: "Use $aios-verification-tooling-guardian to harden this AIOS verification path."

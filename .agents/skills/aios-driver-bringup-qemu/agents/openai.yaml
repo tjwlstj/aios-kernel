@@ -1,0 +1,4 @@
+interface:
+  display_name: "AIOS Driver Bring-up"
+  short_description: "Advance AIOS drivers through observable QEMU checkpoints"
+  default_prompt: "Use $aios-driver-bringup-qemu to plan and verify this AIOS driver bring-up slice."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "AIOS Enum ABI Integrity"
+  short_description: "Prevent numeric and ABI drift across AIOS contracts"
+  default_prompt: "Use $aios-enum-abi-integrity to audit this AIOS enum or numeric contract change."

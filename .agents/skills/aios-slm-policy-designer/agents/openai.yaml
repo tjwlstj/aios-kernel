@@ -1,0 +1,4 @@
+interface:
+  display_name: "AIOS SLM Policy Designer"
+  short_description: "Design bounded AIOS autonomy actions with rollback paths"
+  default_prompt: "Use $aios-slm-policy-designer to design this bounded AIOS autonomy or SLM change."

@@ -14,6 +14,11 @@ AIOS(AI-Native Operating System)는 AI 워크로드를 **1급 시민(First-class
 
 이 저장소는 아직 범용 상용 OS가 아닙니다. 다만 2026-07 기준으로 첫 ring3 실행 조각은 동작합니다. 두 정적 bootstrap process descriptor가 각자 private CR3와 16KiB ring0 entry stack을 소유하고, PID 1이 커널 내장 static ELF64 데모를 CPL3에서 실행해 `int 0x80` 관측 시스콜과 `exit(42)`를 왕복합니다. 장기 실행 유저스페이스 서비스, 두 process의 선점, 동적 주소공간/PMM, 디스크 프로그램, 영속 기억 런타임, 실시간 학습 승격 루프는 후속 영역입니다.
 
+AI 작업자는 루트 [`AGENTS.md`](AGENTS.md)의 저장소 규칙과
+[`.agents/README.md`](.agents/README.md)의 프로젝트 스킬 색인을 먼저
+확인합니다. 체크포인트는 `beta`에서 검증하고 승인된 동일 SHA만 `main`으로
+fast-forward합니다.
+
 ## GitHub Description
 
 Suggested repository description:
@@ -263,6 +268,7 @@ make debug          # GDB 디버깅 모드로 실행
 - [최소 I/O 점검과 성숙도 우선 작업흐름](docs/meta/minimal_io_and_maturity_workflow_ko.md)
 - [OLD 문서 체크리스트](docs/meta/old_docs_check_2026_07_03_ko.md)
 - [유저공간 OS 구현 방향](docs/os/user_space_os_direction_ko.md)
+- [브라우저 콘솔과 자체 런타임 엔진 로드맵](docs/os/browser_console_and_runtime_engine_roadmap_ko.md)
 - [AI 에이전트 OS용 모델 스택 추천](docs/models/agent_model_stack_recommendations_ko.md)
 - [종합 점검 보고서 (2026-04-15)](docs/meta/inspection_report_2026_04_15.md)
 - [Kernel Room Topology 문서 모음](docs/kernel-room/README.md)

@@ -1,0 +1,4 @@
+interface:
+  display_name: "AIOS Workspace Recovery"
+  short_description: "Recover AIOS workspace access without risking project state"
+  default_prompt: "Use $aios-workspace-recovery to diagnose and safely recover this AIOS workspace."

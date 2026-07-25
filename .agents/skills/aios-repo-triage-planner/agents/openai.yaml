@@ -1,0 +1,4 @@
+interface:
+  display_name: "AIOS Repo Triage"
+  short_description: "Turn broad AIOS requests into bounded verifiable slices"
+  default_prompt: "Use $aios-repo-triage-planner to turn this AIOS request into the next bounded slice."

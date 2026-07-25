@@ -1,0 +1,4 @@
+interface:
+  display_name: "AIOS Beta Checkpoint"
+  short_description: "Publish verified AIOS checkpoints from beta to main"
+  default_prompt: "Use $aios-beta-checkpoint-release to publish this AIOS checkpoint through beta safely."
