@@ -109,6 +109,29 @@ QEMU 기본 `-hda`와 즉시 호환되고 수십 줄로 섹터를 읽을 수 있
 
 > 상세 근거와 성숙도 스코어카드(종합 ~4.5/10)는 외부 평가 원문 참조. 이 축은 실행 기반이 선 뒤 착수하되, 규약(§4)은 동일하게 적용한다.
 
+## 3-C. 브라우저 콘솔·자체 실행 엔진 축 (W1~W5) — `PLANNED` (2026-07-25)
+
+브라우저 접근과 장기 자체 런타임은 실행 M축을 대체하지 않는 별도 제품 표면이다.
+상세 구조, 보안 경계와 완료 조건의 정본은
+`docs/os/browser_console_and_runtime_engine_roadmap_ko.md`다.
+
+- **W1 Web Console v0:** 현재 COM1 shell과 `state` 계약을 host WebSocket
+  gateway에 연결한다. 커널 변경 없이 독립 착수할 수 있지만 아직 구현되지 않았다.
+- **W2 Host Session Runtime:** 사용자별 QEMU 격리, 수명주기, budget,
+  provenance와 artifact를 관리한다.
+- **W3 Browser-local Engine Pilot:** WebAssembly x86 실행 엔진에서 AIOS ISO를
+  부팅하는 선택적 `RESEARCH` 트랙이다. QEMU verdict와 같은 증거를 통과하기
+  전에는 지원 플랫폼으로 선언하지 않는다.
+- **W4 AIOS Native Runtime Engine:** M3 다중 프로세스, M4 storage, M5 disk ELF,
+  M6 principal authorize와 실제 네트워크 기반 위에서 AIOS 유저스페이스가
+  gateway, session, model, flow를 소유한다.
+- **W5 Self-hosted Continuity:** M8/M9 저널과 AI Flow를 이용해 재부팅 뒤
+  세션·작업을 명시적으로 복구한다.
+
+여기서 "자체 엔진"은 ring0 LLM이나 단기 QEMU 대체 에뮬레이터가 아니다.
+모델 실행·웹 서비스·세션 지속성은 유저스페이스에 두고, 커널은 bounded syscall,
+SQ/CQ, 자원, authorize, rollback 경계를 제공한다.
+
 ## 4. 작업 규약 (모든 단계 공통 — 이번 세션에서 확립)
 
 1. **셀프테스트 우선:** 새 경로는 부팅 셀프테스트로 왕복 검증하고 `[XXX] ... PASS` 마커를 남긴다.

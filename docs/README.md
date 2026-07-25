@@ -43,6 +43,7 @@
 - [ai_resource_management_development_plan_ko.md](autonomy/ai_resource_management_development_plan_ko.md)
 
 ## os/ — 유저스페이스 OS 계층
+- [browser_console_and_runtime_engine_roadmap_ko.md](os/browser_console_and_runtime_engine_roadmap_ko.md)
 - [user_space_os_direction_ko.md](os/user_space_os_direction_ko.md)
 - [user_space_os_build_slices_ko.md](os/user_space_os_build_slices_ko.md)
 - [user_space_compat_architecture_ko.md](os/user_space_compat_architecture_ko.md)
