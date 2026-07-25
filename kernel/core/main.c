@@ -137,10 +137,11 @@ void kernel_main(uint64_t multiboot_magic, uint64_t multiboot_info) {
             KERNEL_HEALTH_DEGRADED, user_status);
     }
 
-    /* First ring3 slice: enter CPL3 and round-trip a syscall. Requires the
-     * TSS/GDT scaffold, a bound bootstrap process, and int 0x80. */
+    /* Execute both static bootstrap processes sequentially through their own
+     * private CR3, process run state, and TSS rsp0 entry stack. This remains
+     * a bounded synchronous proof, not timer-preemptive ring3 scheduling. */
     if (user_mode_scaffold_ready() && bootstrap_process_ready()) {
-        user_status = user_exec_run_first();
+        user_status = user_exec_run_bootstrap_pair();
         if (user_status != AIOS_OK) {
             kernel_health_mark(KERNEL_SUBSYSTEM_SCHED,
                 KERNEL_HEALTH_DEGRADED, user_status);

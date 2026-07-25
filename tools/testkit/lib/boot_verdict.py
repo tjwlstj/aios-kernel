@@ -33,6 +33,7 @@ TERMINAL_CHECKPOINTS: tuple[tuple[str, str], ...] = (
     ("ring3_exec", "[USER] ring3 exec PASS"),
     ("private_address_space_exec", "[USER] private address space exec PASS"),
     ("bootstrap_process_stack", "[USER] bootstrap process stack PASS"),
+    ("bootstrap_process_pair", "[USER] bootstrap process pair PASS"),
     ("kernel_room", "[ROOM] snapshot stability=stable"),
     ("health", "[HEALTH] stability="),
     ("kernel_ready", "=== AIOS Kernel Ready ==="),

@@ -1,7 +1,8 @@
 # AIOS 검증 도구 진화 설계
 
 작성일: 2026-07-15  
-기준 체크포인트: `981e651` (`M3-b-3b2b: bind ring3 to process-owned entry stack`)
+최종 갱신: 2026-07-26 (두 bootstrap process 순차 ring3 proof)
+기준 시작 체크포인트: `463a8b9`
 
 ## 1. 문서 역할
 
@@ -68,10 +69,11 @@ CI exit status + build artifacts
 - cooperative and timer-driven kthread switching
 - uaccess negative probes and syscall contract probes
 - SLM plan apply and Node pipeline selftest
-- PID 1 / slot 0 private CR3 synchronous ring3 execution
-- process-owned 16KiB ring0 entry stack, TSS `rsp0` publish/readback/restore
-- three `int 0x80` entries at the expected process stack location
-- CR3, caller IF, private leaf policy, backing scrub, process stack canary proof
+- PID 1 / slot 0 뒤 PID 2 / slot 1의 private CR3 synchronous ring3 실행
+- process별 16KiB ring0 entry stack, TSS `rsp0` publish/readback/restore
+- 각 process의 세 `int 0x80` entry가 자기 process stack 위치에 있음을 확인
+- 실행 사이와 최종 CR3, caller IF, private leaf policy, backing scrub, current owner, process stack canary 복원 proof
+- exact pair record의 PID/slot/CR3/backing/stack 고유성 및 `process_pair` 구조 파싱
 - health registry, Kernel Room snapshot, panic/exception serial output
 - C structure/enum static asserts, linker layout assert, stack protector
 
@@ -116,7 +118,7 @@ CI exit status + build artifacts
 - health state는 후속 mark가 앞선 심각도를 낮출 수 있다.
 - ring3 synchronous runner에는 내부 실행 budget과 process fault teardown이 없다.
 - 현재 exception frame은 CPL0-origin frame에도 `rsp/ss`가 있다고 표현하며 C/NASM offset 계약이 생성되지 않는다.
-- PID 1 / slot 0 단회 실행만 검증한다. slot 1 실행과 두 process 선점은 아직 없다.
+- PID 1→PID 2 순차 실행은 검증하지만 full trapframe과 두 process 타이머 선점은 아직 없다. aggregate run counter는 A→B→A switch sequence 증거가 아니다.
 
 ## 6. 정상 부트 판정 계약 v1
 
@@ -162,6 +164,8 @@ CI exit status + build artifacts
 [USER] ring3 exec PASS
 [USER] private address space exec PASS
 [USER] bootstrap process stack PASS
+[USER] secondary process exec PASS
+[USER] bootstrap process pair PASS
 [ROOM] snapshot stability=stable
 [HEALTH] stability=stable
 === AIOS Kernel Ready ===
@@ -256,7 +260,7 @@ full trapframe과 두 ring3 process 선점 교대로 넘어가기 전에 최소�
 - fatal-after-PASS와 health 값 검증
 - C/NASM trapframe offset 및 전체 크기 계약
 - `from_user` 판별과 CPL0/CPL3 frame 차이 처리
-- slot 1 실제 ring3 실행
+- slot 1 실제 ring3 실행 — `CURRENT` (2026-07-26, 순차 pair proof)
 - CPL3 timer IRQ의 process entry stack 귀속 증거
 - A -> B -> A의 PID, CR3, BSP `rsp0`, current owner 순서 이벤트
 - IF=0 원자 전환과 stale current 부재
@@ -358,10 +362,11 @@ kernel/build/test-runs/<run-id>/<profile>/
 - NX outcome 결속
 - 최소 expected degraded/panic hook
 
-### V3. 두 process proof harness — `PLANNED`
+### V3. 두 process proof harness — `PARTIAL`
 
 - full trapframe ABI
-- slot 1 실행
+- slot 1 순차 실행 + exact cleanup pair record — `CURRENT`
+- `process_pair` structured boot summary + missing/incomplete record host negative test — `CURRENT`
 - A -> B -> A 전환 이벤트
 - timer IRQ entry stack 귀속
 - bounded repeat/stress

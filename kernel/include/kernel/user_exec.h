@@ -45,11 +45,40 @@ typedef struct {
     bool     kernel_stack_floor_canary_ok; /* static floor canary survived */
 } user_exec_info_t;
 
-/* Run the first ring3 slice. Returns AIOS_OK only on a fully verified
- * round trip. */
-aios_status_t user_exec_run_first(void);
+typedef struct {
+    bool     attempted;
+    bool     passed;
+    uint64_t completed_runs;
+    uint32_t first_process_id;
+    uint32_t first_address_space_slot;
+    uint32_t first_int80_entries;
+    uint32_t second_process_id;
+    uint32_t second_address_space_slot;
+    uint32_t second_int80_entries;
+    uint64_t second_exit_code;
+    bool     second_syscall_ok;
+    bool     second_boundary_ok;
+    bool     distinct_pid;
+    bool     distinct_slot;
+    bool     distinct_cr3;
+    bool     distinct_backing;
+    bool     distinct_kernel_stack;
+    bool     between_runs_clean;
+    uint32_t current_pid;
+    uint32_t last_pid;
+    uint64_t rsp0_publishes;
+    uint64_t rsp0_restores;
+    bool     tss_rsp0_baseline;
+    bool     both_restored;
+} user_exec_pair_info_t;
 
-/* Snapshot of the most recent run (zeroed before the first run). */
+/* Run both static bootstrap processes sequentially. This proves that slot 1
+ * is executable through its own CR3, run state, and ring0 entry stack. It is
+ * not a timer-preemptive process switch or a full-trapframe scheduler. */
+aios_status_t user_exec_run_bootstrap_pair(void);
+
+/* The primary snapshot remains PID 1 / slot 0 for compatibility. */
 void user_exec_get_info(user_exec_info_t *out);
+void user_exec_get_pair_info(user_exec_pair_info_t *out);
 
 #endif /* _AIOS_KERNEL_USER_EXEC_H */

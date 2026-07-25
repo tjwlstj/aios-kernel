@@ -31,7 +31,7 @@
   - Windows 커널 빌드/부팅용 전용 엔트리포인트
 - `tests/`
   - QEMU 없이 verdict, baseline guard, matrix, shell 반례를 검증하는 host unit test
-  - `test_build_windows_verdict.ps1`은 직접 PowerShell IDE evidence 판정 9개를 검증
+  - `test_build_windows_verdict.ps1`은 직접 PowerShell IDE/process-pair 판정 10개를 검증
 
 원칙:
 
@@ -62,13 +62,14 @@
 - `--export-boot-summary`
   - smoke 성공 후 `kernel/build/boot-summary/test-<profile>.json` 생성
   - checkpoint, selftest, perf profile, device summary, health, user-mode scaffold,
-    Kernel Room snapshot, controller state, network/USB/storage bootstrap selection,
-    SLM seed 결과를 저장
+    primary process stack, 두 process 순차 실행 `process_pair`, Kernel Room snapshot,
+    controller state, network/USB/storage bootstrap selection, SLM seed 결과를 저장
 
 공통 smoke marker:
 
 - `[DEV] Peripheral probe ready`
 - `[USER] Ring3 scaffold ready=1`
+- `[USER] bootstrap process pair PASS runs=2 order=1,2 ... between_clean=1 ... both_restored=1`
 - `[ROOM] snapshot stability=...`
 - `[HEALTH] stability=...`
 

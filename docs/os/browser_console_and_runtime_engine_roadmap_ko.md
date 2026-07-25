@@ -24,7 +24,7 @@ AIOS를 브라우저에서 관찰하고 제어하는 가까운 경로와, 장기
 | 기계 판독 상태 | `CURRENT` | `[STATE] topic key=value`와 `state autonomy` schema 1 |
 | 셸 종료 판정 | `CURRENT` | reader drain, reboot ack, clean QEMU exit를 검증한다 |
 | 커널 네트워크 | `PARTIAL` | e1000 bootstrap/smoke는 있으나 TCP/IP·소켓·HTTP 서버는 없다 |
-| 장기 실행 유저스페이스 | `PLANNED` | 현재 ring3는 PID 1 정적 ELF의 bounded 동기 실행이다 |
+| 장기 실행 유저스페이스 | `PLANNED` | 현재 ring3는 PID 1→PID 2 정적 ELF의 bounded 순차 동기 실행이며, 선점 서비스 모델은 아니다 |
 | 브라우저 콘솔·게이트웨이 | `PLANNED` | 아직 구현 파일이나 정규 검증 경로가 없다 |
 | AIOS 자체 런타임 엔진 | `PLANNED` | M3~M9 실행·I/O·권한·영속 기반 이후의 기능이다 |
 

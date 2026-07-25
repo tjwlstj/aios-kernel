@@ -53,6 +53,7 @@ $normalLines = @(
     '[USER] ring3 exec PASS exit_code=42'
     '[USER] private address space exec PASS slot=0 cr3_restored=1 if_restored=1 leaf_sealed=1 nx_enforced=1 tensor_excluded=1'
     '[USER] bootstrap process stack PASS pid=1 slot=0 process_bound=1 kstack_bytes=16384 rsp0_changed=1 rsp0_published=1 int80_entries=3 all_int80_entries_in_stack=1 rsp0_restored=1 kstack_floor_canary=1'
+    '[USER] bootstrap process pair PASS runs=2 order=1,2 pid_a=1 slot_a=0 pid_b=2 slot_b=1 distinct_pid=1 distinct_slot=1 distinct_cr3=1 distinct_backing=1 distinct_stack=1 int80_a=3 int80_b=3 between_clean=1 current_pid=0 last_pid=2 rsp0_publishes=2 rsp0_restores=2 tss_rsp0_baseline=1 both_restored=1'
     '[ROOM] snapshot stability=stable ok=18 degraded=0 failed=0'
     '[HEALTH] stability=stable ok=18 degraded=0 failed=0 unknown=2'
     '=== AIOS Kernel Ready ==='
@@ -91,8 +92,24 @@ try {
         }
         Write-Output "PASS $($case.Name) expected=$($case.Expected)"
     }
+
+    $missingPairLines = @(
+        $normalLines | Where-Object {
+            $_ -notmatch '^\[USER\] bootstrap process pair '
+        }
+    )
+    [IO.File]::WriteAllLines(
+        $tempPath,
+        $missingPairLines,
+        [Text.UTF8Encoding]::new($false)
+    )
+    $missingPairVerdict = Test-NormalSmokeVerdict -SerialLog $tempPath
+    if ([bool]$missingPairVerdict.Passed) {
+        throw 'Missing bootstrap process pair evidence unexpectedly passed'
+    }
+    Write-Output 'PASS missing-process-pair expected=False'
 } finally {
     Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
 }
 
-Write-Output "PowerShell verdict selftest passed cases=$($cases.Count)"
+Write-Output "PowerShell verdict selftest passed cases=$($cases.Count + 1)"

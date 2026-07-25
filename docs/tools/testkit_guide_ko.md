@@ -2,7 +2,7 @@
 
 작성일: 2026-04-10
 
-최종 갱신: 2026-07-15 (normal verdict v1)
+최종 갱신: 2026-07-26 (bootstrap process pair proof)
 
 ## 목적
 
@@ -86,10 +86,10 @@ pwsh -NoProfile -File .\tools\testkit\tests\test_build_windows_verdict.ps1
 ```
 
 이 검사는 QEMU보다 먼저 실행하며 PASS 뒤 panic, health 실패, checkpoint 역순·중복,
-인용/접두사 마커, 중복 key, 불완전 baseline/perf 출처, stale shell artifact와
-clean-exit 누락을 44개 Python unit으로 고정한다. 별도의
-`test_build_windows_verdict.ps1` 9개 반례가 Windows 직접 판정기의 IDE evidence 문법을
-같은 의미론으로 검증한다.
+인용/접두사 마커, 중복 key, 불완전 baseline/perf 출처, stale shell artifact,
+clean-exit 누락, process pair 레코드 누락/불완전을 48개 Python unit으로 고정한다.
+별도의 `test_build_windows_verdict.ps1` 10개 사례가 Windows 직접 판정기의 IDE evidence
+문법과 process pair 필수성을 같은 의미론으로 검증한다.
 
 ### 전체
 
@@ -168,6 +168,7 @@ optional 하드웨어 구성을 나눌 수 있다.
 - `공통`
   - `[DEV] Peripheral probe ready`
   - `[USER] Ring3 scaffold ready=1`
+  - `[USER] bootstrap process pair PASS runs=2 order=1,2 ... between_clean=1 ... both_restored=1`
   - `[ROOM] snapshot stability=stable`
   - `[HEALTH] stability=stable ... degraded=0 failed=0`
 - `full`
@@ -213,12 +214,14 @@ optional 하드웨어 구성을 나눌 수 있다.
 - device summary
 - health summary
 - `user_mode` scaffold 상태
+- `process_stack`의 primary PID 1 entry-stack proof
+- `process_pair`의 PID 1→PID 2 순차 실행, 고유 CR3/backing/stack, 실행 사이·최종 cleanup proof
 - `kernel_room` snapshot / gate 요약
 - network / usb / storage controller 상태
 - network / USB / storage bootstrap candidate 선택 정보와 점수
 - SLM MainAI 설정과 seeded plan 목록
 
-즉, 지금 단계의 export는 "부팅 이벤트 파서 + 단일 실행 기록"까지 구현된 상태다.
+즉, 지금 단계의 export는 "부팅 이벤트 파서 + bounded 두 process 순차 실행 기록"까지 구현된 상태다. `process_pair.ready`는 PASS 접두사만이 아니라 전체 구조 레코드가 파싱되어야 참이 된다.
 
 ## boot-matrix
 
@@ -236,7 +239,7 @@ optional 하드웨어 구성을 나눌 수 있다.
 
 - 요청한 프로파일 순서
 - baseline profile
-- profile별 ready / stability / device summary / controller state / SLM seeded plan count / process stack proof
+- profile별 ready / stability / device summary / controller state / SLM seeded plan count / primary process stack proof
 - baseline 대비 device delta
 - baseline 대비 controller state delta
 - baseline 대비 seeded plan 수 차이
@@ -255,6 +258,10 @@ repo 안의 baseline fixture와 비교하는 lane이다.
 - `controller_states`
 - `slm_seeded_plan_count`
 - `process_stack` (정적 owner/CR3/backing/16KiB stack 고유성 + PID 1의 BSP `rsp0` 게시·`int 0x80` entry·복원 증거)
+
+두 process 순차 실행 증거는 필수 smoke verdict, profile별 full boot summary의
+`process_pair`, shell `state user`에 존재한다. 기존 compact inventory/baseline의
+`process_stack` 스키마는 승인 없는 fixture 변경을 피하기 위해 이번 조각에서 확장하지 않는다.
 
 출력 위치:
 
@@ -334,6 +341,7 @@ repo 안의 baseline fixture와 비교하는 lane이다.
 - checked-in boot inventory와 host-local boot perf baseline
 - interactive shell state lane, 같은 response record 판정, 전체 transcript verdict,
   reader drain과 clean reboot/exit termination gate
+- PID 1→PID 2 순차 ring3 pair 필수 checkpoint, 구조 파서와 shell state 계약
 - `state autonomy` schema 1의 read-only mode/support/counter/last-decision 계약
 - QEMU 없는 host unit test와 CI 선행 gate
 

@@ -71,10 +71,13 @@ ring3에서 유저 페이지 접근 시 PML4→PDPT→PD→PT의 **모든** 레�
 현재 커널은 첫 4GiB를 identity mapping하고 유저 VA 64MiB도 그 안에 있다. private CR3에서 이 leaf를 별도 backing으로 바꾸면 커널 VA 64–66MiB가 더는 물리 64–66MiB를 가리키지 않는다. 따라서 그 물리 구간을 tensor allocator가 반환하면 private CR3 체류 중 잘못된 backing을 접근한다. M3-b-3b2a는 해당 구간을 모든 tensor free list와 활성 tensor record에서 live 검사로 제외하고 `[MM] bootstrap user tensor exclusion PASS ... excluded=2097152 ... boundary=1 coalesce=1`를 필수화했다. 이건 tensor allocator의 관리 범위를 설정 960MiB에서 958MiB로 줄이는 bootstrap 안전장치일 뿐, 전역 PMM 예약이나 물리 메모리 소유권 증명은 아니다. 장기 해법은 high-half kernel direct map 또는 PMM 기반 유저 VA 배치다.
 
 ### 2.9 process CR3/TSS 전환은 IF=0 순서를 깨지 않는다
-M3-b-3b2b의 활성화 순서는 `caller IF 저장+cli → private CR3 activate → BSP boot-TSS rsp0에 process stack top 게시 → CPL3`다. 복귀는 `process rsp0 → boot rsp0 exact 복원 → boot CR3 exact 복원 → private leaf seal/backing scrub → current owner 해제 → caller IF 복원` 순서다. IF를 먼저 열면 IRQ가 boot CR3/rsp0와 stale current process의 모순을 관측한다. IF readback 실패는 pending guard를 유지하고 다시 `cli`; int80 raw entry RSP의 stack 범위 이탈, stack floor canary 손상, TSS baseline 불일치, leaf seal 실패도 계속 부팅하지 않고 fail-stop한다. `syscall_stack_top`은 이제 BSP baseline/fallback일 뿐 실제 PID 1 실행 스택이 아니다. 현재는 BSP 단일 boot TSS만 갱신하며 SMP/per-CPU TSS 구현이 아니다. `kstack_floor_canary=1`도 guard page가 아니라 8바이트 floor canary 생존 증거다.
+M3-b-3b2b의 활성화 순서는 `caller IF 저장+cli → private CR3 activate → BSP boot-TSS rsp0에 process stack top 게시 → CPL3`다. 복귀는 `process rsp0 → boot rsp0 exact 복원 → boot CR3 exact 복원 → private leaf seal/backing scrub → current owner 해제 → caller IF 복원` 순서다. IF를 먼저 열면 IRQ가 boot CR3/rsp0와 stale current process의 모순을 관측한다. IF readback 실패는 pending guard를 유지하고 다시 `cli`; int80 raw entry RSP의 stack 범위 이탈, stack floor canary 손상, TSS baseline 불일치, leaf seal 실패도 계속 부팅하지 않고 fail-stop한다. `syscall_stack_top`은 이제 BSP baseline/fallback일 뿐 실제 process 실행 스택이 아니다. 현재는 BSP 단일 boot TSS만 갱신하며 SMP/per-CPU TSS 구현이 아니다. `kstack_floor_canary=1`도 guard page가 아니라 8바이트 floor canary 생존 증거다.
 
 ### 2.10 interrupt gate는 DF를 자동으로 지우지 않는다
 ring3가 `std`를 실행한 뒤 인터럽트/시스콜로 들어오면 live DF=1이 커널 C 경계까지 따라온다. `interrupt/isr_stub.asm`의 common C call과 `core/user_entry.asm`의 syscall C call 앞 `cld`를 제거하지 말 것. CPU가 저장한 user RFLAGS frame은 그대로라 `iretq`는 사용자 DF를 복원한다. exit처럼 `iretq` 없이 커널로 돌아오는 경로도 이 `cld` 덕분에 DF=0을 유지한다.
+
+### 2.11 순차 pair counter는 선점 증거가 아니다
+PID 1 실행 뒤 PID 2를 호출하는 것만으로는 scheduler 전환을 증명하지 못한다. pair runner는 첫 teardown 뒤 `current_pid=0`, `last_pid=1`, boot CR3/BSP `rsp0` baseline과 정확한 publish/restore 카운터를 확인하고서만 slot 1에 진입한다. 최종 `runs=2`, `last_pid=2`, `rsp0_publishes=2`, `rsp0_restores=2`는 두 번의 독립 synchronous run과 cleanup 증거다. 앞으로 M3-b-3b2c에서는 이 aggregate를 재사용해 A→B→A를 추론하지 말고 PID·CR3·BSP `rsp0`·current owner 순서를 가진 별도 switch event와 CPL3 timer IRQ stack 증거를 먼저 정의한다.
 
 ---
 
@@ -102,8 +105,9 @@ ring3가 `std`를 실행한 뒤 인터럽트/시스콜로 들어오면 live DF=1
 `address_space_selftest`는 부트 PML4 복제 + CR3 왕복까지 증명했다(공유 매핑). 다음은:
 1. **정적 주소공간 슬롯별 private user leaf proof ✅ M3-b-3b1 완료 (2026-07-14)** — 정적 2슬롯에서 유저 영역(현재 고정 64MiB)을 서로 다른 2MiB backing에 매핑하고 canary 격리를 검증했다. 범용 주소공간 객체, PMM, 실제 프로세스 실행 연결은 아직 아니다.
 2. **private CR3 단일 runner ✅ M3-b-3b2a 완료 (2026-07-15)** — slot 0에서 기존 ELF를 동기 실행한다. exact raw boot CR3와 IF bit를 readback한 뒤에만 leaf policy reset/backing scrub을 수행하고, `leaf_sealed`와 hardware `nx_enforced`를 분리해 관측한다. 물리 64–66MiB는 tensor free/active set에서 제외하지만 PMM 예약으로 과장하지 않는다.
-3. **static bootstrap process + BSP TSS entry stack ✅ M3-b-3b2b 완료 (2026-07-15)** — 정적 descriptor 2개가 unique CR3/backing, process-local run state, unique 16KiB ring0 entry stack을 소유한다. PID 1/slot 0에서 `rsp0` exact publish/restore와 3회 `int 0x80`의 `stack_top-40` 진입을 증명했다. 전체 registers/capabilities, slot 1 실행, guard page, 동적 PMM/VMM, SMP per-CPU TSS는 포함하지 않는다.
-4. **full trapframe + ring3 프로세스 2개 선점 교대** — process에 전체 saved-register/trapframe과 runnable state를 추가하고 slot 1을 실제 실행한 뒤, kthread 선점(M3-b-2) + CR3 스위치(M3-b-3a) + BSP TSS `rsp0` 교대를 결합한다.
-5. 완료 기준: 두 ring3 프로세스가 각자 주소공간에서 시스콜을 왕복하며 선점 교대, `[SCHED]`/`[MM]`/`state user` 마커로 검증.
+3. **static bootstrap process + BSP TSS entry stack ✅ M3-b-3b2b 완료 (2026-07-15)** — 정적 descriptor 2개가 unique CR3/backing, process-local run state, unique 16KiB ring0 entry stack을 소유한다. 이 완료 시점에는 PID 1/slot 0에서만 `rsp0` exact publish/restore와 3회 `int 0x80`의 `stack_top-40` 진입을 증명했다.
+4. **slot 1 순차 ring3 실행 + pair cleanup proof ✅ 완료 (2026-07-26)** — PID 1 teardown이 exact clean state인지 확인한 뒤 PID 2/slot 1도 동일 ELF를 독립 CR3/backing/entry stack에서 실행한다. 두 process 각각 syscall/uaccess/exit/복원을 통과하고 `[USER] bootstrap process pair PASS ... between_clean=1 ... both_restored=1`과 `state user`의 `pair_*` 필드로 노출한다. 이는 선점이 아니다.
+5. **full trapframe + ring3 프로세스 2개 선점 교대** — process에 전체 saved-register/trapframe과 runnable state를 추가하고, kthread 선점(M3-b-2) + CR3 스위치(M3-b-3a) + BSP TSS `rsp0` 교대를 결합한다.
+6. 완료 기준: 두 ring3 프로세스가 각자 주소공간에서 시스콜을 왕복하며 타이머 선점 교대하고, 순서 이벤트와 `[SCHED]`/`[MM]`/`state user` 마커로 검증.
 
-주의: 두 static process에 각자 16KiB ring0 entry stack은 생겼지만 실제 실행은 PID 1 하나뿐이고, 현재 resume 모델은 동기 C 호출 프레임이다. 다음 단계는 이 스택을 schedulable continuation으로 과장하지 말고 full interrupt trapframe을 먼저 정의한 뒤 current process·CR3·BSP `rsp0`를 IF=0에서 함께 교대해야 한다.
+주의: 두 static process 모두 실제 ring3 실행은 하지만 현재 resume 모델은 여전히 순차 동기 C 호출 프레임이다. 다음 단계는 이 스택을 schedulable continuation으로 과장하지 말고 full interrupt trapframe을 먼저 정의한 뒤 current process·CR3·BSP `rsp0`를 IF=0에서 함께 교대해야 한다.

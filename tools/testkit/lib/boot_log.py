@@ -35,6 +35,7 @@ CHECKPOINT_PATTERNS = {
     "ring3_scaffold": "[USER] Ring3 scaffold ready=1",
     "bootstrap_process": "[PROC] bootstrap ownership selftest PASS",
     "bootstrap_process_stack": "[USER] bootstrap process stack PASS",
+    "bootstrap_process_pair": "[USER] bootstrap process pair PASS",
     "kernel_room": "[ROOM] snapshot stability=",
     "health": "[HEALTH] stability=",
     "ready": "AIOS Kernel Ready",
@@ -102,6 +103,24 @@ PROCESS_OWNERSHIP_RE = re.compile(
 )
 PROCESS_STACK_RE = re.compile(
     r"\[USER\] bootstrap process stack (?P<status>\w+) pid=(?P<pid>\d+) slot=(?P<slot>\d+) process_bound=(?P<process_bound>\d+) kstack_bytes=(?P<kstack_bytes>\d+) rsp0_changed=(?P<rsp0_changed>\d+) rsp0_published=(?P<rsp0_published>\d+) int80_entries=(?P<int80_entries>\d+) all_int80_entries_in_stack=(?P<all_int80_entries_in_stack>\d+) rsp0_restored=(?P<rsp0_restored>\d+) kstack_floor_canary=(?P<kstack_floor_canary>\d+)"
+)
+PROCESS_PAIR_RE = re.compile(
+    r"\[USER\] bootstrap process pair (?P<status>\w+) "
+    r"runs=(?P<runs>\d+) order=(?P<order>\S+) "
+    r"pid_a=(?P<pid_a>\d+) slot_a=(?P<slot_a>\d+) "
+    r"pid_b=(?P<pid_b>\d+) slot_b=(?P<slot_b>\d+) "
+    r"distinct_pid=(?P<distinct_pid>\d+) "
+    r"distinct_slot=(?P<distinct_slot>\d+) "
+    r"distinct_cr3=(?P<distinct_cr3>\d+) "
+    r"distinct_backing=(?P<distinct_backing>\d+) "
+    r"distinct_stack=(?P<distinct_stack>\d+) "
+    r"int80_a=(?P<int80_a>\d+) int80_b=(?P<int80_b>\d+) "
+    r"between_clean=(?P<between_clean>\d+) "
+    r"current_pid=(?P<current_pid>\d+) last_pid=(?P<last_pid>\d+) "
+    r"rsp0_publishes=(?P<rsp0_publishes>\d+) "
+    r"rsp0_restores=(?P<rsp0_restores>\d+) "
+    r"tss_rsp0_baseline=(?P<tss_rsp0_baseline>\d+) "
+    r"both_restored=(?P<both_restored>\d+)"
 )
 ROOM_SNAPSHOT_RE = re.compile(
     r"\[ROOM\] snapshot stability=(?P<stability>\w+) ok=(?P<ok>\d+) degraded=(?P<degraded>\d+) failed=(?P<failed>\d+) unknown=(?P<unknown>\d+) topology=(?P<topology>[\w\-]+) domains=(?P<domains>\d+) windows=(?P<windows>\d+) drivers=(?P<drivers_ready>\d+)/(?P<drivers>\d+) plans=(?P<plans>\d+) nodes=(?P<nodes>\d+) rings=(?P<rings>\d+) active=(?P<active>\d+) user=(?P<user>\d+)"
@@ -465,6 +484,33 @@ def parse_boot_log_text(log_text: str, smoke_profile: str, serial_log_path: str 
             ),
         }
 
+    pair_checkpoint_seen = checkpoints["bootstrap_process_pair"]["seen"]
+    process_pair: dict[str, object] = {
+        "ready": False,
+        "checkpoint_seen": pair_checkpoint_seen,
+    }
+    index, line, match = _search_match(lines, PROCESS_PAIR_RE)
+    if match:
+        process_pair.update(
+            {
+                "ready": (
+                    pair_checkpoint_seen and match.group("status") == "PASS"
+                ),
+                "line": index,
+                "text": line,
+                "status": match.group("status"),
+                "order": match.group("order"),
+                **_int_groupdict(
+                    match, "runs", "pid_a", "slot_a", "pid_b", "slot_b",
+                    "distinct_pid", "distinct_slot", "distinct_cr3",
+                    "distinct_backing", "distinct_stack", "int80_a",
+                    "int80_b", "between_clean", "current_pid", "last_pid",
+                    "rsp0_publishes", "rsp0_restores",
+                    "tss_rsp0_baseline", "both_restored"
+                ),
+            }
+        )
+
     kernel_room: dict[str, object] = {"ready": checkpoints["kernel_room"]["seen"]}
     index, line, match = _search_match(lines, ROOM_SNAPSHOT_RE)
     if match:
@@ -535,6 +581,7 @@ def parse_boot_log_text(log_text: str, smoke_profile: str, serial_log_path: str 
         "user_mode": user_mode,
         "user_access": user_access,
         "process_stack": process_stack,
+        "process_pair": process_pair,
         "kernel_room": kernel_room,
         "shell": shell_info,
         "nodebit": nodebit_info,

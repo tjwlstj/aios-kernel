@@ -143,8 +143,10 @@ static void state_sched(void) {
 
 static void state_user(void) {
     user_exec_info_t u;
+    user_exec_pair_info_t pair;
     user_exec_get_info(&u);
-    STATE_EMIT("[STATE] user attempted=%u elf_loaded=%u elf_entry=%x segments=%u entered=%u returned=%u syscall_ok=%u boundary_ok=%u syscalls=%u exit_code=%u pipe_max=%u dur_ns=%u private_cr3=%u slot=%u cr3_restored=%u if_restored=%u leaf_sealed=%u nx_enforced=%u tensor_excluded=%u pid=%u process_bound=%u kstack_bytes=%u rsp0_changed=%u rsp0_published=%u int80_entries=%u all_int80_entries_in_stack=%u rsp0_restored=%u kstack_floor_canary=%u\n",
+    user_exec_get_pair_info(&pair);
+    STATE_EMIT("[STATE] user attempted=%u elf_loaded=%u elf_entry=%x segments=%u entered=%u returned=%u syscall_ok=%u boundary_ok=%u syscalls=%u exit_code=%u pipe_max=%u dur_ns=%u private_cr3=%u slot=%u cr3_restored=%u if_restored=%u leaf_sealed=%u nx_enforced=%u tensor_excluded=%u pid=%u process_bound=%u kstack_bytes=%u rsp0_changed=%u rsp0_published=%u int80_entries=%u all_int80_entries_in_stack=%u rsp0_restored=%u kstack_floor_canary=%u pair_attempted=%u pair_ready=%u pair_runs=%u second_pid=%u second_slot=%u second_exit_code=%u second_syscall_ok=%u second_boundary_ok=%u second_int80_entries=%u distinct_pid=%u distinct_slot=%u distinct_cr3=%u distinct_backing=%u distinct_stack=%u between_clean=%u pair_current_pid=%u pair_last_pid=%u pair_rsp0_publishes=%u pair_rsp0_restores=%u pair_tss_baseline=%u both_restored=%u\n",
         (uint64_t)u.attempted,
         (uint64_t)u.elf_loaded,
         u.elf_entry,
@@ -172,7 +174,28 @@ static void state_user(void) {
         (uint64_t)u.int80_entries,
         (uint64_t)u.all_int80_entries_in_stack,
         (uint64_t)u.rsp0_restored,
-        (uint64_t)u.kernel_stack_floor_canary_ok);
+        (uint64_t)u.kernel_stack_floor_canary_ok,
+        (uint64_t)pair.attempted,
+        (uint64_t)pair.passed,
+        pair.completed_runs,
+        (uint64_t)pair.second_process_id,
+        (uint64_t)pair.second_address_space_slot,
+        pair.second_exit_code,
+        (uint64_t)pair.second_syscall_ok,
+        (uint64_t)pair.second_boundary_ok,
+        (uint64_t)pair.second_int80_entries,
+        (uint64_t)pair.distinct_pid,
+        (uint64_t)pair.distinct_slot,
+        (uint64_t)pair.distinct_cr3,
+        (uint64_t)pair.distinct_backing,
+        (uint64_t)pair.distinct_kernel_stack,
+        (uint64_t)pair.between_runs_clean,
+        (uint64_t)pair.current_pid,
+        (uint64_t)pair.last_pid,
+        pair.rsp0_publishes,
+        pair.rsp0_restores,
+        (uint64_t)pair.tss_rsp0_baseline,
+        (uint64_t)pair.both_restored);
 }
 
 static void state_slm(void) {

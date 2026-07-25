@@ -1,5 +1,5 @@
 /*
- * AIOS Kernel - First Ring3 User Execution Slice
+ * AIOS Kernel - Static Bootstrap Ring3 Execution
  * AI-Native Operating System
  */
 
@@ -22,19 +22,64 @@ extern void user_mode_run(uint64_t entry_rip, uint64_t user_stack_top,
 /* Embedded static ELF64 demo image parsed by the ELF loader. */
 extern uint8_t user_elf_image_start[];
 extern uint8_t user_elf_image_end[];
-#define USER_EXEC_PRIVATE_SLOT 0U
+
+#define USER_EXEC_PRIMARY_SLOT   0U
+#define USER_EXEC_SECONDARY_SLOT 1U
+
+AIOS_STATIC_ASSERT(BOOTSTRAP_PROCESS_COUNT == 2U,
+    "bootstrap pair proof currently expects exactly two processes");
+
+typedef struct {
+    user_exec_info_t info;
+    uint64_t address_space_cr3;
+    uint64_t address_space_backing;
+    uint64_t kernel_stack_base;
+} user_exec_run_result_t;
 
 static user_exec_info_t g_user_exec;
+static user_exec_pair_info_t g_user_exec_pair;
 
-aios_status_t user_exec_run_first(void) {
+static bool run_restored(const user_exec_info_t *info) {
+    return info && info->cr3_restored && info->if_restored &&
+        info->leaf_sealed && info->rsp0_restored &&
+        info->kernel_stack_floor_canary_ok;
+}
+
+static void emit_pair_marker(void) {
+    serial_printf("[USER] bootstrap process pair %s runs=%u order=1,2 pid_a=%u slot_a=%u pid_b=%u slot_b=%u distinct_pid=%u distinct_slot=%u distinct_cr3=%u distinct_backing=%u distinct_stack=%u int80_a=%u int80_b=%u between_clean=%u current_pid=%u last_pid=%u rsp0_publishes=%u rsp0_restores=%u tss_rsp0_baseline=%u both_restored=%u\n",
+        g_user_exec_pair.passed ? "PASS" : "FAIL",
+        g_user_exec_pair.completed_runs,
+        (uint64_t)g_user_exec_pair.first_process_id,
+        (uint64_t)g_user_exec_pair.first_address_space_slot,
+        (uint64_t)g_user_exec_pair.second_process_id,
+        (uint64_t)g_user_exec_pair.second_address_space_slot,
+        (uint64_t)g_user_exec_pair.distinct_pid,
+        (uint64_t)g_user_exec_pair.distinct_slot,
+        (uint64_t)g_user_exec_pair.distinct_cr3,
+        (uint64_t)g_user_exec_pair.distinct_backing,
+        (uint64_t)g_user_exec_pair.distinct_kernel_stack,
+        (uint64_t)g_user_exec_pair.first_int80_entries,
+        (uint64_t)g_user_exec_pair.second_int80_entries,
+        (uint64_t)g_user_exec_pair.between_runs_clean,
+        (uint64_t)g_user_exec_pair.current_pid,
+        (uint64_t)g_user_exec_pair.last_pid,
+        g_user_exec_pair.rsp0_publishes,
+        g_user_exec_pair.rsp0_restores,
+        (uint64_t)g_user_exec_pair.tss_rsp0_baseline,
+        (uint64_t)g_user_exec_pair.both_restored);
+}
+
+static aios_status_t user_exec_run_slot(
+    uint32_t slot, user_exec_run_result_t *result,
+    bool emit_primary_markers) {
     node_pipeline_snapshot_t *const user_result =
         (node_pipeline_snapshot_t *)(uintptr_t)AIOS_BOOTSTRAP_USER_BUFFER;
     bootstrap_process_t *process = NULL;
     bootstrap_process_guard_t process_guard = {0};
-    uint64_t image_size = (uint64_t)((uintptr_t)user_elf_image_end -
-                                     (uintptr_t)user_elf_image_start);
+    user_exec_info_t *info;
+    uint64_t image_size;
     elf_load_result_t elf = {0};
-    aios_status_t elf_status;
+    aios_status_t elf_status = AIOS_ERR_IO;
     aios_status_t status;
     aios_status_t finish_status;
     uint64_t enter_ns = 0;
@@ -45,21 +90,27 @@ aios_status_t user_exec_run_first(void) {
     bool result_collected = false;
     bool ok;
 
-    memset(&g_user_exec, 0, sizeof(g_user_exec));
-    g_user_exec.attempted = true;
-    g_user_exec.address_space_slot = USER_EXEC_PRIVATE_SLOT;
-    g_user_exec.tensor_range_excluded =
-        tensor_mm_bootstrap_user_range_excluded();
+    if (!result || slot >= BOOTSTRAP_PROCESS_COUNT) {
+        return AIOS_ERR_INVAL;
+    }
 
-    if (!g_user_exec.tensor_range_excluded) {
+    memset(result, 0, sizeof(*result));
+    info = &result->info;
+    info->attempted = true;
+    info->address_space_slot = slot;
+    info->tensor_range_excluded =
+        tensor_mm_bootstrap_user_range_excluded();
+    image_size = (uint64_t)((uintptr_t)user_elf_image_end -
+                            (uintptr_t)user_elf_image_start);
+
+    if (!info->tensor_range_excluded) {
         serial_write("[USER] ring3 exec ABORT: tensor range exclusion failed\n");
         return AIOS_ERR_BUSY;
     }
 
-    /* 1. Bind static slot 0 and its dedicated ring0 entry stack to one
-     *    bootstrap process, then activate its private CR3 with IF=0. */
-    status = bootstrap_process_prepare(
-        USER_EXEC_PRIVATE_SLOT, true, &process);
+    /* Bind the selected static slot and its dedicated ring0 entry stack to
+     * one bootstrap process, then activate its private CR3 with IF=0. */
+    status = bootstrap_process_prepare(slot, true, &process);
     if (status != AIOS_OK) {
         serial_write("[USER] ring3 exec ABORT: process prepare failed\n");
         return status;
@@ -80,17 +131,19 @@ aios_status_t user_exec_run_first(void) {
         serial_write("[USER] ring3 exec ABORT: process activation failed\n");
         return status;
     }
-    g_user_exec.private_cr3 = true;
-    g_user_exec.process_bound = true;
-    g_user_exec.process_id = process->pid;
-    g_user_exec.kernel_stack_bytes = (uint32_t)process->kernel_stack_size;
-    g_user_exec.rsp0_changed = process_guard.rsp0_changed;
-    g_user_exec.rsp0_published = process_guard.rsp0.published;
 
-    /* 2. Load the ELF image into the user region and stage the syscall
-     *    scratch buffers. These are deliberate kernel writes to user pages,
-     *    so bracket them with the SMAP fence (no-op when SMAP is off). The
-     *    loader copies segments to their p_vaddr and zeroes any .bss tail. */
+    info->private_cr3 = true;
+    info->process_bound = true;
+    info->process_id = process->pid;
+    info->kernel_stack_bytes = (uint32_t)process->kernel_stack_size;
+    info->rsp0_changed = process_guard.rsp0_changed;
+    info->rsp0_published = process_guard.rsp0.published;
+    result->address_space_cr3 = process->address_space.cr3;
+    result->address_space_backing = process->address_space.backing_phys;
+    result->kernel_stack_base = process->kernel_stack_base;
+
+    /* Load the ELF image and scratch buffers into the active private user
+     * mapping. These deliberate kernel accesses are SMAP fenced. */
     user_access_fence_begin();
     elf_status = elf_load(user_elf_image_start, image_size,
                           AIOS_BOOTSTRAP_USER_BASE,
@@ -106,14 +159,11 @@ aios_status_t user_exec_run_first(void) {
         goto cleanup;
     }
 
-    g_user_exec.elf_loaded = true;
-    g_user_exec.elf_entry = elf.entry;
-    g_user_exec.elf_segments = elf.loadable_segments;
+    info->elf_loaded = true;
+    info->elf_entry = elf.entry;
+    info->elf_segments = elf.loadable_segments;
 
-    /* 3. Constrain uaccess to the user page, then enter ring3 at the ELF
-     *    entry point. Any syscall the program issues with a pointer outside
-     *    the window is denied. The window is cleared on return so
-     *    kernel-internal uaccess (which runs with no window) is unaffected. */
+    /* Constrain uaccess to the active private mapping and enter ring3. */
     user_access_set_window(AIOS_BOOTSTRAP_USER_BASE,
                            AIOS_BOOTSTRAP_USER_SIZE);
     window_active = true;
@@ -122,18 +172,14 @@ aios_status_t user_exec_run_first(void) {
                   &process->run_state);
     exit_ns = kernel_time_monotonic_ns();
 
-    /* 4. Collect and verify the round trip. */
-    g_user_exec.user_syscalls = (uint32_t)process->run_state.user_syscalls;
-    g_user_exec.exit_code = process->run_state.exit_code;
-    g_user_exec.duration_ns = exit_ns - enter_ns;
-    g_user_exec.entered = process->run_state.user_syscalls >= 1;
-    g_user_exec.returned = process->run_state.exited != 0;
+    info->user_syscalls = (uint32_t)process->run_state.user_syscalls;
+    info->exit_code = process->run_state.exit_code;
+    info->duration_ns = exit_ns - enter_ns;
+    info->entered = process->run_state.user_syscalls >= 1;
+    info->returned = process->run_state.exited != 0;
 
-    /* Read the user page's result and rejection stash back (SMAP fenced).
-     * SYS_PIPE_STATS must have written the real registry capacity — proof
-     * ring3 reached the kernel and got data — and the hostile syscall with
-     * a kernel-range pointer must have been denied with AIOS_ERR_PERM,
-     * proving the uaccess window blocked ring3 from reaching kernel memory. */
+    /* Read back the syscall result and hostile-pointer rejection from this
+     * slot's backing while the same private CR3 remains active. */
     user_access_fence_begin();
     observed_max = user_result->max_pipelines;
     reject_value = *(volatile int64_t *)(uintptr_t)
@@ -141,9 +187,9 @@ aios_status_t user_exec_run_first(void) {
     user_access_fence_end();
     result_collected = true;
 
-    g_user_exec.observed_pipeline_max = observed_max;
-    g_user_exec.syscall_ok = observed_max == NODE_PIPELINE_MAX;
-    g_user_exec.boundary_ok = reject_value == (int64_t)AIOS_ERR_PERM;
+    info->observed_pipeline_max = observed_max;
+    info->syscall_ok = observed_max == NODE_PIPELINE_MAX;
+    info->boundary_ok = reject_value == (int64_t)AIOS_ERR_PERM;
 
 cleanup:
     if (window_active) {
@@ -154,63 +200,82 @@ cleanup:
         serial_write("[USER] ring3 exec FATAL: process restoration unproven\n");
         kernel_panic("Bootstrap process restoration failed");
     }
-    g_user_exec.cr3_restored = process_guard.address_space.cr3_restored;
-    g_user_exec.if_restored = process_guard.address_space.if_restored;
-    g_user_exec.leaf_sealed = process_guard.leaf_sealed;
-    g_user_exec.nx_enforced = process_guard.nx_enforced;
-    g_user_exec.int80_entries = (uint32_t)process_guard.int80_entries;
-    g_user_exec.all_int80_entries_in_stack =
+
+    info->cr3_restored = process_guard.address_space.cr3_restored;
+    info->if_restored = process_guard.address_space.if_restored;
+    info->leaf_sealed = process_guard.leaf_sealed;
+    info->nx_enforced = process_guard.nx_enforced;
+    info->int80_entries = (uint32_t)process_guard.int80_entries;
+    info->all_int80_entries_in_stack =
         process_guard.all_int80_entries_in_stack;
-    g_user_exec.rsp0_restored = process_guard.rsp0.restored;
-    g_user_exec.kernel_stack_floor_canary_ok =
+    info->rsp0_restored = process_guard.rsp0.restored;
+    info->kernel_stack_floor_canary_ok =
         process_guard.kernel_stack_floor_canary_ok;
-    g_user_exec.tensor_range_excluded =
+    info->tensor_range_excluded =
         tensor_mm_bootstrap_user_range_excluded();
 
     ok = result_collected &&
-         g_user_exec.elf_loaded && g_user_exec.entered &&
-         g_user_exec.returned && g_user_exec.syscall_ok &&
-         g_user_exec.boundary_ok && g_user_exec.exit_code == 42 &&
-         g_user_exec.private_cr3 && g_user_exec.cr3_restored &&
-         g_user_exec.if_restored && g_user_exec.leaf_sealed &&
-         g_user_exec.tensor_range_excluded &&
-         g_user_exec.process_bound && g_user_exec.process_id == 1U &&
-         g_user_exec.kernel_stack_bytes == AIOS_USER_KERNEL_STACK_SIZE &&
-         g_user_exec.rsp0_changed && g_user_exec.rsp0_published &&
-         g_user_exec.int80_entries == 3U &&
-         g_user_exec.all_int80_entries_in_stack &&
-         g_user_exec.rsp0_restored &&
-         g_user_exec.kernel_stack_floor_canary_ok &&
+         info->elf_loaded && info->entered && info->returned &&
+         info->syscall_ok && info->boundary_ok && info->exit_code == 42 &&
+         info->private_cr3 && info->cr3_restored && info->if_restored &&
+         info->leaf_sealed && info->tensor_range_excluded &&
+         info->process_bound &&
+         info->process_id == BOOTSTRAP_PROCESS_PID_BASE + slot &&
+         info->address_space_slot == slot &&
+         info->kernel_stack_bytes == AIOS_USER_KERNEL_STACK_SIZE &&
+         info->rsp0_changed && info->rsp0_published &&
+         info->int80_entries == 3U &&
+         info->all_int80_entries_in_stack && info->rsp0_restored &&
+         info->kernel_stack_floor_canary_ok &&
          finish_status == AIOS_OK;
 
-    serial_printf("[USER] ring3 exec %s elf_entry=%x segments=%u entered=%u returned=%u syscalls=%u boundary_ok=%u exit_code=%u pipe_max=%u dur_ns=%u private_cr3=%u slot=%u cr3_restored=%u if_restored=%u leaf_sealed=%u nx_enforced=%u tensor_excluded=%u\n",
-        ok ? "PASS" : "FAIL",
-        g_user_exec.elf_entry,
-        (uint64_t)g_user_exec.elf_segments,
-        (uint64_t)g_user_exec.entered,
-        (uint64_t)g_user_exec.returned,
-        (uint64_t)g_user_exec.user_syscalls,
-        (uint64_t)g_user_exec.boundary_ok,
-        g_user_exec.exit_code,
-        (uint64_t)g_user_exec.observed_pipeline_max,
-        g_user_exec.duration_ns,
-        (uint64_t)g_user_exec.private_cr3,
-        (uint64_t)g_user_exec.address_space_slot,
-        (uint64_t)g_user_exec.cr3_restored,
-        (uint64_t)g_user_exec.if_restored,
-        (uint64_t)g_user_exec.leaf_sealed,
-        (uint64_t)g_user_exec.nx_enforced,
-        (uint64_t)g_user_exec.tensor_range_excluded);
+    if (emit_primary_markers) {
+        serial_printf("[USER] ring3 exec %s elf_entry=%x segments=%u entered=%u returned=%u syscalls=%u boundary_ok=%u exit_code=%u pipe_max=%u dur_ns=%u private_cr3=%u slot=%u cr3_restored=%u if_restored=%u leaf_sealed=%u nx_enforced=%u tensor_excluded=%u\n",
+            ok ? "PASS" : "FAIL",
+            info->elf_entry,
+            (uint64_t)info->elf_segments,
+            (uint64_t)info->entered,
+            (uint64_t)info->returned,
+            (uint64_t)info->user_syscalls,
+            (uint64_t)info->boundary_ok,
+            info->exit_code,
+            (uint64_t)info->observed_pipeline_max,
+            info->duration_ns,
+            (uint64_t)info->private_cr3,
+            (uint64_t)info->address_space_slot,
+            (uint64_t)info->cr3_restored,
+            (uint64_t)info->if_restored,
+            (uint64_t)info->leaf_sealed,
+            (uint64_t)info->nx_enforced,
+            (uint64_t)info->tensor_range_excluded);
 
-    if (ok) {
-        serial_printf("[USER] private address space exec PASS slot=%u cr3_restored=1 if_restored=1 leaf_sealed=1 nx_enforced=%u tensor_excluded=1\n",
-            (uint64_t)g_user_exec.address_space_slot,
-            (uint64_t)g_user_exec.nx_enforced);
-        serial_printf("[USER] bootstrap process stack PASS pid=%u slot=%u process_bound=1 kstack_bytes=%u rsp0_changed=1 rsp0_published=1 int80_entries=%u all_int80_entries_in_stack=1 rsp0_restored=1 kstack_floor_canary=1\n",
-            (uint64_t)g_user_exec.process_id,
-            (uint64_t)g_user_exec.address_space_slot,
-            (uint64_t)g_user_exec.kernel_stack_bytes,
-            (uint64_t)g_user_exec.int80_entries);
+        if (ok) {
+            serial_printf("[USER] private address space exec PASS slot=%u cr3_restored=1 if_restored=1 leaf_sealed=1 nx_enforced=%u tensor_excluded=1\n",
+                (uint64_t)info->address_space_slot,
+                (uint64_t)info->nx_enforced);
+            serial_printf("[USER] bootstrap process stack PASS pid=%u slot=%u process_bound=1 kstack_bytes=%u rsp0_changed=1 rsp0_published=1 int80_entries=%u all_int80_entries_in_stack=1 rsp0_restored=1 kstack_floor_canary=1\n",
+                (uint64_t)info->process_id,
+                (uint64_t)info->address_space_slot,
+                (uint64_t)info->kernel_stack_bytes,
+                (uint64_t)info->int80_entries);
+        }
+    } else {
+        serial_printf("[USER] secondary process exec %s pid=%u slot=%u entered=%u returned=%u syscall_ok=%u boundary_ok=%u exit_code=%u int80_entries=%u cr3_restored=%u if_restored=%u leaf_sealed=%u nx_enforced=%u rsp0_restored=%u kstack_floor_canary=%u\n",
+            ok ? "PASS" : "FAIL",
+            (uint64_t)info->process_id,
+            (uint64_t)info->address_space_slot,
+            (uint64_t)info->entered,
+            (uint64_t)info->returned,
+            (uint64_t)info->syscall_ok,
+            (uint64_t)info->boundary_ok,
+            info->exit_code,
+            (uint64_t)info->int80_entries,
+            (uint64_t)info->cr3_restored,
+            (uint64_t)info->if_restored,
+            (uint64_t)info->leaf_sealed,
+            (uint64_t)info->nx_enforced,
+            (uint64_t)info->rsp0_restored,
+            (uint64_t)info->kernel_stack_floor_canary_ok);
     }
 
     if (ok) {
@@ -222,11 +287,159 @@ cleanup:
     return AIOS_ERR_IO;
 }
 
-void user_exec_get_info(user_exec_info_t *out) {
-    if (!out) {
-        return;
+aios_status_t user_exec_run_bootstrap_pair(void) {
+    user_exec_run_result_t first = {0};
+    user_exec_run_result_t second = {0};
+    bootstrap_process_stats_t before = {0};
+    bootstrap_process_stats_t between = {0};
+    bootstrap_process_stats_t after = {0};
+    aios_status_t first_status;
+    aios_status_t second_status;
+
+    if (g_user_exec_pair.attempted) {
+        return AIOS_ERR_BUSY;
     }
-    *out = g_user_exec;
+
+    memset(&g_user_exec, 0, sizeof(g_user_exec));
+    memset(&g_user_exec_pair, 0, sizeof(g_user_exec_pair));
+    g_user_exec_pair.attempted = true;
+
+    bootstrap_process_get_stats(&before);
+    if (!bootstrap_process_ready() || bootstrap_process_current() ||
+        before.current_pid != 0 || before.completed_runs != 0 ||
+        before.rsp0_publishes != 0 || before.rsp0_restores != 0 ||
+        !before.tss_rsp0_baseline) {
+        emit_pair_marker();
+        return AIOS_ERR_BUSY;
+    }
+
+    first_status = user_exec_run_slot(
+        USER_EXEC_PRIMARY_SLOT, &first, true);
+    g_user_exec = first.info;
+    g_user_exec_pair.first_process_id = first.info.process_id;
+    g_user_exec_pair.first_address_space_slot =
+        first.info.address_space_slot;
+    g_user_exec_pair.first_int80_entries = first.info.int80_entries;
+    if (first_status != AIOS_OK) {
+        bootstrap_process_get_stats(&after);
+        g_user_exec_pair.completed_runs = after.completed_runs;
+        g_user_exec_pair.current_pid = after.current_pid;
+        g_user_exec_pair.last_pid = after.last_pid;
+        g_user_exec_pair.rsp0_publishes = after.rsp0_publishes;
+        g_user_exec_pair.rsp0_restores = after.rsp0_restores;
+        g_user_exec_pair.tss_rsp0_baseline = after.tss_rsp0_baseline;
+        emit_pair_marker();
+        return first_status;
+    }
+
+    bootstrap_process_get_stats(&between);
+    g_user_exec_pair.between_runs_clean =
+        !bootstrap_process_current() &&
+        between.current_pid == 0 &&
+        between.last_pid == BOOTSTRAP_PROCESS_PID_BASE &&
+        between.completed_runs == before.completed_runs + 1U &&
+        between.rsp0_publishes == before.rsp0_publishes + 1U &&
+        between.rsp0_restores == before.rsp0_restores + 1U &&
+        between.tss_rsp0_baseline;
+    if (bootstrap_process_current() || between.current_pid != 0 ||
+        !between.tss_rsp0_baseline) {
+        serial_write("[USER] bootstrap process pair FATAL: unsafe state between runs\n");
+        kernel_panic("Bootstrap process pair inter-run restoration failed");
+    }
+    if (!g_user_exec_pair.between_runs_clean) {
+        g_user_exec_pair.completed_runs = between.completed_runs;
+        g_user_exec_pair.current_pid = between.current_pid;
+        g_user_exec_pair.last_pid = between.last_pid;
+        g_user_exec_pair.rsp0_publishes = between.rsp0_publishes;
+        g_user_exec_pair.rsp0_restores = between.rsp0_restores;
+        g_user_exec_pair.tss_rsp0_baseline = between.tss_rsp0_baseline;
+        emit_pair_marker();
+        return AIOS_ERR_IO;
+    }
+
+    second_status = user_exec_run_slot(
+        USER_EXEC_SECONDARY_SLOT, &second, false);
+    bootstrap_process_get_stats(&after);
+
+    g_user_exec_pair.completed_runs = after.completed_runs;
+    g_user_exec_pair.second_process_id = second.info.process_id;
+    g_user_exec_pair.second_address_space_slot =
+        second.info.address_space_slot;
+    g_user_exec_pair.second_int80_entries = second.info.int80_entries;
+    g_user_exec_pair.second_exit_code = second.info.exit_code;
+    g_user_exec_pair.second_syscall_ok = second.info.syscall_ok;
+    g_user_exec_pair.second_boundary_ok = second.info.boundary_ok;
+    g_user_exec_pair.distinct_pid =
+        first.info.process_id != second.info.process_id;
+    g_user_exec_pair.distinct_slot =
+        first.info.address_space_slot != second.info.address_space_slot;
+    g_user_exec_pair.distinct_cr3 =
+        first.address_space_cr3 != second.address_space_cr3;
+    g_user_exec_pair.distinct_backing =
+        first.address_space_backing != second.address_space_backing;
+    g_user_exec_pair.distinct_kernel_stack =
+        first.kernel_stack_base != second.kernel_stack_base;
+    g_user_exec_pair.current_pid = after.current_pid;
+    g_user_exec_pair.last_pid = after.last_pid;
+    g_user_exec_pair.rsp0_publishes = after.rsp0_publishes;
+    g_user_exec_pair.rsp0_restores = after.rsp0_restores;
+    g_user_exec_pair.tss_rsp0_baseline = after.tss_rsp0_baseline;
+    g_user_exec_pair.both_restored =
+        run_restored(&first.info) && run_restored(&second.info) &&
+        !bootstrap_process_current() && after.current_pid == 0 &&
+        after.tss_rsp0_baseline;
+
+    if (bootstrap_process_current() || after.current_pid != 0 ||
+        !after.tss_rsp0_baseline) {
+        serial_write("[USER] bootstrap process pair FATAL: unsafe final ownership state\n");
+        kernel_panic("Bootstrap process pair final restoration failed");
+    }
+
+    g_user_exec_pair.passed =
+        first_status == AIOS_OK && second_status == AIOS_OK &&
+        g_user_exec_pair.completed_runs == before.completed_runs + 2U &&
+        g_user_exec_pair.first_process_id == BOOTSTRAP_PROCESS_PID_BASE &&
+        g_user_exec_pair.first_address_space_slot ==
+            USER_EXEC_PRIMARY_SLOT &&
+        g_user_exec_pair.second_process_id ==
+            BOOTSTRAP_PROCESS_PID_BASE + USER_EXEC_SECONDARY_SLOT &&
+        g_user_exec_pair.second_address_space_slot ==
+            USER_EXEC_SECONDARY_SLOT &&
+        g_user_exec_pair.first_int80_entries == 3U &&
+        g_user_exec_pair.second_int80_entries == 3U &&
+        g_user_exec_pair.second_exit_code == 42U &&
+        g_user_exec_pair.second_syscall_ok &&
+        g_user_exec_pair.second_boundary_ok &&
+        g_user_exec_pair.distinct_pid &&
+        g_user_exec_pair.distinct_slot &&
+        g_user_exec_pair.distinct_cr3 &&
+        g_user_exec_pair.distinct_backing &&
+        g_user_exec_pair.distinct_kernel_stack &&
+        g_user_exec_pair.between_runs_clean &&
+        g_user_exec_pair.current_pid == 0 &&
+        g_user_exec_pair.last_pid ==
+            BOOTSTRAP_PROCESS_PID_BASE + USER_EXEC_SECONDARY_SLOT &&
+        g_user_exec_pair.rsp0_publishes ==
+            before.rsp0_publishes + 2U &&
+        g_user_exec_pair.rsp0_restores ==
+            before.rsp0_restores + 2U &&
+        g_user_exec_pair.tss_rsp0_baseline &&
+        g_user_exec_pair.both_restored;
+
+    emit_pair_marker();
+    return g_user_exec_pair.passed ? AIOS_OK : AIOS_ERR_IO;
+}
+
+void user_exec_get_info(user_exec_info_t *out) {
+    if (out) {
+        *out = g_user_exec;
+    }
+}
+
+void user_exec_get_pair_info(user_exec_pair_info_t *out) {
+    if (out) {
+        *out = g_user_exec_pair;
+    }
 }
 
 __asm__(".section .note.GNU-stack,\"\",@progbits\n\t.previous");

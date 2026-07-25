@@ -16,6 +16,7 @@ def normal_lines() -> list[str]:
         "[USER] ring3 exec PASS exit_code=42",
         "[USER] private address space exec PASS slot=0",
         "[USER] bootstrap process stack PASS pid=1",
+        "[USER] bootstrap process pair PASS runs=2",
         "[ROOM] snapshot stability=stable ok=18 degraded=0 failed=0",
         "[HEALTH] stability=stable ok=18 degraded=0 failed=0 unknown=2",
         "=== AIOS Kernel Ready ===",
@@ -50,6 +51,15 @@ class NormalBootVerdictTests(unittest.TestCase):
 
         self.assertFalse(verdict["passed"])
         self.assertIn("MISSING_REQUIRED_PATTERNS", reason_codes(verdict))
+
+    def test_bootstrap_process_pair_checkpoint_missing_fails(self) -> None:
+        lines = normal_lines()
+        lines.remove("[USER] bootstrap process pair PASS runs=2")
+
+        verdict = evaluate(lines)
+
+        self.assertFalse(verdict["passed"])
+        self.assertIn("TERMINAL_CHECKPOINTS_MISSING", reason_codes(verdict))
 
     def test_required_marker_token_suffix_does_not_match(self) -> None:
         lines = normal_lines()
