@@ -33,6 +33,7 @@
 #include <hal/accel_hal.h>
 #include <runtime/ai_syscall.h>
 #include <runtime/autonomy.h>
+#include <runtime/ai_pressure.h>
 #include <runtime/nodebit.h>
 #include <runtime/node_pipeline.h>
 #include <runtime/slm_orchestrator.h>
@@ -477,7 +478,21 @@ static void init_subsystems(uint64_t multiboot_magic, uint64_t multiboot_info) {
         serial_write("[PIPE] selftest FAIL\n");
     }
 
-    /* 20. PS/2 Keyboard (unmasks PIC IRQ1 — requires IDT + timer ready) */
+    /*
+     * 20. AI Pressure Tracker
+     *
+     * This is observation-only and has no scheduler apply edge. Its invariant
+     * selftest is part of the required boot proof, so an invalid reducer or
+     * source snapshot fails through the existing SELFTEST health record.
+     */
+    aios_status_t pressure_status = ai_pressure_init();
+    if (pressure_status != AIOS_OK) {
+        kernel_health_mark(KERNEL_SUBSYSTEM_SELFTEST,
+            KERNEL_HEALTH_FAILED, pressure_status);
+        kernel_panic("AI pressure tracker selftest failed");
+    }
+
+    /* 21. PS/2 Keyboard (unmasks PIC IRQ1 — requires IDT + timer ready) */
     INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_KEYBOARD,
         "PS/2 Keyboard", keyboard_init());
 }

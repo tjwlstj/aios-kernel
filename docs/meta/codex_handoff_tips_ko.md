@@ -86,6 +86,9 @@ PID 1 실행 뒤 PID 2를 호출하는 것만으로는 scheduler 전환을 증�
 - **두 스케줄러 개념이 분리돼 있다:** `sched/ai_sched.c`는 vruntime 장부질만 하는 **워크로드 회계 모델**(실제 CPU 전환 없음). 진짜 문맥전환은 `sched/kthread.c`(+`kthread_switch.asm`)다. 헷갈리지 말 것.
 - **두 NodeBit 체계가 병존한다:** 런타임 capability 게이트(`runtime/nodebit.c`)와 SLM 하드웨어 정책(`slm_orchestrator.c`의 `slm_nodebit`)은 별개 네임스페이스다. 억지로 합치지 말 것 — 통합은 로드맵 M7의 명시적 작업이다.
 - **Kernel Room 게이트 테이블은 분류 메타데이터**다. 디스패처가 per-call로 검사하지 않는다. 실제 강제는 NodeBit 게이트/autonomy safe-mode/health 플래그가 한다. "모든 시스콜 전에 검사한다"고 서술하지 말 것.
+- **pressure와 gate bitmap은 별도 축이다:** `runtime/ai_pressure.c`의 점수는 부하/중첩 관측이고, eligibility는 `online & affinity & policy_gate & health & budget` 교집합이다. 거부된 목적지를 낮은 pressure로 위장하거나 두 값을 한 scalar로 섞지 말 것. 현재 tracker는 `observation_only=1`이며 scheduler apply/migration 호출자가 없다.
+- **Memory Fabric `map_count`는 순간 동시성이 아니다:** attach는 증가시키지만 detach API가 없으므로 누적 logical-map 사건이다. pressure에는 reader/writer mask popcount, writer pair, read/write pair, weighted shared bytes만 사용한다.
+- **pressure 계층 깊이를 과장하지 말 것:** schema 1은 `max_levels=4`지만 `active_levels=2`인 system→plane까지만 CURRENT다. domain/task/window/ring child, fast/slow EWMA, stall window, SMP migration은 PLANNED다.
 - **시스콜 추가 시:** 번호는 추가만(재번호 금지), 그리고 **커버하는 Kernel Room 게이트의 `syscall_end`를 확장**해야 한다(`kernel/core/kernel_room.c`). 이걸 빼먹으면 ROOM 스냅샷이 새 시스콜을 분류에서 누락한다(체크포인트 때 실제로 드리프트가 났던 부분).
 - **ABI 불변식:** SLM 스냅샷 구조체(`slm_hw_snapshot_t`)나 health 구조체 레이아웃을 바꾸면 소비자와 baseline이 깨진다. 관측 필드는 스냅샷 안이 아니라 별도 접근자로 노출하는 패턴을 따랐다(예: `slm_plan_observation_read`).
 - **bootstrap run-state C/NASM ABI:** `kernel/include/kernel/process.h`의 explicit offset + size static assert와 `kernel/core/user_entry.asm`의 `RUN_STATE_*`가 한 쌍이다. 기존 offset은 재번호하지 말고 append-only로 늘린다. 실제 값은 process-local이지만 `g_active_user_run_state`는 현재 동기 runner 한 개를 가리키는 단일 active pointer다.

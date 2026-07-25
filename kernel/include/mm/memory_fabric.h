@@ -87,6 +87,27 @@ typedef struct {
     uint64_t last_access_ns;
 } memory_shared_window_t;
 
+/*
+ * Exact, read-only overlap evidence for pressure observers.
+ *
+ * map_count is deliberately excluded: attach currently has no matching detach
+ * API, so it is a cumulative logical-map counter rather than an instantaneous
+ * concurrency signal.
+ */
+typedef struct {
+    uint32_t active_domains;
+    uint32_t active_windows;
+    uint32_t shared_windows;
+    uint32_t participant_links;
+    uint32_t writer_links;
+    uint32_t writer_pairs;
+    uint32_t read_write_pairs;
+    uint32_t max_fanout;
+    uint64_t total_budget_bytes;
+    uint64_t shared_bytes;
+    uint64_t weighted_shared_bytes;
+} memory_fabric_pressure_snapshot_t;
+
 aios_status_t memory_fabric_init(void);
 const memory_fabric_profile_t *memory_fabric_profile(void);
 uint32_t memory_fabric_domain_count(void);
@@ -103,6 +124,8 @@ aios_status_t memory_fabric_window_attach(uint32_t window_id, uint32_t domain_id
                                           bool write_access);
 aios_status_t memory_fabric_window_get(uint32_t window_id, memory_shared_window_t *out);
 aios_status_t memory_fabric_window_release(uint32_t window_id);
+aios_status_t memory_fabric_pressure_read(memory_fabric_pressure_snapshot_t *out);
+aios_status_t memory_fabric_pressure_selftest(void);
 const char *memory_fabric_topology_name(memory_fabric_topology_t topology);
 const char *memory_domain_role_name(memory_domain_role_t role);
 const char *memory_fabric_access_name(memory_fabric_access_t access);

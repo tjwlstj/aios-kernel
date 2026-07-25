@@ -108,6 +108,39 @@ class ShellExpectationTests(unittest.TestCase):
                     expectations_match(invalid, autonomy_expectations)
                 )
 
+    def test_state_pressure_contract_is_observation_only(self) -> None:
+        exchange = next(
+            item for item in DEFAULT_EXCHANGES
+            if item["command"] == "state pressure"
+        )
+        expectations = list(exchange["expect"])
+        pressure = (
+            "[STATE] pressure schema=1 observation_only=1 "
+            "gate_filter_separate=1 max_levels=4 active_levels=2 planes=3 "
+            "source_flags=7 sample=1 sampled_ns=10 sched_q10=0 memory_q10=0 "
+            "policy_q10=512 hotspot=policy hotspot_valid=1 hotspot_q10=512 "
+            "concentration_q10=1024 sched_queue_concentration_q10=0 "
+            "queued=0 runnable=0 largest_queue=0 largest_policy=6 "
+            "active_domains=4 active_windows=0 shared_windows=0 "
+            "participant_links=0 writer_pairs=0 read_write_pairs=0 "
+            "max_fanout=0 budget_bytes=4096 shared_bytes=0 "
+            "weighted_shared_bytes=0 active_nodes=1 gate_evals=2 "
+            "gate_denies=1 health_blocks=0\n"
+        )
+        self.assertTrue(expectations_match(pressure, expectations))
+
+        for invalid in (
+            pressure.replace("observation_only=1", "observation_only=0"),
+            pressure.replace("gate_filter_separate=1", "gate_filter_separate=0"),
+            pressure.replace("active_levels=2", "active_levels=3"),
+            pressure.replace(
+                "gate_filter_separate=1",
+                "gate_filter_separate=0 gate_filter_separate=1",
+            ),
+        ):
+            with self.subTest(invalid=invalid):
+                self.assertFalse(expectations_match(invalid, expectations))
+
 
 class ShellVerdictTests(unittest.TestCase):
     def test_clean_exit_is_required_for_pass(self) -> None:

@@ -1,5 +1,7 @@
 # 멀티 AI 에이전트용 Memory Fabric 기초안
 
+최종 갱신: 2026-07-26 (AI Pressure Tracker overlap 관측 연결)
+
 ## 왜 이 기반이 필요한가
 
 현재 AIOS는 다음 강점을 이미 갖고 있다.
@@ -87,6 +89,36 @@
 - logical map count
 
 이렇게 하면 메인 AI와 여러 worker가 같은 텐서를 읽거나, 특정 노드만 쓰기를 허용하는 정책을 커널 레벨에서 붙일 수 있다.
+
+`map_count`는 현재 attach 때 증가하지만 대응 detach API가 없다. 따라서 이 값은
+누적 logical-map 사건이며, “지금 동시에 몇 주체가 접근 중인가”를 뜻하지 않는다.
+실시간 과밀도나 contention 점수에 쓰지 않는다.
+
+## AI Pressure Tracker 연결
+
+상태: `CURRENT`, read-only.
+
+`memory_fabric_pressure_read()`는 fabric lock 아래에서 최대 16개 domain과
+64개 window의 fixed array를 정확히 순회한다. 확률적 sketch가 필요한 규모가
+아니므로 현재는 추정값보다 exact counter를 우선한다.
+
+관측 항목:
+
+- active domain/window 수
+- 둘 이상 participant가 있는 shared window 수와 bytes
+- participant fanout과 최대 fanout
+- 둘 이상의 writer가 만드는 writer pair
+- writer와 writer가 아닌 reader 사이의 read/write pair
+- `shared bytes × participant fanout`인 weighted shared bytes
+- active domain local budget의 합
+
+이 증거는 `runtime/ai_pressure.c`의 memory plane으로 들어가지만 allocator,
+window 권한, reader/writer mask를 변경하지 않는다. `state pressure`는
+Memory Fabric raw evidence와 0..1024 정수 pressure 점수를 함께 노출한다.
+
+현재 계층 깊이는 `system → plane` 두 단계뿐이다. 향후
+`plane → domain → window/task/ring` child cell을 추가할 수 있도록 최대 깊이는
+4로 고정했지만, domain/window별 hotspot과 fast/slow EWMA는 아직 `PLANNED`다.
 
 ## 메모리 다중접근 모델
 

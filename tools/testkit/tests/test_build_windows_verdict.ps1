@@ -45,6 +45,7 @@ $normalLines = @(
     '[NODEBIT] Policy gate ready entries=0'
     '[PIPE] Node pipeline ready'
     '[PIPE] selftest PASS'
+    '[PRESSURE] tracker selftest PASS schema=1 planes=3 max_levels=4 active_levels=2 balanced=1 hotspot=1 overlap=1 gate_mask=1 observation_only=1'
     '[SLM] plan apply selftest PASS'
     '[SLM] Seeded plan 4 label=storage-bootstrap action=8'
     '[SYSCALL] observe dispatch selftest PASS'
@@ -108,8 +109,24 @@ try {
         throw 'Missing bootstrap process pair evidence unexpectedly passed'
     }
     Write-Output 'PASS missing-process-pair expected=False'
+
+    $missingPressureLines = @(
+        $normalLines | Where-Object {
+            $_ -notmatch '^\[PRESSURE\] tracker selftest '
+        }
+    )
+    [IO.File]::WriteAllLines(
+        $tempPath,
+        $missingPressureLines,
+        [Text.UTF8Encoding]::new($false)
+    )
+    $missingPressureVerdict = Test-NormalSmokeVerdict -SerialLog $tempPath
+    if ([bool]$missingPressureVerdict.Passed) {
+        throw 'Missing pressure tracker evidence unexpectedly passed'
+    }
+    Write-Output 'PASS missing-pressure-tracker expected=False'
 } finally {
     Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
 }
 
-Write-Output "PowerShell verdict selftest passed cases=$($cases.Count + 1)"
+Write-Output "PowerShell verdict selftest passed cases=$($cases.Count + 2)"

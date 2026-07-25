@@ -70,6 +70,7 @@ C_SOURCES   = $(KERNEL_DIR)/main.c \
               $(HAL_DIR)/accel_hal.c \
               $(RUNTIME_DIR)/ai_syscall.c \
               $(RUNTIME_DIR)/autonomy.c \
+              $(RUNTIME_DIR)/ai_pressure.c \
               $(RUNTIME_DIR)/nodebit.c \
               $(RUNTIME_DIR)/node_pipeline.c \
               $(RUNTIME_DIR)/slm_orchestrator.c \
@@ -211,6 +212,7 @@ test: iso
 	if grep -q "AIOS Kernel Ready" $(TEST_LOG) && \
 	   grep -q "\\[SELFTEST\\] Memory microbench PASS" $(TEST_LOG) && \
 	   grep -q "\\[DEV\\] Peripheral probe ready" $(TEST_LOG) && \
+	   grep -Fq "[PRESSURE] tracker selftest PASS schema=1 planes=3 max_levels=4 active_levels=2 balanced=1 hotspot=1 overlap=1 gate_mask=1 observation_only=1" $(TEST_LOG) && \
 	   grep -q "\\[HEALTH\\] stability=" $(TEST_LOG) && \
 	   grep -q "\\[SHELL\\] Interactive shell started" $(TEST_LOG); then \
 		echo "[OK] Smoke test PASSED - kernel booted and shell started"; \

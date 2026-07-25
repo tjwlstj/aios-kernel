@@ -26,7 +26,7 @@
  * ============================================================ */
 
 #define MAX_TASKS           MAX_AI_TASKS
-#define NUM_PRIORITY_LEVELS 6
+#define NUM_PRIORITY_LEVELS SCHED_POLICY_COUNT
 #define DEFAULT_TIME_SLICE  (10 * 1000000ULL)  /* 10ms in nanoseconds */
 #define RT_TIME_SLICE       (1 * 1000000ULL)   /* 1ms for real-time */
 #define TRAINING_TIME_SLICE (100 * 1000000ULL) /* 100ms for training */
@@ -48,6 +48,7 @@ static sched_stats_t sched_stats;
 
 /* Legacy coarse tick counter retained for compatibility/debug output. */
 static uint64_t tick_count = 0;
+static bool sched_ready = false;
 
 /* ============================================================
  * Internal Helper Functions
@@ -148,6 +149,8 @@ static void update_vruntime(ai_task_t *task, uint64_t delta_ns) {
  * ============================================================ */
 
 aios_status_t ai_sched_init(void) {
+    sched_ready = false;
+
     /* Initialize all run queues */
     for (uint32_t i = 0; i < NUM_PRIORITY_LEVELS; i++) {
         run_queues[i] = NULL;
@@ -167,6 +170,7 @@ aios_status_t ai_sched_init(void) {
 
     current_task = NULL;
     tick_count = 0;
+    sched_ready = true;
 
     kprintf("\n");
     kprintf("    AI Workload Scheduler initialized:\n");
@@ -436,6 +440,45 @@ aios_status_t ai_sched_batch_submit(ai_task_t **tasks, uint32_t count) {
 void ai_sched_stats(sched_stats_t *stats) {
     if (!stats) return;
     *stats = sched_stats;
+}
+
+aios_status_t ai_sched_queue_snapshot(ai_sched_queue_snapshot_t *out) {
+    uint64_t flags;
+
+    if (!out || !sched_ready) {
+        return AIOS_ERR_INVAL;
+    }
+
+    /*
+     * ai_sched_tick() runs from PIT IRQ0 and may requeue current_task. Masking
+     * local interrupts makes the copy coherent on the current single-BSP
+     * runtime without pretending this is an SMP lock.
+     */
+    __asm__ volatile ("pushfq; popq %0; cli" : "=r"(flags) :: "memory");
+
+    out->queue_count = SCHED_POLICY_COUNT;
+    out->queued_tasks = 0;
+    out->runnable_tasks = 0;
+    out->largest_queue = 0;
+    out->largest_queue_policy = SCHED_POLICY_COUNT;
+    out->running = current_task != NULL;
+    out->running_policy = current_task
+        ? current_task->sched.policy : SCHED_POLICY_COUNT;
+
+    for (uint32_t i = 0; i < SCHED_POLICY_COUNT; i++) {
+        out->queue_sizes[i] = queue_sizes[i];
+        out->queued_tasks += queue_sizes[i];
+        if (queue_sizes[i] > out->largest_queue) {
+            out->largest_queue = queue_sizes[i];
+            out->largest_queue_policy = (sched_policy_t)i;
+        }
+    }
+    out->runnable_tasks = out->queued_tasks + (out->running ? 1U : 0U);
+
+    if ((flags & BIT(9)) != 0) {
+        __asm__ volatile ("sti" ::: "memory");
+    }
+    return AIOS_OK;
 }
 
 void ai_sched_dump(void) {

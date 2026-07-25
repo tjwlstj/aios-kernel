@@ -86,6 +86,7 @@ Windows: `pwsh -File .\tools\testkit\kernel\build-windows.ps1 -Target test`
 - **Kernel Room 게이트 수 = enum 크기** (`kernel/core/kernel_room.c`).
 - **헬스 스냅샷 ABI 안정** — SLM 오케스트레이터가 소비.
 - **정책 게이트** — `store/` 다운로드와 자율 행위는 `SYS_SLM_NODEBIT_LOOKUP` + Kernel Room 게이트를 통과한다.
+- **AI pressure는 관측 전용** — plane ID는 append-only이며, pressure ranking과 gate eligibility bitmap을 섞지 않는다. 별도 apply 검증 전에는 scheduler migration/budget 변경에 연결하지 않는다.
 
 ---
 

@@ -24,7 +24,11 @@ typedef enum {
     SCHED_POLICY_PREPROCESS = 3,    /* Data preprocessing / tokenization */
     SCHED_POLICY_BACKGROUND = 4,    /* Background tasks (model loading, etc.) */
     SCHED_POLICY_IDLE       = 5,    /* Idle task */
+    SCHED_POLICY_COUNT      = 6,
 } sched_policy_t;
+
+AIOS_STATIC_ASSERT(SCHED_POLICY_COUNT == 6,
+    "Scheduler policy IDs are append-only; update queue consumers together");
 
 /* Task states */
 typedef enum {
@@ -117,6 +121,24 @@ typedef struct {
     uint64_t    gpu_utilization;    /* GPU utilization percentage */
 } sched_stats_t;
 
+/*
+ * Read-only queue evidence for observers such as AI Pressure Tracker.
+ *
+ * On the current single-BSP runtime the implementation masks local IRQs while
+ * copying queue state, so the PIT tick cannot tear this snapshot. This is not
+ * yet an SMP synchronization contract.
+ */
+typedef struct {
+    uint32_t queue_count;
+    uint32_t queued_tasks;
+    uint32_t runnable_tasks;
+    uint32_t largest_queue;
+    sched_policy_t largest_queue_policy;
+    bool running;
+    sched_policy_t running_policy;
+    uint32_t queue_sizes[SCHED_POLICY_COUNT];
+} ai_sched_queue_snapshot_t;
+
 /* ============================================================
  * AI Scheduler API
  * ============================================================ */
@@ -145,6 +167,7 @@ aios_status_t ai_sched_batch_submit(ai_task_t **tasks, uint32_t count);
 
 /* Statistics */
 void ai_sched_stats(sched_stats_t *stats);
+aios_status_t ai_sched_queue_snapshot(ai_sched_queue_snapshot_t *out);
 void ai_sched_dump(void);
 
 /* Default scheduling parameters */

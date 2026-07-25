@@ -2,7 +2,7 @@
 
 작성일: 2026-04-10
 
-최종 갱신: 2026-07-26 (bootstrap process pair proof)
+최종 갱신: 2026-07-26 (AI Pressure Tracker 계약)
 
 ## 목적
 
@@ -87,9 +87,10 @@ pwsh -NoProfile -File .\tools\testkit\tests\test_build_windows_verdict.ps1
 
 이 검사는 QEMU보다 먼저 실행하며 PASS 뒤 panic, health 실패, checkpoint 역순·중복,
 인용/접두사 마커, 중복 key, 불완전 baseline/perf 출처, stale shell artifact,
-clean-exit 누락, process pair 레코드 누락/불완전을 48개 Python unit으로 고정한다.
-별도의 `test_build_windows_verdict.ps1` 10개 사례가 Windows 직접 판정기의 IDE evidence
-문법과 process pair 필수성을 같은 의미론으로 검증한다.
+clean-exit 누락, process pair 레코드 누락/불완전, pressure marker
+누락/불완전·apply-capable 변형을 52개 Python unit으로 고정한다.
+별도의 `test_build_windows_verdict.ps1` 11개 사례가 Windows 직접 판정기의 IDE evidence
+문법과 process pair/pressure 필수성을 같은 의미론으로 검증한다.
 
 ### 전체
 
@@ -109,6 +110,18 @@ python .\tools\testkit\aios-testkit.py kernel --target test --strict --smoke-pro
 python .\tools\testkit\aios-testkit.py kernel --target test --strict --smoke-profile minimal --export-boot-summary
 python .\tools\testkit\aios-testkit.py kernel --target test --strict --smoke-profile storage-only --export-boot-summary
 ```
+
+### 대화형 커널 셸
+
+```powershell
+python .\tools\testkit\aios-testkit.py shell --strict
+python .\tools\testkit\aios-testkit.py shell --strict --skip-build
+```
+
+현재 레인은 `state pressure`를 포함한 15개 교환을 수행한다. pressure 응답은
+schema 1, `observation_only=1`, `gate_filter_separate=1`, 계층 깊이와 세 plane,
+queue/fabric/NodeBit raw 증거가 같은 `[STATE] pressure ...` 레코드에 있는지
+토큰 경계로 확인한다.
 
 ### 부팅 매트릭스
 
@@ -169,6 +182,7 @@ optional 하드웨어 구성을 나눌 수 있다.
   - `[DEV] Peripheral probe ready`
   - `[USER] Ring3 scaffold ready=1`
   - `[USER] bootstrap process pair PASS runs=2 order=1,2 ... between_clean=1 ... both_restored=1`
+  - `[PRESSURE] tracker selftest PASS schema=1 planes=3 max_levels=4 active_levels=2 ... observation_only=1`
   - `[ROOM] snapshot stability=stable`
   - `[HEALTH] stability=stable ... degraded=0 failed=0`
 - `full`
@@ -217,6 +231,8 @@ optional 하드웨어 구성을 나눌 수 있다.
 - `process_stack`의 primary PID 1 entry-stack proof
 - `process_pair`의 PID 1→PID 2 순차 실행, 고유 CR3/backing/stack, 실행 사이·최종 cleanup proof
 - `kernel_room` snapshot / gate 요약
+- `pressure`의 schema, active/max level, balanced/hotspot/overlap/gate-mask
+  selftest와 observation-only 계약
 - network / usb / storage controller 상태
 - network / USB / storage bootstrap candidate 선택 정보와 점수
 - SLM MainAI 설정과 seeded plan 목록
@@ -343,6 +359,8 @@ repo 안의 baseline fixture와 비교하는 lane이다.
   reader drain과 clean reboot/exit termination gate
 - PID 1→PID 2 순차 ring3 pair 필수 checkpoint, 구조 파서와 shell state 계약
 - `state autonomy` schema 1의 read-only mode/support/counter/last-decision 계약
+- AI Pressure Tracker required marker, structured `pressure` summary,
+  `state pressure` observation-only/gate-separation 계약
 - QEMU 없는 host unit test와 CI 선행 gate
 
 아직 하지 않은 것:

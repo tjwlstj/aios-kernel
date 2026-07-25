@@ -29,6 +29,7 @@
  *   state nodes      — per-node gate/work observation (summary line +
  *                      one `[STATE] node id=...` line per active node)
  *   state pipeline   — node pipeline registry statistics
+ *   state pressure   — read-only scheduler/memory/policy pressure snapshot
  *   state slm        — SLM plan apply observation (high-precision timing)
  *   state autonomy   — autonomy mode, support matrix, counters, last decision
  *   state user       — first ring3 execution round-trip result
@@ -45,6 +46,7 @@
 #include <runtime/node_pipeline.h>
 #include <runtime/nodebit.h>
 #include <runtime/autonomy.h>
+#include <runtime/ai_pressure.h>
 #include <runtime/slm_orchestrator.h>
 #include <kernel/user_exec.h>
 #include <kernel/process.h>
@@ -110,7 +112,7 @@ static void cmd_ping(void) {
 }
 
 static void state_list(void) {
-    STATE_EMIT("[STATE] topics list=health,mem,sched,nodes,pipeline,slm,autonomy,user,sec,time,version\n");
+    STATE_EMIT("[STATE] topics list=health,mem,sched,nodes,pipeline,pressure,slm,autonomy,user,sec,time,version\n");
 }
 
 static void state_sched(void) {
@@ -294,6 +296,53 @@ static void state_pipeline(void) {
         (int64_t)s.last_status);
 }
 
+static void state_pressure(void) {
+    ai_pressure_snapshot_t p;
+    aios_status_t status = ai_pressure_read(&p);
+
+    if (status != AIOS_OK) {
+        STATE_EMIT("[STATE] pressure ready=0 status=%d\n", (int64_t)status);
+        return;
+    }
+
+    STATE_EMIT("[STATE] pressure schema=%u observation_only=%u gate_filter_separate=%u max_levels=%u active_levels=%u planes=%u source_flags=%x sample=%u sampled_ns=%u sched_q10=%u memory_q10=%u policy_q10=%u hotspot=%s hotspot_valid=%u hotspot_q10=%u concentration_q10=%u sched_queue_concentration_q10=%u queued=%u runnable=%u largest_queue=%u largest_policy=%u active_domains=%u active_windows=%u shared_windows=%u participant_links=%u writer_pairs=%u read_write_pairs=%u max_fanout=%u budget_bytes=%u shared_bytes=%u weighted_shared_bytes=%u active_nodes=%u gate_evals=%u gate_denies=%u health_blocks=%u\n",
+        (uint64_t)p.schema_version,
+        (uint64_t)p.observation_only,
+        (uint64_t)p.gate_filter_separate,
+        (uint64_t)p.max_levels,
+        (uint64_t)p.active_levels,
+        (uint64_t)p.plane_count,
+        (uint64_t)p.source_flags,
+        p.sample_sequence,
+        p.sampled_at_ns,
+        (uint64_t)p.plane_score_q10[AI_PRESSURE_PLANE_SCHED],
+        (uint64_t)p.plane_score_q10[AI_PRESSURE_PLANE_MEMORY],
+        (uint64_t)p.plane_score_q10[AI_PRESSURE_PLANE_POLICY],
+        (uint64_t)(uintptr_t)ai_pressure_plane_name(p.hotspot_plane),
+        (uint64_t)p.hotspot_valid,
+        (uint64_t)p.hotspot_score_q10,
+        (uint64_t)p.plane_concentration_q10,
+        (uint64_t)p.scheduler_queue_concentration_q10,
+        (uint64_t)p.queued_tasks,
+        (uint64_t)p.runnable_tasks,
+        (uint64_t)p.largest_queue,
+        (uint64_t)p.largest_queue_policy,
+        (uint64_t)p.active_domains,
+        (uint64_t)p.active_windows,
+        (uint64_t)p.shared_windows,
+        (uint64_t)p.participant_links,
+        (uint64_t)p.writer_pairs,
+        (uint64_t)p.read_write_pairs,
+        (uint64_t)p.max_fanout,
+        p.total_budget_bytes,
+        p.shared_bytes,
+        p.weighted_shared_bytes,
+        (uint64_t)p.active_nodes,
+        (uint64_t)p.gate_evaluations,
+        (uint64_t)p.gate_denies,
+        (uint64_t)p.gate_health_blocks);
+}
+
 static void state_health(void) {
     kernel_health_summary_t s;
     kernel_health_get_summary(&s);
@@ -356,6 +405,7 @@ static void cmd_state(const char *arg, uint32_t arg_len) {
     if (topic_is(arg, arg_len, "sched"))                { state_sched();   return; }
     if (topic_is(arg, arg_len, "nodes"))                { state_nodes();   return; }
     if (topic_is(arg, arg_len, "pipeline"))             { state_pipeline(); return; }
+    if (topic_is(arg, arg_len, "pressure"))             { state_pressure(); return; }
     if (topic_is(arg, arg_len, "slm"))                  { state_slm();     return; }
     if (topic_is(arg, arg_len, "autonomy"))             { state_autonomy(); return; }
     if (topic_is(arg, arg_len, "user"))                 { state_user();    return; }

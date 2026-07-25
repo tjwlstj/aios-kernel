@@ -31,6 +31,7 @@ CHECKPOINT_PATTERNS = {
     "autonomy": "[INIT] Autonomy Control Plane... OK",
     "slm_orchestrator": "[INIT] SLM Hardware Orchestrator... OK",
     "nodebit": "[INIT] NodeBit Policy Gate... OK",
+    "pressure_tracker": "[PRESSURE] tracker selftest PASS",
     "keyboard": "[INIT] PS/2 Keyboard... OK",
     "ring3_scaffold": "[USER] Ring3 scaffold ready=1",
     "bootstrap_process": "[PROC] bootstrap ownership selftest PASS",
@@ -128,6 +129,14 @@ ROOM_SNAPSHOT_RE = re.compile(
 )
 ROOM_GATES_RE = re.compile(
     r"\[ROOM\] gates total=(?P<total>\d+) stable_only=(?P<stable_only>\d+) completion=(?P<completion>\d+) shared=(?P<shared>\d+) risky_io=(?P<risky_io>\d+) observe=(?P<observe>\d+) control=(?P<control>\d+) data=(?P<data>\d+)"
+)
+PRESSURE_SELFTEST_RE = re.compile(
+    r"^\[PRESSURE\] tracker selftest (?P<status>\w+) "
+    r"schema=(?P<schema>\d+) planes=(?P<planes>\d+) "
+    r"max_levels=(?P<max_levels>\d+) active_levels=(?P<active_levels>\d+) "
+    r"balanced=(?P<balanced>\d+) hotspot=(?P<hotspot>\d+) "
+    r"overlap=(?P<overlap>\d+) gate_mask=(?P<gate_mask>\d+) "
+    r"observation_only=(?P<observation_only>\d+)$"
 )
 
 
@@ -567,6 +576,48 @@ def parse_boot_log_text(log_text: str, smoke_profile: str, serial_log_path: str 
         "ready": checkpoints["nodebit"]["seen"],
     }
 
+    pressure: dict[str, object] = {
+        "ready": False,
+        "checkpoint_seen": checkpoints["pressure_tracker"]["seen"],
+    }
+    index, line, match = _search_match(lines, PRESSURE_SELFTEST_RE)
+    if match:
+        fields = _int_groupdict(
+            match,
+            "schema",
+            "planes",
+            "max_levels",
+            "active_levels",
+            "balanced",
+            "hotspot",
+            "overlap",
+            "gate_mask",
+            "observation_only",
+        )
+        pressure.update(
+            {
+                "line": index,
+                "text": line,
+                "status": match.group("status"),
+                **fields,
+            }
+        )
+        pressure["ready"] = (
+            pressure["checkpoint_seen"]
+            and match.group("status") == "PASS"
+            and fields == {
+                "schema": 1,
+                "planes": 3,
+                "max_levels": 4,
+                "active_levels": 2,
+                "balanced": 1,
+                "hotspot": 1,
+                "overlap": 1,
+                "gate_mask": 1,
+                "observation_only": 1,
+            }
+        )
+
     summary = {
         "smoke_profile": smoke_profile,
         "serial_log": serial_log_path,
@@ -585,6 +636,7 @@ def parse_boot_log_text(log_text: str, smoke_profile: str, serial_log_path: str 
         "kernel_room": kernel_room,
         "shell": shell_info,
         "nodebit": nodebit_info,
+        "pressure": pressure,
     }
     return summary
 

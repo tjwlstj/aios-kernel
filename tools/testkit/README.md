@@ -31,7 +31,7 @@
   - Windows 커널 빌드/부팅용 전용 엔트리포인트
 - `tests/`
   - QEMU 없이 verdict, baseline guard, matrix, shell 반례를 검증하는 host unit test
-  - `test_build_windows_verdict.ps1`은 직접 PowerShell IDE/process-pair 판정 10개를 검증
+  - `test_build_windows_verdict.ps1`은 직접 PowerShell IDE/process-pair/pressure 판정 11개를 검증
 
 원칙:
 
@@ -63,13 +63,15 @@
   - smoke 성공 후 `kernel/build/boot-summary/test-<profile>.json` 생성
   - checkpoint, selftest, perf profile, device summary, health, user-mode scaffold,
     primary process stack, 두 process 순차 실행 `process_pair`, Kernel Room snapshot,
-    controller state, network/USB/storage bootstrap selection, SLM seed 결과를 저장
+    controller state, network/USB/storage bootstrap selection, SLM seed 결과,
+    AI Pressure Tracker schema/selftest를 저장
 
 공통 smoke marker:
 
 - `[DEV] Peripheral probe ready`
 - `[USER] Ring3 scaffold ready=1`
 - `[USER] bootstrap process pair PASS runs=2 order=1,2 ... between_clean=1 ... both_restored=1`
+- `[PRESSURE] tracker selftest PASS schema=1 planes=3 max_levels=4 active_levels=2 ... observation_only=1`
 - `[ROOM] snapshot stability=...`
 - `[HEALTH] stability=...`
 
@@ -100,11 +102,12 @@ terminal checkpoint는 각각 정확히 한 번, 정의된 순서로 나타나�
 
 - `shell`
   - QEMU 시리얼을 stdio에 붙여 "실행 중 커널"과 명령/응답으로 대화하는 레인
-  - `[SHELL] Interactive shell started` 대기 → `ping`, `state list/health/mem/sched/nodes/pipeline/slm/autonomy/user/sec/time/version`,
+  - `[SHELL] Interactive shell started` 대기 → `ping`, `state list/health/mem/sched/nodes/pipeline/pressure/slm/autonomy/user/sec/time/version`,
     미지 토픽 오류 응답까지 순차 검증 → `reboot`로 클린 종료 (`-no-reboot` 덕에 QEMU exit)
   - 응답 프로토콜: 한 줄 `[STATE] <topic> key=value ...` (값에 공백 없음).
     리스트형 토픽(`state nodes`)은 요약 한 줄 + 항목당 `[STATE] node id=...` 한 줄
   - `state autonomy`는 schema, 안전 모드, target별 지원도, queue/event 통계와 마지막 decision/reason을 read-only로 노출
+  - `state pressure`는 schema 1, observation-only/gate 분리 계약, 세 pressure plane과 raw queue/fabric/NodeBit 증거를 한 줄로 노출
   - 각 교환은 한 response record의 토큰 경계로 검증하고, 종료 전 reader를 drain한 뒤
     전체 transcript에 normal boot verdict를 다시 적용한다
   - 아티팩트: `kernel/build/shell-smoke/transcript.log` (전체 시리얼 대화),

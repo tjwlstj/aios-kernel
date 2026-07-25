@@ -2,6 +2,8 @@
 
 작성일: 2026-04-27
 
+최종 갱신: 2026-07-26 (AI Pressure Tracker v0 관측 경로)
+
 ## 목적
 
 이 문서는 AIOS가 부팅 가능한 커널 기준선을 유지하면서,
@@ -25,18 +27,21 @@ AI workload와 agent runtime에 맞는 리소스 관리를 어떤 순서로 확�
 - `mm/memory_fabric.c`의 agent domain / shared window scaffold
 - `mm/heap.c`의 2 MiB static kernel heap
 - `sched/ai_sched.c`의 AI task metadata, run queue, PIT tick accounting
+- `runtime/ai_pressure.c`의 schema 1 관측 전용 pressure snapshot
 - `runtime/ai_syscall.c`의 AI syscall dispatcher와 bootstrap snapshot surface
 - `state autonomy` schema 1의 read-only mode/support/counter/last-decision 관측면
 - `kernel/health.c`, `kernel/kernel_room.c`의 health / room snapshot
 - `runtime/nodebit.c`의 capability policy gate
 - `runtime/slm_orchestrator.c`의 boot-time SLM/hardware snapshot
+- 정적 ELF64 loader, 두 private CR3, process별 16 KiB ring0 entry stack,
+  PID 1→PID 2의 bounded 순차 ring3 실행/정리 증거
 
 아직 없는 것:
 
-- 실제 ring3 handoff와 userspace task 실행
-- static ELF loader와 `aios-init`
-- per-process address space, user page mapping, page fault recovery
-- CPU context switcher
+- 장기 실행 `aios-init`과 일반 userspace task 수명주기
+- 동적 per-process address space/PMM, page fault recovery
+- 두 ring3 process의 timer-preemptive 전환과 full trapframe
+- SMP/per-CPU TSS와 물리 CPU 간 task migration
 - AI resource ledger / quota / budget accounting
 - 리소스 reserve / release / throttle UAPI
 - userspace `aios-resourced` 또는 policy broker 구현체
@@ -98,6 +103,65 @@ AIOS의 첫 AI resource model은 아래 단위로 시작한다.
 | Scheduler slice | `sched/ai_sched.c` | workload policy별 time slice / queue pressure 관측 |
 | Device I/O | driver bootstrap, SLM plans | risky I/O budget은 NodeBit와 health gate로 제한 |
 | KV cache | planned userspace runtime | 커널은 backing/window primitive만 제공하고 policy는 userspace로 이동 |
+
+## AI Pressure Tracker v0
+
+상태: `CURRENT` (2026-07-26), 관측 전용.
+
+이번 조각은 실제 배치 정책보다 먼저 “어디에 일이 몰리는가”를 빠르게 읽는
+고정 크기 압력 표면을 추가한다.
+
+현재 두 단계 계층은 다음과 같다.
+
+```text
+system
+  ├─ sched   : AI workload queue occupancy
+  ├─ memory  : Memory Fabric window/reader/writer overlap
+  └─ policy  : cumulative NodeBit denial ratio
+```
+
+- public plane ID는 `sched=0`, `memory=1`, `policy=2`로 명시하고 append-only로 유지한다.
+- snapshot은 `schema_version`, `struct_size`, `source_flags`를 가져 확장 시
+  기존 독자가 구조 크기와 source 의미를 구분할 수 있다.
+- 점수는 부동소수점/SIMD가 아닌 `0..1024` 정수 고정소수점 비율이다.
+- `max_levels=4`, `active_levels=2`다. 즉 system→plane만 `CURRENT`이고,
+  plane→domain→task/window/ring은 구조적 확장 용량일 뿐 아직 구현이 아니다.
+- system hotspot은 세 plane 점수의 최댓값이고, `concentration_q10`은
+  `max / sum`이다. 모든 점수가 0이면 hotspot은 `none`, valid는 0이다.
+- NodeBit 수치는 누적 counter에서 계산하므로 `source_flags`가 이를 명시한다.
+  fast/slow EWMA나 시간 창 pressure로 과장하지 않는다.
+
+Memory Fabric 중첩 증거는 정확한 fixed array를 한 번 순회해 계산한다.
+
+- participant fanout: `reader_mask | writer_mask` popcount
+- writer conflict: writer 쌍의 수
+- read/write overlap: writer와 writer가 아닌 reader 사이의 쌍
+- weighted shared bytes: shared window bytes × participant fanout
+
+`map_count`는 attach에 대응하는 detach API가 없어 누적 logical-map 수다.
+따라서 순간 동시성이나 현재 과밀도 입력으로 사용하지 않는다.
+
+게이트 bitmap과 압력 점수도 합치지 않는다. pressure가 후보를 관측/순위화한
+뒤 eligibility는 `online & affinity & policy_gate & health & budget`의 별도
+교집합으로 계산한다. v0에는 이 결과를 소비하는 scheduler migration/apply
+edge가 없다.
+
+관측/검증 표면:
+
+- required boot proof:
+  `[PRESSURE] tracker selftest PASS schema=1 ... observation_only=1`
+- structured boot summary: `pressure.ready`, schema/계층/selftest 필드
+- runtime shell: `state pressure`
+- host negative: marker 누락, `observation_only=0`, `gate_mask=0`,
+  불완전 pressure record는 PASS하지 않는다.
+
+다음 확장은 실제 SMP보다 먼저 다음 순서로 제한한다.
+
+1. fast/slow integer EWMA와 sample generation
+2. scheduler wait/stall, Memory Fabric domain/window별 exact child cell
+3. I/O/ring source가 실제 counter를 제공할 때 plane ID append
+4. full trapframe + per-CPU 기반 뒤에만 migration proposal 연결
+5. proposal은 NodeBit/health/budget gate와 rollback verifier를 통과한 뒤에만 apply
 
 ## 개발 순서
 
@@ -280,7 +344,7 @@ OS/tooling 변경:
 
 ## 당장 다음 패치 후보
 
-가장 작은 구현 후보는 다음이다.
+Pressure Tracker v0 다음의 가장 작은 후보는 기존 Slice 1 resource ledger다.
 
 1. `include/runtime/ai_resource.h` 추가
 2. `runtime/ai_resource.c` read-only ledger 추가
@@ -289,7 +353,12 @@ OS/tooling 변경:
 5. testkit parser에 optional resource marker 추가
 
 이 후보는 allocator 정책을 바꾸지 않으면서도,
-AI 친화 리소스 관리의 첫 관측 표면을 만든다.
+pressure 위에 owner별 quota/usage 관측 표면을 더한다.
+
+단, pressure를 실제 scheduler apply에 연결하기 전에는
+`calc_weight()`와 `delta_ns / weight`의 priority 의미를 별도 selftest로 먼저
+고정해야 한다. 현재 v0은 이 경로를 읽기만 하므로 기존 vruntime 동작을
+변경하지 않는다.
 
 ## 하지 말아야 할 것
 

@@ -23,6 +23,65 @@ static uint32_t g_next_domain_id = 1;
 static uint32_t g_next_window_id = 1;
 static spinlock_t g_fabric_lock = SPINLOCK_INIT;
 
+static uint32_t popcount32(uint32_t value) {
+    uint32_t count = 0;
+    while (value != 0) {
+        value &= value - 1U;
+        count++;
+    }
+    return count;
+}
+
+static uint64_t sat_add_u64(uint64_t left, uint64_t right) {
+    uint64_t max_value = ~0ULL;
+    return left > max_value - right ? max_value : left + right;
+}
+
+static uint64_t sat_mul_u64_u32(uint64_t value, uint32_t factor) {
+    uint64_t max_value = ~0ULL;
+    if (factor != 0 && value > max_value / factor) {
+        return max_value;
+    }
+    return value * factor;
+}
+
+static void accumulate_pressure_window(
+    memory_fabric_pressure_snapshot_t *out,
+    const memory_shared_window_t *window
+) {
+    uint32_t participants;
+    uint32_t writers;
+    uint32_t readers_only;
+
+    if (!window->active) {
+        return;
+    }
+
+    participants = popcount32(window->reader_mask | window->writer_mask);
+    writers = popcount32(window->writer_mask);
+    readers_only = popcount32(window->reader_mask & ~window->writer_mask);
+
+    out->active_windows++;
+    out->participant_links += participants;
+    out->writer_links += writers;
+    if (participants > out->max_fanout) {
+        out->max_fanout = participants;
+    }
+
+    if (participants > 1U) {
+        out->shared_windows++;
+        out->shared_bytes = sat_add_u64(out->shared_bytes, window->size_bytes);
+        out->weighted_shared_bytes = sat_add_u64(
+            out->weighted_shared_bytes,
+            sat_mul_u64_u32(window->size_bytes, participants)
+        );
+    }
+    if (writers > 1U) {
+        out->writer_pairs += (writers * (writers - 1U)) / 2U;
+    }
+    out->read_write_pairs += writers * readers_only;
+}
+
 static uint8_t clamp_u8_value(int32_t value, uint8_t min_value, uint8_t max_value) {
     if (value < (int32_t)min_value) {
         return min_value;
@@ -339,6 +398,58 @@ uint32_t memory_fabric_window_count(void) {
     }
     spinlock_unlock(&g_fabric_lock);
     return count;
+}
+
+aios_status_t memory_fabric_pressure_read(
+    memory_fabric_pressure_snapshot_t *out
+) {
+    if (!out) {
+        return AIOS_ERR_INVAL;
+    }
+
+    memset(out, 0, sizeof(*out));
+    spinlock_lock(&g_fabric_lock);
+    for (uint32_t i = 0; i < g_domain_count; i++) {
+        if (!g_domains[i].active) {
+            continue;
+        }
+        out->active_domains++;
+        out->total_budget_bytes = sat_add_u64(
+            out->total_budget_bytes,
+            (uint64_t)g_domains[i].local_budget_kib * KB(1)
+        );
+    }
+    for (uint32_t i = 0; i < g_window_count; i++) {
+        accumulate_pressure_window(out, &g_windows[i]);
+    }
+    spinlock_unlock(&g_fabric_lock);
+    return AIOS_OK;
+}
+
+aios_status_t memory_fabric_pressure_selftest(void) {
+    memory_fabric_pressure_snapshot_t snapshot;
+    memory_shared_window_t window;
+
+    memset(&snapshot, 0, sizeof(snapshot));
+    memset(&window, 0, sizeof(window));
+    window.active = true;
+    window.size_bytes = PAGE_SIZE;
+    window.reader_mask = (uint32_t)(BIT(0) | BIT(1) | BIT(2));
+    window.writer_mask = (uint32_t)(BIT(0) | BIT(1));
+    accumulate_pressure_window(&snapshot, &window);
+
+    if (snapshot.active_windows != 1U ||
+        snapshot.shared_windows != 1U ||
+        snapshot.participant_links != 3U ||
+        snapshot.writer_links != 2U ||
+        snapshot.writer_pairs != 1U ||
+        snapshot.read_write_pairs != 2U ||
+        snapshot.max_fanout != 3U ||
+        snapshot.shared_bytes != PAGE_SIZE ||
+        snapshot.weighted_shared_bytes != (uint64_t)PAGE_SIZE * 3U) {
+        return AIOS_ERR_IO;
+    }
+    return AIOS_OK;
 }
 
 aios_status_t memory_fabric_domain_open(memory_domain_role_t role, uint8_t priority,

@@ -130,11 +130,12 @@ def _record_has_duplicate_fields(record: str) -> bool:
 # whitespace-delimited token on the anchored response record.
 DEFAULT_EXCHANGES: list[dict[str, object]] = [
     {"command": "ping", "expect": ["[STATE] pong ticks="]},
-    {"command": "state list", "expect": ["[STATE] topics list=health,mem,sched,nodes,pipeline,slm,autonomy,user,sec,time,version"]},
+    {"command": "state list", "expect": ["[STATE] topics list=health,mem,sched,nodes,pipeline,pressure,slm,autonomy,user,sec,time,version"]},
     {"command": "state health", "expect": ["[STATE] health stability=stable", "degraded=0", "failed=0", "io_degraded=0", "autonomy="]},
     {"command": "state mem", "expect": ["[STATE] mem heap_total=", "heap_free=", "lock_acquires="]},
     {"command": "state sched", "expect": ["[STATE] sched kthread_switches=", "preempt_ticks=", "address_space_switches=", "address_space_ready=1", "user_leaf_slots=2", "user_leaf_isolated=1", "bootstrap_process_ready=1", "bootstrap_owned_processes=2", "completed_process_runs=2", "current_pid=0", "last_pid=2", "tss_rsp0_publishes=2", "tss_rsp0_restores=2", "tss_rsp0_baseline=1", "total_tasks="]},
     {"command": "state pipeline", "expect": ["[STATE] pipeline active=", "executions="]},
+    {"command": "state pressure", "expect": ["[STATE] pressure schema=1", "observation_only=1", "gate_filter_separate=1", "max_levels=4", "active_levels=2", "planes=3", "source_flags=", "sample=", "sched_q10=", "memory_q10=", "policy_q10=", "hotspot=", "hotspot_valid=", "concentration_q10=", "queued=", "runnable=", "active_domains=", "shared_windows=", "writer_pairs=", "gate_evals="]},
     {"command": "state nodes", "expect": ["[STATE] nodes active=", "[STATE] node id=40"]},
     {"command": "state slm", "expect": ["[STATE] slm apply_ok=1", "tsc_khz="]},
     {"command": "state autonomy", "expect": ["[STATE] autonomy schema=1", "observation_only=1", "safe_mode=0", "support_mem=observe-only", "support_sched=apply", "support_accel=observe-only", "support_infer=observe-only", "telemetry=", "proposed=0", "approved=0", "committed=0", "rejected=0", "rollbacks=0", "queue_depth=0", "event_depth=0", "last_valid=0", "last_action=0", "last_target=none", "last_state=none", "last_reason=none"]},
