@@ -202,8 +202,39 @@ try {
         throw 'Apply-capable resource ledger evidence unexpectedly passed'
     }
     Write-Output 'PASS mutating-resource-ledger expected=False'
+
+    $duplicateObservationCases = @(
+        [pscustomobject]@{
+            Name = 'duplicate-resource-ledger'
+            Line = $normalLines | Where-Object {
+                $_ -match '^\[RESOURCE\] ledger selftest '
+            } | Select-Object -First 1
+        }
+        [pscustomobject]@{
+            Name = 'duplicate-pressure-tracker'
+            Line = $normalLines | Where-Object {
+                $_ -match '^\[PRESSURE\] tracker selftest '
+            } | Select-Object -First 1
+        }
+    )
+    foreach ($duplicateCase in $duplicateObservationCases) {
+        $duplicateObservationLines = @($normalLines) + @(
+            [string]$duplicateCase.Line
+        )
+        [IO.File]::WriteAllLines(
+            $tempPath,
+            $duplicateObservationLines,
+            [Text.UTF8Encoding]::new($false)
+        )
+        $duplicateObservationVerdict =
+            Test-NormalSmokeVerdict -SerialLog $tempPath
+        if ([bool]$duplicateObservationVerdict.Passed) {
+            throw "$($duplicateCase.Name) unexpectedly passed"
+        }
+        Write-Output "PASS $($duplicateCase.Name) expected=False"
+    }
 } finally {
     Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
 }
 
-Write-Output "PowerShell verdict selftest passed cases=$($cases.Count + 6)"
+Write-Output "PowerShell verdict selftest passed cases=$($cases.Count + 6 + $duplicateObservationCases.Count)"

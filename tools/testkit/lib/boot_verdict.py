@@ -211,6 +211,31 @@ def _invalid_required_evidence_records(
     return invalid_records
 
 
+def _duplicate_exact_required_records(
+    required_occurrences: Mapping[str, list[dict[str, object]]],
+) -> list[dict[str, object]]:
+    duplicate_records: list[dict[str, object]] = []
+    for pattern, occurrences in required_occurrences.items():
+        record_name = next(
+            (
+                name
+                for prefix, name in EXACT_REQUIRED_RECORDS
+                if pattern.startswith(prefix)
+            ),
+            None,
+        )
+        if record_name is None or len(occurrences) <= 1:
+            continue
+        duplicate_records.append(
+            {
+                "record": record_name,
+                "lines": [occurrence["line"] for occurrence in occurrences],
+                "texts": [occurrence["text"] for occurrence in occurrences],
+            }
+        )
+    return duplicate_records
+
+
 def _fatal_events(lines: list[str]) -> list[dict[str, object]]:
     events: list[dict[str, object]] = []
     for index, line in enumerate(lines, start=1):
@@ -350,6 +375,9 @@ def evaluate_normal_boot(
     invalid_evidence_records = _invalid_required_evidence_records(
         required_occurrences
     )
+    duplicate_evidence_records = _duplicate_exact_required_records(
+        required_occurrences
+    )
     missing_checkpoints = [name for name, _ in TERMINAL_CHECKPOINTS if not occurrences[name]]
     duplicates = [
         {
@@ -414,6 +442,13 @@ def evaluate_normal_boot(
                 "events": invalid_evidence_records,
             }
         )
+    if duplicate_evidence_records:
+        reasons.append(
+            {
+                "code": "EVIDENCE_RECORD_DUPLICATED",
+                "events": duplicate_evidence_records,
+            }
+        )
     if missing_checkpoints:
         reasons.append(
             {
@@ -465,6 +500,16 @@ def evaluate_normal_boot(
                 "record": event["record"],
             }
         )
+    for event in duplicate_evidence_records:
+        duplicate_lines = event["lines"]
+        if isinstance(duplicate_lines, list) and len(duplicate_lines) > 1:
+            line_failures.append(
+                {
+                    "kind": "EVIDENCE_RECORD_DUPLICATED",
+                    "line": duplicate_lines[1],
+                    "record": event["record"],
+                }
+            )
     for duplicate in duplicates:
         duplicate_lines = duplicate["lines"]
         if isinstance(duplicate_lines, list) and len(duplicate_lines) > 1:
@@ -504,6 +549,7 @@ def evaluate_normal_boot(
         "fatal_events": fatal_events,
         "duplicate_evidence_fields": duplicate_evidence_fields,
         "invalid_evidence_records": invalid_evidence_records,
+        "duplicate_evidence_records": duplicate_evidence_records,
         "health": health,
         "checkpoints": {
             "expected_order": [name for name, _ in TERMINAL_CHECKPOINTS],

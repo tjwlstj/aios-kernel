@@ -218,10 +218,16 @@ function Test-NormalSmokeVerdict {
         return @($allOccurrences | Where-Object { $_.LineNumber -ge $firstAnchorLine })
     }
 
-    $lines = @(Get-Content -Path $SerialLog -ErrorAction SilentlyContinue)
+    # Match the Python sanitizer: ignore trailing transport whitespace while
+    # preserving leading whitespace so diagnostic copies cannot become proof.
+    $lines = @(
+        Get-Content -Path $SerialLog -ErrorAction SilentlyContinue |
+            ForEach-Object { ([string]$_).TrimEnd() }
+    )
     $reasons = @()
     $missingPatterns = @()
     $requiredOccurrences = @{}
+    $duplicateEvidenceRecords = @()
     $duplicateFieldLines = [System.Collections.Generic.HashSet[int]]::new()
     foreach ($pattern in (Get-SmokeRequiredPatterns)) {
         $occurrenceArgs = @{ Pattern = $pattern }
@@ -240,6 +246,22 @@ function Test-NormalSmokeVerdict {
         $requiredOccurrences[$pattern] = $matches
         if ($matches.Count -eq 0) {
             $missingPatterns += $pattern
+        }
+        $exactRecordName = $null
+        if ($pattern.StartsWith('^\[RESOURCE\] ledger selftest PASS ')) {
+            $exactRecordName = 'resource_ledger'
+        } elseif ($pattern.StartsWith('^\[PRESSURE\] tracker selftest PASS ')) {
+            $exactRecordName = 'pressure_tracker'
+        }
+        if ($null -ne $exactRecordName -and $matches.Count -gt 1) {
+            $duplicateEvidenceRecords += [pscustomobject]@{
+                Record = $exactRecordName
+                Lines  = @($matches | ForEach-Object { $_.LineNumber })
+                Texts  = @($matches | ForEach-Object { $_.Text })
+            }
+            $duplicateLinesText =
+                ($matches | ForEach-Object { $_.LineNumber }) -join ','
+            $reasons += "evidence-record-duplicated:${exactRecordName}:lines=$duplicateLinesText"
         }
         foreach ($match in $matches) {
             $null = $duplicateFieldLines.Add([int]$match.LineNumber)
@@ -467,6 +489,11 @@ function Test-NormalSmokeVerdict {
     foreach ($event in $invalidEvidenceRecords) {
         $lineFailures += [pscustomobject]@{ Kind = 'EVIDENCE_RECORD_INVALID'; Line = $event.Line; Text = $event.Text }
     }
+    foreach ($event in $duplicateEvidenceRecords) {
+        if ($event.Lines.Count -gt 1) {
+            $lineFailures += [pscustomobject]@{ Kind = 'EVIDENCE_RECORD_DUPLICATED'; Line = $event.Lines[1]; Record = $event.Record }
+        }
+    }
     foreach ($duplicate in $duplicateCheckpoints) {
         if ($duplicate.Lines.Count -gt 1) {
             $lineFailures += [pscustomobject]@{ Kind = 'TERMINAL_CHECKPOINT_DUPLICATED'; Line = $duplicate.Lines[1]; Checkpoint = $duplicate.Checkpoint }
@@ -494,6 +521,7 @@ function Test-NormalSmokeVerdict {
         fatal_events              = $fatalEvents
         duplicate_evidence_fields = $duplicateEvidenceFields
         invalid_evidence_records  = $invalidEvidenceRecords
+        duplicate_evidence_records = $duplicateEvidenceRecords
         health                    = [pscustomobject]$health
         checkpoints               = [pscustomobject]@{
             expected_order   = @($terminalCheckpoints | ForEach-Object { $_.Name })

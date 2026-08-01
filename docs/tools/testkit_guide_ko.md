@@ -86,12 +86,13 @@ pwsh -NoProfile -File .\tools\testkit\tests\test_build_windows_verdict.ps1
 ```
 
 이 검사는 QEMU보다 먼저 실행하며 PASS 뒤 panic, health 실패, checkpoint 역순·중복,
-인용/접두사 마커, 중복 key, 불완전 baseline/perf 출처, stale shell artifact,
+인용/접두사/들여쓰기 마커, 중복 key와 중복 exact observation record,
+불완전 baseline/perf 출처, stale shell artifact,
 clean-exit 누락, process pair 레코드 누락/불완전, pressure marker
 누락/불완전·apply-capable 변형, resource marker 누락/축약/상충 변형을
 55개 Python unit으로 고정한다.
-별도의 `test_build_windows_verdict.ps1` 15개 사례가 Windows 직접 판정기의 IDE evidence
-문법과 process pair/pressure/resource 필수성을 같은 의미론으로 검증한다.
+별도의 `test_build_windows_verdict.ps1` 17개 사례가 Windows 직접 판정기의 IDE evidence
+문법과 process pair/pressure/resource 필수성 및 exact record 단일성을 같은 의미론으로 검증한다.
 
 ### 전체
 
@@ -213,7 +214,8 @@ optional 하드웨어 구성을 나눌 수 있다.
 중복 key도 거부하고, verdict line number는 raw serial artifact와 일치한다. `failed=0`,
 `apply_failed=0` 같은 소문자 상태 필드는 fatal로 오인하지 않는다.
 Resource와 pressure selftest는 required substring 뒤의 임의 필드를 허용하지 않는 exact
-record다. canonical record에 `apply_enabled=1`을 덧붙인 로그도 정상 PASS가 아니다.
+record다. canonical record에 `apply_enabled=1`을 덧붙이거나 같은 exact record를 두 번
+제시한 로그도 정상 PASS가 아니다. 선행 공백을 제거해 증거로 승격하지도 않는다.
 
 ## 부팅 요약 export
 

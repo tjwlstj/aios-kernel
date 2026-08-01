@@ -90,7 +90,7 @@ CI exit status + build artifacts
 - boot summary, matrix, inventory, perf, shell transcript/summary artifacts
 - cppcheck CI gate and Linux full smoke/minimal shell gate
 - normal boot verdict v1의 전체 로그 fatal, anchored/token-boundary evidence,
-  health, terminal-chain, duplicate-key 판정과 55개 host unit test
+  health, terminal-chain, duplicate-key/exact-record 판정과 55개 host unit test
 - Python/PowerShell 공통 resource/pressure exact required marker, structured
   boot-summary `resource`/`pressure` section, shell `state pressure` same-record 계약
 - shell 전체 transcript verdict, 동일 response record 검증, reader drain,
@@ -248,7 +248,7 @@ inventory와 perf가 같은 출처 신뢰 규칙을 공유해야 한다.
 
 | 구성요소 | 상태 | 역할 |
 |---|---|---|
-| 순수 boot verdict evaluator | `CURRENT` | 전체 로그 fatal, anchored evidence, duplicate key, health, terminal order/duplicate 판정 |
+| 순수 boot verdict evaluator | `CURRENT` | 전체 로그 fatal, anchored evidence, duplicate key/exact record, health, terminal order/duplicate 판정 |
 | verdict host unit tests | `CURRENT` | panic-after-PASS, token/행 위장, 중복 키, health, resource/pressure, shell, baseline/perf 반례 55개 고정 |
 | shell reboot/clean-exit gate | `CURRENT` | 전체 transcript verdict, reader drain, reboot ack, exit code 0을 PASS 조건으로 강제 |
 | baseline trusted-source guard | `CURRENT` | strict matrix/profile/verdict, profile-aware inventory와 comparable finite perf 검사 |
@@ -357,19 +357,20 @@ kernel/build/test-runs/<run-id>/<profile>/
 - CI에서 host unit test를 QEMU보다 먼저 실행
 
 완료 조건: 정상 로그는 PASS하고, PASS 뒤 panic·health degraded·역순·중복,
-인용/접두사 마커, 중복 key, stale shell artifact, 불완전 baseline/perf는 모두
+인용/접두사/들여쓰기 마커, 중복 key/exact record, stale shell artifact,
+불완전 baseline/perf는 모두
 단위 테스트에서 FAIL한다.
 
 구현 근거:
 
 - `tools/testkit/lib/boot_verdict.py`, `baseline_guard.py`
 - `tools/testkit/tests/` host unit test 55개
-- PowerShell 직접 verdict host selftest 15개와 CI 선행 gate
+- PowerShell 직접 verdict host selftest 17개와 CI 선행 gate
 - Resource Ledger exact marker/structured summary와 missing/truncated/
   observation-only/apply-capable 상충 반례
 - pressure marker도 같은 exact-record 규칙으로 강화해 trailing apply 필드를 거부
 - Python boot matrix의 QEMU `full/minimal/storage-only` 통과와 PowerShell 직접
-  verdict host selftest 15개 통과
+  verdict host selftest 17개 통과
 - shell 15개 교환(`state pressure`, `state autonomy` 포함)과 `reader_drained=true reboot_ack=true clean_exit=true exit_code=0`,
   `termination.reason=guest-reboot-exit`, 전체 transcript boot verdict PASS
 - strict boot inventory 3프로필 baseline 일치

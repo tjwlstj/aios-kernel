@@ -155,7 +155,10 @@ PRESSURE_SELFTEST_RE = re.compile(
 def _sanitize_lines(log_text: str) -> list[str]:
     lines = []
     for raw_line in log_text.splitlines():
-        clean = ANSI_ESCAPE_RE.sub("", raw_line).strip()
+        # Transport whitespace at the end is harmless, but leading whitespace
+        # is contract-significant: an indented or quoted diagnostic copy must
+        # not become an anchored evidence record during sanitization.
+        clean = ANSI_ESCAPE_RE.sub("", raw_line).rstrip()
         if clean:
             lines.append(clean)
     return lines

@@ -77,6 +77,8 @@ class BootLogPressureTests(unittest.TestCase):
             "[PRESSURE] tracker selftest PASS schema=1 planes=3",
             PRESSURE_LINE.replace("observation_only=1", "observation_only=0"),
             PRESSURE_LINE.replace("gate_mask=1", "gate_mask=0"),
+            f"  {PRESSURE_LINE}",
+            f'"{PRESSURE_LINE}"',
         ):
             with self.subTest(line=line):
                 summary = parse_boot_log_text(line, "full", "synthetic.log")
@@ -103,6 +105,8 @@ class BootLogResourceTests(unittest.TestCase):
             "[RESOURCE] ledger selftest PASS schema=1 kinds=5",
             RESOURCE_LINE.replace("observation_only=1", "observation_only=0"),
             f"{RESOURCE_LINE} apply_enabled=1",
+            f"  {RESOURCE_LINE}",
+            f'"{RESOURCE_LINE}"',
         ):
             with self.subTest(line=line):
                 summary = parse_boot_log_text(line, "full", "synthetic.log")

@@ -78,6 +78,7 @@ class NormalBootVerdictTests(unittest.TestCase):
             PRESSURE_SELFTEST_PATTERN.replace("gate_mask=1", "gate_mask=0"),
             "[PRESSURE] tracker selftest PASS schema=1 planes=3",
             f"{PRESSURE_SELFTEST_PATTERN} apply_enabled=1",
+            f"  {PRESSURE_SELFTEST_PATTERN}",
         ):
             with self.subTest(invalid=invalid):
                 verdict = evaluate_normal_boot(
@@ -89,6 +90,19 @@ class NormalBootVerdictTests(unittest.TestCase):
                     {"MISSING_REQUIRED_PATTERNS", "EVIDENCE_RECORD_INVALID"}
                     & set(reason_codes(verdict))
                 )
+
+        duplicate = evaluate_normal_boot(
+            "\n".join(
+                [
+                    *normal_lines(),
+                    PRESSURE_SELFTEST_PATTERN,
+                    PRESSURE_SELFTEST_PATTERN,
+                ]
+            ),
+            [PRESSURE_SELFTEST_PATTERN],
+        )
+        self.assertFalse(duplicate["passed"])
+        self.assertIn("EVIDENCE_RECORD_DUPLICATED", reason_codes(duplicate))
 
     def test_resource_contract_is_exact_and_fails_closed(self) -> None:
         for profile in ("full", "minimal", "storage-only"):
@@ -110,6 +124,7 @@ class NormalBootVerdictTests(unittest.TestCase):
             ),
             "[RESOURCE] ledger selftest PASS schema=1 kinds=5",
             f"{RESOURCE_SELFTEST_PATTERN} apply_enabled=1",
+            f"  {RESOURCE_SELFTEST_PATTERN}",
         )
         for invalid in invalid_cases:
             with self.subTest(invalid=invalid):
@@ -122,6 +137,19 @@ class NormalBootVerdictTests(unittest.TestCase):
                     {"MISSING_REQUIRED_PATTERNS", "EVIDENCE_RECORD_INVALID"}
                     & set(reason_codes(verdict))
                 )
+
+        duplicate = evaluate_normal_boot(
+            "\n".join(
+                [
+                    *normal_lines(),
+                    RESOURCE_SELFTEST_PATTERN,
+                    RESOURCE_SELFTEST_PATTERN,
+                ]
+            ),
+            [RESOURCE_SELFTEST_PATTERN],
+        )
+        self.assertFalse(duplicate["passed"])
+        self.assertIn("EVIDENCE_RECORD_DUPLICATED", reason_codes(duplicate))
 
     def test_bootstrap_process_pair_checkpoint_missing_fails(self) -> None:
         lines = normal_lines()
