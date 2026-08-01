@@ -8,7 +8,7 @@
 
 ## Overview
 
-AIOS(AI-Native Operating System)는 AI 워크로드를 **1급 시민(First-class citizen)**으로 취급하는 커널 우선형 x86_64 베어메탈 OS 실험입니다. 현재 베타는 부팅 가능한 커널 기반, 텐서 지향 메모리 메타데이터, 메모리 패브릭, 헬스 스냅샷, SLM 하드웨어 스냅샷, NodeBit 정책 게이트, 관측 전용 AI pressure tracker, 제한된 AI 시스콜 표면을 중심으로 발전하고 있습니다.
+AIOS(AI-Native Operating System)는 AI 워크로드를 **1급 시민(First-class citizen)**으로 취급하는 커널 우선형 x86_64 베어메탈 OS 실험입니다. 현재 베타는 부팅 가능한 커널 기반, 텐서 지향 메모리 메타데이터, 메모리 패브릭, 헬스 스냅샷, SLM 하드웨어 스냅샷, NodeBit 정책 게이트, 관측 전용 AI pressure tracker와 resource ledger, 제한된 AI 시스콜 표면을 중심으로 발전하고 있습니다.
 
 장기 방향은 embodied AI OS입니다. LLM/SLM 에이전트는 유저스페이스에서 단기 기억과 장기 기억을 분리해 유지하고, 세션을 넘어 연속성을 보존하며, 하드웨어에는 커널이 중재하는 정책 경계를 통해 접근합니다.
 
@@ -25,13 +25,14 @@ Suggested repository description:
 
 > Kernel-first AI-native OS experiment for embodied LLM/SLM runtime: ring3 ELF demo, memory fabric, NodeBit policy gates, and mediated hardware access.
 
-## Current Status (2026-07-26)
+## Current Status (2026-08-02)
 
 - **Current beta:** `v0.2.0-beta.6` (`0.2.0-beta.6 "Genesis"` boot banner).
 - **Boot path:** x86_64 Multiboot2 커널, GDT/IDT/TSS, 페이징, PIT IRQ0 scheduler tick bootstrap, QEMU 스모크 테스트 기반.
 - **Hardening:** stack protector, NX/W^X 2MB identity-map marking, SMEP/UMIP/SMAP 감지/활성화 경로, #PF CR2 dump, #DF IST1, cppcheck CI.
 - **Memory:** 물리/가상 할당 기반, 텐서 메모리 메타데이터, 수명 프로파일링, 메모리 패브릭 노드, 공유 영역 스캐폴딩.
 - **Pressure observation:** schema 1의 `state pressure`가 workload queue, Memory Fabric reader/writer 중첩, 누적 NodeBit 거부율을 0..1024 정수 벡터로 읽는다. 현재는 system→plane 2단계 관측만 `CURRENT`이며 task migration이나 budget apply는 하지 않는다.
+- **Resource observation:** schema 1의 커널 내부 `ai_resource_snapshot_t`가 heap bytes, tensor bytes, active Memory Fabric windows, inference ring registrations, runnable scheduler tasks를 고정 5개 aggregate row로 읽는다. 모든 owner는 아직 `NONE/UNATTRIBUTED`이며 resource syscall, `state resource`, quota/reserve/apply는 `PLANNED`다.
 - **Autonomy and policy:** 헬스 스냅샷, 제한된 자율 제안/롤백 경로, SLM 하드웨어 스냅샷, NodeBit 정책 조회, Kernel Room syscall range classification.
 - **Userspace:** bounded bootstrap process pair slice 완료. 정적 descriptor 2개가 각자 private 2MiB user leaf/CR3와 16KiB ring0 entry stack을 소유하며, PID 1/slot 0과 PID 2/slot 1이 순차적으로 static ELF64 데모의 `int 0x80` 왕복, uaccess 거부, CR3·BSP `rsp0` 복원을 검증한다. `aios-init`, 디스크 기반 ELF 적재, 두 process의 타이머 선점, full trapframe, 동적 주소공간 수명주기, 장기 실행 유저스페이스 런타임은 아직 없다.
 - **Hardware AI access:** 가속기 인터페이스는 추상화/탐색 스캐폴딩 단계. 실제 GPU/NPU/TPU 드라이버와 직접 클럭 제어 백엔드는 계획 상태.
@@ -90,6 +91,14 @@ AIOS의 방향은 커널을 AI 시스템의 결정론적 body로 두고, 학습 
 - `max_levels=4` 중 system→plane 두 단계만 활성화한 확장 가능한 고정 계층
 - gate eligibility bitmap과 pressure score를 분리하고 `observation_only=1`로 고정
 - required boot selftest, structured boot summary, `state pressure` shell lane으로 검증
+
+### AI Resource Ledger v0
+- append-only resource kind 5개와 unit ID 2개를 가진 versioned fixed snapshot
+- heap/tensor 사용 bytes, Memory Fabric active-window 수, ring registration 수, runnable task 수를 관측
+- limit/used는 5종 모두 유효하지만 source-native high-water는 tensor 1종만 유효하고 denial counter는 아직 없음
+- owner 필드는 future attribution을 위해 존재하지만 현재 모든 row는 `NONE/UNATTRIBUTED`
+- exact required boot selftest와 structured `resource` boot summary로 검증
+- syscall, shell topic, reserve/release/throttle, allocator/scheduler policy 변경은 아직 없음
 
 ### SLM Snapshot and NodeBit Policy Gate
 - `slm_hw_snapshot_t`로 커널 health, 메모리 패브릭, agent tree, device readiness를 한 번에 노출

@@ -31,6 +31,7 @@ CHECKPOINT_PATTERNS = {
     "autonomy": "[INIT] Autonomy Control Plane... OK",
     "slm_orchestrator": "[INIT] SLM Hardware Orchestrator... OK",
     "nodebit": "[INIT] NodeBit Policy Gate... OK",
+    "resource_ledger": "[RESOURCE] ledger selftest PASS",
     "pressure_tracker": "[PRESSURE] tracker selftest PASS",
     "keyboard": "[INIT] PS/2 Keyboard... OK",
     "ring3_scaffold": "[USER] Ring3 scaffold ready=1",
@@ -129,6 +130,17 @@ ROOM_SNAPSHOT_RE = re.compile(
 )
 ROOM_GATES_RE = re.compile(
     r"\[ROOM\] gates total=(?P<total>\d+) stable_only=(?P<stable_only>\d+) completion=(?P<completion>\d+) shared=(?P<shared>\d+) risky_io=(?P<risky_io>\d+) observe=(?P<observe>\d+) control=(?P<control>\d+) data=(?P<data>\d+)"
+)
+RESOURCE_SELFTEST_RE = re.compile(
+    r"^\[RESOURCE\] ledger selftest (?P<status>\w+) "
+    r"schema=(?P<schema>\d+) kinds=(?P<kinds>\d+) units=(?P<units>\d+) "
+    r"entries=(?P<entries>\d+) capacity=(?P<capacity>\d+) "
+    r"source_flags=(?P<source_flags>\d+) "
+    r"limit_kinds=(?P<limit_kinds>\d+) used_kinds=(?P<used_kinds>\d+) "
+    r"high_water_kinds=(?P<high_water_kinds>\d+) "
+    r"denied_kinds=(?P<denied_kinds>\d+) "
+    r"owners_unattributed=(?P<owners_unattributed>\d+) "
+    r"observation_only=(?P<observation_only>\d+)$"
 )
 PRESSURE_SELFTEST_RE = re.compile(
     r"^\[PRESSURE\] tracker selftest (?P<status>\w+) "
@@ -576,6 +588,54 @@ def parse_boot_log_text(log_text: str, smoke_profile: str, serial_log_path: str 
         "ready": checkpoints["nodebit"]["seen"],
     }
 
+    resource: dict[str, object] = {
+        "ready": False,
+        "checkpoint_seen": checkpoints["resource_ledger"]["seen"],
+    }
+    index, line, match = _search_match(lines, RESOURCE_SELFTEST_RE)
+    if match:
+        fields = _int_groupdict(
+            match,
+            "schema",
+            "kinds",
+            "units",
+            "entries",
+            "capacity",
+            "source_flags",
+            "limit_kinds",
+            "used_kinds",
+            "high_water_kinds",
+            "denied_kinds",
+            "owners_unattributed",
+            "observation_only",
+        )
+        resource.update(
+            {
+                "line": index,
+                "text": line,
+                "status": match.group("status"),
+                **fields,
+            }
+        )
+        resource["ready"] = (
+            resource["checkpoint_seen"]
+            and match.group("status") == "PASS"
+            and fields == {
+                "schema": 1,
+                "kinds": 5,
+                "units": 2,
+                "entries": 5,
+                "capacity": 8,
+                "source_flags": 31,
+                "limit_kinds": 5,
+                "used_kinds": 5,
+                "high_water_kinds": 1,
+                "denied_kinds": 0,
+                "owners_unattributed": 1,
+                "observation_only": 1,
+            }
+        )
+
     pressure: dict[str, object] = {
         "ready": False,
         "checkpoint_seen": checkpoints["pressure_tracker"]["seen"],
@@ -636,6 +696,7 @@ def parse_boot_log_text(log_text: str, smoke_profile: str, serial_log_path: str 
         "kernel_room": kernel_room,
         "shell": shell_info,
         "nodebit": nodebit_info,
+        "resource": resource,
         "pressure": pressure,
     }
     return summary

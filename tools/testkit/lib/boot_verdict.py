@@ -51,6 +51,10 @@ ALLOWED_DUPLICATE_FIELDS_BY_PREFIX = {
     # per-channel fields may repeat; controller identity must remain unique.
     "[STO] IDE channels": frozenset({"status", "live"}),
 }
+EXACT_REQUIRED_RECORDS = (
+    ("[RESOURCE] ledger selftest PASS ", "resource_ledger"),
+    ("[PRESSURE] tracker selftest PASS ", "pressure_tracker"),
+)
 
 
 def _sanitize_lines(log_text: str) -> list[str]:
@@ -183,6 +187,27 @@ def _invalid_required_evidence_records(
                     "field_counts": counts,
                 }
             )
+    for pattern, occurrences in required_occurrences.items():
+        record_name = next(
+            (
+                name
+                for prefix, name in EXACT_REQUIRED_RECORDS
+                if pattern.startswith(prefix)
+            ),
+            None,
+        )
+        if record_name is None:
+            continue
+        for occurrence in occurrences:
+            text = str(occurrence["text"])
+            if text != pattern:
+                invalid_records.append(
+                    {
+                        "line": occurrence["line"],
+                        "text": text,
+                        "record": record_name,
+                    }
+                )
     return invalid_records
 
 

@@ -1,5 +1,7 @@
 # Codex 작업 핸드오프 팁 (2026-07-15)
 
+최종 갱신: 2026-08-02 (AI Resource Ledger v0)
+
 이 커널에서 Claude가 M1~M3 작업 중 실제로 밟은 지뢰와 관례를 모았다. 다음 작업자(Codex)가 같은 함정에 빠지지 않도록 하는 실전 노트다. **CLAUDE.md의 규칙이 정본이고, 이 문서는 "왜 그런지"와 "어떻게 디버깅했는지"를 보완한다.**
 
 M3-b-3a부터 M3-b-3b2b까지(주소공간 전환 → private leaf → process-owned 동기 runner) 작업은 우리 규약을 정확히 따랐다(셀프테스트 마커 + `state` 노출 + 스모크 3곳 + shell 레인 + 문서). 이 형식을 계속 유지하면 된다.
@@ -14,6 +16,9 @@ M3-b-3a부터 M3-b-3b2b까지(주소공간 전환 → private leaf → process-o
    - `tools/testkit/kernel/build-windows.ps1`의 `Get-SmokeRequiredPatterns` (윈도우 로컬)
    - 한쪽만 넣으면 다른 OS에서 스모크가 통과해버려 회귀를 놓친다.
 3. **관측 연결.** 런타임 상태는 `state <topic>` 셸 토픽(한 줄 `[STATE] topic key=value`, 값에 공백 금지)으로 노출하고, 새 토픽/필드는 `tools/testkit/lib/shell_lane.py`의 `DEFAULT_EXCHANGES`에 교환을 등록한다. `state list`의 토픽 목록 문자열도 갱신.
+   부팅 전용 관측 조각은 structured boot summary와 Python/PowerShell exact
+   required record를 함께 추가한다. Resource/pressure처럼 `observation_only=1`인
+   레코드는 정본 뒤 상충 필드도 허용하지 않는다.
 4. **고정밀 계측.** 시간이 걸리는 경로는 `kernel_time_monotonic_ns()`(TSC 기반)로 재서 관측에 ns로 포함.
 5. **검증 세트 (커밋 전 전부):**
    ```
@@ -89,6 +94,12 @@ PID 1 실행 뒤 PID 2를 호출하는 것만으로는 scheduler 전환을 증�
 - **pressure와 gate bitmap은 별도 축이다:** `runtime/ai_pressure.c`의 점수는 부하/중첩 관측이고, eligibility는 `online & affinity & policy_gate & health & budget` 교집합이다. 거부된 목적지를 낮은 pressure로 위장하거나 두 값을 한 scalar로 섞지 말 것. 현재 tracker는 `observation_only=1`이며 scheduler apply/migration 호출자가 없다.
 - **Memory Fabric `map_count`는 순간 동시성이 아니다:** attach는 증가시키지만 detach API가 없으므로 누적 logical-map 사건이다. pressure에는 reader/writer mask popcount, writer pair, read/write pair, weighted shared bytes만 사용한다.
 - **pressure 계층 깊이를 과장하지 말 것:** schema 1은 `max_levels=4`지만 `active_levels=2`인 system→plane까지만 CURRENT다. domain/task/window/ring child, fast/slow EWMA, stall window, SMP migration은 PLANNED다.
+- **resource ledger는 owner별 quota가 아니다:** `runtime/ai_resource.c` schema 1은
+  heap/tensor bytes, active fabric windows, registered rings, runnable tasks의
+  aggregate 5개 row만 읽는다. owner 4필드는 모두 `NONE/UNATTRIBUTED=0`이며,
+  high-water는 tensor 1종만 valid하고 denial accounting은 없다. syscall,
+  `state resource`, reserve/apply도 PLANNED다. validity flag 없는 0을 지원된
+  측정값으로 해석하지 말 것.
 - **시스콜 추가 시:** 번호는 추가만(재번호 금지), 그리고 **커버하는 Kernel Room 게이트의 `syscall_end`를 확장**해야 한다(`kernel/core/kernel_room.c`). 이걸 빼먹으면 ROOM 스냅샷이 새 시스콜을 분류에서 누락한다(체크포인트 때 실제로 드리프트가 났던 부분).
 - **ABI 불변식:** SLM 스냅샷 구조체(`slm_hw_snapshot_t`)나 health 구조체 레이아웃을 바꾸면 소비자와 baseline이 깨진다. 관측 필드는 스냅샷 안이 아니라 별도 접근자로 노출하는 패턴을 따랐다(예: `slm_plan_observation_read`).
 - **bootstrap run-state C/NASM ABI:** `kernel/include/kernel/process.h`의 explicit offset + size static assert와 `kernel/core/user_entry.asm`의 `RUN_STATE_*`가 한 쌍이다. 기존 offset은 재번호하지 말고 append-only로 늘린다. 실제 값은 process-local이지만 `g_active_user_run_state`는 현재 동기 runner 한 개를 가리키는 단일 active pointer다.
@@ -103,7 +114,11 @@ PID 1 실행 뒤 PID 2를 호출하는 것만으로는 scheduler 전환을 증�
 
 ---
 
-## 5. 다음 작업: M3-b-3b2c
+## 5. 다음 실행축 작업: M3-b-3b2c
+
+리소스 관리축의 다음 작은 조각은 기존 `ai_resource_snapshot_t`를 append-only
+info syscall과 `state resource`로 노출하는 Slice 2다. 이 작업은 owner attribution,
+quota 또는 apply를 함께 넣지 않는다.
 
 `address_space_selftest`는 부트 PML4 복제 + CR3 왕복까지 증명했다(공유 매핑). 다음은:
 1. **정적 주소공간 슬롯별 private user leaf proof ✅ M3-b-3b1 완료 (2026-07-14)** — 정적 2슬롯에서 유저 영역(현재 고정 64MiB)을 서로 다른 2MiB backing에 매핑하고 canary 격리를 검증했다. 범용 주소공간 객체, PMM, 실제 프로세스 실행 연결은 아직 아니다.

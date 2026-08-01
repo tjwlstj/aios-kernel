@@ -3,7 +3,11 @@ from __future__ import annotations
 import unittest
 
 from lib.boot_verdict import evaluate_normal_boot
-from lib.kernel_lane import PRESSURE_SELFTEST_PATTERN, required_smoke_patterns
+from lib.kernel_lane import (
+    PRESSURE_SELFTEST_PATTERN,
+    RESOURCE_SELFTEST_PATTERN,
+    required_smoke_patterns,
+)
 
 
 REQUIRED_PATTERNS = ["[BOOT] profile-required"]
@@ -73,6 +77,7 @@ class NormalBootVerdictTests(unittest.TestCase):
             ),
             PRESSURE_SELFTEST_PATTERN.replace("gate_mask=1", "gate_mask=0"),
             "[PRESSURE] tracker selftest PASS schema=1 planes=3",
+            f"{PRESSURE_SELFTEST_PATTERN} apply_enabled=1",
         ):
             with self.subTest(invalid=invalid):
                 verdict = evaluate_normal_boot(
@@ -80,8 +85,42 @@ class NormalBootVerdictTests(unittest.TestCase):
                     [PRESSURE_SELFTEST_PATTERN],
                 )
                 self.assertFalse(verdict["passed"])
+                self.assertTrue(
+                    {"MISSING_REQUIRED_PATTERNS", "EVIDENCE_RECORD_INVALID"}
+                    & set(reason_codes(verdict))
+                )
+
+    def test_resource_contract_is_exact_and_fails_closed(self) -> None:
+        for profile in ("full", "minimal", "storage-only"):
+            with self.subTest(profile=profile):
                 self.assertIn(
-                    "MISSING_REQUIRED_PATTERNS", reason_codes(verdict)
+                    RESOURCE_SELFTEST_PATTERN,
+                    required_smoke_patterns(profile),
+                )
+
+        valid = evaluate_normal_boot(
+            "\n".join([*normal_lines(), RESOURCE_SELFTEST_PATTERN]),
+            [RESOURCE_SELFTEST_PATTERN],
+        )
+        self.assertTrue(valid["passed"])
+
+        invalid_cases = (
+            RESOURCE_SELFTEST_PATTERN.replace(
+                "observation_only=1", "observation_only=0"
+            ),
+            "[RESOURCE] ledger selftest PASS schema=1 kinds=5",
+            f"{RESOURCE_SELFTEST_PATTERN} apply_enabled=1",
+        )
+        for invalid in invalid_cases:
+            with self.subTest(invalid=invalid):
+                verdict = evaluate_normal_boot(
+                    "\n".join([*normal_lines(), invalid]),
+                    [RESOURCE_SELFTEST_PATTERN],
+                )
+                self.assertFalse(verdict["passed"])
+                self.assertTrue(
+                    {"MISSING_REQUIRED_PATTERNS", "EVIDENCE_RECORD_INVALID"}
+                    & set(reason_codes(verdict))
                 )
 
     def test_bootstrap_process_pair_checkpoint_missing_fails(self) -> None:

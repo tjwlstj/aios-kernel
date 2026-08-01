@@ -135,6 +135,7 @@ kernel/boot/boot.asm  (Multiboot2 entry, GDT, paging, SSE/AVX setup, long mode)
 - `slm_orchestrator.c` — 84 KB hardware + SLM snapshot, plan submit/validate/rollback. Plan *apply* is TSC-timed into a high-precision observation rollup (apply ok/failed/rejected, last/min/avg/max latency ns); read via `slm_plan_observation_read` or the shell's `state slm`. A boot selftest applies one read-only CORE_AUDIT plan — the only automated coverage of the apply path.
 - `nodebit.c` — fast per-node policy bitmap lookup (`SYS_SLM_NODEBIT_LOOKUP`). Every gate decision is timed with the TSC-backed monotonic clock into per-node stats (permits/denies/health blocks, gate latency min/avg/max ns, attributed work via `nodebit_observe_work`); read them with `SYS_NODEBIT_STATS` or the shell's `state nodes`.
 - `node_pipeline.c` — node-owned pipeline registry backing `SYS_PIPE_*` (0x600-0x603); every create/add-stage/execute/destroy needs a NodeBit PERMIT with `NODEBIT_CAP_PIPELINE`, and execute/destroy require the caller's node to own the pipeline. Stage execution is a control-plane accounting walk until the model runtime lands.
+- `ai_resource.c` — schema 1 observation-only aggregate ledger. It exposes five append-only rows (heap bytes, tensor bytes, active Memory Fabric windows, registered inference rings, runnable scheduler tasks) through an internal fixed snapshot. Owners remain `NONE/UNATTRIBUTED`; only tensor has a source-native high-water value, and no syscall, shell topic, quota, denial accounting, reserve, or apply edge exists yet.
 - `ai_pressure.c` — schema 1 observation-only pressure tracker. It reads exact workload queue occupancy, exact Memory Fabric reader/writer overlap, and cumulative NodeBit denial counters into a fixed-point system→plane snapshot. `max_levels=4` is expansion capacity; only `active_levels=2` is current. Gate bitmap eligibility remains a separate intersection, and no scheduler apply/migration edge consumes this snapshot yet. Read it with `state pressure`.
 
 **Kernel Room (`kernel/core/kernel_room.c`)**
@@ -166,6 +167,7 @@ A successful boot must emit all of:
 [HEALTH] stability=...
 [PIPE] Node pipeline ready
 [PIPE] selftest PASS
+[RESOURCE] ledger selftest PASS schema=1 kinds=5 units=2 entries=5 capacity=8 source_flags=31 limit_kinds=5 used_kinds=5 high_water_kinds=1 denied_kinds=0 owners_unattributed=1 observation_only=1
 [PRESSURE] tracker selftest PASS schema=1 planes=3 max_levels=4 active_levels=2 balanced=1 hotspot=1 overlap=1 gate_mask=1 observation_only=1
 [SLM] plan apply selftest PASS
 [SYSCALL] observe dispatch selftest PASS
@@ -245,7 +247,7 @@ replacement for QEMU or the normal verification path.
 | `kernel/mm/` | tensor_mm, memory_fabric, heap |
 | `kernel/sched/` | AI workload scheduler |
 | `kernel/hal/` | Accelerator HAL |
-| `kernel/runtime/` | ai_syscall, autonomy, ai_pressure, slm_orchestrator, nodebit |
+| `kernel/runtime/` | ai_syscall, autonomy, ai_resource, ai_pressure, slm_orchestrator, nodebit |
 | `kernel/drivers/` | All device drivers |
 | `kernel/lib/` | Freestanding string utilities |
 | `kernel/include/` | Public headers, organized by subsystem |
@@ -264,6 +266,7 @@ replacement for QEMU or the normal verification path.
 - AI syscall number ranges are ABI-stable — do not renumber or overlap them. This is the only
   contract between `kernel/` and `os/`.
 - Health snapshot ABI must remain stable across builds (consumed by SLM orchestrator).
+- AI resource kind/unit IDs are append-only. Keep aggregate owner IDs at `NONE/UNATTRIBUTED` until attribution exists, honor validity flags, and preserve `observation_only=1` until a separately authorized resource-control UAPI is verified.
 - AI pressure schema/plane IDs are append-only; keep pressure ranking separate from gate eligibility and preserve `observation_only=1` until a separately verified apply path exists.
 - `store/` downloads and autonomy actions must pass the NodeBit + Kernel Room gates.
 - GPU/NPU driver code is scaffolding only; no real hardware interaction yet.

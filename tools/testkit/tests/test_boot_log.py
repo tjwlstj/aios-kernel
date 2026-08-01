@@ -17,6 +17,12 @@ PRESSURE_LINE = (
     "active_levels=2 balanced=1 hotspot=1 overlap=1 gate_mask=1 "
     "observation_only=1"
 )
+RESOURCE_LINE = (
+    "[RESOURCE] ledger selftest PASS schema=1 kinds=5 units=2 entries=5 "
+    "capacity=8 source_flags=31 limit_kinds=5 used_kinds=5 "
+    "high_water_kinds=1 denied_kinds=0 owners_unattributed=1 "
+    "observation_only=1"
+)
 
 
 class BootLogProcessPairTests(unittest.TestCase):
@@ -76,6 +82,32 @@ class BootLogPressureTests(unittest.TestCase):
                 summary = parse_boot_log_text(line, "full", "synthetic.log")
                 self.assertTrue(summary["pressure"]["checkpoint_seen"])
                 self.assertFalse(summary["pressure"]["ready"])
+
+
+class BootLogResourceTests(unittest.TestCase):
+    def test_resource_record_is_structured(self) -> None:
+        summary = parse_boot_log_text(RESOURCE_LINE, "full", "synthetic.log")
+        resource = summary["resource"]
+
+        self.assertTrue(resource["ready"])
+        self.assertEqual("PASS", resource["status"])
+        self.assertEqual(1, resource["schema"])
+        self.assertEqual(5, resource["kinds"])
+        self.assertEqual(5, resource["entries"])
+        self.assertEqual(1, resource["high_water_kinds"])
+        self.assertEqual(0, resource["denied_kinds"])
+        self.assertEqual(1, resource["observation_only"])
+
+    def test_incomplete_or_mutating_resource_is_not_ready(self) -> None:
+        for line in (
+            "[RESOURCE] ledger selftest PASS schema=1 kinds=5",
+            RESOURCE_LINE.replace("observation_only=1", "observation_only=0"),
+            f"{RESOURCE_LINE} apply_enabled=1",
+        ):
+            with self.subTest(line=line):
+                summary = parse_boot_log_text(line, "full", "synthetic.log")
+                self.assertTrue(summary["resource"]["checkpoint_seen"])
+                self.assertFalse(summary["resource"]["ready"])
 
 
 if __name__ == "__main__":

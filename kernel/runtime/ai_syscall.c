@@ -32,7 +32,6 @@
  * ============================================================ */
 
 #define MAX_MODELS_REGISTRY 64
-#define MAX_INFER_RINGS     16
 
 static model_info_t model_registry[MAX_MODELS_REGISTRY];
 static uint32_t model_count = 0;
@@ -47,7 +46,9 @@ typedef struct {
     ai_ring_registration_t  registration;
 } infer_ring_state_t;
 
-static infer_ring_state_t infer_ring_table[MAX_INFER_RINGS];
+static infer_ring_state_t infer_ring_table[AI_INFER_RING_CAPACITY];
+AIOS_STATIC_ASSERT(ARRAY_SIZE(infer_ring_table) == AI_INFER_RING_CAPACITY,
+    "Inference ring table must match its public capacity");
 static uint32_t infer_ring_count = 0;
 static spinlock_t model_registry_lock = SPINLOCK_INIT;
 static spinlock_t infer_ring_lock = SPINLOCK_INIT;
@@ -162,7 +163,7 @@ aios_status_t ai_syscall_init(void) {
     syscall_stats.invalid_calls = 0;
     spinlock_lock(&infer_ring_lock);
     infer_ring_count = 0;
-    for (uint32_t i = 0; i < MAX_INFER_RINGS; i++) {
+    for (uint32_t i = 0; i < AI_INFER_RING_CAPACITY; i++) {
         infer_ring_table[i].registered = false;
         infer_ring_table[i].ring_id = 0;
         infer_ring_table[i].notify_count = 0;
@@ -615,7 +616,7 @@ aios_status_t sys_infer_ring_setup(syscall_infer_ring_setup_t *req) {
     if (!ai_ring_valid_entries(local_req.registration.submit_entries)) return AIOS_ERR_INVAL;
     if (!ai_ring_valid_entries(local_req.registration.completion_entries)) return AIOS_ERR_INVAL;
     spinlock_lock(&infer_ring_lock);
-    if (infer_ring_count >= MAX_INFER_RINGS) {
+    if (infer_ring_count >= AI_INFER_RING_CAPACITY) {
         spinlock_unlock(&infer_ring_lock);
         return AIOS_ERR_NOMEM;
     }

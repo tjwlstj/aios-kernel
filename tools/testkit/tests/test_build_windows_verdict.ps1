@@ -45,6 +45,7 @@ $normalLines = @(
     '[NODEBIT] Policy gate ready entries=0'
     '[PIPE] Node pipeline ready'
     '[PIPE] selftest PASS'
+    '[RESOURCE] ledger selftest PASS schema=1 kinds=5 units=2 entries=5 capacity=8 source_flags=31 limit_kinds=5 used_kinds=5 high_water_kinds=1 denied_kinds=0 owners_unattributed=1 observation_only=1'
     '[PRESSURE] tracker selftest PASS schema=1 planes=3 max_levels=4 active_levels=2 balanced=1 hotspot=1 overlap=1 gate_mask=1 observation_only=1'
     '[SLM] plan apply selftest PASS'
     '[SLM] Seeded plan 4 label=storage-bootstrap action=8'
@@ -125,8 +126,84 @@ try {
         throw 'Missing pressure tracker evidence unexpectedly passed'
     }
     Write-Output 'PASS missing-pressure-tracker expected=False'
+
+    $mutatingPressureLines = @(
+        $normalLines | ForEach-Object {
+            if ($_ -match '^\[PRESSURE\] tracker selftest ') {
+                "$_ apply_enabled=1"
+            } else {
+                $_
+            }
+        }
+    )
+    [IO.File]::WriteAllLines(
+        $tempPath,
+        $mutatingPressureLines,
+        [Text.UTF8Encoding]::new($false)
+    )
+    $mutatingPressureVerdict = Test-NormalSmokeVerdict -SerialLog $tempPath
+    if ([bool]$mutatingPressureVerdict.Passed) {
+        throw 'Apply-capable pressure tracker evidence unexpectedly passed'
+    }
+    Write-Output 'PASS mutating-pressure-tracker expected=False'
+
+    $missingResourceLines = @(
+        $normalLines | Where-Object {
+            $_ -notmatch '^\[RESOURCE\] ledger selftest '
+        }
+    )
+    [IO.File]::WriteAllLines(
+        $tempPath,
+        $missingResourceLines,
+        [Text.UTF8Encoding]::new($false)
+    )
+    $missingResourceVerdict = Test-NormalSmokeVerdict -SerialLog $tempPath
+    if ([bool]$missingResourceVerdict.Passed) {
+        throw 'Missing resource ledger evidence unexpectedly passed'
+    }
+    Write-Output 'PASS missing-resource-ledger expected=False'
+
+    $incompleteResourceLines = @(
+        $normalLines | ForEach-Object {
+            if ($_ -match '^\[RESOURCE\] ledger selftest ') {
+                '[RESOURCE] ledger selftest PASS schema=1 kinds=5'
+            } else {
+                $_
+            }
+        }
+    )
+    [IO.File]::WriteAllLines(
+        $tempPath,
+        $incompleteResourceLines,
+        [Text.UTF8Encoding]::new($false)
+    )
+    $incompleteResourceVerdict = Test-NormalSmokeVerdict -SerialLog $tempPath
+    if ([bool]$incompleteResourceVerdict.Passed) {
+        throw 'Incomplete resource ledger evidence unexpectedly passed'
+    }
+    Write-Output 'PASS incomplete-resource-ledger expected=False'
+
+    $mutatingResourceLines = @(
+        $normalLines | ForEach-Object {
+            if ($_ -match '^\[RESOURCE\] ledger selftest ') {
+                "$_ apply_enabled=1"
+            } else {
+                $_
+            }
+        }
+    )
+    [IO.File]::WriteAllLines(
+        $tempPath,
+        $mutatingResourceLines,
+        [Text.UTF8Encoding]::new($false)
+    )
+    $mutatingResourceVerdict = Test-NormalSmokeVerdict -SerialLog $tempPath
+    if ([bool]$mutatingResourceVerdict.Passed) {
+        throw 'Apply-capable resource ledger evidence unexpectedly passed'
+    }
+    Write-Output 'PASS mutating-resource-ledger expected=False'
 } finally {
     Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
 }
 
-Write-Output "PowerShell verdict selftest passed cases=$($cases.Count + 2)"
+Write-Output "PowerShell verdict selftest passed cases=$($cases.Count + 6)"

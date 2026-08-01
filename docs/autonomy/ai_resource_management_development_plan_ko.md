@@ -2,7 +2,7 @@
 
 작성일: 2026-04-27
 
-최종 갱신: 2026-07-26 (AI Pressure Tracker v0 관측 경로)
+최종 갱신: 2026-08-02 (AI Resource Ledger v0 aggregate 관측 경로)
 
 ## 목적
 
@@ -28,6 +28,7 @@ AI workload와 agent runtime에 맞는 리소스 관리를 어떤 순서로 확�
 - `mm/heap.c`의 2 MiB static kernel heap
 - `sched/ai_sched.c`의 AI task metadata, run queue, PIT tick accounting
 - `runtime/ai_pressure.c`의 schema 1 관측 전용 pressure snapshot
+- `runtime/ai_resource.c`의 schema 1 관측 전용 aggregate resource ledger
 - `runtime/ai_syscall.c`의 AI syscall dispatcher와 bootstrap snapshot surface
 - `state autonomy` schema 1의 read-only mode/support/counter/last-decision 관측면
 - `kernel/health.c`, `kernel/kernel_room.c`의 health / room snapshot
@@ -42,7 +43,7 @@ AI workload와 agent runtime에 맞는 리소스 관리를 어떤 순서로 확�
 - 동적 per-process address space/PMM, page fault recovery
 - 두 ring3 process의 timer-preemptive 전환과 full trapframe
 - SMP/per-CPU TSS와 물리 CPU 간 task migration
-- AI resource ledger / quota / budget accounting
+- per-node/task/model/ring resource attribution과 quota / budget accounting
 - 리소스 reserve / release / throttle UAPI
 - userspace `aios-resourced` 또는 policy broker 구현체
 - WASI component runtime 또는 bytecode interpreter
@@ -163,6 +164,45 @@ edge가 없다.
 4. full trapframe + per-CPU 기반 뒤에만 migration proposal 연결
 5. proposal은 NodeBit/health/budget gate와 rollback verifier를 통과한 뒤에만 apply
 
+## AI Resource Ledger v0
+
+상태: `CURRENT` (2026-08-02), 커널 내부 aggregate 관측 전용.
+
+`ai_resource_snapshot_t`는 capacity 8의 고정 snapshot에 현재 구현된 다섯
+resource kind를 한 row씩 기록한다. public kind와 unit ID는 append-only다.
+
+| kind | unit | 현재 `used` 의미 | 현재 `limit` 의미 |
+|---|---|---|---|
+| `kernel-heap` | bytes | heap allocated bytes | heap capacity |
+| `tensor-pool` | bytes | tensor managed allocation bytes | tensor managed capacity |
+| `memory-fabric-windows` | count | active window count | fixed window slots |
+| `inference-ring-registrations` | count | registered ring count | fixed registration slots |
+| `scheduler-runnable` | count | queued + running AI workload count | fixed AI task slots |
+
+- `limit`/`used` validity는 5종 모두 켜져 있다.
+- source-native high-water는 tensor `peak_usage` 한 종류만 유효하다. read 호출
+  빈도에 따라 달라지는 가짜 high-water를 만들지 않는다.
+- 공통 per-resource denial counter가 아직 없으므로 `denied` validity는 0이다.
+- `node_id`, `task_id`, `model_id`, `ring_id`는 future attribution 자리지만,
+  현재 모든 row는 `NONE/UNATTRIBUTED=0`인 aggregate다.
+- heap/fabric/ring reader는 내부 동기화되고 scheduler는 local IRQ를 막고
+  복사한다. tensor stats와 전체 cross-source 조합은 현재 single-BSP에서의
+  best-effort snapshot이며 원자적 multi-source transaction이 아니다.
+- 별도 versioned snapshot을 사용해 `kernel_room_snapshot_t`, bootstrap ABI와
+  syscall 번호를 바꾸지 않았다.
+- userspace resource syscall, `state resource`, quota/reserve/release/throttle,
+  allocator/scheduler policy 변경은 아직 없다.
+
+필수 부팅 증거는 다음 exact record다.
+
+```text
+[RESOURCE] ledger selftest PASS schema=1 kinds=5 units=2 entries=5 capacity=8 source_flags=31 limit_kinds=5 used_kinds=5 high_water_kinds=1 denied_kinds=0 owners_unattributed=1 observation_only=1
+```
+
+Python/PowerShell 정상 verdict와 직접 Make smoke가 행 전체를 요구한다. marker
+누락, 축약, `observation_only=0`, 뒤에 `apply_enabled=1`을 붙인 상충 레코드는
+PASS하지 않는다. boot summary의 `resource.ready`도 같은 전체 필드를 검사한다.
+
 ## 개발 순서
 
 ### Slice 0. 부팅 기준선 유지
@@ -181,12 +221,13 @@ edge가 없다.
 
 ### Slice 1. AI Resource Ledger 관측 전용 도입
 
-상태: planned.
+상태: `CURRENT` (2026-08-02), aggregate-only.
 
 목표:
 
 - 리소스 사용량을 먼저 읽기 전용으로 모은다.
-- 어떤 AI node, model, task가 어떤 자원을 쓰는지 future-proof metadata를 둔다.
+- 향후 AI node/model/task attribution을 추가할 자리를 두되, 현재 값은
+  `NONE/UNATTRIBUTED`로 명시한다.
 
 최소 패치:
 
@@ -195,14 +236,16 @@ edge가 없다.
 - 고정 크기 ledger table
 - resource kind enum
 - owner fields: `node_id`, `task_id`, `model_id`, `ring_id`
-- counters: `limit`, `used`, `high_water`, `denied`, `last_update_ns`
-- `kernel_room_snapshot_t` 또는 별도 snapshot에 summary count 추가
+- counters와 validity: `limit`, `used`, `high_water`, `denied`, `last_observed_ns`
+- 별도 `ai_resource_snapshot_t`에 entry count와 fixed table 포함
+- exact boot selftest, structured boot summary, host negative test
 
 주의:
 
 - reserve/apply 기능은 넣지 않는다.
 - 실제 allocator policy를 바꾸지 않는다.
-- boot log에는 read-only marker만 추가한다.
+- source-native 값이 없는 high-water/denied를 0만 보고 유효하다고 하지 않는다.
+- `kernel_room_snapshot_t`와 bootstrap ABI는 바꾸지 않는다.
 
 ### Slice 2. Read-only resource snapshot UAPI
 
@@ -216,13 +259,14 @@ edge가 없다.
 
 - `SYS_RESOURCE_SNAPSHOT` 또는 `SYS_INFO_RESOURCE`
 - staging copy 후 `copy_to_user`
-- testkit boot summary parser에 optional `resource` section 추가
+- `state resource` 한 줄 관측면과 shell lane 교환
 
 완료 기준:
 
 - snapshot syscall null output은 `AIOS_ERR_INVAL`
 - 정상 path는 ledger summary를 반환
-- QEMU smoke에서 `[RESOURCE] ledger ready` marker 확인
+- unknown schema/oversized output은 명시적으로 거부
+- 기존 exact `[RESOURCE] ledger selftest PASS ...`와 `observation_only=1` 유지
 
 ### Slice 3. Bounded policy schema 고정
 
@@ -334,9 +378,16 @@ OS/tooling 변경:
 
 - `python .\tools\testkit\aios-testkit.py os`
 
-필수 negative test:
+Slice 1 필수 negative test:
 
-- null output pointer
+- null internal snapshot output
+- oversized entry count internal contract
+- missing/truncated resource marker
+- `observation_only=0`
+- canonical marker 뒤 `apply_enabled=1` 상충 필드
+
+후속 policy/UAPI negative test:
+
 - unknown resource target
 - unsupported action
 - over-limit reserve
@@ -344,16 +395,16 @@ OS/tooling 변경:
 
 ## 당장 다음 패치 후보
 
-Pressure Tracker v0 다음의 가장 작은 후보는 기존 Slice 1 resource ledger다.
+Resource Ledger v0 다음의 가장 작은 후보는 Slice 2 read-only UAPI다.
 
-1. `include/runtime/ai_resource.h` 추가
-2. `runtime/ai_resource.c` read-only ledger 추가
-3. boot init에서 `[RESOURCE] ledger ready kinds=...` marker 출력
-4. `kernel_room_snapshot_t`에 resource ledger count만 추가
-5. testkit parser에 optional resource marker 추가
+1. info 범위 끝에 `SYS_INFO_RESOURCE`를 append-only로 추가
+2. Kernel Room info gate의 `syscall_end`를 같은 번호까지 확장
+3. kernel staging snapshot 뒤 `copy_to_user`로 반환
+4. null/invalid user output 반례 추가
+5. `state resource`와 shell same-record 계약 추가
 
-이 후보는 allocator 정책을 바꾸지 않으면서도,
-pressure 위에 owner별 quota/usage 관측 표면을 더한다.
+이 후보는 allocator 정책이나 owner attribution을 바꾸지 않고, 이미 검증된
+aggregate snapshot을 userspace와 shell에 읽기 전용으로 노출한다.
 
 단, pressure를 실제 scheduler apply에 연결하기 전에는
 `calc_weight()`와 `delta_ns / weight`의 priority 의미를 별도 selftest로 먼저

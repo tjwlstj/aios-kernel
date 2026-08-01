@@ -30,8 +30,8 @@
 - `kernel/build-windows.ps1`
   - Windows 커널 빌드/부팅용 전용 엔트리포인트
 - `tests/`
-  - QEMU 없이 verdict, baseline guard, matrix, shell 반례를 검증하는 host unit test
-  - `test_build_windows_verdict.ps1`은 직접 PowerShell IDE/process-pair/pressure 판정 11개를 검증
+  - QEMU 없이 verdict, baseline guard, matrix, shell 반례를 검증하는 Python host unit test 55개
+  - `test_build_windows_verdict.ps1`은 직접 PowerShell IDE/process-pair/pressure/resource 판정 15개를 검증
 
 원칙:
 
@@ -64,13 +64,14 @@
   - checkpoint, selftest, perf profile, device summary, health, user-mode scaffold,
     primary process stack, 두 process 순차 실행 `process_pair`, Kernel Room snapshot,
     controller state, network/USB/storage bootstrap selection, SLM seed 결과,
-    AI Pressure Tracker schema/selftest를 저장
+    AI Resource Ledger와 AI Pressure Tracker schema/selftest를 저장
 
 공통 smoke marker:
 
 - `[DEV] Peripheral probe ready`
 - `[USER] Ring3 scaffold ready=1`
 - `[USER] bootstrap process pair PASS runs=2 order=1,2 ... between_clean=1 ... both_restored=1`
+- `[RESOURCE] ledger selftest PASS schema=1 kinds=5 units=2 entries=5 ... owners_unattributed=1 observation_only=1`
 - `[PRESSURE] tracker selftest PASS schema=1 planes=3 max_levels=4 active_levels=2 ... observation_only=1`
 - `[ROOM] snapshot stability=...`
 - `[HEALTH] stability=...`
@@ -80,6 +81,8 @@ exception, 대문자 단어 `FAIL`/`FATAL`을 금지하고, health가
 `stability=stable degraded=0 failed=0`인지 확인한다. ring3 scaffold부터 shell 시작까지의
 terminal checkpoint는 각각 정확히 한 번, 정의된 순서로 나타나야 한다. 증거 행과 토큰
 경계를 고정하고 contract-bearing 행의 중복 key를 거부하므로 인용·접두사 위장도 PASS하지 않는다.
+Resource와 pressure의 observation-only selftest는 행 전체 exact record라서 정본 뒤에
+`apply_enabled=1` 같은 상충 필드를 붙여도 PASS하지 않는다.
 
 부팅 매트릭스:
 

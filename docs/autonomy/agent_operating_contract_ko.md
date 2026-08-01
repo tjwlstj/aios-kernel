@@ -26,7 +26,8 @@ AIOS에서 "AI가 편하게 움직인다"는 것은 커널 내부를 자유 형�
 | 단계 | 상태 | 현재 표면 |
 |---|---|---|
 | 발견 | `CURRENT` | `state list` |
-| 커널 관측 | `CURRENT` | `state health/mem/sched/nodes/pipeline/slm/autonomy/user/sec/time/version` |
+| 커널 관측 | `CURRENT` | `state health/mem/sched/nodes/pipeline/pressure/slm/autonomy/user/sec/time/version` |
+| 커널 내부 리소스 ledger | `CURRENT` | schema 1 aggregate snapshot + exact boot summary; resource syscall/state topic은 아직 없음 |
 | 자율 제어 관측 | `CURRENT` | `state autonomy` schema 1 |
 | 제한된 행동 제안 | `PARTIAL` | `SYS_AUTONOMY_ACTION_PROPOSE`; scheduler만 apply 지원, delta ±32 |
 | commit/rollback | `PARTIAL` | `SYS_AUTONOMY_ACTION_COMMIT`, `SYS_AUTONOMY_ROLLBACK`; 상주 userspace agent는 아직 없음 |
@@ -63,7 +64,9 @@ ring3는 정적 ELF 한 개를 동기 실행하는 단계이며, 상주 AI runti
 
 ## 5. 안전 경계
 
-- 이 계약은 read-only 관측면만 추가하며 action, syscall 번호, enum 값, 구조체 ABI를 늘리지 않는다.
+- `state autonomy` 계약 자체는 read-only 관측면이며 action, syscall 번호, enum 값,
+  구조체 ABI를 늘리지 않는다. 별도 AI Resource Ledger는 커널 내부 versioned snapshot만
+  추가했고 userspace ABI는 아직 열지 않았다.
 - memory/accel/infer target은 계속 `observe-only`다.
 - scheduler action만 구현돼 있으며 delta는 `-32..32`로 제한된다.
 - raw pointer, register, MMIO 주소를 모델 출력으로 받지 않는다.
@@ -76,7 +79,7 @@ ring3는 정적 ELF 한 개를 동기 실행하는 단계이며, 상주 AI runti
 1. 버전드 `[EVT]` 파일럿과 host event parser로 부트 증거를 문자열에서 구조적 계약으로 이동.
 2. 기존 ABI를 변경하지 않는 새 read-only autonomy snapshot syscall 설계.
 3. M6 principal과 Kernel Room authorize를 mode-set/commit 앞에 강제.
-4. read-only AI resource ledger와 budget snapshot 도입.
+4. `CURRENT` aggregate AI resource ledger를 read-only syscall/`state resource`로 노출하고, attribution과 budget은 별도 후속으로 유지.
 5. M8/M9에서 정책 저널과 flow continuation으로 재부팅 경계 연속성 확보.
 
 새 행동을 추가할 때는 항상 `observe → propose → authorize → apply → verify → commit/rollback`

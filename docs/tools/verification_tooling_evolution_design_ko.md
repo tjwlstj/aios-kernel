@@ -1,7 +1,7 @@
 # AIOS 검증 도구 진화 설계
 
 작성일: 2026-07-15  
-최종 갱신: 2026-07-26 (AI Pressure Tracker fail-closed 계약)
+최종 갱신: 2026-08-02 (AI Resource Ledger와 exact observation record 계약)
 기준 시작 체크포인트: `463a8b9`
 
 ## 1. 문서 역할
@@ -69,6 +69,8 @@ CI exit status + build artifacts
 - cooperative and timer-driven kthread switching
 - uaccess negative probes and syscall contract probes
 - SLM plan apply and Node pipeline selftest
+- AI Resource Ledger의 5개 aggregate row, append-only kind/unit,
+  validity/unattributed/observation-only selftest
 - AI Pressure Tracker balanced/hotspot reducer, Memory Fabric overlap,
   gate-mask 분리 selftest와 observation-only required marker
 - PID 1 / slot 0 뒤 PID 2 / slot 1의 private CR3 synchronous ring3 실행
@@ -88,9 +90,9 @@ CI exit status + build artifacts
 - boot summary, matrix, inventory, perf, shell transcript/summary artifacts
 - cppcheck CI gate and Linux full smoke/minimal shell gate
 - normal boot verdict v1의 전체 로그 fatal, anchored/token-boundary evidence,
-  health, terminal-chain, duplicate-key 판정과 52개 host unit test
-- Python/PowerShell 공통 pressure required marker, structured boot-summary
-  `pressure` section, shell `state pressure` same-record 계약
+  health, terminal-chain, duplicate-key 판정과 55개 host unit test
+- Python/PowerShell 공통 resource/pressure exact required marker, structured
+  boot-summary `resource`/`pressure` section, shell `state pressure` same-record 계약
 - shell 전체 transcript verdict, 동일 response record 검증, reader drain,
   reboot acknowledgement, QEMU exit-code/termination gate
 - inventory/perf baseline의 strict matrix·profile·semantic record 완전성 guard와
@@ -126,6 +128,9 @@ CI exit status + build artifacts
 - pressure schema 1은 system→plane 두 단계의 순간 snapshot과 NodeBit 누적
   counter만 제공한다. fast/slow EWMA, stall window, domain/entity child와
   scheduler apply/migration은 아직 없다.
+- resource schema 1은 owner가 모두 `NONE/UNATTRIBUTED`인 5개 aggregate row다.
+  cross-source snapshot은 single-BSP best-effort이며 per-owner attribution,
+  공통 denial accounting, resource syscall/`state resource`, quota/apply는 아직 없다.
 
 ## 6. 정상 부트 판정 계약 v1
 
@@ -183,11 +188,13 @@ CI exit status + build artifacts
 포함된다.
 
 ```text
+[RESOURCE] ledger selftest PASS schema=1 kinds=5 units=2 entries=5 capacity=8 source_flags=31 limit_kinds=5 used_kinds=5 high_water_kinds=1 denied_kinds=0 owners_unattributed=1 observation_only=1
 [PRESSURE] tracker selftest PASS schema=1 planes=3 max_levels=4 active_levels=2 balanced=1 hotspot=1 overlap=1 gate_mask=1 observation_only=1
 ```
 
-이 레코드의 누락, 불완전 필드, `gate_mask=0`,
-`observation_only=0`은 Python/PowerShell 양쪽에서 정상 PASS가 아니다.
+이 두 레코드는 행 전체가 정본과 일치해야 한다. 누락, 불완전 필드,
+`gate_mask=0`, `observation_only=0`, 정본 뒤 `apply_enabled=1` 같은 상충 필드는
+Python/PowerShell 양쪽에서 정상 PASS가 아니다.
 
 드라이버와 초기 selftest 전체의 엄격한 전역 순서 검증은 v1 범위에 넣지 않는다. 먼저 process 이후 terminal chain만 고정해 false positive를 줄인다.
 
@@ -242,7 +249,7 @@ inventory와 perf가 같은 출처 신뢰 규칙을 공유해야 한다.
 | 구성요소 | 상태 | 역할 |
 |---|---|---|
 | 순수 boot verdict evaluator | `CURRENT` | 전체 로그 fatal, anchored evidence, duplicate key, health, terminal order/duplicate 판정 |
-| verdict host unit tests | `CURRENT` | panic-after-PASS, token/행 위장, 중복 키, health, pressure, shell, baseline/perf 반례 52개 고정 |
+| verdict host unit tests | `CURRENT` | panic-after-PASS, token/행 위장, 중복 키, health, resource/pressure, shell, baseline/perf 반례 55개 고정 |
 | shell reboot/clean-exit gate | `CURRENT` | 전체 transcript verdict, reader drain, reboot ack, exit code 0을 PASS 조건으로 강제 |
 | baseline trusted-source guard | `CURRENT` | strict matrix/profile/verdict, profile-aware inventory와 comparable finite perf 검사 |
 | shared marker manifest | `PLANNED` | Python/PowerShell 중복 계약 제거 |
@@ -356,9 +363,13 @@ kernel/build/test-runs/<run-id>/<profile>/
 구현 근거:
 
 - `tools/testkit/lib/boot_verdict.py`, `baseline_guard.py`
-- `tools/testkit/tests/` host unit test 52개
-- PowerShell 직접 verdict host selftest 11개와 CI 선행 gate
-- Python과 직접 PowerShell 정상 verdict 모두 QEMU `full/minimal/storage-only` 통과
+- `tools/testkit/tests/` host unit test 55개
+- PowerShell 직접 verdict host selftest 15개와 CI 선행 gate
+- Resource Ledger exact marker/structured summary와 missing/truncated/
+  observation-only/apply-capable 상충 반례
+- pressure marker도 같은 exact-record 규칙으로 강화해 trailing apply 필드를 거부
+- Python boot matrix의 QEMU `full/minimal/storage-only` 통과와 PowerShell 직접
+  verdict host selftest 15개 통과
 - shell 15개 교환(`state pressure`, `state autonomy` 포함)과 `reader_drained=true reboot_ack=true clean_exit=true exit_code=0`,
   `termination.reason=guest-reboot-exit`, 전체 transcript boot verdict PASS
 - strict boot inventory 3프로필 baseline 일치

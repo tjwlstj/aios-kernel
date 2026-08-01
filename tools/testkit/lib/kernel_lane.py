@@ -22,6 +22,12 @@ from lib.common import (
 
 DEFAULT_SMOKE_PROFILE = "full"
 SUPPORTED_SMOKE_PROFILES = {"full", "minimal", "storage-only"}
+RESOURCE_SELFTEST_PATTERN = (
+    "[RESOURCE] ledger selftest PASS schema=1 kinds=5 units=2 entries=5 "
+    "capacity=8 source_flags=31 limit_kinds=5 used_kinds=5 "
+    "high_water_kinds=1 denied_kinds=0 owners_unattributed=1 "
+    "observation_only=1"
+)
 PRESSURE_SELFTEST_PATTERN = (
     "[PRESSURE] tracker selftest PASS schema=1 planes=3 max_levels=4 "
     "active_levels=2 balanced=1 hotspot=1 overlap=1 gate_mask=1 "
@@ -83,6 +89,7 @@ def required_smoke_patterns(smoke_profile: str) -> list[str]:
         "[NODEBIT] Policy gate ready entries=0",
         "[PIPE] Node pipeline ready",
         "[PIPE] selftest PASS",
+        RESOURCE_SELFTEST_PATTERN,
         PRESSURE_SELFTEST_PATTERN,
         "[SLM] plan apply selftest PASS",
         "[SYSCALL] observe dispatch selftest PASS",
