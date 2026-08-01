@@ -34,7 +34,30 @@ AIOS_STATIC_ASSERT(
 #define AI_RESOURCE_ENTRY_HIGH_WATER_VALID   ((uint32_t)BIT(2))
 #define AI_RESOURCE_ENTRY_DENIED_VALID       ((uint32_t)BIT(3))
 #define AI_RESOURCE_ENTRY_OWNER_UNATTRIBUTED ((uint32_t)BIT(4))
-#define AI_RESOURCE_ENTRY_ALL_FLAGS          ((uint32_t)0x1FU)
+#define AI_RESOURCE_ENTRY_NODE_ID_VALID       ((uint32_t)BIT(5))
+#define AI_RESOURCE_ENTRY_TASK_ID_VALID       ((uint32_t)BIT(6))
+#define AI_RESOURCE_ENTRY_MODEL_ID_VALID      ((uint32_t)BIT(7))
+#define AI_RESOURCE_ENTRY_RING_ID_VALID       ((uint32_t)BIT(8))
+#define AI_RESOURCE_ENTRY_OWNER_VALID_MASK    ((uint32_t)0x1E0U)
+#define AI_RESOURCE_ENTRY_ALL_FLAGS           ((uint32_t)0x1FFU)
+
+AIOS_STATIC_ASSERT(
+    (AI_RESOURCE_ENTRY_LIMIT_VALID |
+     AI_RESOURCE_ENTRY_USED_VALID |
+     AI_RESOURCE_ENTRY_HIGH_WATER_VALID |
+     AI_RESOURCE_ENTRY_DENIED_VALID |
+     AI_RESOURCE_ENTRY_OWNER_UNATTRIBUTED |
+     AI_RESOURCE_ENTRY_NODE_ID_VALID |
+     AI_RESOURCE_ENTRY_TASK_ID_VALID |
+     AI_RESOURCE_ENTRY_MODEL_ID_VALID |
+     AI_RESOURCE_ENTRY_RING_ID_VALID) == AI_RESOURCE_ENTRY_ALL_FLAGS,
+    "Resource entry flags are append-only and must remain explicit");
+AIOS_STATIC_ASSERT(
+    (AI_RESOURCE_ENTRY_NODE_ID_VALID |
+     AI_RESOURCE_ENTRY_TASK_ID_VALID |
+     AI_RESOURCE_ENTRY_MODEL_ID_VALID |
+     AI_RESOURCE_ENTRY_RING_ID_VALID) == AI_RESOURCE_ENTRY_OWNER_VALID_MASK,
+    "Resource owner-valid flags must remain explicit");
 
 /* Public IDs are append-only. Only currently observed sources receive IDs. */
 typedef enum {
@@ -66,7 +89,12 @@ typedef struct {
     uint32_t valid_flags;
     uint32_t reserved0;
 
-    /* Zero means NONE/UNATTRIBUTED. Current rows are aggregate-only. */
+    /*
+     * Owner values are meaningful only when their matching validity bit is
+     * set. Zero is therefore a valid future ID; without a validity bit it is
+     * only a placeholder. Current aggregate rows set OWNER_UNATTRIBUTED and
+     * no owner-valid bits.
+     */
     uint32_t node_id;
     task_id_t task_id;
     model_id_t model_id;

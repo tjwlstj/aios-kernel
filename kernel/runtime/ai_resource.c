@@ -19,6 +19,14 @@
 static bool g_resource_ready = false;
 static uint64_t g_sample_sequence = 0;
 
+typedef struct {
+    heap_stats_t heap;
+    mem_stats_t tensor;
+    memory_fabric_pressure_snapshot_t fabric;
+    ai_ring_runtime_snapshot_t rings;
+    ai_sched_queue_snapshot_t sched;
+} ai_resource_sources_t;
+
 static void resource_entry_set(
     ai_resource_entry_t *entry,
     ai_resource_kind_t kind,
@@ -45,25 +53,14 @@ static void resource_entry_set(
     entry->last_observed_ns = sampled_at_ns;
 }
 
-static aios_status_t resource_sources_read(ai_resource_snapshot_t *out) {
-    heap_stats_t heap;
-    mem_stats_t tensor;
-    memory_fabric_pressure_snapshot_t fabric;
-    ai_ring_runtime_snapshot_t rings;
-    ai_sched_queue_snapshot_t sched;
-    uint64_t sampled_at_ns;
+static void resource_snapshot_build(
+    ai_resource_snapshot_t *out,
+    const ai_resource_sources_t *sources,
+    uint64_t sampled_at_ns,
+    uint64_t sample_sequence
+) {
     const uint32_t limit_used_flags =
         AI_RESOURCE_ENTRY_LIMIT_VALID | AI_RESOURCE_ENTRY_USED_VALID;
-
-    if (memory_fabric_pressure_read(&fabric) != AIOS_OK ||
-        ai_sched_queue_snapshot(&sched) != AIOS_OK) {
-        return AIOS_ERR_IO;
-    }
-
-    heap_get_stats(&heap);
-    tensor_mm_stats(&tensor);
-    ai_infer_ring_runtime(&rings);
-    sampled_at_ns = kernel_time_monotonic_ns();
 
     memset(out, 0, sizeof(*out));
     out->schema_version = AI_RESOURCE_SCHEMA_VERSION;
@@ -73,23 +70,17 @@ static aios_status_t resource_sources_read(ai_resource_snapshot_t *out) {
     out->unit_count = AI_RESOURCE_UNIT_COUNT;
     out->entry_count = AI_RESOURCE_KIND_COUNT;
     out->entry_capacity = AI_RESOURCE_LEDGER_CAPACITY;
-    out->source_flags = AI_RESOURCE_SOURCE_HEAP_EXACT |
-                        AI_RESOURCE_SOURCE_TENSOR_SINGLE_BSP |
-                        AI_RESOURCE_SOURCE_FABRIC_EXACT |
-                        AI_RESOURCE_SOURCE_RING_EXACT |
-                        AI_RESOURCE_SOURCE_SCHED_SINGLE_BSP;
+    out->source_flags = AI_RESOURCE_SOURCE_ALL_CURRENT;
     out->sampled_at_ns = sampled_at_ns;
-    out->sample_sequence = __atomic_add_fetch(
-        &g_sample_sequence, 1ULL, __ATOMIC_RELAXED
-    );
+    out->sample_sequence = sample_sequence;
 
     resource_entry_set(
         &out->entries[AI_RESOURCE_KIND_KERNEL_HEAP],
         AI_RESOURCE_KIND_KERNEL_HEAP,
         AI_RESOURCE_UNIT_BYTES,
         limit_used_flags,
-        (uint64_t)heap.total,
-        (uint64_t)heap.used,
+        (uint64_t)sources->heap.total,
+        (uint64_t)sources->heap.used,
         0,
         sampled_at_ns
     );
@@ -98,9 +89,9 @@ static aios_status_t resource_sources_read(ai_resource_snapshot_t *out) {
         AI_RESOURCE_KIND_TENSOR_POOL,
         AI_RESOURCE_UNIT_BYTES,
         limit_used_flags | AI_RESOURCE_ENTRY_HIGH_WATER_VALID,
-        tensor.total_memory,
-        tensor.used_memory,
-        tensor.peak_usage,
+        sources->tensor.total_memory,
+        sources->tensor.used_memory,
+        sources->tensor.peak_usage,
         sampled_at_ns
     );
     resource_entry_set(
@@ -109,7 +100,7 @@ static aios_status_t resource_sources_read(ai_resource_snapshot_t *out) {
         AI_RESOURCE_UNIT_ITEMS,
         limit_used_flags,
         MEMORY_FABRIC_MAX_WINDOWS,
-        fabric.active_windows,
+        sources->fabric.active_windows,
         0,
         sampled_at_ns
     );
@@ -119,7 +110,7 @@ static aios_status_t resource_sources_read(ai_resource_snapshot_t *out) {
         AI_RESOURCE_UNIT_ITEMS,
         limit_used_flags,
         AI_INFER_RING_CAPACITY,
-        rings.registered_rings,
+        sources->rings.registered_rings,
         0,
         sampled_at_ns
     );
@@ -129,11 +120,63 @@ static aios_status_t resource_sources_read(ai_resource_snapshot_t *out) {
         AI_RESOURCE_UNIT_ITEMS,
         limit_used_flags,
         MAX_AI_TASKS,
-        sched.runnable_tasks,
+        sources->sched.runnable_tasks,
         0,
         sampled_at_ns
     );
+}
+
+static aios_status_t resource_sources_read(ai_resource_snapshot_t *out) {
+    ai_resource_sources_t sources;
+    uint64_t sampled_at_ns;
+
+    memset(&sources, 0, sizeof(sources));
+    if (memory_fabric_pressure_read(&sources.fabric) != AIOS_OK ||
+        ai_sched_queue_snapshot(&sources.sched) != AIOS_OK) {
+        return AIOS_ERR_IO;
+    }
+
+    heap_get_stats(&sources.heap);
+    tensor_mm_stats(&sources.tensor);
+    ai_infer_ring_runtime(&sources.rings);
+    sampled_at_ns = kernel_time_monotonic_ns();
+    resource_snapshot_build(
+        out,
+        &sources,
+        sampled_at_ns,
+        __atomic_add_fetch(&g_sample_sequence, 1ULL, __ATOMIC_RELAXED)
+    );
     return AIOS_OK;
+}
+
+static bool resource_entry_owner_contract_valid(
+    const ai_resource_entry_t *entry
+) {
+    uint32_t owner_valid_flags =
+        entry->valid_flags & AI_RESOURCE_ENTRY_OWNER_VALID_MASK;
+
+    if ((entry->valid_flags & ~AI_RESOURCE_ENTRY_ALL_FLAGS) != 0U ||
+        ((entry->valid_flags & AI_RESOURCE_ENTRY_OWNER_UNATTRIBUTED) != 0U &&
+         owner_valid_flags != 0U)) {
+        return false;
+    }
+    if ((entry->valid_flags & AI_RESOURCE_ENTRY_NODE_ID_VALID) == 0U &&
+        entry->node_id != AI_RESOURCE_OWNER_NONE) {
+        return false;
+    }
+    if ((entry->valid_flags & AI_RESOURCE_ENTRY_TASK_ID_VALID) == 0U &&
+        entry->task_id != (task_id_t)AI_RESOURCE_OWNER_NONE) {
+        return false;
+    }
+    if ((entry->valid_flags & AI_RESOURCE_ENTRY_MODEL_ID_VALID) == 0U &&
+        entry->model_id != (model_id_t)AI_RESOURCE_OWNER_NONE) {
+        return false;
+    }
+    if ((entry->valid_flags & AI_RESOURCE_ENTRY_RING_ID_VALID) == 0U &&
+        entry->ring_id != AI_RESOURCE_OWNER_NONE) {
+        return false;
+    }
+    return true;
 }
 
 static bool resource_snapshot_contract_valid(
@@ -153,6 +196,7 @@ static bool resource_snapshot_contract_valid(
         snapshot->entry_count != AI_RESOURCE_KIND_COUNT ||
         snapshot->entry_capacity != AI_RESOURCE_LEDGER_CAPACITY ||
         snapshot->source_flags != AI_RESOURCE_SOURCE_ALL_CURRENT ||
+        snapshot->sampled_at_ns == 0U ||
         snapshot->sample_sequence == 0U) {
         return false;
     }
@@ -173,10 +217,9 @@ static bool resource_snapshot_contract_valid(
             !ai_resource_unit_valid(entry->unit) ||
             entry->unit != expected_unit ||
             entry->valid_flags != expected_valid_flags ||
-            entry->node_id != AI_RESOURCE_OWNER_NONE ||
-            entry->task_id != AI_RESOURCE_OWNER_NONE ||
-            entry->model_id != AI_RESOURCE_OWNER_NONE ||
-            entry->ring_id != AI_RESOURCE_OWNER_NONE) {
+            entry->reserved0 != 0U ||
+            entry->last_observed_ns != snapshot->sampled_at_ns ||
+            !resource_entry_owner_contract_valid(entry)) {
             return false;
         }
         if ((entry->valid_flags & AI_RESOURCE_ENTRY_LIMIT_VALID) != 0) {
@@ -193,12 +236,29 @@ static bool resource_snapshot_contract_valid(
         }
         if ((entry->valid_flags & AI_RESOURCE_ENTRY_HIGH_WATER_VALID) != 0) {
             high_water_kinds++;
-            if (entry->high_water < entry->used) {
+            if (entry->high_water < entry->used ||
+                entry->high_water > entry->limit) {
                 return false;
             }
+        } else if (entry->high_water != 0U) {
+            return false;
         }
         if ((entry->valid_flags & AI_RESOURCE_ENTRY_DENIED_VALID) != 0) {
             denied_kinds++;
+        } else if (entry->denied != 0U) {
+            return false;
+        }
+    }
+
+    {
+        ai_resource_entry_t empty_entry;
+        memset(&empty_entry, 0, sizeof(empty_entry));
+        for (uint32_t i = snapshot->entry_count;
+             i < snapshot->entry_capacity; i++) {
+            if (memcmp(&snapshot->entries[i], &empty_entry,
+                       sizeof(empty_entry)) != 0) {
+                return false;
+            }
         }
     }
 
@@ -210,9 +270,39 @@ static bool resource_snapshot_contract_valid(
            !ai_resource_unit_valid(AI_RESOURCE_UNIT_COUNT);
 }
 
+static bool resource_snapshot_matches_sources(
+    const ai_resource_snapshot_t *snapshot,
+    const ai_resource_sources_t *sources
+) {
+    const ai_resource_entry_t *heap =
+        &snapshot->entries[AI_RESOURCE_KIND_KERNEL_HEAP];
+    const ai_resource_entry_t *tensor =
+        &snapshot->entries[AI_RESOURCE_KIND_TENSOR_POOL];
+    const ai_resource_entry_t *fabric =
+        &snapshot->entries[AI_RESOURCE_KIND_MEMORY_FABRIC_WINDOWS];
+    const ai_resource_entry_t *rings =
+        &snapshot->entries[AI_RESOURCE_KIND_INFERENCE_RING_REGISTRATIONS];
+    const ai_resource_entry_t *sched =
+        &snapshot->entries[AI_RESOURCE_KIND_SCHEDULER_RUNNABLE];
+
+    return heap->limit == (uint64_t)sources->heap.total &&
+           heap->used == (uint64_t)sources->heap.used &&
+           tensor->limit == sources->tensor.total_memory &&
+           tensor->used == sources->tensor.used_memory &&
+           tensor->high_water == sources->tensor.peak_usage &&
+           fabric->limit == MEMORY_FABRIC_MAX_WINDOWS &&
+           fabric->used == sources->fabric.active_windows &&
+           rings->limit == AI_INFER_RING_CAPACITY &&
+           rings->used == sources->rings.registered_rings &&
+           sched->limit == MAX_AI_TASKS &&
+           sched->used == sources->sched.runnable_tasks;
+}
+
 aios_status_t ai_resource_init(void) {
     ai_resource_snapshot_t snapshot;
     ai_resource_snapshot_t invalid_snapshot;
+    ai_resource_snapshot_t mapping_snapshot;
+    ai_resource_sources_t synthetic_sources;
     aios_status_t status;
 
     g_resource_ready = false;
@@ -232,11 +322,58 @@ aios_status_t ai_resource_init(void) {
         return status == AIOS_OK ? AIOS_ERR_IO : status;
     }
 
+    memset(&synthetic_sources, 0, sizeof(synthetic_sources));
+    synthetic_sources.heap.total = 1009U;
+    synthetic_sources.heap.used = 109U;
+    synthetic_sources.tensor.total_memory = 2003U;
+    synthetic_sources.tensor.used_memory = 211U;
+    synthetic_sources.tensor.peak_usage = 307U;
+    synthetic_sources.fabric.active_windows = 3U;
+    synthetic_sources.rings.registered_rings = 7U;
+    synthetic_sources.sched.runnable_tasks = 11U;
+    resource_snapshot_build(
+        &mapping_snapshot, &synthetic_sources, 1234567U, 41U
+    );
+    if (!resource_snapshot_contract_valid(&mapping_snapshot) ||
+        !resource_snapshot_matches_sources(
+            &mapping_snapshot, &synthetic_sources
+        )) {
+        g_resource_ready = false;
+        serial_write("[RESOURCE] ledger selftest FAIL mapping=0\n");
+        return AIOS_ERR_IO;
+    }
+
     invalid_snapshot = snapshot;
     invalid_snapshot.entry_count = AI_RESOURCE_LEDGER_CAPACITY + 1U;
     if (resource_snapshot_contract_valid(&invalid_snapshot)) {
         g_resource_ready = false;
         serial_write("[RESOURCE] ledger selftest FAIL bounds=0\n");
+        return AIOS_ERR_IO;
+    }
+
+    invalid_snapshot = snapshot;
+    invalid_snapshot.entries[AI_RESOURCE_KIND_KERNEL_HEAP].valid_flags |=
+        AI_RESOURCE_ENTRY_NODE_ID_VALID;
+    if (resource_snapshot_contract_valid(&invalid_snapshot)) {
+        g_resource_ready = false;
+        serial_write("[RESOURCE] ledger selftest FAIL owner_flags=0\n");
+        return AIOS_ERR_IO;
+    }
+
+    invalid_snapshot = snapshot;
+    invalid_snapshot.entries[AI_RESOURCE_KIND_TENSOR_POOL].high_water =
+        invalid_snapshot.entries[AI_RESOURCE_KIND_TENSOR_POOL].limit + 1U;
+    if (resource_snapshot_contract_valid(&invalid_snapshot)) {
+        g_resource_ready = false;
+        serial_write("[RESOURCE] ledger selftest FAIL high_water=0\n");
+        return AIOS_ERR_IO;
+    }
+
+    invalid_snapshot = snapshot;
+    invalid_snapshot.entries[AI_RESOURCE_KIND_COUNT].used = 1U;
+    if (resource_snapshot_contract_valid(&invalid_snapshot)) {
+        g_resource_ready = false;
+        serial_write("[RESOURCE] ledger selftest FAIL tail_zero=0\n");
         return AIOS_ERR_IO;
     }
 
