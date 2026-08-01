@@ -59,7 +59,6 @@
 #define SYS_INFER_RING_WAIT_CQ  0x307   /* Wait for completion activity */
 #define SYS_INFER_RING_STATUS   0x308   /* Query registered ring state */
 /* High-frequency data plane is expected to move onto ai_ring.h shared rings. */
-#define AI_INFER_RING_CAPACITY  16U     /* Fixed registration slots */
 
 /* Training syscalls (0x400 - 0x4FF) */
 #define SYS_TRAIN_FORWARD       0x400   /* Forward pass */
@@ -239,7 +238,6 @@ aios_status_t sys_infer_ring_setup(syscall_infer_ring_setup_t *req);
 aios_status_t sys_infer_ring_notify(syscall_infer_ring_notify_t *req);
 aios_status_t sys_infer_ring_wait_cq(syscall_infer_ring_wait_t *req);
 aios_status_t sys_infer_ring_status(uint32_t ring_id, syscall_infer_ring_status_t *out);
-void ai_infer_ring_runtime(ai_ring_runtime_snapshot_t *out);
 
 /* Training */
 aios_status_t sys_train_forward(syscall_train_t *req);

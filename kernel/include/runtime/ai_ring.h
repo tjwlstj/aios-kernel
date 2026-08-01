@@ -21,6 +21,9 @@
 #define AI_RING_DEFAULT_ENTRIES      256
 #define AI_RING_MAX_ENTRIES          4096
 
+/* Fixed kernel registration slots for the bootstrap inference data plane. */
+#define AI_INFER_RING_CAPACITY       16U
+
 /* Ring roles */
 #define AI_RING_ROLE_SUBMIT          1
 #define AI_RING_ROLE_COMPLETION      2
@@ -136,6 +139,9 @@ typedef struct PACKED {
     bool        any_shared_kv;
     uint16_t    reserved1;
 } ai_ring_runtime_snapshot_t;
+
+/* Read-only aggregate observer; it does not notify, wait, or mutate a ring. */
+void ai_infer_ring_runtime(ai_ring_runtime_snapshot_t *out);
 
 static inline uint32_t ai_ring_bytes(uint32_t entry_count, uint32_t entry_size) {
     return (uint32_t)(sizeof(ai_ring_header_t) + ((uint64_t)entry_count * entry_size));

@@ -16,7 +16,7 @@
 #include <drivers/vga.h>
 #include <kernel/user_mode.h>
 #include <mm/memory_fabric.h>
-#include <runtime/ai_syscall.h>
+#include <runtime/ai_ring.h>
 #include <lib/string.h>
 
 static slm_plan_t plan_table[SLM_PLAN_CAP];

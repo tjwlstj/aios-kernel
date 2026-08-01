@@ -6,7 +6,7 @@
  */
 
 #include <runtime/ai_resource.h>
-#include <runtime/ai_syscall.h>
+#include <runtime/ai_ring.h>
 #include <drivers/serial.h>
 #include <drivers/vga.h>
 #include <kernel/time.h>
