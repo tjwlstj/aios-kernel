@@ -2,7 +2,7 @@
 
 작성일: 2026-04-27
 
-최종 갱신: 2026-08-02 (AI Resource Ledger v0 aggregate 관측 경로)
+최종 갱신: 2026-08-02 (AI Resource Ledger v0 read-only UAPI와 shell 관측 경로)
 
 ## 목적
 
@@ -29,6 +29,8 @@ AI workload와 agent runtime에 맞는 리소스 관리를 어떤 순서로 확�
 - `sched/ai_sched.c`의 AI task metadata, run queue, PIT tick accounting
 - `runtime/ai_pressure.c`의 schema 1 관측 전용 pressure snapshot
 - `runtime/ai_resource.c`의 schema 1 관측 전용 aggregate resource ledger
+- `SYS_INFO_RESOURCE=0x706`의 versioned read request와 staging-copy 반환 경로
+- `state resource`의 aggregate-only 한 줄 관측면
 - `runtime/ai_syscall.c`의 AI syscall dispatcher와 bootstrap snapshot surface
 - `state autonomy` schema 1의 read-only mode/support/counter/last-decision 관측면
 - `kernel/health.c`, `kernel/kernel_room.c`의 health / room snapshot
@@ -166,7 +168,7 @@ edge가 없다.
 
 ## AI Resource Ledger v0
 
-상태: `CURRENT` (2026-08-02), 커널 내부 aggregate 관측 전용.
+상태: `CURRENT` (2026-08-02), aggregate 관측 전용 + read-only UAPI/shell.
 
 `ai_resource_snapshot_t`는 capacity 8의 고정 snapshot에 현재 구현된 다섯
 resource kind를 한 row씩 기록한다. public kind와 unit ID는 append-only다.
@@ -183,15 +185,21 @@ resource kind를 한 row씩 기록한다. public kind와 unit ID는 append-only�
 - source-native high-water는 tensor `peak_usage` 한 종류만 유효하다. read 호출
   빈도에 따라 달라지는 가짜 high-water를 만들지 않는다.
 - 공통 per-resource denial counter가 아직 없으므로 `denied` validity는 0이다.
-- `node_id`, `task_id`, `model_id`, `ring_id`는 future attribution 자리지만,
-  현재 모든 row는 `NONE/UNATTRIBUTED=0`인 aggregate다.
+- `node_id`, `task_id`, `model_id`, `ring_id`는 future attribution 자리다.
+  각 owner에는 별도 validity bit가 있으므로 ID 0도 future valid ID가 될 수 있다.
+  현재 row는 `OWNER_UNATTRIBUTED=1`, owner-valid bit 0인 aggregate이며 owner
+  값의 0은 validity가 없을 때만 placeholder다.
 - heap/fabric/ring reader는 내부 동기화되고 scheduler는 local IRQ를 막고
   복사한다. tensor stats와 전체 cross-source 조합은 현재 single-BSP에서의
   best-effort snapshot이며 원자적 multi-source transaction이 아니다.
-- 별도 versioned snapshot을 사용해 `kernel_room_snapshot_t`, bootstrap ABI와
-  syscall 번호를 바꾸지 않았다.
-- userspace resource syscall, `state resource`, quota/reserve/release/throttle,
-  allocator/scheduler policy 변경은 아직 없다.
+- 별도 versioned snapshot을 사용해 `kernel_room_snapshot_t`와 bootstrap ABI는
+  바꾸지 않았다. info 범위 끝에 `SYS_INFO_RESOURCE=0x706`만 append-only로
+  추가하고 Kernel Room info gate 끝도 같은 번호로 확장했다.
+- `ai_resource_snapshot_request_t`는 16바이트 고정 request이며 schema 1,
+  정확한 `output_size`, non-null `output_addr`만 허용한다. kernel staging
+  snapshot이 내부 계약을 다시 통과한 뒤에만 `copy_to_user`한다.
+- `state resource`와 shell same-record 계약은 CURRENT다. quota/reserve/release/
+  throttle 및 allocator/scheduler policy 변경은 아직 없다.
 
 필수 부팅 증거는 다음 exact record다.
 
@@ -200,8 +208,9 @@ resource kind를 한 row씩 기록한다. public kind와 unit ID는 append-only�
 ```
 
 Python/PowerShell 정상 verdict와 직접 Make smoke가 행 전체를 요구한다. marker
-누락, 축약, `observation_only=0`, 뒤에 `apply_enabled=1`을 붙인 상충 레코드는
-PASS하지 않는다. boot summary의 `resource.ready`도 같은 전체 필드를 검사한다.
+누락, 축약, 선행 공백, 중복 exact record, `observation_only=0`, 뒤에
+`apply_enabled=1`을 붙인 상충 레코드는 PASS하지 않는다. boot summary의
+`resource.ready`도 같은 전체 필드를 검사한다.
 
 ## 개발 순서
 
@@ -239,6 +248,8 @@ PASS하지 않는다. boot summary의 `resource.ready`도 같은 전체 필드�
 - counters와 validity: `limit`, `used`, `high_water`, `denied`, `last_observed_ns`
 - 별도 `ai_resource_snapshot_t`에 entry count와 fixed table 포함
 - exact boot selftest, structured boot summary, host negative test
+- synthetic source mapping, owner-validity 충돌, high-water 상한, unused tail
+  zero 계약을 포함한 fail-closed kernel selftest
 
 주의:
 
@@ -249,7 +260,7 @@ PASS하지 않는다. boot summary의 `resource.ready`도 같은 전체 필드�
 
 ### Slice 2. Read-only resource snapshot UAPI
 
-상태: planned.
+상태: `CURRENT` (2026-08-02), read-only.
 
 목표:
 
@@ -257,16 +268,24 @@ PASS하지 않는다. boot summary의 `resource.ready`도 같은 전체 필드�
 
 최소 패치:
 
-- `SYS_RESOURCE_SNAPSHOT` 또는 `SYS_INFO_RESOURCE`
-- staging copy 후 `copy_to_user`
+- append-only `SYS_INFO_RESOURCE=0x706`
+- 16바이트 `ai_resource_snapshot_request_t`의 schema/size/output 검증
+- kernel staging snapshot 검증 후 `copy_to_user`
+- Kernel Room info gate의 `syscall_end=SYS_INFO_RESOURCE`
 - `state resource` 한 줄 관측면과 shell lane 교환
 
 완료 기준:
 
-- snapshot syscall null output은 `AIOS_ERR_INVAL`
-- 정상 path는 ledger summary를 반환
-- unknown schema/oversized output은 명시적으로 거부
+- null request/output은 `AIOS_ERR_INVAL`
+- 정상 dispatcher path는 schema 1, entry 5, `observation_only=1` ledger를 반환
+- unknown schema와 undersized/oversized output을 명시적으로 거부
 - 기존 exact `[RESOURCE] ledger selftest PASS ...`와 `observation_only=1` 유지
+- `state resource`는 owner row 0, unattributed row 5와 source별 used/limit를
+  같은 한 줄에서 검증
+
+현재 성공 경로 proof는 모든 subsystem 초기화 뒤 real dispatcher를 호출하는
+kernel-internal boot selftest다. embedded ring3 demo program은 아직 0x706 request를
+직접 만들지 않으므로 실제 page-backed userspace caller proof로 과장하지 않는다.
 
 ### Slice 3. Bounded policy schema 고정
 
@@ -378,15 +397,18 @@ OS/tooling 변경:
 
 - `python .\tools\testkit\aios-testkit.py os`
 
-Slice 1 필수 negative test:
+Slice 1/2 필수 negative test:
 
 - null internal snapshot output
 - oversized entry count internal contract
 - missing/truncated resource marker
 - `observation_only=0`
 - canonical marker 뒤 `apply_enabled=1` 상충 필드
+- 중복 exact resource/pressure record와 선행 공백 증거
+- null request/output, unknown schema, 크기가 다른 output request
+- `state resource`의 owner/attribution/validity 상충 레코드
 
-후속 policy/UAPI negative test:
+후속 policy negative test:
 
 - unknown resource target
 - unsupported action
@@ -395,16 +417,16 @@ Slice 1 필수 negative test:
 
 ## 당장 다음 패치 후보
 
-Resource Ledger v0 다음의 가장 작은 후보는 Slice 2 read-only UAPI다.
+Slice 2까지 완료한 뒤의 가장 작은 후보는 Slice 3 bounded policy schema 고정이다.
 
-1. info 범위 끝에 `SYS_INFO_RESOURCE`를 append-only로 추가
-2. Kernel Room info gate의 `syscall_end`를 같은 번호까지 확장
-3. kernel staging snapshot 뒤 `copy_to_user`로 반환
-4. null/invalid user output 반례 추가
-5. `state resource`와 shell same-record 계약 추가
+1. target/action/risk ID를 append-only enum으로 먼저 정의
+2. request/result에 schema와 struct size를 포함
+3. 모든 action은 기본 unsupported로 두고 handler/apply는 아직 연결하지 않음
+4. unknown target/action과 크기 불일치 host/kernel 반례를 먼저 추가
+5. owner attribution source가 생기기 전까지 aggregate row를 분할하지 않음
 
-이 후보는 allocator 정책이나 owner attribution을 바꾸지 않고, 이미 검증된
-aggregate snapshot을 userspace와 shell에 읽기 전용으로 노출한다.
+이 후보는 정책 언어의 모양만 고정하는 scaffold다. allocator/scheduler 적용,
+quota accounting, reserve/release syscall은 별도 검증 조각 전까지 PLANNED다.
 
 단, pressure를 실제 scheduler apply에 연결하기 전에는
 `calc_weight()`와 `delta_ns / weight`의 priority 의미를 별도 selftest로 먼저

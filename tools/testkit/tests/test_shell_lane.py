@@ -141,6 +141,38 @@ class ShellExpectationTests(unittest.TestCase):
             with self.subTest(invalid=invalid):
                 self.assertFalse(expectations_match(invalid, expectations))
 
+    def test_state_resource_contract_is_aggregate_and_observation_only(self) -> None:
+        exchange = next(
+            item for item in DEFAULT_EXCHANGES
+            if item["command"] == "state resource"
+        )
+        expectations = list(exchange["expect"])
+        resource = (
+            "[STATE] resource schema=1 observation_only=1 kinds=5 units=2 "
+            "entries=5 capacity=8 source_flags=0x1f sample=2 sampled_ns=10 "
+            "owner_rows=0 unattributed_rows=5 heap_used=1024 "
+            "heap_limit=2097152 tensor_used=0 tensor_limit=268435456 "
+            "tensor_high_water=0 fabric_used=0 fabric_limit=64 "
+            "rings_used=0 rings_limit=16 sched_used=0 sched_limit=256 "
+            "high_water_kinds=1 denied_kinds=0\n"
+        )
+        self.assertTrue(expectations_match(resource, expectations))
+
+        for invalid in (
+            resource.replace("observation_only=1", "observation_only=0"),
+            resource.replace("entries=5", "entries=4"),
+            resource.replace("owner_rows=0", "owner_rows=1"),
+            resource.replace("unattributed_rows=5", "unattributed_rows=4"),
+            resource.replace("high_water_kinds=1", "high_water_kinds=0"),
+            resource.replace("denied_kinds=0", "denied_kinds=1"),
+            resource.replace(
+                "observation_only=1",
+                "observation_only=0 observation_only=1",
+            ),
+        ):
+            with self.subTest(invalid=invalid):
+                self.assertFalse(expectations_match(invalid, expectations))
+
 
 class ShellVerdictTests(unittest.TestCase):
     def test_clean_exit_is_required_for_pass(self) -> None:

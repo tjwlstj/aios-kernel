@@ -29,6 +29,7 @@
  *   state nodes      — per-node gate/work observation (summary line +
  *                      one `[STATE] node id=...` line per active node)
  *   state pipeline   — node pipeline registry statistics
+ *   state resource   — read-only aggregate AI resource ledger
  *   state pressure   — read-only scheduler/memory/policy pressure snapshot
  *   state slm        — SLM plan apply observation (high-precision timing)
  *   state autonomy   — autonomy mode, support matrix, counters, last decision
@@ -46,6 +47,7 @@
 #include <runtime/node_pipeline.h>
 #include <runtime/nodebit.h>
 #include <runtime/autonomy.h>
+#include <runtime/ai_resource.h>
 #include <runtime/ai_pressure.h>
 #include <runtime/slm_orchestrator.h>
 #include <kernel/user_exec.h>
@@ -112,7 +114,7 @@ static void cmd_ping(void) {
 }
 
 static void state_list(void) {
-    STATE_EMIT("[STATE] topics list=health,mem,sched,nodes,pipeline,pressure,slm,autonomy,user,sec,time,version\n");
+    STATE_EMIT("[STATE] topics list=health,mem,sched,nodes,pipeline,resource,pressure,slm,autonomy,user,sec,time,version\n");
 }
 
 static void state_sched(void) {
@@ -296,6 +298,65 @@ static void state_pipeline(void) {
         (int64_t)s.last_status);
 }
 
+static void state_resource(void) {
+    ai_resource_snapshot_t r;
+    uint32_t owner_rows = 0;
+    uint32_t unattributed_rows = 0;
+    uint32_t high_water_kinds = 0;
+    uint32_t denied_kinds = 0;
+    aios_status_t status = ai_resource_read(&r);
+
+    if (status != AIOS_OK || !ai_resource_snapshot_valid(&r)) {
+        if (status == AIOS_OK) {
+            status = AIOS_ERR_IO;
+        }
+        STATE_EMIT("[STATE] resource ready=0 status=%d\n", (int64_t)status);
+        return;
+    }
+
+    for (uint32_t i = 0; i < r.entry_count; i++) {
+        uint32_t flags = r.entries[i].valid_flags;
+        if ((flags & AI_RESOURCE_ENTRY_OWNER_VALID_MASK) != 0U) {
+            owner_rows++;
+        }
+        if ((flags & AI_RESOURCE_ENTRY_OWNER_UNATTRIBUTED) != 0U) {
+            unattributed_rows++;
+        }
+        if ((flags & AI_RESOURCE_ENTRY_HIGH_WATER_VALID) != 0U) {
+            high_water_kinds++;
+        }
+        if ((flags & AI_RESOURCE_ENTRY_DENIED_VALID) != 0U) {
+            denied_kinds++;
+        }
+    }
+
+    STATE_EMIT("[STATE] resource schema=%u observation_only=%u kinds=%u units=%u entries=%u capacity=%u source_flags=%x sample=%u sampled_ns=%u owner_rows=%u unattributed_rows=%u heap_used=%u heap_limit=%u tensor_used=%u tensor_limit=%u tensor_high_water=%u fabric_used=%u fabric_limit=%u rings_used=%u rings_limit=%u sched_used=%u sched_limit=%u high_water_kinds=%u denied_kinds=%u\n",
+        (uint64_t)r.schema_version,
+        (uint64_t)r.observation_only,
+        (uint64_t)r.kind_count,
+        (uint64_t)r.unit_count,
+        (uint64_t)r.entry_count,
+        (uint64_t)r.entry_capacity,
+        (uint64_t)r.source_flags,
+        r.sample_sequence,
+        r.sampled_at_ns,
+        (uint64_t)owner_rows,
+        (uint64_t)unattributed_rows,
+        r.entries[AI_RESOURCE_KIND_KERNEL_HEAP].used,
+        r.entries[AI_RESOURCE_KIND_KERNEL_HEAP].limit,
+        r.entries[AI_RESOURCE_KIND_TENSOR_POOL].used,
+        r.entries[AI_RESOURCE_KIND_TENSOR_POOL].limit,
+        r.entries[AI_RESOURCE_KIND_TENSOR_POOL].high_water,
+        r.entries[AI_RESOURCE_KIND_MEMORY_FABRIC_WINDOWS].used,
+        r.entries[AI_RESOURCE_KIND_MEMORY_FABRIC_WINDOWS].limit,
+        r.entries[AI_RESOURCE_KIND_INFERENCE_RING_REGISTRATIONS].used,
+        r.entries[AI_RESOURCE_KIND_INFERENCE_RING_REGISTRATIONS].limit,
+        r.entries[AI_RESOURCE_KIND_SCHEDULER_RUNNABLE].used,
+        r.entries[AI_RESOURCE_KIND_SCHEDULER_RUNNABLE].limit,
+        (uint64_t)high_water_kinds,
+        (uint64_t)denied_kinds);
+}
+
 static void state_pressure(void) {
     ai_pressure_snapshot_t p;
     aios_status_t status = ai_pressure_read(&p);
@@ -405,6 +466,7 @@ static void cmd_state(const char *arg, uint32_t arg_len) {
     if (topic_is(arg, arg_len, "sched"))                { state_sched();   return; }
     if (topic_is(arg, arg_len, "nodes"))                { state_nodes();   return; }
     if (topic_is(arg, arg_len, "pipeline"))             { state_pipeline(); return; }
+    if (topic_is(arg, arg_len, "resource"))             { state_resource(); return; }
     if (topic_is(arg, arg_len, "pressure"))             { state_pressure(); return; }
     if (topic_is(arg, arg_len, "slm"))                  { state_slm();     return; }
     if (topic_is(arg, arg_len, "autonomy"))             { state_autonomy(); return; }

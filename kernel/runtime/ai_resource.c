@@ -179,7 +179,7 @@ static bool resource_entry_owner_contract_valid(
     return true;
 }
 
-static bool resource_snapshot_contract_valid(
+bool ai_resource_snapshot_valid(
     const ai_resource_snapshot_t *snapshot
 ) {
     uint32_t limit_kinds = 0;
@@ -316,7 +316,7 @@ aios_status_t ai_resource_init(void) {
 
     g_resource_ready = true;
     status = ai_resource_read(&snapshot);
-    if (status != AIOS_OK || !resource_snapshot_contract_valid(&snapshot)) {
+    if (status != AIOS_OK || !ai_resource_snapshot_valid(&snapshot)) {
         g_resource_ready = false;
         serial_write("[RESOURCE] ledger selftest FAIL invariant=0\n");
         return status == AIOS_OK ? AIOS_ERR_IO : status;
@@ -334,7 +334,7 @@ aios_status_t ai_resource_init(void) {
     resource_snapshot_build(
         &mapping_snapshot, &synthetic_sources, 1234567U, 41U
     );
-    if (!resource_snapshot_contract_valid(&mapping_snapshot) ||
+    if (!ai_resource_snapshot_valid(&mapping_snapshot) ||
         !resource_snapshot_matches_sources(
             &mapping_snapshot, &synthetic_sources
         )) {
@@ -345,7 +345,7 @@ aios_status_t ai_resource_init(void) {
 
     invalid_snapshot = snapshot;
     invalid_snapshot.entry_count = AI_RESOURCE_LEDGER_CAPACITY + 1U;
-    if (resource_snapshot_contract_valid(&invalid_snapshot)) {
+    if (ai_resource_snapshot_valid(&invalid_snapshot)) {
         g_resource_ready = false;
         serial_write("[RESOURCE] ledger selftest FAIL bounds=0\n");
         return AIOS_ERR_IO;
@@ -354,7 +354,7 @@ aios_status_t ai_resource_init(void) {
     invalid_snapshot = snapshot;
     invalid_snapshot.entries[AI_RESOURCE_KIND_KERNEL_HEAP].valid_flags |=
         AI_RESOURCE_ENTRY_NODE_ID_VALID;
-    if (resource_snapshot_contract_valid(&invalid_snapshot)) {
+    if (ai_resource_snapshot_valid(&invalid_snapshot)) {
         g_resource_ready = false;
         serial_write("[RESOURCE] ledger selftest FAIL owner_flags=0\n");
         return AIOS_ERR_IO;
@@ -363,7 +363,7 @@ aios_status_t ai_resource_init(void) {
     invalid_snapshot = snapshot;
     invalid_snapshot.entries[AI_RESOURCE_KIND_TENSOR_POOL].high_water =
         invalid_snapshot.entries[AI_RESOURCE_KIND_TENSOR_POOL].limit + 1U;
-    if (resource_snapshot_contract_valid(&invalid_snapshot)) {
+    if (ai_resource_snapshot_valid(&invalid_snapshot)) {
         g_resource_ready = false;
         serial_write("[RESOURCE] ledger selftest FAIL high_water=0\n");
         return AIOS_ERR_IO;
@@ -371,7 +371,7 @@ aios_status_t ai_resource_init(void) {
 
     invalid_snapshot = snapshot;
     invalid_snapshot.entries[AI_RESOURCE_KIND_COUNT].used = 1U;
-    if (resource_snapshot_contract_valid(&invalid_snapshot)) {
+    if (ai_resource_snapshot_valid(&invalid_snapshot)) {
         g_resource_ready = false;
         serial_write("[RESOURCE] ledger selftest FAIL tail_zero=0\n");
         return AIOS_ERR_IO;

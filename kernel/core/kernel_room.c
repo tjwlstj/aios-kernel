@@ -86,7 +86,7 @@ static const kernel_room_gate_descriptor_t g_gate_table[KERNEL_ROOM_GATE_COUNT] 
         .id = KERNEL_ROOM_GATE_INFO,
         .name = "info",
         .syscall_start = SYS_INFO_MEMORY,
-        .syscall_end = SYS_INFO_BOOTSTRAP,
+        .syscall_end = SYS_INFO_RESOURCE,
         .min_stability = KERNEL_STABILITY_UNSAFE,
         .risk = KERNEL_ROOM_GATE_RISK_OBSERVE,
         .completion_ready = false,

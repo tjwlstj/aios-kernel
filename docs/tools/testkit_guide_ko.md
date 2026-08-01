@@ -90,7 +90,7 @@ pwsh -NoProfile -File .\tools\testkit\tests\test_build_windows_verdict.ps1
 불완전 baseline/perf 출처, stale shell artifact,
 clean-exit 누락, process pair 레코드 누락/불완전, pressure marker
 누락/불완전·apply-capable 변형, resource marker 누락/축약/상충 변형을
-55개 Python unit으로 고정한다.
+56개 Python unit으로 고정한다.
 별도의 `test_build_windows_verdict.ps1` 17개 사례가 Windows 직접 판정기의 IDE evidence
 문법과 process pair/pressure/resource 필수성 및 exact record 단일성을 같은 의미론으로 검증한다.
 
@@ -120,12 +120,15 @@ python .\tools\testkit\aios-testkit.py shell --strict
 python .\tools\testkit\aios-testkit.py shell --strict --skip-build
 ```
 
-현재 레인은 `state pressure`를 포함한 15개 교환을 수행한다. pressure 응답은
+현재 레인은 `state resource`와 `state pressure`를 포함한 16개 교환을 수행한다.
+resource 응답은 schema 1, `observation_only=1`, aggregate 5행, owner row 0/
+unattributed row 5, source별 used/limit와 validity 수를 같은 `[STATE] resource ...`
+레코드에서 확인한다. pressure 응답은
 schema 1, `observation_only=1`, `gate_filter_separate=1`, 계층 깊이와 세 plane,
 queue/fabric/NodeBit raw 증거가 같은 `[STATE] pressure ...` 레코드에 있는지
 토큰 경계로 확인한다.
-Resource Ledger는 아직 shell/UAPI가 없으므로 교환 수를 늘리지 않는다. 대신 shell
-전체 transcript에 normal boot verdict를 다시 적용해 exact resource boot marker를 검증한다.
+shell 전체 transcript에는 normal boot verdict도 다시 적용해 exact resource/pressure
+boot marker와 런타임 state 레코드를 서로 독립적으로 검증한다.
 
 ### 부팅 매트릭스
 
@@ -371,7 +374,8 @@ repo 안의 baseline fixture와 비교하는 lane이다.
 - AI Pressure Tracker required marker, structured `pressure` summary,
   `state pressure` observation-only/gate-separation 계약
 - AI Resource Ledger exact required marker와 structured `resource` summary
-  (aggregate-only; resource syscall/`state resource`는 아직 없음)
+  및 append-only `SYS_INFO_RESOURCE=0x706`, `state resource` same-record 계약
+  (aggregate-only; owner attribution/quota/apply는 아직 없음)
 - QEMU 없는 host unit test와 CI 선행 gate
 
 아직 하지 않은 것:

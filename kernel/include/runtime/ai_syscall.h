@@ -24,6 +24,7 @@
 #include <hal/accel_hal.h>
 #include <kernel/health.h>
 #include <runtime/ai_ring.h>
+#include <runtime/ai_resource.h>
 #include <runtime/autonomy.h>
 #include <runtime/nodebit.h>
 #include <runtime/node_pipeline.h>
@@ -88,6 +89,10 @@
 #define SYS_INFO_HEALTH         0x703   /* Get kernel health summary */
 #define SYS_INFO_ROOM           0x704   /* Get Kernel Room snapshot */
 #define SYS_INFO_BOOTSTRAP      0x705   /* Get early userspace bootstrap snapshot */
+#define SYS_INFO_RESOURCE       0x706   /* Get read-only AI resource snapshot */
+
+AIOS_STATIC_ASSERT(SYS_INFO_RESOURCE == 0x706,
+    "System info syscall IDs are append-only");
 
 /* Autonomy control syscalls (0x710 - 0x71F) */
 #define SYS_AUTONOMY_ACTION_PROPOSE 0x710  /* Propose policy action */
@@ -249,6 +254,7 @@ void sys_info_dump(void);
 aios_status_t sys_info_health(kernel_health_summary_t *out);
 aios_status_t sys_info_room(kernel_room_snapshot_t *out);
 aios_status_t sys_info_bootstrap(aios_bootstrap_info_t *out);
+aios_status_t sys_info_resource(ai_resource_snapshot_request_t *req);
 
 /* Autonomy control */
 aios_status_t sys_autonomy_action_propose(autonomy_action_req_t *req);

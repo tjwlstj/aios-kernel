@@ -130,6 +130,16 @@ typedef struct {
 AIOS_STATIC_ASSERT(sizeof(ai_resource_snapshot_t) <= 1024U,
     "Resource snapshot must remain bounded; version before expanding it");
 
+/* Versioned read request used by SYS_INFO_RESOURCE. */
+typedef struct {
+    uint32_t schema_version;
+    uint32_t output_size;
+    uint64_t output_addr;
+} ai_resource_snapshot_request_t;
+
+AIOS_STATIC_ASSERT(sizeof(ai_resource_snapshot_request_t) == 16U,
+    "Resource snapshot request ABI must stay fixed at 16 bytes");
+
 static inline bool ai_resource_kind_valid(uint32_t kind) {
     return kind < AI_RESOURCE_KIND_COUNT;
 }
@@ -141,6 +151,7 @@ static inline bool ai_resource_unit_valid(uint32_t unit) {
 aios_status_t ai_resource_init(void);
 bool ai_resource_ready(void);
 aios_status_t ai_resource_read(ai_resource_snapshot_t *out);
+bool ai_resource_snapshot_valid(const ai_resource_snapshot_t *snapshot);
 const char *ai_resource_kind_name(uint32_t kind);
 const char *ai_resource_unit_name(uint32_t unit);
 

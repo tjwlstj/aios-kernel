@@ -331,6 +331,9 @@ int64_t ai_syscall_dispatch(uint64_t syscall_num, uint64_t arg1,
                     return (int64_t)sys_info_room((kernel_room_snapshot_t *)arg1);
                 case SYS_INFO_BOOTSTRAP:
                     return (int64_t)sys_info_bootstrap((aios_bootstrap_info_t *)arg1);
+                case SYS_INFO_RESOURCE:
+                    return (int64_t)sys_info_resource(
+                        (ai_resource_snapshot_request_t *)arg1);
                 case SYS_AUTONOMY_ACTION_PROPOSE:
                     return (int64_t)sys_autonomy_action_propose((autonomy_action_req_t *)arg1);
                 case SYS_AUTONOMY_ACTION_COMMIT:
@@ -1225,6 +1228,40 @@ aios_status_t sys_info_bootstrap(aios_bootstrap_info_t *out) {
     return copy_to_user(out, &info, sizeof(info));
 }
 
+aios_status_t sys_info_resource(ai_resource_snapshot_request_t *req) {
+    ai_resource_snapshot_request_t local_req;
+    ai_resource_snapshot_t snapshot;
+    ai_resource_snapshot_t *out;
+    aios_status_t status = copy_from_user(
+        &local_req, req, sizeof(local_req)
+    );
+
+    if (status != AIOS_OK) {
+        return status;
+    }
+    if (local_req.schema_version != AI_RESOURCE_SCHEMA_VERSION ||
+        local_req.output_size != (uint32_t)sizeof(snapshot) ||
+        local_req.output_addr == 0U) {
+        return AIOS_ERR_INVAL;
+    }
+
+    out = (ai_resource_snapshot_t *)(uintptr_t)local_req.output_addr;
+    status = syscall_output_buffer_status(out, local_req.output_size);
+    if (status != AIOS_OK) {
+        return status;
+    }
+
+    status = ai_resource_read(&snapshot);
+    if (status != AIOS_OK) {
+        return status;
+    }
+    if (!ai_resource_snapshot_valid(&snapshot)) {
+        return AIOS_ERR_IO;
+    }
+
+    return copy_to_user(out, &snapshot, sizeof(snapshot));
+}
+
 static aios_status_t sys_info_memory(mem_stats_t *out) {
     mem_stats_t stats;
     aios_status_t status = syscall_output_buffer_status(out, sizeof(*out));
@@ -1251,6 +1288,12 @@ static aios_status_t sys_info_scheduler(sched_stats_t *out) {
 
 static aios_status_t ai_syscall_contract_selftest(void) {
     slm_nodebit_t nodebit = {0};
+    ai_resource_snapshot_t resource_snapshot = {0};
+    ai_resource_snapshot_request_t resource_req = {
+        .schema_version = AI_RESOURCE_SCHEMA_VERSION,
+        .output_size = (uint32_t)sizeof(resource_snapshot),
+        .output_addr = (uint64_t)(uintptr_t)&resource_snapshot,
+    };
 
     if (sys_tensor_create(NULL, MEM_REGION_TENSOR, NULL) != AIOS_ERR_INVAL) {
         return AIOS_ERR_IO;
@@ -1341,6 +1384,32 @@ static aios_status_t ai_syscall_contract_selftest(void) {
         return AIOS_ERR_IO;
     }
     if (sys_info_bootstrap(NULL) != AIOS_ERR_INVAL) {
+        return AIOS_ERR_IO;
+    }
+    if (sys_info_resource(NULL) != AIOS_ERR_INVAL) {
+        return AIOS_ERR_IO;
+    }
+    resource_req.output_addr = 0U;
+    if (sys_info_resource(&resource_req) != AIOS_ERR_INVAL) {
+        return AIOS_ERR_IO;
+    }
+    resource_req.output_addr = (uint64_t)(uintptr_t)&resource_snapshot;
+    resource_req.schema_version = AI_RESOURCE_SCHEMA_VERSION + 1U;
+    if (sys_info_resource(&resource_req) != AIOS_ERR_INVAL) {
+        return AIOS_ERR_IO;
+    }
+    resource_req.schema_version = AI_RESOURCE_SCHEMA_VERSION;
+    resource_req.output_size = (uint32_t)sizeof(resource_snapshot) + 1U;
+    if (sys_info_resource(&resource_req) != AIOS_ERR_INVAL) {
+        return AIOS_ERR_IO;
+    }
+    resource_req.output_size = (uint32_t)sizeof(resource_snapshot) - 1U;
+    if (sys_info_resource(&resource_req) != AIOS_ERR_INVAL) {
+        return AIOS_ERR_IO;
+    }
+    resource_req.output_size = (uint32_t)sizeof(resource_snapshot);
+    resource_req.output_addr = (uint64_t)((uintptr_t)~0ULL - 7ULL);
+    if (sys_info_resource(&resource_req) != AIOS_ERR_OVERFLOW) {
         return AIOS_ERR_IO;
     }
     if (syscall_output_buffer_status((void *)((uintptr_t)~0ULL - 7ULL), 16) !=

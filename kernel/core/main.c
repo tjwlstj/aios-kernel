@@ -536,18 +536,30 @@ static void run_selftests(void) {
 static void run_observe_dispatch_selftest(void) {
     node_pipeline_snapshot_t pipe_snap = {0};
     slm_plan_observation_t slm_obs = {0};
+    ai_resource_snapshot_t resource_snap = {0};
+    ai_resource_snapshot_request_t resource_req = {
+        .schema_version = AI_RESOURCE_SCHEMA_VERSION,
+        .output_size = (uint32_t)sizeof(resource_snap),
+        .output_addr = (uint64_t)(uintptr_t)&resource_snap,
+    };
 
     int64_t pipe_status = ai_syscall_dispatch(SYS_PIPE_STATS,
         (uint64_t)(uintptr_t)&pipe_snap, 0, 0, 0, 0);
     int64_t slm_status = ai_syscall_dispatch(SYS_SLM_PLAN_OBSERVE,
         (uint64_t)(uintptr_t)&slm_obs, 0, 0, 0, 0);
+    int64_t resource_status = ai_syscall_dispatch(SYS_INFO_RESOURCE,
+        (uint64_t)(uintptr_t)&resource_req, 0, 0, 0, 0);
 
     bool ok = pipe_status == (int64_t)AIOS_OK &&
               slm_status == (int64_t)AIOS_OK &&
+              resource_status == (int64_t)AIOS_OK &&
               pipe_snap.max_pipelines == NODE_PIPELINE_MAX &&
               pipe_snap.total_executions >= 1 &&
               slm_obs.apply_ok >= 1 &&
-              slm_obs.last_latency_ns > 0;
+              slm_obs.last_latency_ns > 0 &&
+              ai_resource_snapshot_valid(&resource_snap) &&
+              resource_snap.observation_only == 1U &&
+              resource_snap.entry_count == AI_RESOURCE_KIND_COUNT;
 
     if (!ok) {
         kernel_health_mark(KERNEL_SUBSYSTEM_SYSCALL,
@@ -556,10 +568,12 @@ static void run_observe_dispatch_selftest(void) {
         return;
     }
 
-    serial_printf("[SYSCALL] observe dispatch selftest PASS pipe_execs=%u slm_applies=%u slm_last_ns=%u\n",
+    serial_printf("[SYSCALL] observe dispatch selftest PASS pipe_execs=%u slm_applies=%u slm_last_ns=%u resource_entries=%u resource_observation_only=%u\n",
         pipe_snap.total_executions,
         (uint64_t)slm_obs.apply_ok,
-        slm_obs.last_latency_ns);
+        slm_obs.last_latency_ns,
+        (uint64_t)resource_snap.entry_count,
+        (uint64_t)resource_snap.observation_only);
 }
 
 static void finalize_runtime_health(void) {

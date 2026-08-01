@@ -1,6 +1,6 @@
 # Codex 작업 핸드오프 팁 (2026-07-15)
 
-최종 갱신: 2026-08-02 (AI Resource Ledger v0)
+최종 갱신: 2026-08-02 (AI Resource Ledger v0 + read-only UAPI/state)
 
 이 커널에서 Claude가 M1~M3 작업 중 실제로 밟은 지뢰와 관례를 모았다. 다음 작업자(Codex)가 같은 함정에 빠지지 않도록 하는 실전 노트다. **CLAUDE.md의 규칙이 정본이고, 이 문서는 "왜 그런지"와 "어떻게 디버깅했는지"를 보완한다.**
 
@@ -96,10 +96,11 @@ PID 1 실행 뒤 PID 2를 호출하는 것만으로는 scheduler 전환을 증�
 - **pressure 계층 깊이를 과장하지 말 것:** schema 1은 `max_levels=4`지만 `active_levels=2`인 system→plane까지만 CURRENT다. domain/task/window/ring child, fast/slow EWMA, stall window, SMP migration은 PLANNED다.
 - **resource ledger는 owner별 quota가 아니다:** `runtime/ai_resource.c` schema 1은
   heap/tensor bytes, active fabric windows, registered rings, runnable tasks의
-  aggregate 5개 row만 읽는다. owner 4필드는 모두 `NONE/UNATTRIBUTED=0`이며,
-  high-water는 tensor 1종만 valid하고 denial accounting은 없다. syscall,
-  `state resource`, reserve/apply도 PLANNED다. validity flag 없는 0을 지원된
-  측정값으로 해석하지 말 것.
+  aggregate 5개 row만 읽는다. owner 4필드는 별도 validity bit를 가지며 현재는
+  모두 `OWNER_UNATTRIBUTED=1`, owner-valid bit 0이다. ID 0 자체를 NONE으로
+  고정하지 말 것. high-water는 tensor 1종만 valid하고 denial accounting은 없다.
+  `SYS_INFO_RESOURCE=0x706`과 `state resource`는 CURRENT지만 reserve/apply와
+  owner attribution은 PLANNED다.
 - **시스콜 추가 시:** 번호는 추가만(재번호 금지), 그리고 **커버하는 Kernel Room 게이트의 `syscall_end`를 확장**해야 한다(`kernel/core/kernel_room.c`). 이걸 빼먹으면 ROOM 스냅샷이 새 시스콜을 분류에서 누락한다(체크포인트 때 실제로 드리프트가 났던 부분).
 - **ABI 불변식:** SLM 스냅샷 구조체(`slm_hw_snapshot_t`)나 health 구조체 레이아웃을 바꾸면 소비자와 baseline이 깨진다. 관측 필드는 스냅샷 안이 아니라 별도 접근자로 노출하는 패턴을 따랐다(예: `slm_plan_observation_read`).
 - **bootstrap run-state C/NASM ABI:** `kernel/include/kernel/process.h`의 explicit offset + size static assert와 `kernel/core/user_entry.asm`의 `RUN_STATE_*`가 한 쌍이다. 기존 offset은 재번호하지 말고 append-only로 늘린다. 실제 값은 process-local이지만 `g_active_user_run_state`는 현재 동기 runner 한 개를 가리키는 단일 active pointer다.
@@ -114,11 +115,12 @@ PID 1 실행 뒤 PID 2를 호출하는 것만으로는 scheduler 전환을 증�
 
 ---
 
-## 5. 다음 실행축 작업: M3-b-3b2c
+## 5. 다음 실행축 작업
 
-리소스 관리축의 다음 작은 조각은 기존 `ai_resource_snapshot_t`를 append-only
-info syscall과 `state resource`로 노출하는 Slice 2다. 이 작업은 owner attribution,
-quota 또는 apply를 함께 넣지 않는다.
+리소스 관리축의 Slice 2 read-only UAPI/`state resource`는 2026-08-02에 완료됐다.
+다음 작은 후보는 bounded policy schema만 정의하는 Slice 3이며, handler/apply,
+owner attribution, quota를 함께 넣지 않는다. 프로세스 실행축은 M3-b-3b2c를
+계속 따른다.
 
 `address_space_selftest`는 부트 PML4 복제 + CR3 왕복까지 증명했다(공유 매핑). 다음은:
 1. **정적 주소공간 슬롯별 private user leaf proof ✅ M3-b-3b1 완료 (2026-07-14)** — 정적 2슬롯에서 유저 영역(현재 고정 64MiB)을 서로 다른 2MiB backing에 매핑하고 canary 격리를 검증했다. 범용 주소공간 객체, PMM, 실제 프로세스 실행 연결은 아직 아니다.
