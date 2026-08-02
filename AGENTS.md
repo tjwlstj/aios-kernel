@@ -19,7 +19,7 @@
 - 드라이버·QEMU bring-up: `aios-driver-bringup-qemu`
 - SLM·자율 정책 설계: `aios-slm-policy-designer`
 - testkit·CI·증거·판정 변경: `aios-verification-tooling-guardian`
-- 문서·구현 성숙도 동기화: `aios-doc-impl-sync`
+- 문서·구현 성숙도 동기화(코드가 문서화된 표면을 바꿀 때 포함): `aios-doc-impl-sync`
 - 로컬 경로·작업공간 복구: `aios-workspace-recovery`
 - 체크포인트·배포: `aios-beta-checkpoint-release`
 

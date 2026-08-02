@@ -41,7 +41,10 @@ file, including in:
 ## Verify the full contract
 
 Update and test all coupled sites in one patch: header, implementation,
-validation, name table, parser, fixtures, state output, and docs. Include a
+validation, name table, parser, fixtures, state output, and docs. "Docs" means
+every mirror of the value — top-level `CLAUDE.md`, `README.md`, and
+`PROJECT.md` included, not only the nearest design document; the
+`$aios-doc-impl-sync` mirror-surface table lists the coupled sites. Include a
 negative test for unknown or out-of-range values when externally supplied.
 
 Use `$aios-kernel-change-guardian` for kernel/public-header changes and

@@ -56,12 +56,12 @@ python tools/testkit/aios-testkit.py os   # OS tool smoke test
 The kernel shell reads from both the PS/2 keyboard and COM1 serial, so QEMU
 `-serial stdio` gives a scriptable REPL into the running kernel. Machine-oriented
 commands answer with single-line `[STATE] <topic> key=value...` responses:
-`ping`, `state list|health|mem|sched|nodes|pipeline|pressure|slm|autonomy|user|sec|time|version`. List-shaped topics
+`ping`, `state list|health|mem|sched|nodes|pipeline|resource|pressure|slm|autonomy|user|sec|time|version`. List-shaped topics
 (`state nodes`) emit one summary line plus one `[STATE] node id=...` line per item;
-every line still follows the key=value convention. Core pipeline/node/SLM
+every line still follows the key=value convention. Core pipeline/node/SLM/resource
 observation surfaces are mirrored as userspace syscalls (`SYS_PIPE_STATS`,
-`SYS_NODEBIT_STATS`, `SYS_SLM_PLAN_OBSERVE`), and a post-init selftest drives
-them through the real dispatcher (`[SYSCALL] observe dispatch selftest PASS`).
+`SYS_NODEBIT_STATS`, `SYS_SLM_PLAN_OBSERVE`, `SYS_INFO_RESOURCE`), and a post-init
+selftest drives them through the real dispatcher (`[SYSCALL] observe dispatch selftest PASS`).
 The autonomy support matrix and last event do not yet have one versioned snapshot
 syscall. The `shell` testkit lane boots
 QEMU, drives these commands, asserts on the responses, and stores
@@ -135,7 +135,7 @@ kernel/boot/boot.asm  (Multiboot2 entry, GDT, paging, SSE/AVX setup, long mode)
 - `slm_orchestrator.c` — 84 KB hardware + SLM snapshot, plan submit/validate/rollback. Plan *apply* is TSC-timed into a high-precision observation rollup (apply ok/failed/rejected, last/min/avg/max latency ns); read via `slm_plan_observation_read` or the shell's `state slm`. A boot selftest applies one read-only CORE_AUDIT plan — the only automated coverage of the apply path.
 - `nodebit.c` — fast per-node policy bitmap lookup (`SYS_SLM_NODEBIT_LOOKUP`). Every gate decision is timed with the TSC-backed monotonic clock into per-node stats (permits/denies/health blocks, gate latency min/avg/max ns, attributed work via `nodebit_observe_work`); read them with `SYS_NODEBIT_STATS` or the shell's `state nodes`.
 - `node_pipeline.c` — node-owned pipeline registry backing `SYS_PIPE_*` (0x600-0x603); every create/add-stage/execute/destroy needs a NodeBit PERMIT with `NODEBIT_CAP_PIPELINE`, and execute/destroy require the caller's node to own the pipeline. Stage execution is a control-plane accounting walk until the model runtime lands.
-- `ai_resource.c` — schema 1 observation-only aggregate ledger. It exposes five append-only rows (heap bytes, tensor bytes, active Memory Fabric windows, registered inference rings, runnable scheduler tasks) through an internal fixed snapshot. Owners remain `NONE/UNATTRIBUTED`; only tensor has a source-native high-water value, and no syscall, shell topic, quota, denial accounting, reserve, or apply edge exists yet.
+- `ai_resource.c` — schema 1 observation-only aggregate ledger. It exposes five append-only rows (heap bytes, tensor bytes, active Memory Fabric windows, registered inference rings, runnable scheduler tasks) through an internal fixed snapshot. Owners remain `NONE/UNATTRIBUTED`; only tensor has a source-native high-water value. Read it via the read-only `SYS_INFO_RESOURCE` (0x706) syscall or the shell's `state resource`; owner attribution and any quota, denial accounting, reserve, or apply edge still do not exist.
 - `ai_pressure.c` — schema 1 observation-only pressure tracker. It reads exact workload queue occupancy, exact Memory Fabric reader/writer overlap, and cumulative NodeBit denial counters into a fixed-point system→plane snapshot. `max_levels=4` is expansion capacity; only `active_levels=2` is current. Gate bitmap eligibility remains a separate intersection, and no scheduler apply/migration edge consumes this snapshot yet. Read it with `state pressure`.
 
 **Kernel Room (`kernel/core/kernel_room.c`)**

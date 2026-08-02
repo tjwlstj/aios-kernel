@@ -1,4 +1,4 @@
 interface:
   display_name: "AIOS Doc-Impl Sync"
-  short_description: "Keep AIOS documentation aligned with implementation maturity"
+  short_description: "Keep AIOS docs and code-change mirror files aligned with implementation maturity"
   default_prompt: "Use $aios-doc-impl-sync to align these AIOS documents with current implementation evidence."

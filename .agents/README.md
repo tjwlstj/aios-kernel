@@ -14,7 +14,7 @@
 | `aios-driver-bringup-qemu` | e1000, storage, USB, PCI, QEMU | probe를 실제 지원으로 과장 |
 | `aios-slm-policy-designer` | SLM, autonomy, policy, verifier | 무제한 AI 액션과 rollback 부재 |
 | `aios-verification-tooling-guardian` | testkit, marker, CI, baseline | false PASS, stale artifact, 약한 판정 |
-| `aios-doc-impl-sync` | README, 설계, 로드맵, handoff | 문서와 구현 성숙도의 낙관적 drift |
+| `aios-doc-impl-sync` | README, 설계, 로드맵, handoff, 문서화된 표면(시스콜·state 토픽·마커)을 바꾸는 코드 변경 | 문서와 구현 성숙도의 낙관적 drift, 상위 미러 문서(CLAUDE.md·README.md·PROJECT.md) 갱신 누락 |
 | `aios-workspace-recovery` | `Z:`·cwd·권한·프로필 오류 | 로컬 상태를 모른 채 원격을 변경 |
 | `aios-beta-checkpoint-release` | commit, checkpoint, push | beta 미검증 main 반영과 SHA 분기 |
 

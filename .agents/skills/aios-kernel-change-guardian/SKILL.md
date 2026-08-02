@@ -39,7 +39,11 @@ autonomy, require a bounded action surface, verifier, and rollback path.
 
 Use `$aios-enum-abi-integrity` for stable numeric contracts and
 `$aios-verification-tooling-guardian` whenever evidence or verdict behavior
-changes.
+changes. When the slice adds or changes an externally documented surface — a
+syscall, a shell `state` topic, a boot marker, or a selftest line — run the
+`$aios-doc-impl-sync` mirror sweep in the same patch: `CLAUDE.md`, `README.md`,
+`PROJECT.md`, and the nearest design doc must all move together, not just the
+doc closest to the code.
 
 ## Verify from narrow to broad
 
