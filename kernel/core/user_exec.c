@@ -26,9 +26,13 @@ extern uint8_t user_elf_image_end[];
 
 #define USER_EXEC_PRIMARY_SLOT   0U
 #define USER_EXEC_SECONDARY_SLOT 1U
+#define USER_EXEC_PROCESS_EVENT_COUNT 6U
 
 AIOS_STATIC_ASSERT(BOOTSTRAP_PROCESS_COUNT == 2U,
     "bootstrap pair proof currently expects exactly two processes");
+AIOS_STATIC_ASSERT(BOOTSTRAP_PROCESS_EVENT_CAPACITY >=
+        USER_EXEC_PROCESS_EVENT_COUNT,
+    "process event journal cannot hold the exact pair proof");
 
 typedef struct {
     user_exec_info_t info;
@@ -260,6 +264,263 @@ static void emit_trap_snapshot_marker(void) {
         (uint64_t)g_user_exec_pair.saved_current_pid,
         (uint64_t)g_user_exec_pair.saved_stale_owner,
         (uint64_t)g_user_exec_pair.saved_resume_ready);
+}
+
+static bool process_event_frame_same(
+    const bootstrap_process_event_t *a,
+    const bootstrap_process_event_t *b) {
+    return a && b && a->capture_sequence == b->capture_sequence &&
+        a->frame_addr == b->frame_addr && a->frame_rip == b->frame_rip &&
+        a->frame_rsp == b->frame_rsp &&
+        a->frame_rflags == b->frame_rflags &&
+        a->frame_cs == b->frame_cs && a->frame_ss == b->frame_ss &&
+        a->frame_int_no == b->frame_int_no &&
+        a->frame_err_code == b->frame_err_code;
+}
+
+static bool collect_process_event_journal(
+    bootstrap_process_event_t events[USER_EXEC_PROCESS_EVENT_COUNT],
+    const user_exec_run_result_t *first,
+    const user_exec_run_result_t *second,
+    const bootstrap_process_stats_t *stats) {
+    static const bootstrap_process_event_kind_t expected_kinds[] = {
+        BOOTSTRAP_PROCESS_EVENT_KIND_ACQUIRE,
+        BOOTSTRAP_PROCESS_EVENT_KIND_TRAP_CAPTURE,
+        BOOTSTRAP_PROCESS_EVENT_KIND_RELEASE,
+        BOOTSTRAP_PROCESS_EVENT_KIND_ACQUIRE,
+        BOOTSTRAP_PROCESS_EVENT_KIND_TRAP_CAPTURE,
+        BOOTSTRAP_PROCESS_EVENT_KIND_RELEASE,
+    };
+    static const bootstrap_process_event_reason_t expected_reasons[] = {
+        BOOTSTRAP_PROCESS_EVENT_REASON_ACTIVATE_PUBLISH,
+        BOOTSTRAP_PROCESS_EVENT_REASON_BREAKPOINT_CAPTURE,
+        BOOTSTRAP_PROCESS_EVENT_REASON_RESTORE_PUBLISH,
+        BOOTSTRAP_PROCESS_EVENT_REASON_ACTIVATE_PUBLISH,
+        BOOTSTRAP_PROCESS_EVENT_REASON_BREAKPOINT_CAPTURE,
+        BOOTSTRAP_PROCESS_EVENT_REASON_RESTORE_PUBLISH,
+    };
+    static const pid_t expected_from_pid[] = {0, 1, 1, 0, 2, 2};
+    static const pid_t expected_to_pid[] = {1, 1, 0, 2, 2, 0};
+    static const pid_t expected_current_pid[] = {1, 1, 0, 2, 2, 0};
+    static const uint32_t expected_slots[] = {0, 0, 0, 1, 1, 1};
+    static const uint64_t expected_capture_sequence[] = {0, 1, 1, 0, 2, 2};
+    static const bool expected_frame[] = {
+        false, true, true, false, true, true,
+    };
+    bool loaded = true;
+    bool ordered = true;
+    bool kind_reason_ok = true;
+    bool outcomes_ok = true;
+    bool owner_ok = true;
+    bool cr3_ok;
+    bool rsp0_ok;
+    bool if0 = true;
+    bool frame_valid = true;
+    uint32_t lifecycle = 0;
+    uint32_t captures = 0;
+    uint32_t snapshot_refs = 0;
+    uint32_t switch_events = 0;
+    bool resume_ready = false;
+
+    if (!events || !first || !second || !stats) {
+        return false;
+    }
+    memset(events, 0,
+        sizeof(bootstrap_process_event_t) * USER_EXEC_PROCESS_EVENT_COUNT);
+    for (uint32_t i = 0; i < USER_EXEC_PROCESS_EVENT_COUNT; i++) {
+        if (bootstrap_process_get_event(i, &events[i]) != AIOS_OK) {
+            loaded = false;
+            break;
+        }
+    }
+
+    if (loaded) {
+        for (uint32_t i = 0; i < USER_EXEC_PROCESS_EVENT_COUNT; i++) {
+            const bootstrap_process_event_t *event = &events[i];
+
+            ordered = ordered && event->valid &&
+                event->event_sequence == (uint64_t)i + 1ULL &&
+                event->from_pid == expected_from_pid[i] &&
+                event->to_pid == expected_to_pid[i] &&
+                event->current_pid == expected_current_pid[i] &&
+                event->slot == expected_slots[i] &&
+                event->capture_sequence == expected_capture_sequence[i];
+            kind_reason_ok = kind_reason_ok &&
+                event->kind == expected_kinds[i] &&
+                event->reason == expected_reasons[i];
+            outcomes_ok = outcomes_ok && event->outcome ==
+                BOOTSTRAP_PROCESS_EVENT_OUTCOME_COMMITTED;
+            owner_ok = owner_ok && event->owner_ok;
+            if0 = if0 && event->if_disabled;
+            frame_valid = frame_valid &&
+                event->frame_valid == expected_frame[i] &&
+                event->snapshot_ref == expected_frame[i];
+            snapshot_refs += event->snapshot_ref ? 1U : 0U;
+            resume_ready = resume_ready || event->resume_ready;
+            if (event->from_pid != 0 && event->to_pid != 0 &&
+                event->from_pid != event->to_pid) {
+                switch_events++;
+            }
+            if (event->kind == BOOTSTRAP_PROCESS_EVENT_KIND_TRAP_CAPTURE) {
+                captures++;
+            } else {
+                lifecycle++;
+            }
+        }
+    }
+
+    ordered = loaded && ordered &&
+        events[0].run_generation == first->run_generation &&
+        events[1].run_generation == first->run_generation &&
+        events[2].run_generation == first->run_generation &&
+        events[3].run_generation == second->run_generation &&
+        events[4].run_generation == second->run_generation &&
+        events[5].run_generation == second->run_generation &&
+        events[1].capture_sequence == first->trap_snapshot.capture_sequence &&
+        events[4].capture_sequence == second->trap_snapshot.capture_sequence;
+
+    cr3_ok = loaded;
+    rsp0_ok = loaded;
+    for (uint32_t i = 0; i < USER_EXEC_PROCESS_EVENT_COUNT; i++) {
+        cr3_ok = cr3_ok && events[i].cr3_ok;
+        rsp0_ok = rsp0_ok && events[i].rsp0_ok;
+    }
+    cr3_ok = cr3_ok &&
+        events[0].from_cr3 == events[2].to_cr3 &&
+        events[2].to_cr3 == events[3].from_cr3 &&
+        events[3].from_cr3 == events[5].to_cr3 &&
+        events[0].to_cr3 == first->address_space_cr3 &&
+        events[1].from_cr3 == first->address_space_cr3 &&
+        events[1].to_cr3 == first->address_space_cr3 &&
+        events[2].from_cr3 == first->address_space_cr3 &&
+        events[3].to_cr3 == second->address_space_cr3 &&
+        events[4].from_cr3 == second->address_space_cr3 &&
+        events[4].to_cr3 == second->address_space_cr3 &&
+        events[5].from_cr3 == second->address_space_cr3;
+    rsp0_ok = rsp0_ok &&
+        events[0].from_rsp0 == events[2].to_rsp0 &&
+        events[2].to_rsp0 == events[3].from_rsp0 &&
+        events[3].from_rsp0 == events[5].to_rsp0 &&
+        events[0].to_rsp0 == first->kernel_stack_top &&
+        events[1].from_rsp0 == first->kernel_stack_top &&
+        events[1].to_rsp0 == first->kernel_stack_top &&
+        events[2].from_rsp0 == first->kernel_stack_top &&
+        events[3].to_rsp0 == second->kernel_stack_top &&
+        events[4].from_rsp0 == second->kernel_stack_top &&
+        events[4].to_rsp0 == second->kernel_stack_top &&
+        events[5].from_rsp0 == second->kernel_stack_top;
+    frame_valid = loaded && frame_valid &&
+        process_event_frame_same(&events[1], &events[2]) &&
+        process_event_frame_same(&events[4], &events[5]);
+
+    g_user_exec_pair.event_schema = BOOTSTRAP_PROCESS_EVENT_SCHEMA;
+    g_user_exec_pair.event_count = stats->event_count;
+    g_user_exec_pair.event_lifecycle = lifecycle;
+    g_user_exec_pair.event_captures = captures;
+    g_user_exec_pair.event_first_sequence =
+        loaded ? events[0].event_sequence : 0;
+    g_user_exec_pair.event_last_sequence = stats->event_last_sequence;
+    g_user_exec_pair.event_dropped = stats->event_dropped;
+    g_user_exec_pair.event_current_pid = stats->current_pid;
+    g_user_exec_pair.event_switch_events = switch_events;
+    g_user_exec_pair.event_ordered = ordered;
+    g_user_exec_pair.event_kind_reason_ok = loaded && kind_reason_ok;
+    g_user_exec_pair.event_owner_ok = loaded && owner_ok;
+    g_user_exec_pair.event_cr3_ok = cr3_ok;
+    g_user_exec_pair.event_rsp0_ok = rsp0_ok;
+    g_user_exec_pair.event_if0 = loaded && if0;
+    g_user_exec_pair.event_frame_valid = frame_valid;
+    g_user_exec_pair.event_snapshot_refs = loaded && snapshot_refs == 4U;
+    g_user_exec_pair.event_outcomes_ok = loaded && outcomes_ok;
+    g_user_exec_pair.event_capture_seq_separate = loaded &&
+        events[0].capture_sequence == 0 &&
+        events[1].capture_sequence == 1 &&
+        events[2].capture_sequence == 1 &&
+        events[3].capture_sequence == 0 &&
+        events[4].capture_sequence == 2 &&
+        events[5].capture_sequence == 2;
+    g_user_exec_pair.event_stale_owner =
+        !g_user_exec_pair.event_owner_ok;
+    g_user_exec_pair.event_overflow = stats->event_overflow;
+    g_user_exec_pair.event_evidence_only = loaded &&
+        switch_events == 0 && !resume_ready;
+    g_user_exec_pair.event_resume_ready = resume_ready;
+
+    return loaded && stats->event_count == USER_EXEC_PROCESS_EVENT_COUNT &&
+        stats->event_last_sequence == USER_EXEC_PROCESS_EVENT_COUNT &&
+        stats->event_dropped == 0 && !stats->event_overflow &&
+        lifecycle == 4U && captures == 2U && snapshot_refs == 4U &&
+        ordered && kind_reason_ok && outcomes_ok && owner_ok && cr3_ok &&
+        rsp0_ok && if0 && frame_valid &&
+        g_user_exec_pair.event_snapshot_refs &&
+        g_user_exec_pair.event_capture_seq_separate &&
+        stats->current_pid == 0 && switch_events == 0 && !resume_ready;
+}
+
+static void emit_process_event_journal_marker(
+    const bootstrap_process_event_t
+        events[USER_EXEC_PROCESS_EVENT_COUNT]) {
+    serial_printf("[PROC] process event journal %s schema=1 events=%u lifecycle=%u captures=%u seqs=%u,%u,%u,%u,%u,%u kinds=%u,%u,%u,%u,%u,%u reasons=%u,%u,%u,%u,%u,%u from_pids=%u,%u,%u,%u,%u,%u to_pids=%u,%u,%u,%u,%u,%u slots=%u,%u,%u,%u,%u,%u generations=%u,%u,%u,%u,%u,%u capture_seqs=%u,%u,%u,%u,%u,%u owner_ok=%u,%u,%u,%u,%u,%u cr3_ok=%u,%u,%u,%u,%u,%u rsp0_ok=%u,%u,%u,%u,%u,%u if0=%u,%u,%u,%u,%u,%u snapshot_refs=%u,%u,%u,%u,%u,%u outcomes=%u,%u,%u,%u,%u,%u capture_seq_separate=%u current_pid=%u stale_owner=%u dropped=%u overflow=%u evidence_only=%u switch_events=%u resume_ready=%u\n",
+        g_user_exec_pair.passed ? "PASS" : "FAIL",
+        (uint64_t)g_user_exec_pair.event_count,
+        (uint64_t)g_user_exec_pair.event_lifecycle,
+        (uint64_t)g_user_exec_pair.event_captures,
+        events[0].event_sequence, events[1].event_sequence,
+        events[2].event_sequence, events[3].event_sequence,
+        events[4].event_sequence, events[5].event_sequence,
+        (uint64_t)events[0].kind, (uint64_t)events[1].kind,
+        (uint64_t)events[2].kind, (uint64_t)events[3].kind,
+        (uint64_t)events[4].kind, (uint64_t)events[5].kind,
+        (uint64_t)events[0].reason, (uint64_t)events[1].reason,
+        (uint64_t)events[2].reason, (uint64_t)events[3].reason,
+        (uint64_t)events[4].reason, (uint64_t)events[5].reason,
+        (uint64_t)events[0].from_pid, (uint64_t)events[1].from_pid,
+        (uint64_t)events[2].from_pid, (uint64_t)events[3].from_pid,
+        (uint64_t)events[4].from_pid, (uint64_t)events[5].from_pid,
+        (uint64_t)events[0].to_pid, (uint64_t)events[1].to_pid,
+        (uint64_t)events[2].to_pid, (uint64_t)events[3].to_pid,
+        (uint64_t)events[4].to_pid, (uint64_t)events[5].to_pid,
+        (uint64_t)events[0].slot, (uint64_t)events[1].slot,
+        (uint64_t)events[2].slot, (uint64_t)events[3].slot,
+        (uint64_t)events[4].slot, (uint64_t)events[5].slot,
+        events[0].run_generation, events[1].run_generation,
+        events[2].run_generation, events[3].run_generation,
+        events[4].run_generation, events[5].run_generation,
+        events[0].capture_sequence, events[1].capture_sequence,
+        events[2].capture_sequence, events[3].capture_sequence,
+        events[4].capture_sequence, events[5].capture_sequence,
+        (uint64_t)events[0].owner_ok, (uint64_t)events[1].owner_ok,
+        (uint64_t)events[2].owner_ok, (uint64_t)events[3].owner_ok,
+        (uint64_t)events[4].owner_ok, (uint64_t)events[5].owner_ok,
+        (uint64_t)events[0].cr3_ok, (uint64_t)events[1].cr3_ok,
+        (uint64_t)events[2].cr3_ok, (uint64_t)events[3].cr3_ok,
+        (uint64_t)events[4].cr3_ok, (uint64_t)events[5].cr3_ok,
+        (uint64_t)events[0].rsp0_ok, (uint64_t)events[1].rsp0_ok,
+        (uint64_t)events[2].rsp0_ok, (uint64_t)events[3].rsp0_ok,
+        (uint64_t)events[4].rsp0_ok, (uint64_t)events[5].rsp0_ok,
+        (uint64_t)events[0].if_disabled,
+        (uint64_t)events[1].if_disabled,
+        (uint64_t)events[2].if_disabled,
+        (uint64_t)events[3].if_disabled,
+        (uint64_t)events[4].if_disabled,
+        (uint64_t)events[5].if_disabled,
+        (uint64_t)events[0].snapshot_ref,
+        (uint64_t)events[1].snapshot_ref,
+        (uint64_t)events[2].snapshot_ref,
+        (uint64_t)events[3].snapshot_ref,
+        (uint64_t)events[4].snapshot_ref,
+        (uint64_t)events[5].snapshot_ref,
+        (uint64_t)events[0].outcome, (uint64_t)events[1].outcome,
+        (uint64_t)events[2].outcome, (uint64_t)events[3].outcome,
+        (uint64_t)events[4].outcome, (uint64_t)events[5].outcome,
+        (uint64_t)g_user_exec_pair.event_capture_seq_separate,
+        (uint64_t)g_user_exec_pair.event_current_pid,
+        (uint64_t)g_user_exec_pair.event_stale_owner,
+        g_user_exec_pair.event_dropped,
+        (uint64_t)g_user_exec_pair.event_overflow,
+        (uint64_t)g_user_exec_pair.event_evidence_only,
+        (uint64_t)g_user_exec_pair.event_switch_events,
+        (uint64_t)g_user_exec_pair.event_resume_ready);
 }
 
 static void emit_pair_marker(void) {
@@ -520,11 +781,14 @@ cleanup:
 aios_status_t user_exec_run_bootstrap_pair(void) {
     user_exec_run_result_t first = {0};
     user_exec_run_result_t second = {0};
+    bootstrap_process_event_t
+        events[USER_EXEC_PROCESS_EVENT_COUNT] = {0};
     bootstrap_process_stats_t before = {0};
     bootstrap_process_stats_t between = {0};
     bootstrap_process_stats_t after = {0};
     aios_status_t first_status;
     aios_status_t second_status;
+    bool event_journal_ok;
 
     if (g_user_exec_pair.attempted) {
         return AIOS_ERR_BUSY;
@@ -652,6 +916,9 @@ aios_status_t user_exec_run_bootstrap_pair(void) {
         first.trap_snapshot.resume_ready ||
         second.trap_snapshot.resume_ready;
 
+    event_journal_ok = collect_process_event_journal(
+        events, &first, &second, &after);
+
     if (bootstrap_process_current() || after.current_pid != 0 ||
         !after.tss_rsp0_baseline) {
         serial_write("[USER] bootstrap process pair FATAL: unsafe final ownership state\n");
@@ -704,11 +971,13 @@ aios_status_t user_exec_run_bootstrap_pair(void) {
         g_user_exec_pair.saved_distinct_storage &&
         g_user_exec_pair.saved_current_pid == 0 &&
         !g_user_exec_pair.saved_stale_owner &&
-        !g_user_exec_pair.saved_resume_ready;
+        !g_user_exec_pair.saved_resume_ready &&
+        event_journal_ok;
 
     emit_pair_marker();
     emit_trap_capture_marker(&first.info, &second.info);
     emit_trap_snapshot_marker();
+    emit_process_event_journal_marker(events);
     return g_user_exec_pair.passed ? AIOS_OK : AIOS_ERR_IO;
 }
 

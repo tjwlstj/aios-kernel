@@ -41,6 +41,7 @@ CHECKPOINT_PATTERNS = {
     "bootstrap_process_pair": "[USER] bootstrap process pair PASS",
     "user_trap_capture": "[TRAP] user frame capture PASS",
     "process_trap_snapshot": "[PROC] trap evidence snapshot PASS",
+    "process_event_journal": "[PROC] process event journal PASS",
     "kernel_room": "[ROOM] snapshot stability=",
     "health": "[HEALTH] stability=",
     "ready": "AIOS Kernel Ready",
@@ -144,6 +145,33 @@ PROCESS_TRAP_SNAPSHOT_RE = re.compile(
     r"stale_owner=(?P<stale_owner>\d+) "
     r"resume_ready=(?P<resume_ready>\d+)$"
 )
+PROCESS_EVENT_JOURNAL_PREFIX = "[PROC] process event journal "
+PROCESS_EVENT_JOURNAL_RE = re.compile(
+    r"^\[PROC\] process event journal (?P<status>\w+) "
+    r"schema=(?P<schema>\d+) events=(?P<event_count>\d+) "
+    r"lifecycle=(?P<lifecycle>\d+) captures=(?P<captures>\d+) "
+    r"seqs=(?P<seqs>\d+(?:,\d+)*) "
+    r"kinds=(?P<kinds>\d+(?:,\d+)*) "
+    r"reasons=(?P<reasons>\d+(?:,\d+)*) "
+    r"from_pids=(?P<from_pids>\d+(?:,\d+)*) "
+    r"to_pids=(?P<to_pids>\d+(?:,\d+)*) "
+    r"slots=(?P<slots>\d+(?:,\d+)*) "
+    r"generations=(?P<generations>\d+(?:,\d+)*) "
+    r"capture_seqs=(?P<capture_seqs>\d+(?:,\d+)*) "
+    r"owner_ok=(?P<owner_ok>\d+(?:,\d+)*) "
+    r"cr3_ok=(?P<cr3_ok>\d+(?:,\d+)*) "
+    r"rsp0_ok=(?P<rsp0_ok>\d+(?:,\d+)*) "
+    r"if0=(?P<if0>\d+(?:,\d+)*) "
+    r"snapshot_refs=(?P<snapshot_refs>\d+(?:,\d+)*) "
+    r"outcomes=(?P<outcomes>\d+(?:,\d+)*) "
+    r"capture_seq_separate=(?P<capture_seq_separate>\d+) "
+    r"current_pid=(?P<current_pid>\d+) "
+    r"stale_owner=(?P<stale_owner>\d+) "
+    r"dropped=(?P<dropped>\d+) overflow=(?P<overflow>\d+) "
+    r"evidence_only=(?P<evidence_only>\d+) "
+    r"switch_events=(?P<switch_events>\d+) "
+    r"resume_ready=(?P<resume_ready>\d+)$"
+)
 ROOM_SNAPSHOT_RE = re.compile(
     r"\[ROOM\] snapshot stability=(?P<stability>\w+) ok=(?P<ok>\d+) degraded=(?P<degraded>\d+) failed=(?P<failed>\d+) unknown=(?P<unknown>\d+) topology=(?P<topology>[\w\-]+) domains=(?P<domains>\d+) windows=(?P<windows>\d+) drivers=(?P<drivers_ready>\d+)/(?P<drivers>\d+) plans=(?P<plans>\d+) nodes=(?P<nodes>\d+) rings=(?P<rings>\d+) active=(?P<active>\d+) user=(?P<user>\d+)"
     r"(?: nodebit_active=(?P<nodebit_active>\d+) nodebit_risky=(?P<nodebit_risky>\d+))?"
@@ -206,6 +234,10 @@ def _int_groupdict(match: re.Match[str], *keys: str) -> dict[str, int]:
         if value is not None:
             values[key] = int(value)
     return values
+
+
+def _csv_int_group(match: re.Match[str], key: str) -> list[int]:
+    return [int(value) for value in match.group(key).split(",")]
 
 
 def _find_all_matches(lines: list[str], pattern: re.Pattern[str]) -> list[tuple[int, str, re.Match[str]]]:
@@ -604,6 +636,136 @@ def parse_boot_log_text(log_text: str, smoke_profile: str, serial_log_path: str 
             }
         )
 
+    journal_checkpoint_seen = checkpoints["process_event_journal"]["seen"]
+    journal_prefix_records = [
+        (index, line)
+        for index, line in enumerate(lines, start=1)
+        if line.startswith(PROCESS_EVENT_JOURNAL_PREFIX)
+    ]
+    journal_matches = _find_all_matches(lines, PROCESS_EVENT_JOURNAL_RE)
+    process_event_journal: dict[str, object] = {
+        "ready": False,
+        "checkpoint_seen": journal_checkpoint_seen,
+        "record_count": len(journal_prefix_records),
+        "fullmatch_count": len(journal_matches),
+        "duplicate": len(journal_prefix_records) > 1,
+        "events": [],
+    }
+    if len(journal_matches) == 1:
+        index, line, match = journal_matches[0]
+        scalar_values = _int_groupdict(
+            match,
+            "schema", "event_count", "lifecycle", "captures",
+            "capture_seq_separate", "current_pid", "stale_owner",
+            "dropped", "overflow", "evidence_only", "switch_events",
+            "resume_ready",
+        )
+        vector_keys = (
+            "seqs", "kinds", "reasons", "from_pids", "to_pids",
+            "slots", "generations", "capture_seqs", "owner_ok",
+            "cr3_ok", "rsp0_ok", "if0", "snapshot_refs", "outcomes",
+        )
+        vectors = {
+            key: _csv_int_group(match, key)
+            for key in vector_keys
+        }
+        vector_lengths = {
+            key: len(values)
+            for key, values in vectors.items()
+        }
+        event_count = scalar_values["event_count"]
+        expected_event_count = 6
+        lengths_match = event_count == expected_event_count and all(
+            length == expected_event_count
+            for length in vector_lengths.values()
+        )
+        ordered = (
+            event_count == expected_event_count and
+            vectors["seqs"] == [1, 2, 3, 4, 5, 6]
+        )
+        unknown_kind_ids = sorted(set(vectors["kinds"]) - {1, 2, 3})
+        unknown_reason_ids = sorted(set(vectors["reasons"]) - {1, 2, 3})
+        unknown_outcome_ids = sorted(set(vectors["outcomes"]) - {1})
+        event_rows = [
+            {
+                "sequence": vectors["seqs"][event_index],
+                "kind": vectors["kinds"][event_index],
+                "reason": vectors["reasons"][event_index],
+                "from_pid": vectors["from_pids"][event_index],
+                "to_pid": vectors["to_pids"][event_index],
+                "slot": vectors["slots"][event_index],
+                "generation": vectors["generations"][event_index],
+                "capture_sequence": vectors["capture_seqs"][event_index],
+                "owner_ok": vectors["owner_ok"][event_index],
+                "cr3_ok": vectors["cr3_ok"][event_index],
+                "rsp0_ok": vectors["rsp0_ok"][event_index],
+                "if0": vectors["if0"][event_index],
+                "snapshot_ref": vectors["snapshot_refs"][event_index],
+                "outcome": vectors["outcomes"][event_index],
+            }
+            for event_index in range(
+                min(expected_event_count, min(vector_lengths.values()))
+            )
+        ]
+        expected_scalars = {
+            "schema": 1,
+            "event_count": 6,
+            "lifecycle": 4,
+            "captures": 2,
+            "capture_seq_separate": 1,
+            "current_pid": 0,
+            "stale_owner": 0,
+            "dropped": 0,
+            "overflow": 0,
+            "evidence_only": 1,
+            "switch_events": 0,
+            "resume_ready": 0,
+        }
+        expected_vectors = {
+            "seqs": [1, 2, 3, 4, 5, 6],
+            "kinds": [1, 2, 3, 1, 2, 3],
+            "reasons": [1, 2, 3, 1, 2, 3],
+            "from_pids": [0, 1, 1, 0, 2, 2],
+            "to_pids": [1, 1, 0, 2, 2, 0],
+            "slots": [0, 0, 0, 1, 1, 1],
+            "generations": [1, 1, 1, 1, 1, 1],
+            "capture_seqs": [0, 1, 1, 0, 2, 2],
+            "owner_ok": [1, 1, 1, 1, 1, 1],
+            "cr3_ok": [1, 1, 1, 1, 1, 1],
+            "rsp0_ok": [1, 1, 1, 1, 1, 1],
+            "if0": [1, 1, 1, 1, 1, 1],
+            "snapshot_refs": [0, 1, 1, 0, 1, 1],
+            "outcomes": [1, 1, 1, 1, 1, 1],
+        }
+        process_event_journal.update(
+            {
+                "ready": (
+                    journal_checkpoint_seen and
+                    len(journal_prefix_records) == 1 and
+                    len(journal_matches) == 1 and
+                    match.group("status") == "PASS" and
+                    scalar_values == expected_scalars and
+                    vectors == expected_vectors and
+                    lengths_match and ordered and
+                    not unknown_kind_ids and
+                    not unknown_reason_ids and
+                    not unknown_outcome_ids
+                ),
+                "line": index,
+                "text": line,
+                "status": match.group("status"),
+                "ordered": ordered,
+                "lengths_match": lengths_match,
+                "vector_lengths": vector_lengths,
+                "unknown_kind_ids": unknown_kind_ids,
+                "unknown_reason_ids": unknown_reason_ids,
+                "unknown_outcome_ids": unknown_outcome_ids,
+                "events": event_rows,
+                **scalar_values,
+                **vectors,
+            }
+        )
+
     kernel_room: dict[str, object] = {"ready": checkpoints["kernel_room"]["seen"]}
     index, line, match = _search_match(lines, ROOM_SNAPSHOT_RE)
     if match:
@@ -766,6 +928,7 @@ def parse_boot_log_text(log_text: str, smoke_profile: str, serial_log_path: str 
         "process_stack": process_stack,
         "process_pair": process_pair,
         "process_trap_snapshot": process_trap_snapshot,
+        "process_event_journal": process_event_journal,
         "kernel_room": kernel_room,
         "shell": shell_info,
         "nodebit": nodebit_info,

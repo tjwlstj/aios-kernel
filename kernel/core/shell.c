@@ -153,7 +153,7 @@ static void state_user(void) {
     user_exec_get_info(&u);
     user_exec_get_pair_info(&pair);
     bootstrap_process_get_stats(&process);
-    STATE_EMIT("[STATE] user attempted=%u elf_loaded=%u elf_entry=%x segments=%u entered=%u returned=%u syscall_ok=%u boundary_ok=%u syscalls=%u exit_code=%u pipe_max=%u dur_ns=%u private_cr3=%u slot=%u cr3_restored=%u if_restored=%u leaf_sealed=%u nx_enforced=%u tensor_excluded=%u pid=%u process_bound=%u kstack_bytes=%u rsp0_changed=%u rsp0_published=%u int80_entries=%u all_int80_entries_in_stack=%u rsp0_restored=%u kstack_floor_canary=%u pair_attempted=%u pair_ready=%u pair_runs=%u second_pid=%u second_slot=%u second_exit_code=%u second_syscall_ok=%u second_boundary_ok=%u second_int80_entries=%u distinct_pid=%u distinct_slot=%u distinct_cr3=%u distinct_backing=%u distinct_stack=%u between_clean=%u pair_current_pid=%u pair_last_pid=%u pair_rsp0_publishes=%u pair_rsp0_restores=%u pair_tss_baseline=%u both_restored=%u trap_captured=%u trap_from_user=%u trap_rsp_user=%u trap_rip_user=%u trap_canary=%u trap_frame_in_kstack=%u trap_addr_exact=%u trap_contract=%u saved_captures=%u saved_pid_a=%u saved_slot_a=%u saved_seq_a=%u saved_valid_a=%u saved_owner_a=%u saved_frame_a=%u saved_cr3_a=%u saved_rsp0_a=%u saved_pid_b=%u saved_slot_b=%u saved_seq_b=%u saved_valid_b=%u saved_owner_b=%u saved_frame_b=%u saved_cr3_b=%u saved_rsp0_b=%u saved_distinct_storage=%u saved_current_pid=%u saved_stale_owner=%u saved_resume_ready=%u\n",
+    STATE_EMIT("[STATE] user attempted=%u elf_loaded=%u elf_entry=%x segments=%u entered=%u returned=%u syscall_ok=%u boundary_ok=%u syscalls=%u exit_code=%u pipe_max=%u dur_ns=%u private_cr3=%u slot=%u cr3_restored=%u if_restored=%u leaf_sealed=%u nx_enforced=%u tensor_excluded=%u pid=%u process_bound=%u kstack_bytes=%u rsp0_changed=%u rsp0_published=%u int80_entries=%u all_int80_entries_in_stack=%u rsp0_restored=%u kstack_floor_canary=%u pair_attempted=%u pair_ready=%u pair_runs=%u second_pid=%u second_slot=%u second_exit_code=%u second_syscall_ok=%u second_boundary_ok=%u second_int80_entries=%u distinct_pid=%u distinct_slot=%u distinct_cr3=%u distinct_backing=%u distinct_stack=%u between_clean=%u pair_current_pid=%u pair_last_pid=%u pair_rsp0_publishes=%u pair_rsp0_restores=%u pair_tss_baseline=%u both_restored=%u trap_captured=%u trap_from_user=%u trap_rsp_user=%u trap_rip_user=%u trap_canary=%u trap_frame_in_kstack=%u trap_addr_exact=%u trap_contract=%u saved_captures=%u saved_pid_a=%u saved_slot_a=%u saved_seq_a=%u saved_valid_a=%u saved_owner_a=%u saved_frame_a=%u saved_cr3_a=%u saved_rsp0_a=%u saved_pid_b=%u saved_slot_b=%u saved_seq_b=%u saved_valid_b=%u saved_owner_b=%u saved_frame_b=%u saved_cr3_b=%u saved_rsp0_b=%u saved_distinct_storage=%u saved_current_pid=%u saved_stale_owner=%u saved_resume_ready=%u event_schema=%u event_count=%u event_lifecycle=%u event_captures=%u event_first_seq=%u event_last_seq=%u event_ordered=%u event_owner_ok=%u event_cr3_ok=%u event_rsp0_ok=%u event_if0=%u event_snapshot_refs=%u event_outcomes_ok=%u event_capture_seq_separate=%u event_current_pid=%u event_stale_owner=%u event_dropped=%u event_overflow=%u event_evidence_only=%u event_switches=%u event_resume_ready=%u\n",
         (uint64_t)u.attempted,
         (uint64_t)u.elf_loaded,
         u.elf_entry,
@@ -231,7 +231,28 @@ static void state_user(void) {
         (uint64_t)pair.saved_distinct_storage,
         (uint64_t)process.current_pid,
         (uint64_t)pair.saved_stale_owner,
-        (uint64_t)pair.saved_resume_ready);
+        (uint64_t)pair.saved_resume_ready,
+        (uint64_t)pair.event_schema,
+        (uint64_t)process.event_count,
+        (uint64_t)pair.event_lifecycle,
+        (uint64_t)pair.event_captures,
+        pair.event_first_sequence,
+        process.event_last_sequence,
+        (uint64_t)pair.event_ordered,
+        (uint64_t)pair.event_owner_ok,
+        (uint64_t)pair.event_cr3_ok,
+        (uint64_t)pair.event_rsp0_ok,
+        (uint64_t)pair.event_if0,
+        (uint64_t)pair.event_snapshot_refs,
+        (uint64_t)pair.event_outcomes_ok,
+        (uint64_t)pair.event_capture_seq_separate,
+        (uint64_t)process.current_pid,
+        (uint64_t)pair.event_stale_owner,
+        process.event_dropped,
+        (uint64_t)process.event_overflow,
+        (uint64_t)pair.event_evidence_only,
+        (uint64_t)pair.event_switch_events,
+        (uint64_t)pair.event_resume_ready);
 }
 
 static void state_slm(void) {

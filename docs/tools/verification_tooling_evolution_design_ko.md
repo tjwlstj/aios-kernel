@@ -1,7 +1,7 @@
 # AIOS 검증 도구 진화 설계
 
 작성일: 2026-07-15  
-최종 갱신: 2026-08-03 (process-owned trap evidence snapshot v0와 fail-closed 판정 계약)
+최종 갱신: 2026-08-03 (process event journal v1과 fail-closed 판정 계약)
 기준 시작 체크포인트: `463a8b9`
 
 ## 1. 문서 역할
@@ -34,7 +34,7 @@
 2. **정상 검증은 fail-closed다.** 증거 누락, 상충, 역순, 치명 이벤트, 불명확한 종료를 성공으로 해석하지 않는다.
 3. **timeout은 성공이 아니다.** timeout은 hang 검출 경계이며 별도 outcome이다.
 4. **PASS 뒤도 검사한다.** 필수 마커가 모두 나온 뒤의 panic, exception, FAIL도 전체 실행을 실패시킨다.
-5. **사람용 로그와 기계용 계약을 구분한다.** 현재 문자열 마커는 유지하되 장기적으로 versioned event를 병행한다.
+5. **사람용 로그와 기계용 계약을 구분한다.** 문자열 마커와 bounded process event journal v1의 구조 계약은 함께 검증한다. generic `[EVT]{json}`, shared manifest, `events.jsonl` 전환은 아직 장기 계획이다.
 6. **기준선 쓰기는 검증보다 강하다.** 성공·완전성·출처가 증명된 결과만 candidate가 될 수 있다.
 7. **내부 검증 실패 자체도 안전해야 한다.** CR3, TSS `rsp0`, IF, current owner의 복원이 불확실하면 계속 실행하지 않는다.
 8. **프로덕션과 fault hook을 분리한다.** fault injection은 명시적인 test build/boot gate 없이는 활성화되지 않는다.
@@ -84,6 +84,11 @@ CI exit status + build artifacts
 - `[PROC] trap evidence snapshot PASS schema=1 ...` exact record와
   `process_trap_snapshot` 구조 파싱. 이 snapshot은 `resume_ready=0`인 관찰 증거이며
   재개 가능한 context나 switch state가 아니다.
+- capacity 8/no-overwrite process event journal v1의 acquire/capture/release 여섯
+  record와 별도 event/capture sequence, PID/slot/generation, before/after CR3·`rsp0`,
+  owner/IF/frame-reference/outcome vector. exact `[PROC] process event journal PASS ...`
+  계약은 `evidence_only=1 switch_events=0 resume_ready=0`이며 lifecycle
+  `0→1→0→2→0`은 순차 bootstrap 증거이지 CPU switch가 아니다.
 - health registry, Kernel Room snapshot, panic/exception serial output
 - C structure/enum static asserts, linker layout assert, stack protector
 
@@ -96,13 +101,17 @@ CI exit status + build artifacts
 - boot summary, matrix, inventory, perf, shell transcript/summary artifacts
 - cppcheck CI gate and Linux full smoke/minimal shell gate
 - normal boot verdict v1의 전체 로그 fatal, anchored/token-boundary evidence,
-  health, terminal-chain, duplicate-key/exact-record 판정과 62개 host unit test
+  health, terminal-chain, duplicate-key/exact-record 판정과 67개 host unit test
 - Python/PowerShell 공통 resource/pressure exact required marker, structured
-  boot-summary `resource`/`pressure` section, process trap snapshot exact required
-  marker와 `process_trap_snapshot` section, shell `state resource`/`state pressure`와
-  `state user`의 `saved_*` same-record 계약
+  boot-summary `resource`/`pressure` section, process trap snapshot과 event journal의
+  exact required marker, `process_trap_snapshot`/`process_event_journal` section,
+  shell `state resource`/`state pressure`와 `state user`의 `saved_*`/`event_*`
+  same-record 계약
 - `process_trap_snapshot.ready`는 `record_count`(prefix 행 수)=1,
   `fullmatch_count=1`, 모든 semantic 값 exact를 함께 만족할 때만 참
+- `process_event_journal.ready`도 prefix record와 fullmatch가 각각 정확히 하나이고,
+  six-record ordered vector, `dropped=0 overflow=0 evidence_only=1 switch_events=0
+  resume_ready=0`이 모두 exact일 때만 참
 - shell 전체 transcript verdict, 동일 response record 검증, reader drain,
   reboot acknowledgement, QEMU exit-code/termination gate
 - inventory/perf baseline의 strict matrix·profile·semantic record 완전성 guard와
@@ -134,11 +143,13 @@ CI exit status + build artifacts
 - health state는 후속 mark가 앞선 심각도를 낮출 수 있다.
 - ring3 synchronous runner에는 내부 실행 budget과 process fault teardown이 없다.
 - exception frame의 C/NASM offset·크기 계약과 CPL0/CPL3 `from_user` 판별은 2026-08-02에 `CURRENT`가 됐다(`trapframe.h` static assert + NASM mirror + `[TRAP]` canary 실경로 증명). long mode는 CPL0-origin frame에도 `rsp/ss`를 push하므로 두 frame은 같은 176B 레이아웃이고 CS RPL로만 구분한다. from_user fault teardown 분기는 아직 없다.
-- PID 1→PID 2 순차 실행과 각 descriptor의 process-owned trap evidence snapshot은
-  검증하지만 trapframe 기반 재개·전환과 두 process 타이머 선점은 아직 없다.
-  snapshot의 `seq_a=1`, `seq_b=2`는 두 동기 실행에서 관찰 증거를 저장한 순서일 뿐
-  A→B→A switch sequence 증거가 아니다. 176B frame 계약과 `from_user` 판별,
-  non-resumable snapshot 귀속까지만 `CURRENT`다.
+- PID 1→PID 2 순차 실행, 각 descriptor의 process-owned trap evidence snapshot,
+  capacity 8/no-overwrite process event journal v1은 검증하지만 trapframe 기반 재개·전환과
+  두 process 타이머 선점은 아직 없다. snapshot의 capture sequence 1,2와 journal의
+  event sequence 1..6은 분리되며, 여섯 record가 보이는 owner lifecycle
+  `0→1→0→2→0`은 A→B→A switch sequence가 아니다. 176B frame 계약,
+  `from_user` 판별, non-resumable snapshot 귀속, evidence-only lifecycle journal까지만
+  `CURRENT`다. resumable context와 runnable-state binding은 `PLANNED`다.
 - pressure schema 1은 system→plane 두 단계의 순간 snapshot과 NodeBit 누적
   counter만 제공한다. fast/slow EWMA, stall window, domain/entity child와
   scheduler apply/migration은 아직 없다.
@@ -194,6 +205,7 @@ CI exit status + build artifacts
 [USER] bootstrap process pair PASS
 [TRAP] user frame capture PASS
 [PROC] trap evidence snapshot PASS
+[PROC] process event journal PASS
 [ROOM] snapshot stability=stable
 [HEALTH] stability=stable
 === AIOS Kernel Ready ===
@@ -211,10 +223,13 @@ CI exit status + build artifacts
 ```
 
 위 세 레코드와 terminal chain 안의 `[TRAP] user frame capture PASS`,
-`[PROC] trap evidence snapshot PASS`는 행 전체가 정본과 일치하고 정확히 한 번만
-나타나야 한다. 누락, 불완전·확장 필드, `gate_mask=0`, `observation_only=0`,
-snapshot owner/sequence/current/stale/resume 값 변조, 정본 뒤 `apply_enabled=1` 같은
-상충 증거는 Python/PowerShell 양쪽에서 정상 PASS가 아니다.
+`[PROC] trap evidence snapshot PASS`, `[PROC] process event journal PASS`는 행 전체가
+정본과 일치하고 정확히 한 번만 나타나야 한다. journal 정본은 여섯 record의
+sequence/kind/reason/from/to PID/slot/generation/capture sequence/owner/CR3/`rsp0`/IF/
+snapshot reference/outcome vector와 `dropped=0 overflow=0 evidence_only=1
+switch_events=0 resume_ready=0`을 한 행에서 결속한다. 누락, 불완전·확장 필드,
+`gate_mask=0`, `observation_only=0`, snapshot 또는 journal 값 변조, 정본 뒤
+`apply_enabled=1` 같은 상충 증거는 Python/PowerShell 양쪽에서 정상 PASS가 아니다.
 
 드라이버와 초기 selftest 전체의 엄격한 전역 순서 검증은 v1 범위에 넣지 않는다. 먼저 process 이후 terminal chain만 고정해 false positive를 줄인다.
 
@@ -269,7 +284,7 @@ inventory와 perf가 같은 출처 신뢰 규칙을 공유해야 한다.
 | 구성요소 | 상태 | 역할 |
 |---|---|---|
 | 순수 boot verdict evaluator | `CURRENT` | 전체 로그 fatal, anchored evidence, duplicate key/exact record, health, terminal order/duplicate 판정 |
-| verdict host unit tests | `CURRENT` | panic-after-PASS, token/행 위장, 중복 키, health, resource/pressure/process snapshot, shell, baseline/perf 반례 62개 고정 |
+| verdict host unit tests | `CURRENT` | panic-after-PASS, token/행 위장, 중복 키, health, resource/pressure/process snapshot/event journal, shell, baseline/perf 반례 67개 고정 |
 | shell reboot/clean-exit gate | `CURRENT` | 전체 transcript verdict, reader drain, reboot ack, exit code 0을 PASS 조건으로 강제 |
 | baseline trusted-source guard | `CURRENT` | strict matrix/profile/verdict, profile-aware inventory와 comparable finite perf 검사 |
 | shared marker manifest | `PLANNED` | Python/PowerShell 중복 계약 제거 |
@@ -308,8 +323,13 @@ full trapframe과 두 ring3 process 선점 교대로 넘어가기 전에 최소�
   descriptor에 frame 사본과 owner/run generation/CR3/`rsp0`/capture sequence를
   결속하고 cleanup 뒤에도 같은 사본임을 검증). `resume_ready=0`이며 재개 가능한
   saved context는 아니다.
+- process event journal v1 — `CURRENT` (2026-08-03, per-boot capacity 8/no-overwrite
+  내부 journal의 acquire/capture/release 여섯 record와 exact ordered vector,
+  structured `process_event_journal`, `state user event_*` mirror를 Python/PowerShell
+  fail-closed 반례로 검증). event sequence와 capture sequence는 별도이며
+  `evidence_only=1 switch_events=0 resume_ready=0`이다.
 - CPL3 timer IRQ의 process entry stack 귀속 증거
-- A -> B -> A의 PID, CR3, BSP `rsp0`, current owner 순서 이벤트
+- 실제 A -> B -> A의 PID, CR3, BSP `rsp0`, current owner live-switch 순서 이벤트
 - IF=0 원자 전환과 stale current 부재
 - full register canary 보존
 - 두 주소공간의 동일 VA 격리 유지
@@ -317,7 +337,9 @@ full trapframe과 두 ring3 process 선점 교대로 넘어가기 전에 최소�
 - bounded execution budget
 - 반복 전환에서 첫 실패 trace 보존
 
-aggregate counter만으로 순서를 추론하지 않는다. process 전환은 sequence가 있는 기계 판독 이벤트로 보존한다.
+aggregate counter만으로 순서를 추론하지 않는다. 현재 journal의 `0→1→0→2→0`
+lifecycle은 순차 bootstrap 관찰이다. 실제 process 전환은 resumable context와 원자 교대를
+갖춘 뒤 별도 live-switch kind와 sequence로 보존한다.
 
 ## 11. CI 계층
 
@@ -388,16 +410,19 @@ kernel/build/test-runs/<run-id>/<profile>/
 구현 근거:
 
 - `tools/testkit/lib/boot_verdict.py`, `baseline_guard.py`
-- `tools/testkit/tests/` host unit test 62개
-- PowerShell 직접 verdict host selftest 27개와 CI 선행 gate
+- `tools/testkit/tests/` host unit test 67개
+- PowerShell 직접 verdict host selftest 40개와 CI 선행 gate
 - Resource Ledger exact marker/structured summary와 missing/truncated/
   observation-only/apply-capable 상충 반례
 - pressure marker도 같은 exact-record 규칙으로 강화해 trailing apply 필드를 거부
 - process trap snapshot의 세 profile 공통 required/exact-once 판정,
   malformed/extended/duplicate/owner/sequence/current/stale/resume 반례와
   structured `process_trap_snapshot`, shell `state user saved_*` mirror
+- process event journal의 세 profile 공통 exact ordered-vector 판정,
+  missing/duplicate/truncated/extended/reordered/stale/sequence/overflow/
+  switch-capable 반례, structured `process_event_journal`, shell `state user event_*` mirror
 - Python boot matrix의 QEMU `full/minimal/storage-only` 통과와 PowerShell 직접
-  verdict host selftest 27개 통과
+  verdict host selftest 40개 통과
 - shell 16개 교환(`state resource`, `state pressure`, `state autonomy` 포함)과 `reader_drained=true reboot_ack=true clean_exit=true exit_code=0`,
   `termination.reason=guest-reboot-exit`, 전체 transcript boot verdict PASS
 - strict boot inventory 3프로필 baseline 일치
@@ -408,6 +433,8 @@ kernel/build/test-runs/<run-id>/<profile>/
 - timeout/guest-exit/host-kill 분리
 - profile별 raw artifact bundle과 provenance
 - shared marker manifest와 `make test`의 testkit 위임
+- generic `[EVT]{json}` parser와 `events.jsonl` artifact. 현재 process event journal v1의
+  bounded 내부 schema/summary는 이 일반 이벤트 이행을 완료한 것으로 보지 않는다.
 - post-link structural verifier
 
 ### V2. 내부 fail-closed — `PLANNED`
@@ -424,7 +451,11 @@ kernel/build/test-runs/<run-id>/<profile>/
 - `process_pair` structured boot summary + missing/incomplete record host negative test — `CURRENT`
 - process-owned non-resumable trap evidence snapshot, exact record,
   `process_trap_snapshot` summary와 `state user saved_*` mirror — `CURRENT`
-- 재개 가능한 saved context와 A -> B -> A 전환 이벤트 — `PLANNED`
+- process event journal v1의 capacity 8/no-overwrite six-record lifecycle/capture evidence,
+  exact ordered-vector record, `process_event_journal` summary와 `state user event_*`
+  mirror — `CURRENT`
+- 재개 가능한 saved context, runnable-state 결속, live continuation/switch와 실제
+  A -> B -> A 전환 이벤트 — `PLANNED`
 - timer IRQ entry stack 귀속과 실제 선점 — `PLANNED`
 - bounded repeat/stress
 

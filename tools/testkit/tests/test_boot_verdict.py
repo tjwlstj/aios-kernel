@@ -6,6 +6,7 @@ from lib.boot_verdict import evaluate_normal_boot
 from lib.kernel_lane import (
     PRESSURE_SELFTEST_PATTERN,
     PROCESS_TRAP_SNAPSHOT_PATTERN,
+    PROCESS_EVENT_JOURNAL_PATTERN,
     RESOURCE_SELFTEST_PATTERN,
     TRAPFRAME_CONTRACT_PATTERN,
     USER_TRAP_CAPTURE_PATTERN,
@@ -27,6 +28,7 @@ def normal_lines() -> list[str]:
         "[USER] bootstrap process pair PASS runs=2",
         "[TRAP] user frame capture PASS pid_a=1 pid_b=2",
         "[PROC] trap evidence snapshot PASS schema=1 captures=2",
+        "[PROC] process event journal PASS schema=1 events=6",
         "[ROOM] snapshot stability=stable ok=18 degraded=0 failed=0",
         "[HEALTH] stability=stable ok=18 degraded=0 failed=0 unknown=2",
         "=== AIOS Kernel Ready ===",
@@ -183,6 +185,123 @@ class NormalBootVerdictTests(unittest.TestCase):
             "TERMINAL_CHECKPOINTS_DUPLICATED",
             reason_codes(conflicting_duplicate),
         )
+
+    def test_process_event_journal_is_exact_and_fails_closed(self) -> None:
+        for profile in ("full", "minimal", "storage-only"):
+            with self.subTest(profile=profile):
+                self.assertIn(
+                    PROCESS_EVENT_JOURNAL_PATTERN,
+                    required_smoke_patterns(profile),
+                )
+
+        def journal_lines(record: str) -> list[str]:
+            lines = normal_lines()
+            index = lines.index(
+                "[PROC] process event journal PASS schema=1 events=6"
+            )
+            lines[index] = record
+            return lines
+
+        valid = evaluate_normal_boot(
+            "\n".join(journal_lines(PROCESS_EVENT_JOURNAL_PATTERN)),
+            [PROCESS_EVENT_JOURNAL_PATTERN],
+        )
+        self.assertTrue(valid["passed"])
+
+        for invalid in (
+            "[PROC] process event journal PASS schema=1 events=6",
+            PROCESS_EVENT_JOURNAL_PATTERN.replace(
+                "seqs=1,2,3,4,5,6", "seqs=1,2,4,3,5,6"
+            ),
+            PROCESS_EVENT_JOURNAL_PATTERN.replace(
+                "kinds=1,2,3,1,2,3", "kinds=1,2,4,1,2,3"
+            ),
+            PROCESS_EVENT_JOURNAL_PATTERN.replace(
+                "reasons=1,2,3,1,2,3", "reasons=1,2,0,1,2,3"
+            ),
+            PROCESS_EVENT_JOURNAL_PATTERN.replace(
+                "from_pids=0,1,1,0,2,2", "from_pids=0,1,2,0,2,2"
+            ),
+            PROCESS_EVENT_JOURNAL_PATTERN.replace(
+                "capture_seqs=0,1,1,0,2,2",
+                "capture_seqs=0,2,1,0,1,2",
+            ),
+            PROCESS_EVENT_JOURNAL_PATTERN.replace(
+                "owner_ok=1,1,1,1,1,1", "owner_ok=1,1,1,1,0,1"
+            ),
+            PROCESS_EVENT_JOURNAL_PATTERN.replace(
+                "cr3_ok=1,1,1,1,1,1", "cr3_ok=1,1,0,1,1,1"
+            ),
+            PROCESS_EVENT_JOURNAL_PATTERN.replace(
+                "rsp0_ok=1,1,1,1,1,1", "rsp0_ok=1,0,1,1,1,1"
+            ),
+            PROCESS_EVENT_JOURNAL_PATTERN.replace(
+                "if0=1,1,1,1,1,1", "if0=1,1,1,1,1,0"
+            ),
+            PROCESS_EVENT_JOURNAL_PATTERN.replace(
+                "snapshot_refs=0,1,1,0,1,1",
+                "snapshot_refs=0,0,1,0,1,1",
+            ),
+            PROCESS_EVENT_JOURNAL_PATTERN.replace(
+                "outcomes=1,1,1,1,1,1", "outcomes=1,1,1,1,1,2"
+            ),
+            PROCESS_EVENT_JOURNAL_PATTERN.replace(
+                "capture_seq_separate=1", "capture_seq_separate=0"
+            ),
+            PROCESS_EVENT_JOURNAL_PATTERN.replace(
+                "stale_owner=0", "stale_owner=1"
+            ),
+            PROCESS_EVENT_JOURNAL_PATTERN.replace("dropped=0", "dropped=1"),
+            PROCESS_EVENT_JOURNAL_PATTERN.replace("overflow=0", "overflow=1"),
+            PROCESS_EVENT_JOURNAL_PATTERN.replace(
+                "evidence_only=1", "evidence_only=0"
+            ),
+            PROCESS_EVENT_JOURNAL_PATTERN.replace(
+                "switch_events=0", "switch_events=1"
+            ),
+            PROCESS_EVENT_JOURNAL_PATTERN.replace(
+                "resume_ready=0", "resume_ready=1"
+            ),
+            f"{PROCESS_EVENT_JOURNAL_PATTERN} extra=1",
+            f"  {PROCESS_EVENT_JOURNAL_PATTERN}",
+            f'"{PROCESS_EVENT_JOURNAL_PATTERN}"',
+            PROCESS_EVENT_JOURNAL_PATTERN.replace(
+                "switch_events=0", "switch_events=1 switch_events=0"
+            ),
+        ):
+            with self.subTest(invalid_transition=invalid):
+                verdict = evaluate_normal_boot(
+                    "\n".join(journal_lines(invalid)),
+                    [PROCESS_EVENT_JOURNAL_PATTERN],
+                )
+                self.assertFalse(verdict["passed"])
+
+        malformed_duplicate = evaluate_normal_boot(
+            "\n".join(
+                [
+                    *journal_lines(PROCESS_EVENT_JOURNAL_PATTERN),
+                    "[PROC] process event journal schema=1 events=6",
+                ]
+            ),
+            [PROCESS_EVENT_JOURNAL_PATTERN],
+        )
+        self.assertFalse(malformed_duplicate["passed"])
+        self.assertIn(
+            "EVIDENCE_RECORD_INVALID",
+            reason_codes(malformed_duplicate),
+        )
+
+        duplicate = evaluate_normal_boot(
+            "\n".join(
+                [
+                    *journal_lines(PROCESS_EVENT_JOURNAL_PATTERN),
+                    PROCESS_EVENT_JOURNAL_PATTERN,
+                ]
+            ),
+            [PROCESS_EVENT_JOURNAL_PATTERN],
+        )
+        self.assertFalse(duplicate["passed"])
+        self.assertIn("EVIDENCE_RECORD_DUPLICATED", reason_codes(duplicate))
 
     def test_trapframe_contract_is_exact_and_fails_closed(self) -> None:
         for profile in ("full", "minimal", "storage-only"):

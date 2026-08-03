@@ -49,6 +49,18 @@ PROCESS_TRAP_SNAPSHOT_PATTERN = (
     "pid_b=2 slot_b=1 seq_b=2 valid_b=1 owner_b=1 frame_b=1 cr3_b=1 "
     "rsp0_b=1 distinct_storage=1 current_pid=0 stale_owner=0 resume_ready=0"
 )
+PROCESS_EVENT_JOURNAL_PATTERN = (
+    "[PROC] process event journal PASS schema=1 events=6 lifecycle=4 "
+    "captures=2 seqs=1,2,3,4,5,6 kinds=1,2,3,1,2,3 "
+    "reasons=1,2,3,1,2,3 from_pids=0,1,1,0,2,2 "
+    "to_pids=1,1,0,2,2,0 slots=0,0,0,1,1,1 "
+    "generations=1,1,1,1,1,1 capture_seqs=0,1,1,0,2,2 "
+    "owner_ok=1,1,1,1,1,1 cr3_ok=1,1,1,1,1,1 "
+    "rsp0_ok=1,1,1,1,1,1 if0=1,1,1,1,1,1 "
+    "snapshot_refs=0,1,1,0,1,1 outcomes=1,1,1,1,1,1 "
+    "capture_seq_separate=1 current_pid=0 stale_owner=0 dropped=0 "
+    "overflow=0 evidence_only=1 switch_events=0 resume_ready=0"
+)
 
 
 def ensure_smoke_profile(smoke_profile: str) -> str:
@@ -116,6 +128,7 @@ def required_smoke_patterns(smoke_profile: str) -> list[str]:
         "[USER] bootstrap process pair PASS runs=2 order=1,2 pid_a=1 slot_a=0 pid_b=2 slot_b=1 distinct_pid=1 distinct_slot=1 distinct_cr3=1 distinct_backing=1 distinct_stack=1 int80_a=3 int80_b=3 between_clean=1 current_pid=0 last_pid=2 rsp0_publishes=2 rsp0_restores=2 tss_rsp0_baseline=1 both_restored=1",
         USER_TRAP_CAPTURE_PATTERN,
         PROCESS_TRAP_SNAPSHOT_PATTERN,
+        PROCESS_EVENT_JOURNAL_PATTERN,
         "[SHELL] Interactive shell started",
     ]
     if smoke_profile == "storage-only":

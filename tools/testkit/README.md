@@ -30,8 +30,8 @@
 - `kernel/build-windows.ps1`
   - Windows 커널 빌드/부팅용 전용 엔트리포인트
 - `tests/`
-  - QEMU 없이 verdict, baseline guard, matrix, shell 반례를 검증하는 Python host unit test 62개
-  - `test_build_windows_verdict.ps1`은 직접 PowerShell IDE/process-pair/pressure/resource/trap snapshot 판정 27개를 검증
+  - QEMU 없이 verdict, baseline guard, matrix, shell 반례를 검증하는 Python host unit test 67개
+  - `test_build_windows_verdict.ps1`은 직접 PowerShell IDE/process-pair/pressure/resource/trap snapshot/process event journal 판정 40개를 검증
 
 원칙:
 
@@ -63,11 +63,15 @@
   - smoke 성공 후 `kernel/build/boot-summary/test-<profile>.json` 생성
   - checkpoint, selftest, perf profile, device summary, health, user-mode scaffold,
     primary process stack, 두 process 순차 실행 `process_pair`, process-owned
-    trap evidence `process_trap_snapshot`, Kernel Room snapshot,
+    trap evidence `process_trap_snapshot`, lifecycle evidence `process_event_journal`,
+    Kernel Room snapshot,
     controller state, network/USB/storage bootstrap selection, SLM seed 결과,
     AI Resource Ledger와 AI Pressure Tracker schema/selftest를 저장
   - `process_trap_snapshot.ready`는 `record_count`(prefix 행 수)=1,
     `fullmatch_count=1`, 모든 semantic 값 exact를 함께 만족할 때만 참
+  - `process_event_journal.ready`도 prefix/fullmatch가 각각 정확히 하나이고 six-record
+    ordered vector와 `dropped=0 overflow=0 evidence_only=1 switch_events=0
+    resume_ready=0`이 exact일 때만 참
 
 공통 smoke marker:
 
@@ -77,6 +81,7 @@
 - `[TRAP] frame contract selftest PASS size=176 canaries=15 ... frame_addr_exact=1 rflags_bit1=1 df_clear=1`
 - `[TRAP] user frame capture PASS pid_a=1 pid_b=2 ... from_user=1 cs=0x23 ss=0x1b ... frame_addr_exact=1 contract=1`
 - `[PROC] trap evidence snapshot PASS schema=1 captures=2 pid_a=1 slot_a=0 seq_a=1 ... pid_b=2 slot_b=1 seq_b=2 ... current_pid=0 stale_owner=0 resume_ready=0`
+- `[PROC] process event journal PASS schema=1 events=6 lifecycle=4 captures=2 seqs=1,2,3,4,5,6 kinds=1,2,3,1,2,3 ... from_pids=0,1,1,0,2,2 to_pids=1,1,0,2,2,0 ... dropped=0 overflow=0 evidence_only=1 switch_events=0 resume_ready=0`
 - `[RESOURCE] ledger selftest PASS schema=1 kinds=5 units=2 entries=5 ... owners_unattributed=1 observation_only=1`
 - `[PRESSURE] tracker selftest PASS schema=1 planes=3 max_levels=4 active_levels=2 ... observation_only=1`
 - `[ROOM] snapshot stability=...`
@@ -88,11 +93,13 @@ exception, 대문자 단어 `FAIL`/`FATAL`을 금지하고, health가
 terminal checkpoint는 각각 정확히 한 번, 정의된 순서로 나타나야 한다. 증거 행과 토큰
 경계를 고정하고 contract-bearing 행의 중복 key를 거부하므로 인용·접두사 위장도 PASS하지 않는다.
 Resource와 pressure의 observation-only selftest, trapframe 계약의 두 `[TRAP]`
-마커, process-owned snapshot `[PROC]` 마커는 행 전체 exact record다. snapshot은
-user trap 뒤와 Kernel Room 앞에 정확히 한 번 있어야 하고 owner/sequence/current/
-stale/resume 값까지 정본과 같아야 한다. 임의 필드를 붙이거나 같은 레코드를
-중복해도 PASS하지 않는다. 이 snapshot은 `resume_ready=0`인 관찰 증거이며 실제
-context resume, switch, preemption은 아직 구현 범위가 아니다.
+마커, process-owned snapshot과 process event journal의 `[PROC]` 마커는 행 전체 exact
+record다. snapshot과 journal은 user trap 뒤와 Kernel Room 앞에 각각 정확히 한 번,
+정해진 순서로 있어야 한다. journal은 six-record vector, 별도 event/capture sequence,
+owner/CR3/`rsp0`/IF/frame reference, `dropped=0 overflow=0 evidence_only=1
+switch_events=0 resume_ready=0`까지 정본과 같아야 한다. 임의 필드를 붙이거나 같은
+레코드를 중복해도 PASS하지 않는다. owner lifecycle `0→1→0→2→0`은 순차 bootstrap
+관찰이며 실제 context resume, CPU switch, A→B→A, preemption은 아직 구현 범위가 아니다.
 
 부팅 매트릭스:
 
@@ -110,7 +117,7 @@ context resume, switch, preemption은 아직 구현 범위가 아니다.
   - baseline fixture는 `tools/testkit/fixtures/boot-baseline/<profile>.json`
   - `--write-baseline`은 `--strict`, matrix 전체 PASS, 정확한 profile 순서,
     canonical verdict와 profile별 controller/process/numeric proof를 모두 요구
-  - 이번 snapshot 조각은 compact inventory/baseline 스키마를 변경하지 않는다
+  - 이번 snapshot/journal 조각은 compact inventory/baseline 스키마를 변경하지 않는다
 
 대화형 셸 레인:
 
@@ -123,7 +130,10 @@ context resume, switch, preemption은 아직 구현 범위가 아니다.
   - `state autonomy`는 schema, 안전 모드, target별 지원도, queue/event 통계와 마지막 decision/reason을 read-only로 노출
   - `state pressure`는 schema 1, observation-only/gate 분리 계약, 세 pressure plane과 raw queue/fabric/NodeBit 증거를 한 줄로 노출
   - `state user`는 trap capture와 process-owned snapshot의 `saved_*` mirror를 같은
-    레코드에서 검증하며 `saved_resume_ready=0`을 요구
+    레코드에서 검증하며 `saved_resume_ready=0`을 요구한다. 같은 record의 journal
+    `event_*` 21개 필드는 schema/count/first·last sequence/lifecycle/captures/order와
+    owner/CR3/`rsp0`/IF/snapshot/outcome/current/stale/drop/overflow 경계 및
+    `event_evidence_only=1 event_switches=0 event_resume_ready=0`을 mirror한다
   - 각 교환은 한 response record의 토큰 경계로 검증하고, 종료 전 reader를 drain한 뒤
     전체 transcript에 normal boot verdict를 다시 적용한다
   - 아티팩트: `kernel/build/shell-smoke/transcript.log` (전체 시리얼 대화),

@@ -16,6 +16,9 @@
 
 #define BOOTSTRAP_PROCESS_COUNT ADDRESS_SPACE_BOOTSTRAP_USER_SLOT_COUNT
 #define BOOTSTRAP_PROCESS_PID_BASE 1U
+#define BOOTSTRAP_PROCESS_EVENT_SCHEMA 1U
+#define BOOTSTRAP_PROCESS_EVENT_CAPACITY 8U
+#define BOOTSTRAP_PROCESS_EVENTS_PER_RUN 3U
 
 /* C/NASM contract used by kernel/core/user_entry.asm. Keep the explicit
  * offsets append-only and let the runtime proof catch assembly drift. */
@@ -95,6 +98,89 @@ typedef struct bootstrap_process_trap_snapshot {
     bool resume_ready;
 } bootstrap_process_trap_snapshot_t;
 
+/* Per-boot, append-only evidence journal for the bounded bootstrap lifecycle.
+ * These are observation records, not resumable contexts or scheduler switch
+ * commands. Numeric values escape through the serial evidence contract and
+ * therefore remain explicit and append-only. */
+typedef enum bootstrap_process_event_kind {
+    BOOTSTRAP_PROCESS_EVENT_KIND_INVALID = 0,
+    BOOTSTRAP_PROCESS_EVENT_KIND_ACQUIRE = 1,
+    BOOTSTRAP_PROCESS_EVENT_KIND_TRAP_CAPTURE = 2,
+    BOOTSTRAP_PROCESS_EVENT_KIND_RELEASE = 3,
+    BOOTSTRAP_PROCESS_EVENT_KIND_COUNT = 4
+} bootstrap_process_event_kind_t;
+
+typedef enum bootstrap_process_event_reason {
+    BOOTSTRAP_PROCESS_EVENT_REASON_INVALID = 0,
+    BOOTSTRAP_PROCESS_EVENT_REASON_ACTIVATE_PUBLISH = 1,
+    BOOTSTRAP_PROCESS_EVENT_REASON_BREAKPOINT_CAPTURE = 2,
+    BOOTSTRAP_PROCESS_EVENT_REASON_RESTORE_PUBLISH = 3,
+    BOOTSTRAP_PROCESS_EVENT_REASON_COUNT = 4
+} bootstrap_process_event_reason_t;
+
+typedef enum bootstrap_process_event_outcome {
+    BOOTSTRAP_PROCESS_EVENT_OUTCOME_INVALID = 0,
+    BOOTSTRAP_PROCESS_EVENT_OUTCOME_COMMITTED = 1,
+    BOOTSTRAP_PROCESS_EVENT_OUTCOME_COUNT = 2
+} bootstrap_process_event_outcome_t;
+
+AIOS_STATIC_ASSERT(BOOTSTRAP_PROCESS_EVENT_KIND_ACQUIRE == 1,
+    "process event acquire ID drift");
+AIOS_STATIC_ASSERT(BOOTSTRAP_PROCESS_EVENT_KIND_TRAP_CAPTURE == 2,
+    "process event capture ID drift");
+AIOS_STATIC_ASSERT(BOOTSTRAP_PROCESS_EVENT_KIND_RELEASE == 3,
+    "process event release ID drift");
+AIOS_STATIC_ASSERT(BOOTSTRAP_PROCESS_EVENT_REASON_ACTIVATE_PUBLISH == 1,
+    "process event activate reason ID drift");
+AIOS_STATIC_ASSERT(BOOTSTRAP_PROCESS_EVENT_REASON_BREAKPOINT_CAPTURE == 2,
+    "process event capture reason ID drift");
+AIOS_STATIC_ASSERT(BOOTSTRAP_PROCESS_EVENT_REASON_RESTORE_PUBLISH == 3,
+    "process event restore reason ID drift");
+AIOS_STATIC_ASSERT(BOOTSTRAP_PROCESS_EVENT_OUTCOME_COMMITTED == 1,
+    "process event committed outcome ID drift");
+AIOS_STATIC_ASSERT(BOOTSTRAP_PROCESS_EVENT_CAPACITY >=
+        BOOTSTRAP_PROCESS_COUNT * BOOTSTRAP_PROCESS_EVENTS_PER_RUN,
+    "process event journal cannot hold the bootstrap pair proof");
+
+typedef struct bootstrap_process_event {
+    uint64_t event_sequence;
+    uint64_t run_generation;
+    uint64_t capture_sequence;
+    uint64_t from_cr3;
+    uint64_t to_cr3;
+    uint64_t from_rsp0;
+    uint64_t to_rsp0;
+    /* Historical #BP metadata only. This deliberately omits the full GPR
+     * image and must never be used as an iretq source. */
+    uint64_t frame_addr;
+    uint64_t frame_rip;
+    uint64_t frame_rsp;
+    uint64_t frame_rflags;
+    uint64_t frame_cs;
+    uint64_t frame_ss;
+    uint64_t frame_int_no;
+    uint64_t frame_err_code;
+    pid_t from_pid;
+    pid_t to_pid;
+    pid_t current_pid;
+    uint32_t schema;
+    uint32_t slot;
+    bootstrap_process_event_kind_t kind;
+    bootstrap_process_event_reason_t reason;
+    bootstrap_process_event_outcome_t outcome;
+    bool owner_ok;
+    bool cr3_ok;
+    bool rsp0_ok;
+    bool if_disabled;
+    bool snapshot_ref;
+    bool frame_valid;
+    bool frame_from_user;
+    bool frame_addr_exact;
+    bool direct_switch;
+    bool resume_ready;
+    bool valid;
+} bootstrap_process_event_t;
+
 typedef struct bootstrap_process {
     pid_t pid;
     uint32_t slot;
@@ -134,6 +220,10 @@ typedef struct bootstrap_process_stats {
     bool unique_backing;
     bool unique_kernel_stack;
     bool tss_rsp0_baseline;
+    uint32_t event_count;
+    uint64_t event_last_sequence;
+    uint64_t event_dropped;
+    bool event_overflow;
 } bootstrap_process_stats_t;
 
 aios_status_t bootstrap_process_init(void);
@@ -151,6 +241,9 @@ aios_status_t bootstrap_process_capture_current_trap(
 /* Snapshot remains readable after finish until this slot is prepared again. */
 aios_status_t bootstrap_process_get_trap_snapshot(
     uint32_t slot, bootstrap_process_trap_snapshot_t *out);
+/* Stable readback is available only while no bootstrap process is active. */
+aios_status_t bootstrap_process_get_event(
+    uint32_t index, bootstrap_process_event_t *out);
 bootstrap_process_t *bootstrap_process_current(void);
 void bootstrap_process_get_stats(bootstrap_process_stats_t *out);
 

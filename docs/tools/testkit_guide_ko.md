@@ -2,7 +2,7 @@
 
 작성일: 2026-04-10
 
-최종 갱신: 2026-08-03 (process-owned trap evidence snapshot v0 검증 계약)
+최종 갱신: 2026-08-03 (process event journal v1 검증 계약)
 
 ## 목적
 
@@ -91,11 +91,12 @@ pwsh -NoProfile -File .\tools\testkit\tests\test_build_windows_verdict.ps1
 clean-exit 누락, process pair 레코드 누락/불완전, pressure marker
 누락/불완전·apply-capable 변형, resource marker 누락/축약/상충 변형,
 trapframe 계약/유저 캡처 marker의 값 변조·확장 변형, process-owned trap
-snapshot의 malformed/extended/duplicate/owner/sequence/current/stale/resume 반례와
-`state user` trap/`saved_*` 증거 flip을 62개 Python unit으로 고정한다.
-별도의 `test_build_windows_verdict.ps1` 27개 사례가 Windows 직접 판정기의 IDE evidence
-문법과 process pair/pressure/resource/trapframe/process snapshot 필수성 및 exact
-record 단일성을 같은 의미론으로 검증한다.
+snapshot의 malformed/extended/duplicate/owner/sequence/current/stale/resume 반례,
+process event journal의 missing/duplicate/truncated/extended/reordered/stale/sequence/
+overflow/switch-capable 반례와 `state user` trap/`saved_*`/`event_*` 증거 flip을 Python
+host unit test 67개로 고정한다. 별도의 `test_build_windows_verdict.ps1` 40개 사례가 Windows 직접
+판정기의 IDE evidence 문법과 process pair/pressure/resource/trapframe/process
+snapshot/event journal 필수성 및 exact record 단일성을 같은 의미론으로 검증한다.
 
 ### 전체
 
@@ -196,6 +197,7 @@ optional 하드웨어 구성을 나눌 수 있다.
   - `[TRAP] frame contract selftest PASS size=176 canaries=15 ... frame_addr_exact=1 rflags_bit1=1 df_clear=1`
   - `[TRAP] user frame capture PASS pid_a=1 pid_b=2 ... from_user=1 cs=0x23 ss=0x1b ... frame_addr_exact=1 contract=1`
   - `[PROC] trap evidence snapshot PASS schema=1 captures=2 pid_a=1 slot_a=0 seq_a=1 ... pid_b=2 slot_b=1 seq_b=2 ... current_pid=0 stale_owner=0 resume_ready=0`
+  - `[PROC] process event journal PASS schema=1 events=6 lifecycle=4 captures=2 seqs=1,2,3,4,5,6 kinds=1,2,3,1,2,3 ... from_pids=0,1,1,0,2,2 to_pids=1,1,0,2,2,0 ... dropped=0 overflow=0 evidence_only=1 switch_events=0 resume_ready=0`
   - `[RESOURCE] ledger selftest PASS schema=1 kinds=5 units=2 entries=5 ... owners_unattributed=1 observation_only=1`
   - `[PRESSURE] tracker selftest PASS schema=1 planes=3 max_levels=4 active_levels=2 ... observation_only=1`
   - `[ROOM] snapshot stability=stable`
@@ -224,12 +226,14 @@ optional 하드웨어 구성을 나눌 수 있다.
 중복 key도 거부하고, verdict line number는 raw serial artifact와 일치한다. `failed=0`,
 `apply_failed=0` 같은 소문자 상태 필드는 fatal로 오인하지 않는다.
 Resource와 pressure selftest, trapframe 계약의 두 `[TRAP]` marker
-(`frame contract selftest`, `user frame capture`), process-owned snapshot `[PROC]`
-marker는 required substring 뒤의 임의 필드를 허용하지 않는 exact record다.
-snapshot은 세 profile 모두에서 user trap 뒤, Kernel Room 앞에 정확히 한 번 필요하며,
-owner/sequence/current/stale/resume 의미론도 정본과 같아야 한다. canonical record에
-`apply_enabled=1`이나 `extra=1`을 덧붙이거나 같은 exact record를 두 번 제시한 로그도
-정상 PASS가 아니다. 선행 공백을 제거해 증거로 승격하지도 않는다.
+(`frame contract selftest`, `user frame capture`), process-owned snapshot과 process
+event journal의 `[PROC]` marker는 required substring 뒤의 임의 필드를 허용하지 않는
+exact record다. snapshot과 journal은 세 profile 모두에서 user trap 뒤, Kernel Room
+앞에 각각 정확히 한 번, 정해진 순서로 필요하다. journal은 capacity 8/no-overwrite의
+여섯 record ordered vector, 별도 event/capture sequence, `dropped=0 overflow=0
+evidence_only=1 switch_events=0 resume_ready=0`까지 정본과 같아야 한다. canonical
+record에 `apply_enabled=1`이나 `extra=1`을 덧붙이거나 같은 exact record를 두 번 제시한
+로그도 정상 PASS가 아니다. 선행 공백을 제거해 증거로 승격하지도 않는다.
 
 ## 부팅 요약 export
 
@@ -254,6 +258,9 @@ owner/sequence/current/stale/resume 의미론도 정본과 같아야 한다. can
 - `process_pair`의 PID 1→PID 2 순차 실행, 고유 CR3/backing/stack, 실행 사이·최종 cleanup proof
 - `process_trap_snapshot`의 exact record 수, fullmatch 수, PID/slot owner,
   sequence, CR3/`rsp0`, distinct storage, current/stale/resume 상태
+- `process_event_journal`의 exact record/fullmatch 수, six-record ordered vector,
+  event/capture sequence 분리, owner/CR3/`rsp0`/IF/frame reference, current/stale,
+  dropped/overflow/evidence-only/switch/resume 상태
 - `kernel_room` snapshot / gate 요약
 - `resource`의 schema, kind/unit/entry 수, source/validity 수와 unattributed/observation-only 계약
 - `pressure`의 schema, active/max level, balanced/hotspot/overlap/gate-mask
@@ -263,10 +270,12 @@ owner/sequence/current/stale/resume 의미론도 정본과 같아야 한다. can
 - SLM MainAI 설정과 seeded plan 목록
 
 즉, 지금 단계의 export는 "부팅 이벤트 파서 + bounded 두 process 순차 실행 +
-non-resumable process-owned trap evidence snapshot"까지 구현된 상태다.
-`process_pair.ready`와 `process_trap_snapshot.ready`는 PASS 접두사만으로 참이 되지 않는다.
-snapshot은 `record_count`(prefix 행 수)=1, `fullmatch_count=1`이고 모든 의미 값이 exact일 때만
-`ready=true`다. 이 증거는 context resume, switch 또는 preemption 구현을 뜻하지 않는다.
+non-resumable process-owned trap evidence snapshot + process event journal v1"까지
+구현된 상태다. `process_pair.ready`, `process_trap_snapshot.ready`,
+`process_event_journal.ready`는 PASS 접두사만으로 참이 되지 않는다. snapshot과 journal은
+각각 `record_count`(prefix 행 수)=1, `fullmatch_count=1`이고 모든 의미 값이 exact일 때만
+`ready=true`다. journal의 `0→1→0→2→0` owner lifecycle은 순차 bootstrap 증거이며
+context resume, CPU switch, 실제 A→B→A 또는 preemption 구현을 뜻하지 않는다.
 
 ## boot-matrix
 
@@ -390,6 +399,8 @@ repo 안의 baseline fixture와 비교하는 lane이다.
 - PID 1→PID 2 순차 ring3 pair 필수 checkpoint, 구조 파서와 shell state 계약
 - process-owned non-resumable trap evidence snapshot의 세 profile 공통 exact-once
   marker, structured `process_trap_snapshot`, shell `state user saved_*` mirror
+- capacity 8/no-overwrite process event journal v1의 세 profile 공통 exact ordered-vector
+  marker, structured `process_event_journal`, shell `state user event_*` mirror
 - `state autonomy` schema 1의 read-only mode/support/counter/last-decision 계약
 - AI Pressure Tracker required marker, structured `pressure` summary,
   `state pressure` observation-only/gate-separation 계약
@@ -405,7 +416,8 @@ repo 안의 baseline fixture와 비교하는 lane이다.
 - shared Python/PowerShell marker manifest
 - post-link ELF structural verifier
 - fault injection과 expected outcome lane
-- trap snapshot을 실제 재개 context로 사용하는 switch와 timer preemption
+- trap snapshot/journal을 실제 재개 context로 사용하는 live switch, 실제 A→B→A와 timer preemption
+- generic `[EVT]{json}`, shared marker manifest, `events.jsonl` artifact
 - `-cpu max` 정규 CI profile
 - trace dataset 전용 lane
 - per-lane config file

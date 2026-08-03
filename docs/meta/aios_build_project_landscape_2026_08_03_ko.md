@@ -23,17 +23,18 @@
 ## 2. AIOS의 현재 출발점
 
 조사 시작 기준 체크포인트는 `5b345f3`의 trapframe 계약 조각이었다.
-아래 표는 2026-08-03 process-owned trap evidence snapshot v0 반영 후의
+아래 표는 2026-08-03 process-owned trap evidence snapshot v0와 process event journal v1 반영 후의
 현재 경계를 사용한다.
 
 | 상태 | 현재 범위 |
 |---|---|
 | `CURRENT` | x86_64 부팅, 정적 ELF64, 두 bootstrap process의 private CR3·16KiB ring0 entry stack, PID 1→PID 2 순차 ring3 실행, 176B C/NASM trapframe exact 계약, CPL0/CPL3 `from_user` 실경로 증거 |
 | `CURRENT` | ISR 시점 owner/current/private CR3/TSS `rsp0`/IF=0을 검증한 descriptor-owned trap evidence snapshot v0: full 176B frame 복사, per-boot sequence 1,2, finish 뒤 보존과 final pair 경계 양쪽 재조회, `resume_ready=0` |
+| `CURRENT` | per-boot capacity 8/no-overwrite process event journal v1: acquire/capture/release 여섯 record, event sequence 1..6과 별도 capture sequence 1,2, exact ordered-vector marker·structured `process_event_journal`·`state user event_*`, `evidence_only=1 switch_events=0 resume_ready=0` |
 | `CURRENT` | 커널 kthread의 타이머 선점, strict boot/shell verdict, 세 프로파일 inventory, pressure/resource aggregate 관측 |
-| `PARTIAL` | process 모델은 정적 두 슬롯이며 실행은 순차 동기 호출이다. descriptor snapshot은 증거 소유권만 가지며 scheduler runnable state나 재개 가능한 continuation으로 결속되지 않았다. next-prepare reset/run generation은 구현됐지만 live reuse/re-prepare와 stale-generation 거부의 부팅 증거는 없다 |
+| `PARTIAL` | process 모델은 정적 두 슬롯이며 실행은 순차 동기 호출이다. descriptor snapshot과 event journal은 증거 소유권·순서만 가지며 scheduler runnable state나 재개 가능한 continuation으로 결속되지 않았다. next-prepare reset/run generation은 구현됐지만 live reuse/re-prepare와 stale-generation 거부의 부팅 증거는 없다 |
 | `PARTIAL` | pressure/resource는 `observation_only=1`이다. owner attribution, quota, reserve/apply, migration 입력은 없다 |
-| `PLANNED` | 두 ring3 process의 타이머 선점 교대, A→B→A 순서 이벤트, process fault teardown, bounded execution budget, 동적 PMM/VMM |
+| `PLANNED` | resumable saved context, runnable-state 결속, live continuation/switch, 두 ring3 process의 타이머 선점 교대, 실제 A→B→A switch sequence, process fault teardown, bounded execution budget, 동적 PMM/VMM |
 | `PLANNED` | virtio-blk 읽기(M4), 디스크 ELF(M5), principal authorize(M6), 브라우저 콘솔·AIOS native runtime(W1~W5) |
 
 따라서 지금 필요한 외부 참고점은 “완성형 AI agent platform”보다 **saved-state 소유권,
@@ -173,23 +174,33 @@ prepare 코드 경로는 이전 snapshot을 지우고 run generation을 올리�
    `resume_ready=0`이므로 continuation, context switch, preemption으로 부르지 않는다.
 
 이 조각은 Theseus의 saved-state 소유권 원칙을 작게 적용하면서도 현재 순차 runner와
-rollback 구조를 유지한다. 이후 순서는 **evidence snapshot → append-only
-transition event → live continuation/switch**로 고정한다.
+rollback 구조를 유지한다. 이어서 evidence-only process event journal을 고정한 뒤에만
+live continuation/switch로 나아가도록 순서를 유지했다.
 
-### 6.2 그 다음: process transition event v1
+### 6.2 완료된 두 번째 조각: process event journal v1 (`CURRENT`)
 
-- append-only numeric schema와 monotonic sequence를 먼저 정의한다.
-- 최소 필드: `seq`, `reason`, from/to PID, from/to CR3, from/to BSP `rsp0`,
-  current owner, frame validity, outcome.
-- Python/PowerShell verifier에 missing, duplicate, truncation, 역순, stale owner,
-  aggregate-only 위장 반례를 먼저 추가한다.
-- capture 이벤트와 실제 switch 이벤트를 다른 kind/reason으로 구분한다.
+- append-only numeric schema/kind/reason/outcome과 per-boot event sequence를 정의했다.
+- capacity 8의 내부 journal은 기존 record를 덮어쓰지 않으며 두 synchronous run의
+  acquire/capture/release 여섯 record를 보존한다. 가득 찬 뒤 append 시도는 성공이나
+  overwrite가 아니라 dropped/overflow로 남고 정상 계약에서 fail-closed다.
+- exact vector는 `seqs=1,2,3,4,5,6`, `kinds=1,2,3,1,2,3`,
+  `from_pids=0,1,1,0,2,2`, `to_pids=1,1,0,2,2,0`이다. capture sequence 1,2는
+  별도 필드로 유지한다.
+- 각 record는 PID/slot/run generation, before/after CR3·BSP `rsp0`, current owner,
+  frame/snapshot reference, IF=0, outcome을 담는다.
+- exact `[PROC] process event journal PASS ...`, structured `process_event_journal`,
+  `state user event_*` mirror를 Python/PowerShell이 missing, duplicate, truncation,
+  확장, 역순, stale owner, sequence 혼용, aggregate-only 위장, overflow 반례로
+  fail-closed 검증한다.
+- 이 journal의 owner lifecycle은 `0→1→0→2→0`이다. capture self-edge를 포함한
+  순차 bootstrap 증거일 뿐 CPU switch event는 하나도 없고,
+  `evidence_only=1 switch_events=0 resume_ready=0`을 유지한다.
 
 ### 6.3 이후: bounded cooperative proof → timer preemption
 
 1. IF=0 구간에서 current process, CR3, BSP TSS `rsp0`, saved frame,
    `g_active_user_run_state`를 함께 교대한다.
-2. 먼저 bounded A→B→A 순서를 기계 판독 이벤트로 증명한다.
+2. 먼저 bounded 실제 A→B→A 순서를 별도 live-switch 기계 판독 이벤트로 증명한다.
 3. 그 다음 `ai_sched_tick()` 요청과 CPL3 timer IRQ entry-stack 귀속을 연결한다.
 4. full GPR canary, 동일 VA 격리, syscall 왕복, execution budget, process fault
    teardown과 첫 실패 trace를 완료 조건으로 둔다.

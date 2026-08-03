@@ -205,11 +205,40 @@ class ShellExpectationTests(unittest.TestCase):
             record.replace("saved_current_pid=0", "saved_current_pid=2"),
             record.replace("saved_stale_owner=0", "saved_stale_owner=1"),
             record.replace("saved_resume_ready=0", "saved_resume_ready=1"),
+            record.replace("event_schema=1", "event_schema=2"),
+            record.replace("event_count=6", "event_count=5"),
+            record.replace("event_lifecycle=4", "event_lifecycle=3"),
+            record.replace("event_captures=2", "event_captures=1"),
+            record.replace("event_first_seq=1", "event_first_seq=2"),
+            record.replace("event_last_seq=6", "event_last_seq=5"),
+            record.replace("event_ordered=1", "event_ordered=0"),
+            record.replace("event_owner_ok=1", "event_owner_ok=0"),
+            record.replace("event_cr3_ok=1", "event_cr3_ok=0"),
+            record.replace("event_rsp0_ok=1", "event_rsp0_ok=0"),
+            record.replace("event_if0=1", "event_if0=0"),
+            record.replace("event_snapshot_refs=1", "event_snapshot_refs=0"),
+            record.replace("event_outcomes_ok=1", "event_outcomes_ok=0"),
+            record.replace(
+                "event_capture_seq_separate=1",
+                "event_capture_seq_separate=0",
+            ),
+            record.replace("event_current_pid=0", "event_current_pid=2"),
+            record.replace("event_stale_owner=0", "event_stale_owner=1"),
+            record.replace("event_dropped=0", "event_dropped=1"),
+            record.replace("event_overflow=0", "event_overflow=1"),
+            record.replace("event_evidence_only=1", "event_evidence_only=0"),
+            record.replace("event_switches=0", "event_switches=1"),
+            record.replace("event_resume_ready=0", "event_resume_ready=1"),
+            record.replace(" event_count=6", ""),
             record.replace(
                 "trap_contract=1", "trap_contract=0 trap_contract=1"
             ),
             record.replace(
                 "saved_owner_b=1", "saved_owner_b=0 saved_owner_b=1"
+            ),
+            record.replace(
+                "event_owner_ok=1",
+                "event_owner_ok=0 event_owner_ok=1",
             ),
         ):
             with self.subTest(invalid=invalid):

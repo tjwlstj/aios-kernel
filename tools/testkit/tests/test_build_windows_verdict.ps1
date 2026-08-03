@@ -59,6 +59,7 @@ $normalLines = @(
     '[USER] bootstrap process pair PASS runs=2 order=1,2 pid_a=1 slot_a=0 pid_b=2 slot_b=1 distinct_pid=1 distinct_slot=1 distinct_cr3=1 distinct_backing=1 distinct_stack=1 int80_a=3 int80_b=3 between_clean=1 current_pid=0 last_pid=2 rsp0_publishes=2 rsp0_restores=2 tss_rsp0_baseline=1 both_restored=1'
     '[TRAP] user frame capture PASS pid_a=1 pid_b=2 captures_a=1 captures_b=1 from_user=1 cs=0x23 ss=0x1b rsp_user=1 rip_user=1 canary_ok=1 frame_in_kstack=1 frame_addr_exact=1 contract=1'
     '[PROC] trap evidence snapshot PASS schema=1 captures=2 pid_a=1 slot_a=0 seq_a=1 valid_a=1 owner_a=1 frame_a=1 cr3_a=1 rsp0_a=1 pid_b=2 slot_b=1 seq_b=2 valid_b=1 owner_b=1 frame_b=1 cr3_b=1 rsp0_b=1 distinct_storage=1 current_pid=0 stale_owner=0 resume_ready=0'
+    '[PROC] process event journal PASS schema=1 events=6 lifecycle=4 captures=2 seqs=1,2,3,4,5,6 kinds=1,2,3,1,2,3 reasons=1,2,3,1,2,3 from_pids=0,1,1,0,2,2 to_pids=1,1,0,2,2,0 slots=0,0,0,1,1,1 generations=1,1,1,1,1,1 capture_seqs=0,1,1,0,2,2 owner_ok=1,1,1,1,1,1 cr3_ok=1,1,1,1,1,1 rsp0_ok=1,1,1,1,1,1 if0=1,1,1,1,1,1 snapshot_refs=0,1,1,0,1,1 outcomes=1,1,1,1,1,1 capture_seq_separate=1 current_pid=0 stale_owner=0 dropped=0 overflow=0 evidence_only=1 switch_events=0 resume_ready=0'
     '[ROOM] snapshot stability=stable ok=18 degraded=0 failed=0'
     '[HEALTH] stability=stable ok=18 degraded=0 failed=0 unknown=2'
     '=== AIOS Kernel Ready ==='
@@ -79,6 +80,7 @@ $cases = @(
 )
 
 $tempPath = [IO.Path]::GetTempFileName()
+$journalExtraCases = 0
 try {
     foreach ($case in $cases) {
         $candidateLines = @(
@@ -302,6 +304,145 @@ try {
         Write-Output 'PASS invalid-process-trap-snapshot expected=False'
     }
 
+    $journalLine = [string]($normalLines | Where-Object {
+        $_ -match '^\[PROC\] process event journal '
+    } | Select-Object -First 1)
+    $missingJournalLines = @(
+        $normalLines | Where-Object {
+            $_ -notmatch '^\[PROC\] process event journal '
+        }
+    )
+    [IO.File]::WriteAllLines(
+        $tempPath,
+        $missingJournalLines,
+        [Text.UTF8Encoding]::new($false)
+    )
+    $missingJournalVerdict = Test-NormalSmokeVerdict -SerialLog $tempPath
+    if ([bool]$missingJournalVerdict.Passed) {
+        throw 'Missing process event journal evidence unexpectedly passed'
+    }
+    $journalExtraCases++
+    Write-Output 'PASS missing-process-event-journal expected=False'
+
+    $journalMutations = @(
+        [pscustomobject]@{
+            Name = 'truncated-process-event-journal'
+            Line = '[PROC] process event journal PASS schema=1 events=6'
+        }
+        [pscustomobject]@{
+            Name = 'aggregate-only-process-event-journal'
+            Line = '[PROC] process event journal PASS schema=1 events=6 lifecycle=4 captures=2 current_pid=0 stale_owner=0 dropped=0 overflow=0 evidence_only=1 switch_events=0 resume_ready=0'
+        }
+        [pscustomobject]@{
+            Name = 'reordered-process-event-vector'
+            Line = $journalLine.Replace(
+                'seqs=1,2,3,4,5,6',
+                'seqs=1,3,2,4,5,6'
+            )
+        }
+        [pscustomobject]@{
+            Name = 'short-process-event-vector'
+            Line = $journalLine.Replace(
+                'capture_seqs=0,1,1,0,2,2',
+                'capture_seqs=0,1,0,2,2'
+            )
+        }
+        [pscustomobject]@{
+            Name = 'unknown-process-event-kind'
+            Line = $journalLine.Replace(
+                'kinds=1,2,3,1,2,3',
+                'kinds=1,2,99,1,2,3'
+            )
+        }
+        [pscustomobject]@{
+            Name = 'unknown-process-event-reason'
+            Line = $journalLine.Replace(
+                'reasons=1,2,3,1,2,3',
+                'reasons=1,2,99,1,2,3'
+            )
+        }
+        [pscustomobject]@{
+            Name = 'unknown-process-event-outcome'
+            Line = $journalLine.Replace(
+                'outcomes=1,1,1,1,1,1',
+                'outcomes=1,1,1,1,1,99'
+            )
+        }
+        [pscustomobject]@{
+            Name = 'stale-process-event-owner'
+            Line = $journalLine.Replace('stale_owner=0', 'stale_owner=1')
+        }
+        [pscustomobject]@{
+            Name = 'duplicate-process-event-key'
+            Line = $journalLine.Replace(
+                'kinds=1,2,3,1,2,3',
+                'kinds=1,2,3,1,2,3 kinds=1,2,3,1,2,3'
+            )
+        }
+    )
+    foreach ($journalMutation in $journalMutations) {
+        $mutatedJournalLines = @(
+            $normalLines | ForEach-Object {
+                if ($_ -match '^\[PROC\] process event journal ') {
+                    [string]$journalMutation.Line
+                } else {
+                    $_
+                }
+            }
+        )
+        [IO.File]::WriteAllLines(
+            $tempPath,
+            $mutatedJournalLines,
+            [Text.UTF8Encoding]::new($false)
+        )
+        $mutatedJournalVerdict =
+            Test-NormalSmokeVerdict -SerialLog $tempPath
+        if ([bool]$mutatedJournalVerdict.Passed) {
+            throw "$($journalMutation.Name) unexpectedly passed"
+        }
+        $journalExtraCases++
+        Write-Output "PASS $($journalMutation.Name) expected=False"
+    }
+
+    $duplicateJournalFamilyLines = @($normalLines) + @(
+        '[PROC] process event journal PARTIAL schema=1 events=6'
+    )
+    [IO.File]::WriteAllLines(
+        $tempPath,
+        $duplicateJournalFamilyLines,
+        [Text.UTF8Encoding]::new($false)
+    )
+    $duplicateJournalFamilyVerdict =
+        Test-NormalSmokeVerdict -SerialLog $tempPath
+    if ([bool]$duplicateJournalFamilyVerdict.Passed) {
+        throw 'Truncated duplicate process event journal family unexpectedly passed'
+    }
+    $journalExtraCases++
+    Write-Output 'PASS duplicate-process-event-journal-family expected=False'
+
+    $reorderedJournalLines = @()
+    foreach ($line in $normalLines) {
+        if ($line -match '^\[PROC\] process event journal ') {
+            continue
+        }
+        if ($line -match '^\[PROC\] trap evidence snapshot ') {
+            $reorderedJournalLines += $journalLine
+        }
+        $reorderedJournalLines += $line
+    }
+    [IO.File]::WriteAllLines(
+        $tempPath,
+        $reorderedJournalLines,
+        [Text.UTF8Encoding]::new($false)
+    )
+    $reorderedJournalVerdict =
+        Test-NormalSmokeVerdict -SerialLog $tempPath
+    if ([bool]$reorderedJournalVerdict.Passed) {
+        throw 'Reordered process event journal checkpoint unexpectedly passed'
+    }
+    $journalExtraCases++
+    Write-Output 'PASS reordered-process-event-journal-checkpoint expected=False'
+
     $duplicateObservationCases = @(
         [pscustomobject]@{
             Name = 'duplicate-resource-ledger'
@@ -333,6 +474,12 @@ try {
                 $_ -match '^\[PROC\] trap evidence snapshot '
             } | Select-Object -First 1
         }
+        [pscustomobject]@{
+            Name = 'duplicate-process-event-journal'
+            Line = $normalLines | Where-Object {
+                $_ -match '^\[PROC\] process event journal '
+            } | Select-Object -First 1
+        }
     )
     foreach ($duplicateCase in $duplicateObservationCases) {
         $duplicateObservationLines = @($normalLines) + @(
@@ -354,4 +501,4 @@ try {
     Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
 }
 
-Write-Output "PowerShell verdict selftest passed cases=$($cases.Count + 13 + $duplicateObservationCases.Count)"
+Write-Output "PowerShell verdict selftest passed cases=$($cases.Count + 13 + $duplicateObservationCases.Count + $journalExtraCases)"

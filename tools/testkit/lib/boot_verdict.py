@@ -36,6 +36,7 @@ TERMINAL_CHECKPOINTS: tuple[tuple[str, str], ...] = (
     ("bootstrap_process_pair", "[USER] bootstrap process pair PASS"),
     ("user_trap_capture", "[TRAP] user frame capture PASS"),
     ("process_trap_snapshot", "[PROC] trap evidence snapshot PASS"),
+    ("process_event_journal", "[PROC] process event journal PASS"),
     ("kernel_room", "[ROOM] snapshot stability=stable"),
     ("health", "[HEALTH] stability="),
     ("kernel_ready", "=== AIOS Kernel Ready ==="),
@@ -59,7 +60,10 @@ EXACT_REQUIRED_RECORDS = (
     ("[TRAP] frame contract selftest PASS ", "trapframe_contract"),
     ("[TRAP] user frame capture PASS ", "user_trap_capture"),
     ("[PROC] trap evidence snapshot PASS ", "process_trap_snapshot"),
+    ("[PROC] process event journal PASS ", "process_event_journal"),
 )
+
+PROCESS_EVENT_JOURNAL_FAMILY_PREFIX = "[PROC] process event journal "
 
 
 def _sanitize_lines(log_text: str) -> list[str]:
@@ -214,6 +218,46 @@ def _invalid_required_evidence_records(
                     }
                 )
     return invalid_records
+
+
+def _invalid_process_event_journal_family_records(
+    lines: list[str],
+    required_occurrences: Mapping[str, list[dict[str, object]]],
+) -> list[dict[str, object]]:
+    """Reject a canonical journal summary plus an extra malformed row.
+
+    Exact required-pattern matching alone cannot see a second family row that
+    omits or mutates the PASS token. The event-journal contract is a single
+    anchored summary, so every anchored family row must be that one canonical
+    record.
+    """
+
+    canonical_patterns = [
+        pattern
+        for pattern in required_occurrences
+        if pattern.startswith("[PROC] process event journal PASS ")
+    ]
+    if not canonical_patterns:
+        return []
+
+    canonical = canonical_patterns[0]
+    family_rows = [
+        {"line": index, "text": line}
+        for index, line in enumerate(lines, start=1)
+        if line.startswith(PROCESS_EVENT_JOURNAL_FAMILY_PREFIX)
+    ]
+    if len(family_rows) == 1 and family_rows[0]["text"] == canonical:
+        return []
+
+    return [
+        {
+            "line": row["line"],
+            "text": row["text"],
+            "record": "process_event_journal",
+        }
+        for row in family_rows
+        if row["text"] != canonical or len(family_rows) != 1
+    ]
 
 
 def _duplicate_exact_required_records(
@@ -379,6 +423,11 @@ def evaluate_normal_boot(
     )
     invalid_evidence_records = _invalid_required_evidence_records(
         required_occurrences
+    )
+    invalid_evidence_records.extend(
+        _invalid_process_event_journal_family_records(
+            lines, required_occurrences
+        )
     )
     duplicate_evidence_records = _duplicate_exact_required_records(
         required_occurrences

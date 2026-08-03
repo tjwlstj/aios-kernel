@@ -1,6 +1,6 @@
 # Codex 작업 핸드오프 팁 (2026-07-15)
 
-최종 갱신: 2026-08-03 (process-owned trap evidence snapshot v0)
+최종 갱신: 2026-08-03 (process event journal v1)
 
 이 커널에서 Claude가 M1~M3 작업 중 실제로 밟은 지뢰와 관례를 모았다. 다음 작업자(Codex)가 같은 함정에 빠지지 않도록 하는 실전 노트다. **CLAUDE.md의 규칙이 정본이고, 이 문서는 "왜 그런지"와 "어떻게 디버깅했는지"를 보완한다.**
 
@@ -82,7 +82,7 @@ M3-b-3b2b의 활성화 순서는 `caller IF 저장+cli → private CR3 activate 
 ring3가 `std`를 실행한 뒤 인터럽트/시스콜로 들어오면 live DF=1이 커널 C 경계까지 따라온다. `interrupt/isr_stub.asm`의 common C call과 `core/user_entry.asm`의 syscall C call 앞 `cld`를 제거하지 말 것. CPU가 저장한 user RFLAGS frame은 그대로라 `iretq`는 사용자 DF를 복원한다. exit처럼 `iretq` 없이 커널로 돌아오는 경로도 이 `cld` 덕분에 DF=0을 유지한다.
 
 ### 2.11 순차 pair counter는 선점 증거가 아니다
-PID 1 실행 뒤 PID 2를 호출하는 것만으로는 scheduler 전환을 증명하지 못한다. pair runner는 첫 teardown 뒤 `current_pid=0`, `last_pid=1`, boot CR3/BSP `rsp0` baseline과 정확한 publish/restore 카운터를 확인하고서만 slot 1에 진입한다. 최종 `runs=2`, `last_pid=2`, `rsp0_publishes=2`, `rsp0_restores=2`는 두 번의 독립 synchronous run과 cleanup 증거다. 앞으로 M3-b-3b2c에서는 이 aggregate를 재사용해 A→B→A를 추론하지 말고 PID·CR3·BSP `rsp0`·current owner 순서를 가진 별도 switch event와 CPL3 timer IRQ stack 증거를 먼저 정의한다.
+PID 1 실행 뒤 PID 2를 호출하는 것만으로는 scheduler 전환을 증명하지 못한다. pair runner는 첫 teardown 뒤 `current_pid=0`, `last_pid=1`, boot CR3/BSP `rsp0` baseline과 정확한 publish/restore 카운터를 확인하고서만 slot 1에 진입한다. 최종 `runs=2`, `last_pid=2`, `rsp0_publishes=2`, `rsp0_restores=2`는 두 번의 독립 synchronous run과 cleanup 증거다. process event journal v1도 이 기존 경계를 벗어나지 않는다. 여섯 acquire/capture/release record의 owner lifecycle `0→1→0→2→0`은 순차 bootstrap 관찰이며 A→B→A CPU switch가 아니다. 실제 live switch는 별도 event kind, saved context, CPL3 timer IRQ stack 증거가 모두 생긴 뒤에만 주장한다.
 
 ---
 
@@ -106,6 +106,7 @@ PID 1 실행 뒤 PID 2를 호출하는 것만으로는 scheduler 전환을 증�
 - **bootstrap run-state C/NASM ABI:** `kernel/include/kernel/process.h`의 explicit offset + size static assert와 `kernel/core/user_entry.asm`의 `RUN_STATE_*`가 한 쌍이다. 기존 offset은 재번호하지 말고 append-only로 늘린다. 실제 값은 process-local이지만 `g_active_user_run_state`는 현재 동기 runner 한 개를 가리키는 단일 active pointer다.
 - **trapframe C/NASM 계약 (2026-08-02):** `interrupt_frame_t`의 모든 offset과 176B 크기는 `kernel/include/interrupt/trapframe.h`에 static assert되고 `isr_stub.asm`이 byte 상수를 mirror한다. 이 레이아웃은 append-only가 아니라 **exact 계약**이다(스텁 push 순서 + 하드웨어 frame이 고정). 함정 셋: ① `#BP` 게이트는 DPL=3이다 — ring3 `int3`가 CPL3 증거 경로라서, DPL=0로 되돌리면 유저 int3가 `#GP` panic이 된다. ② verdict가 로그 전체에서 `!!! EXCEPTION`을 금지하므로 셀프테스트 int3는 반드시 armed capture로 **조용히** 소비해야 한다(`trapframe_capture_consume`). ③ long mode는 frame push 전에 RSP를 16B로 내림 정렬한다 — same-CPL 기대 frame 주소는 `(rsp & ~15) - 176`이고, CPL3 진입은 TSS `rsp0`(=stack_top, 16B 정렬)라서 정확히 `stack_top - 176`이다. 데모의 int3는 int80 카운터를 건드리지 않는다(`int80_entries`는 여전히 3). 알려진 latent 항목: ring3에서 도달 가능한 공통 스텁/int 0x80 진입은 `cld`만 하고 `clac`은 하지 않으므로 유저가 세팅한 RFLAGS.AC가 핸들러까지 살아온다 — 현재 두 경로 모두 커널이 유저 메모리를 만지지 않아 무해하지만, 더 풍부한 ring3 IRQ 경로나 uaccess 밖 유저-page 접근을 넣기 전에는 SMAP 지원 CPU에서만 실행되는 feature-gated entry `clac` 하드닝을 별도 선행 후보로 검증한다.
 - **process-owned trap evidence snapshot v0 (2026-08-03):** ring3 `int3`의 armed capture를 global 결과로만 끝내지 않고 ISR 안에서 live process descriptor에 full 176B 복사한다. 이때 current owner, private CR3, BSP TSS `rsp0`, IF=0, exact `stack_top-176`, CPL3 RFLAGS 경계를 함께 확인한다. snapshot은 각 finish 뒤와 두 번째 실행이 끝난 최종 pair 경계에서 양쪽 모두 다시 읽어 같은 값임을 확인하며, per-boot sequence 1,2는 캡처 순서 증거일 뿐 switch event sequence가 아니다. prepare 코드 경로는 이전 snapshot을 지우고 run generation을 올리지만, live slot reuse/re-prepare와 stale-generation 거부는 아직 부팅으로 증명하지 않았다. exact marker는 `[PROC] trap evidence snapshot PASS ... stale_owner=0 resume_ready=0`이다. 이 상태를 continuation/saved-state switch로 과장하지 말 것.
+- **process event journal v1 (2026-08-03):** per-boot capacity 8의 고정 journal에 PID 1과 PID 2 각각의 acquire/capture/release를 append한다. 기존 record는 덮어쓰지 않고 여섯 record 뒤 `dropped=0 overflow=0`을 요구한다. event sequence 1..6과 capture sequence 1,2를 분리하며 exact kind/reason/from/to PID·slot·generation·owner/CR3/`rsp0`/IF/frame-reference vector를 `[PROC] process event journal PASS ... evidence_only=1 switch_events=0 resume_ready=0`, structured `process_event_journal`, `state user event_*` mirror로 고정한다. current lifecycle은 `0→1→0→2→0`이고 실제 CPU switch가 아니다. capacity 초과, 누락·중복·축약·확장·역순·stale owner·sequence 혼용은 fail-closed다.
 
 ---
 
@@ -124,11 +125,13 @@ PID 1 실행 뒤 PID 2를 호출하는 것만으로는 scheduler 전환을 증�
 owner attribution, quota를 함께 넣지 않는다. 프로세스 실행축은 M3-b-3b2c를
 계속 따른다.
 
-2026-08-03 최신 조사에서 고른 가장 작은 조각인 **process-owned trap evidence
-snapshot v0**는 완료됐다. 기존 ring3 `int3` frame을 각 static process의
-snapshot/validity/capture sequence에 결속했지만 `resume_ready=0`이고 전체 process
-모델은 계속 `PARTIAL`이다. 다음은 append-only process transition event v1과 verifier
-반례를 먼저 고정하고 bounded A→B→A, 마지막으로 timer preemption을 연결한다.
+2026-08-03 최신 조사에서 고른 **process-owned trap evidence snapshot v0**와
+**process event journal v1**은 완료됐다. 기존 ring3 `int3` frame을 각 static process의
+snapshot/validity/capture sequence에 결속하고, capacity 8/no-overwrite journal로
+여섯 lifecycle/capture record를 보존한다. 둘 다 `evidence_only=1 switch_events=0
+resume_ready=0` 경계이며 전체 process 모델은 계속 `PARTIAL`이다. 다음은 resumable
+saved context와 runnable-state 결속을 포함한 live continuation/switch이고, bounded 실제
+A→B→A를 증명한 뒤 마지막으로 timer preemption을 연결한다.
 근거와 외부 참고선은 [AIOS 빌드 참고 프로젝트 최신 조사](aios_build_project_landscape_2026_08_03_ko.md)를 본다.
 
 `address_space_selftest`는 부트 PML4 복제 + CR3 왕복까지 증명했다(공유 매핑). 다음은:
@@ -138,7 +141,7 @@ snapshot/validity/capture sequence에 결속했지만 `resume_ready=0`이고 전
 4. **slot 1 순차 ring3 실행 + pair cleanup proof ✅ 완료 (2026-07-26)** — PID 1 teardown이 exact clean state인지 확인한 뒤 PID 2/slot 1도 동일 ELF를 독립 CR3/backing/entry stack에서 실행한다. 두 process 각각 syscall/uaccess/exit/복원을 통과하고 `[USER] bootstrap process pair PASS ... between_clean=1 ... both_restored=1`과 `state user`의 `pair_*` 필드로 노출한다. 이는 선점이 아니다.
 5. **trapframe C/NASM 계약 + from_user 판별 ✅ 진입 게이트 완료 (2026-08-02)** — `interrupt_frame_t` 전 필드 offset과 176B 크기를 static assert + NASM mirror로 고정하고, CPL0 canary `int3`(`[TRAP] frame contract selftest PASS`)와 두 process의 ring3 `int3` 캡처(`[TRAP] user frame capture PASS`, `cs=0x23`/`ss=0x1b`/user RSP·RIP/`stack_top-176` exact)로 실경로를 증명했다. `state user`의 `trap_*` 필드로 노출된다. 이는 계약·판별 증거이며 아직 trapframe 기반 전환이 아니다.
 6. **process-owned trap evidence snapshot v0 ✅ 완료 (2026-08-03)** — ISR 시점 owner/current/private CR3/TSS `rsp0`/IF=0 검사를 통과한 full 176B frame을 해당 descriptor에 복사한다. per-boot seq 1,2, finish 뒤 보존, final pair 경계 양쪽 재조회, distinct storage, final current owner=0을 exact `[PROC]` record와 `state user`의 `saved_*` 필드로 고정한다. next-prepare reset과 run generation 증가는 구현됐지만 live reuse/re-prepare 증거는 `PLANNED`다. `resume_ready=0`이며 schedulable continuation이 아니다.
-7. **append-only process transition event v1** — capture sequence와 실제 transition sequence를 분리하고, missing/duplicate/truncation/역순/stale-owner/aggregate-only 반례를 verifier에 먼저 고정한다.
+7. **process event journal v1 ✅ 완료 (2026-08-03)** — append-only numeric kind/reason/outcome과 별도 event/capture sequence를 사용한다. capacity 8/no-overwrite 내부 journal의 여섯 acquire/capture/release record를 exact ordered vector, `[PROC] process event journal PASS`, structured `process_event_journal`, `state user event_*`로 고정하고 missing/duplicate/truncation/확장/역순/stale-owner/aggregate-only/overflow 반례를 Python과 PowerShell에서 fail-closed로 거부한다. `evidence_only=1 switch_events=0 resume_ready=0`이며 owner lifecycle `0→1→0→2→0`은 CPU switch 증거가 아니다.
 8. **live continuation + ring3 process 2개 선점 교대** — process에 full trapframe continuation/runnable state를 결속하고, IF=0 원자 집합에 current process·CR3·BSP TSS `rsp0`·saved frame·`g_active_user_run_state`를 함께 넣는다. bounded A→B→A 후 kthread 선점(M3-b-2)과 timer IRQ를 연결하고, 두 ring3 process의 syscall 왕복과 순서 이벤트를 `[SCHED]`/`[MM]`/`state user`로 검증한다.
 
-주의: 두 static process 모두 실제 ring3 실행은 하지만 현재 resume 모델은 여전히 순차 동기 C 호출 프레임이다. descriptor의 trap snapshot은 증거 소유권만 고정하며 `resume_ready=0`이다. 다음 단계는 먼저 transition event를 고정하고, 그 이후에만 current process·CR3·BSP `rsp0`·saved frame·`g_active_user_run_state`를 IF=0에서 함께 교대하는 live continuation으로 나아가야 한다.
+주의: 두 static process 모두 실제 ring3 실행은 하지만 현재 resume 모델은 여전히 순차 동기 C 호출 프레임이다. descriptor의 trap snapshot과 process event journal은 증거 소유권과 순서만 고정하며 `resume_ready=0`이다. journal 완료를 live transition 완료로 해석하지 말고, 다음 단계에서만 current process·CR3·BSP `rsp0`·saved frame·`g_active_user_run_state`를 IF=0에서 함께 교대하는 live continuation으로 나아가야 한다.

@@ -18,6 +18,13 @@ static uint8_t g_process_kernel_stacks[BOOTSTRAP_PROCESS_COUNT]
     ALIGNED(PAGE_SIZE);
 static bootstrap_process_t *g_current_process;
 static bootstrap_process_stats_t g_stats;
+static bootstrap_process_event_t
+    g_process_events[BOOTSTRAP_PROCESS_EVENT_CAPACITY];
+static uint32_t g_process_event_count;
+static uint64_t g_process_event_sequence;
+static uint64_t g_process_event_dropped;
+static bool g_process_event_overflow;
+static uint64_t g_baseline_cr3;
 static uint64_t g_baseline_rsp0;
 static uint64_t g_trap_capture_sequence;
 static bool g_initialized;
@@ -75,6 +82,184 @@ static bool process_descriptor_valid(const bootstrap_process_t *process) {
            process->address_space.ready;
 }
 
+static bool process_event_frame_empty(
+    const bootstrap_process_event_t *event) {
+    return event && event->capture_sequence == 0 &&
+        event->frame_addr == 0 && event->frame_rip == 0 &&
+        event->frame_rsp == 0 && event->frame_rflags == 0 &&
+        event->frame_cs == 0 && event->frame_ss == 0 &&
+        event->frame_int_no == 0 && event->frame_err_code == 0 &&
+        !event->snapshot_ref && !event->frame_valid &&
+        !event->frame_from_user && !event->frame_addr_exact;
+}
+
+static bool process_event_frame_valid(
+    const bootstrap_process_event_t *event,
+    const bootstrap_process_t *process) {
+    return event && process && event->capture_sequence != 0 &&
+        event->snapshot_ref && event->frame_valid &&
+        event->frame_from_user && event->frame_addr_exact &&
+        event->frame_int_no == 3ULL && event->frame_err_code == 0 &&
+        event->frame_cs == (uint64_t)AIOS_USER_CS_RPL3 &&
+        event->frame_ss == (uint64_t)AIOS_USER_DS_RPL3 &&
+        event->frame_rip >= AIOS_BOOTSTRAP_USER_BASE &&
+        event->frame_rip < AIOS_BOOTSTRAP_USER_END &&
+        event->frame_rsp >= AIOS_BOOTSTRAP_USER_BASE &&
+        event->frame_rsp < AIOS_BOOTSTRAP_USER_END &&
+        event->frame_addr == process->kernel_stack_top -
+            (uint64_t)TRAPFRAME_SIZE &&
+        (event->frame_rflags & 0x2ULL) != 0 &&
+        (event->frame_rflags & (BIT(10) | BIT(18))) == 0;
+}
+
+static bool process_event_fields_valid(
+    const bootstrap_process_event_t *event,
+    const bootstrap_process_t *process) {
+    bool frame_bound;
+
+    if (!event || !process_descriptor_valid(process) ||
+        event->schema != BOOTSTRAP_PROCESS_EVENT_SCHEMA ||
+        event->slot != process->slot || event->run_generation == 0 ||
+        event->run_generation > process->run_generation ||
+        event->outcome != BOOTSTRAP_PROCESS_EVENT_OUTCOME_COMMITTED ||
+        !event->owner_ok || !event->cr3_ok || !event->rsp0_ok ||
+        !event->if_disabled || event->direct_switch || event->resume_ready) {
+        return false;
+    }
+
+    frame_bound = process_event_frame_valid(event, process);
+    switch (event->kind) {
+        case BOOTSTRAP_PROCESS_EVENT_KIND_ACQUIRE:
+            return event->reason ==
+                    BOOTSTRAP_PROCESS_EVENT_REASON_ACTIVATE_PUBLISH &&
+                event->from_pid == 0 && event->to_pid == process->pid &&
+                event->current_pid == process->pid &&
+                event->from_cr3 == g_baseline_cr3 &&
+                event->to_cr3 == process->address_space.cr3 &&
+                event->from_rsp0 == g_baseline_rsp0 &&
+                event->to_rsp0 == process->kernel_stack_top &&
+                process_event_frame_empty(event);
+        case BOOTSTRAP_PROCESS_EVENT_KIND_TRAP_CAPTURE:
+            return event->reason ==
+                    BOOTSTRAP_PROCESS_EVENT_REASON_BREAKPOINT_CAPTURE &&
+                event->from_pid == process->pid &&
+                event->to_pid == process->pid &&
+                event->current_pid == process->pid &&
+                event->from_cr3 == process->address_space.cr3 &&
+                event->to_cr3 == process->address_space.cr3 &&
+                event->from_rsp0 == process->kernel_stack_top &&
+                event->to_rsp0 == process->kernel_stack_top &&
+                frame_bound;
+        case BOOTSTRAP_PROCESS_EVENT_KIND_RELEASE:
+            if (event->reason !=
+                    BOOTSTRAP_PROCESS_EVENT_REASON_RESTORE_PUBLISH ||
+                event->from_pid != process->pid || event->to_pid != 0 ||
+                event->current_pid != 0 ||
+                event->from_cr3 != process->address_space.cr3 ||
+                event->to_cr3 != g_baseline_cr3 ||
+                event->from_rsp0 != process->kernel_stack_top ||
+                event->to_rsp0 != g_baseline_rsp0) {
+                return false;
+            }
+            /* Cleanup must remain possible when execution failed before the
+             * armed #BP. A successful boot proof separately requires the
+             * release record to reference that run's capture. */
+            return frame_bound || process_event_frame_empty(event);
+        case BOOTSTRAP_PROCESS_EVENT_KIND_INVALID:
+        case BOOTSTRAP_PROCESS_EVENT_KIND_COUNT:
+        default:
+            return false;
+    }
+}
+
+static aios_status_t process_event_preflight(uint32_t needed) {
+    if (needed == 0 || needed > BOOTSTRAP_PROCESS_EVENT_CAPACITY) {
+        return AIOS_ERR_INVAL;
+    }
+    if (g_process_event_count >
+            BOOTSTRAP_PROCESS_EVENT_CAPACITY - needed ||
+        g_process_event_sequence > ~0ULL - (uint64_t)needed) {
+        g_process_event_dropped++;
+        g_process_event_overflow = true;
+        return AIOS_ERR_BUSY;
+    }
+    return AIOS_OK;
+}
+
+static aios_status_t process_event_append(
+    const bootstrap_process_event_t *event,
+    const bootstrap_process_t *process) {
+    bootstrap_process_event_t committed;
+    uint64_t next_sequence;
+
+    if (!event || event->valid ||
+        !process_event_fields_valid(event, process)) {
+        g_process_event_dropped++;
+        return AIOS_ERR_IO;
+    }
+    if (g_process_event_count >= BOOTSTRAP_PROCESS_EVENT_CAPACITY ||
+        g_process_event_sequence == ~0ULL) {
+        g_process_event_dropped++;
+        g_process_event_overflow = true;
+        return AIOS_ERR_BUSY;
+    }
+    if (g_process_event_count > 0) {
+        const bootstrap_process_event_t *previous =
+            &g_process_events[g_process_event_count - 1U];
+
+        if (!previous->valid ||
+            previous->event_sequence != g_process_event_sequence) {
+            g_process_event_dropped++;
+            return AIOS_ERR_IO;
+        }
+    }
+
+    next_sequence = g_process_event_sequence + 1ULL;
+    committed = *event;
+    committed.event_sequence = next_sequence;
+    committed.valid = false;
+    g_process_events[g_process_event_count] = committed;
+    __asm__ volatile ("" : : : "memory");
+    g_process_events[g_process_event_count].valid = true;
+    g_process_event_sequence = next_sequence;
+    g_process_event_count++;
+    return AIOS_OK;
+}
+
+static void process_event_bind_frame(
+    bootstrap_process_event_t *event, uint64_t capture_sequence,
+    uint64_t frame_addr, const interrupt_frame_t *frame,
+    const bootstrap_process_t *process) {
+    if (!event || !frame || !process || capture_sequence == 0) {
+        return;
+    }
+
+    event->capture_sequence = capture_sequence;
+    event->frame_addr = frame_addr;
+    event->frame_rip = frame->rip;
+    event->frame_rsp = frame->rsp;
+    event->frame_rflags = frame->rflags;
+    event->frame_cs = frame->cs;
+    event->frame_ss = frame->ss;
+    event->frame_int_no = frame->int_no;
+    event->frame_err_code = frame->err_code;
+    event->snapshot_ref = true;
+    event->frame_from_user = interrupt_frame_from_user(frame);
+    event->frame_addr_exact = frame_addr == process->kernel_stack_top -
+        (uint64_t)TRAPFRAME_SIZE;
+    event->frame_valid = event->frame_from_user &&
+        event->frame_addr_exact && frame->int_no == 3ULL &&
+        frame->err_code == 0 &&
+        frame->cs == (uint64_t)AIOS_USER_CS_RPL3 &&
+        frame->ss == (uint64_t)AIOS_USER_DS_RPL3 &&
+        frame->rip >= AIOS_BOOTSTRAP_USER_BASE &&
+        frame->rip < AIOS_BOOTSTRAP_USER_END &&
+        frame->rsp >= AIOS_BOOTSTRAP_USER_BASE &&
+        frame->rsp < AIOS_BOOTSTRAP_USER_END &&
+        (frame->rflags & 0x2ULL) != 0 &&
+        (frame->rflags & (BIT(10) | BIT(18))) == 0;
+}
+
 aios_status_t bootstrap_process_init(void) {
     bool unique_cr3;
     bool unique_backing;
@@ -96,12 +281,19 @@ aios_status_t bootstrap_process_init(void) {
 
     memset(g_processes, 0, sizeof(g_processes));
     memset(&g_stats, 0, sizeof(g_stats));
+    memset(g_process_events, 0, sizeof(g_process_events));
     g_current_process = NULL;
+    g_process_event_count = 0;
+    g_process_event_sequence = 0;
+    g_process_event_dropped = 0;
+    g_process_event_overflow = false;
+    g_baseline_cr3 = process_read_cr3();
     g_baseline_rsp0 = user_mode_rsp0_read();
     g_trap_capture_sequence = 0;
     g_initialized = false;
 
-    if (!user_mode_scaffold_ready() || g_baseline_rsp0 == 0) {
+    if (!user_mode_scaffold_ready() || g_baseline_cr3 == 0 ||
+        g_baseline_rsp0 == 0) {
         return AIOS_ERR_IO;
     }
 
@@ -223,6 +415,7 @@ aios_status_t bootstrap_process_cancel(bootstrap_process_t *process) {
 
 aios_status_t bootstrap_process_activate(
     bootstrap_process_t *process, bootstrap_process_guard_t *guard) {
+    bootstrap_process_event_t event = {0};
     aios_status_t status;
 
     if (!guard || !g_initialized || !process_descriptor_valid(process) ||
@@ -231,6 +424,10 @@ aios_status_t bootstrap_process_activate(
     }
     if (guard->active || g_current_process || process->active) {
         return AIOS_ERR_BUSY;
+    }
+    status = process_event_preflight(BOOTSTRAP_PROCESS_EVENTS_PER_RUN);
+    if (status != AIOS_OK) {
+        return status;
     }
 
     memset(guard, 0, sizeof(*guard));
@@ -272,17 +469,47 @@ aios_status_t bootstrap_process_activate(
     g_stats.current_pid = process->pid;
     g_stats.rsp0_publishes++;
     g_stats.tss_rsp0_baseline = false;
+
+    event.schema = BOOTSTRAP_PROCESS_EVENT_SCHEMA;
+    event.kind = BOOTSTRAP_PROCESS_EVENT_KIND_ACQUIRE;
+    event.reason = BOOTSTRAP_PROCESS_EVENT_REASON_ACTIVATE_PUBLISH;
+    event.outcome = BOOTSTRAP_PROCESS_EVENT_OUTCOME_COMMITTED;
+    event.run_generation = process->run_generation;
+    event.from_pid = 0;
+    event.to_pid = process->pid;
+    event.current_pid = process->pid;
+    event.slot = process->slot;
+    event.from_cr3 = guard->address_space.previous_cr3;
+    event.to_cr3 = process->address_space.cr3;
+    event.from_rsp0 = guard->rsp0.previous_rsp0;
+    event.to_rsp0 = guard->rsp0.published_rsp0;
+    event.owner_ok = g_current_process == process && process->active &&
+        g_stats.current_pid == process->pid;
+    event.cr3_ok = process_read_cr3() == event.to_cr3;
+    event.rsp0_ok = user_mode_rsp0_read() == event.to_rsp0;
+    event.if_disabled = (process_read_rflags() & BIT(9)) == 0;
+
+    status = process_event_append(&event, process);
+    if (status != AIOS_OK) {
+        /* The live guard remains owned and IF remains disabled. The caller's
+         * existing activation-failure path will fail-stop rather than run
+         * without an auditable owner publication. */
+        return status;
+    }
     return AIOS_OK;
 }
 
 aios_status_t bootstrap_process_finish(
     bootstrap_process_t *process, bootstrap_process_guard_t *guard) {
     bootstrap_user_run_state_t *state;
+    bootstrap_process_trap_snapshot_t snapshot = {0};
+    bootstrap_process_event_t event = {0};
     uint64_t expected_entry_rsp;
     bool int80_entries_within_stack;
     aios_status_t restore_status;
     aios_status_t seal_status;
     aios_status_t irq_status;
+    aios_status_t event_status;
 
     if (!process_descriptor_valid(process) || !guard || !guard->active ||
         g_current_process != process || !process->active) {
@@ -342,6 +569,41 @@ aios_status_t bootstrap_process_finish(
         return AIOS_ERR_IO;
     }
 
+    event.schema = BOOTSTRAP_PROCESS_EVENT_SCHEMA;
+    event.kind = BOOTSTRAP_PROCESS_EVENT_KIND_RELEASE;
+    event.reason = BOOTSTRAP_PROCESS_EVENT_REASON_RESTORE_PUBLISH;
+    event.outcome = BOOTSTRAP_PROCESS_EVENT_OUTCOME_COMMITTED;
+    event.run_generation = process->run_generation;
+    event.from_pid = process->pid;
+    event.to_pid = 0;
+    event.current_pid = 0;
+    event.slot = process->slot;
+    event.from_cr3 = process->address_space.cr3;
+    event.to_cr3 = guard->address_space.previous_cr3;
+    event.from_rsp0 = process->kernel_stack_top;
+    event.to_rsp0 = guard->rsp0.previous_rsp0;
+    event.owner_ok = !g_current_process && !process->active &&
+        g_stats.current_pid == 0;
+    event.cr3_ok = guard->address_space.cr3_restored &&
+        process_read_cr3() == event.to_cr3;
+    event.rsp0_ok = guard->rsp0.restored &&
+        user_mode_rsp0_read() == event.to_rsp0;
+    event.if_disabled = (process_read_rflags() & BIT(9)) == 0;
+
+    if (bootstrap_process_get_trap_snapshot(process->slot, &snapshot) ==
+            AIOS_OK) {
+        process_event_bind_frame(&event, snapshot.capture_sequence,
+            snapshot.frame_addr, &snapshot.frame, process);
+    }
+
+    event_status = process_event_append(&event, process);
+    if (event_status != AIOS_OK) {
+        /* CR3/rsp0/current are already in their safe baseline state and IF
+         * remains disabled. Preserve the live outer guard so the caller
+         * fail-stops on an unauditable publication. */
+        return event_status;
+    }
+
     irq_status = address_space_restore_interrupts(&guard->address_space);
     guard->active = irq_status != AIOS_OK ||
                     guard->address_space.active ||
@@ -357,10 +619,13 @@ aios_status_t bootstrap_process_capture_current_trap(
     const interrupt_frame_t *frame) {
     bootstrap_process_t *process = g_current_process;
     bootstrap_process_trap_snapshot_t *snapshot;
+    bootstrap_process_event_t event = {0};
     uint64_t live_cr3;
     uint64_t live_rsp0;
+    uint64_t live_rflags;
     uint64_t frame_addr;
     uint64_t next_sequence;
+    aios_status_t event_status;
 
     if (!g_initialized || !frame || !process ||
         !process_descriptor_valid(process) || !process->prepared ||
@@ -378,8 +643,9 @@ aios_status_t bootstrap_process_capture_current_trap(
 
     live_cr3 = process_read_cr3();
     live_rsp0 = user_mode_rsp0_read();
+    live_rflags = process_read_rflags();
     frame_addr = (uint64_t)(uintptr_t)frame;
-    if ((process_read_rflags() & BIT(9)) != 0 ||
+    if ((live_rflags & BIT(9)) != 0 ||
         live_cr3 != process->address_space.cr3 ||
         live_rsp0 != process->kernel_stack_top ||
         frame->int_no != 3ULL || frame->err_code != 0ULL ||
@@ -428,6 +694,33 @@ aios_status_t bootstrap_process_capture_current_trap(
         return AIOS_ERR_IO;
     }
 
+    event.schema = BOOTSTRAP_PROCESS_EVENT_SCHEMA;
+    event.kind = BOOTSTRAP_PROCESS_EVENT_KIND_TRAP_CAPTURE;
+    event.reason = BOOTSTRAP_PROCESS_EVENT_REASON_BREAKPOINT_CAPTURE;
+    event.outcome = BOOTSTRAP_PROCESS_EVENT_OUTCOME_COMMITTED;
+    event.run_generation = process->run_generation;
+    event.from_pid = process->pid;
+    event.to_pid = process->pid;
+    event.current_pid = process->pid;
+    event.slot = process->slot;
+    event.from_cr3 = live_cr3;
+    event.to_cr3 = live_cr3;
+    event.from_rsp0 = live_rsp0;
+    event.to_rsp0 = live_rsp0;
+    event.owner_ok = g_current_process == process && process->active &&
+        g_stats.current_pid == process->pid;
+    event.cr3_ok = live_cr3 == process->address_space.cr3;
+    event.rsp0_ok = live_rsp0 == process->kernel_stack_top;
+    event.if_disabled = (live_rflags & BIT(9)) == 0;
+    process_event_bind_frame(&event, next_sequence, frame_addr, frame,
+        process);
+
+    event_status = process_event_append(&event, process);
+    if (event_status != AIOS_OK) {
+        trap_snapshot_reset(process);
+        return event_status;
+    }
+
     g_trap_capture_sequence = next_sequence;
     __asm__ volatile ("" : : : "memory");
     snapshot->evidence_valid = true;
@@ -463,6 +756,32 @@ aios_status_t bootstrap_process_get_trap_snapshot(
     return AIOS_OK;
 }
 
+aios_status_t bootstrap_process_get_event(
+    uint32_t index, bootstrap_process_event_t *out) {
+    const bootstrap_process_event_t *event;
+    const bootstrap_process_t *process;
+
+    if (!out || !g_initialized || index >= g_process_event_count) {
+        return AIOS_ERR_INVAL;
+    }
+    if (g_current_process) {
+        return AIOS_ERR_BUSY;
+    }
+
+    event = &g_process_events[index];
+    if (event->slot >= BOOTSTRAP_PROCESS_COUNT) {
+        return AIOS_ERR_IO;
+    }
+    process = &g_processes[event->slot];
+    if (!event->valid || event->event_sequence != (uint64_t)index + 1ULL ||
+        !process_event_fields_valid(event, process)) {
+        return AIOS_ERR_IO;
+    }
+
+    *out = *event;
+    return AIOS_OK;
+}
+
 bootstrap_process_t *bootstrap_process_current(void) {
     return g_current_process;
 }
@@ -475,6 +794,10 @@ void bootstrap_process_get_stats(bootstrap_process_stats_t *out) {
     out->current_pid = g_current_process ? g_current_process->pid : 0;
     out->tss_rsp0_baseline = !g_current_process &&
         user_mode_rsp0_read() == g_baseline_rsp0;
+    out->event_count = g_process_event_count;
+    out->event_last_sequence = g_process_event_sequence;
+    out->event_dropped = g_process_event_dropped;
+    out->event_overflow = g_process_event_overflow;
 }
 
 __asm__(".section .note.GNU-stack,\"\",@progbits\n\t.previous");

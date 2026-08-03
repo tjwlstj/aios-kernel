@@ -18,6 +18,18 @@ PROCESS_TRAP_SNAPSHOT_LINE = (
     "pid_b=2 slot_b=1 seq_b=2 valid_b=1 owner_b=1 frame_b=1 cr3_b=1 "
     "rsp0_b=1 distinct_storage=1 current_pid=0 stale_owner=0 resume_ready=0"
 )
+PROCESS_EVENT_JOURNAL_LINE = (
+    "[PROC] process event journal PASS schema=1 events=6 lifecycle=4 "
+    "captures=2 seqs=1,2,3,4,5,6 kinds=1,2,3,1,2,3 "
+    "reasons=1,2,3,1,2,3 from_pids=0,1,1,0,2,2 "
+    "to_pids=1,1,0,2,2,0 slots=0,0,0,1,1,1 "
+    "generations=1,1,1,1,1,1 capture_seqs=0,1,1,0,2,2 "
+    "owner_ok=1,1,1,1,1,1 cr3_ok=1,1,1,1,1,1 "
+    "rsp0_ok=1,1,1,1,1,1 if0=1,1,1,1,1,1 "
+    "snapshot_refs=0,1,1,0,1,1 outcomes=1,1,1,1,1,1 "
+    "capture_seq_separate=1 current_pid=0 stale_owner=0 dropped=0 "
+    "overflow=0 evidence_only=1 switch_events=0 resume_ready=0"
+)
 PRESSURE_LINE = (
     "[PRESSURE] tracker selftest PASS schema=1 planes=3 max_levels=4 "
     "active_levels=2 balanced=1 hotspot=1 overlap=1 gate_mask=1 "
@@ -119,6 +131,147 @@ class BootLogProcessTrapSnapshotTests(unittest.TestCase):
                 self.assertFalse(snapshot["ready"])
                 self.assertEqual(2, snapshot["record_count"])
                 self.assertTrue(snapshot["duplicate"])
+
+
+class BootLogProcessEventJournalTests(unittest.TestCase):
+    def test_process_event_journal_is_structured(self) -> None:
+        summary = parse_boot_log_text(
+            PROCESS_EVENT_JOURNAL_LINE, "full", "synthetic.log"
+        )
+        journal = summary["process_event_journal"]
+
+        self.assertTrue(journal["ready"])
+        self.assertEqual("PASS", journal["status"])
+        self.assertEqual(1, journal["schema"])
+        self.assertEqual(6, journal["event_count"])
+        self.assertEqual(4, journal["lifecycle"])
+        self.assertEqual(2, journal["captures"])
+        self.assertEqual([1, 2, 3, 4, 5, 6], journal["seqs"])
+        self.assertEqual([0, 1, 1, 0, 2, 2], journal["capture_seqs"])
+        self.assertTrue(journal["ordered"])
+        self.assertTrue(journal["lengths_match"])
+        self.assertEqual(6, len(journal["events"]))
+        self.assertEqual(
+            {
+                "sequence": 2,
+                "kind": 2,
+                "reason": 2,
+                "from_pid": 1,
+                "to_pid": 1,
+                "slot": 0,
+                "generation": 1,
+                "capture_sequence": 1,
+                "owner_ok": 1,
+                "cr3_ok": 1,
+                "rsp0_ok": 1,
+                "if0": 1,
+                "snapshot_ref": 1,
+                "outcome": 1,
+            },
+            journal["events"][1],
+        )
+        self.assertEqual(1, journal["record_count"])
+        self.assertEqual(1, journal["fullmatch_count"])
+
+    def test_process_event_journal_missing_or_aggregate_only_is_not_ready(self) -> None:
+        aggregate_only = (
+            "[PROC] process event journal PASS schema=1 events=6 lifecycle=4 "
+            "captures=2 current_pid=0 stale_owner=0 dropped=0 overflow=0 "
+            "evidence_only=1 switch_events=0 resume_ready=0"
+        )
+        for line in (
+            "[PROC] trap evidence snapshot PASS schema=1 captures=2",
+            "[PROC] process event journal PASS schema=1 events=6",
+            aggregate_only,
+            f"  {PROCESS_EVENT_JOURNAL_LINE}",
+            f'"{PROCESS_EVENT_JOURNAL_LINE}"',
+        ):
+            with self.subTest(line=line):
+                summary = parse_boot_log_text(line, "full", "synthetic.log")
+                self.assertFalse(summary["process_event_journal"]["ready"])
+
+    def test_process_event_journal_mutations_are_not_ready(self) -> None:
+        mutations = (
+            PROCESS_EVENT_JOURNAL_LINE.replace(
+                "seqs=1,2,3,4,5,6", "seqs=1,3,2,4,5,6"
+            ),
+            PROCESS_EVENT_JOURNAL_LINE.replace(
+                "kinds=1,2,3,1,2,3", "kinds=1,2,99,1,2,3"
+            ),
+            PROCESS_EVENT_JOURNAL_LINE.replace(
+                "reasons=1,2,3,1,2,3", "reasons=1,2,99,1,2,3"
+            ),
+            PROCESS_EVENT_JOURNAL_LINE.replace(
+                "outcomes=1,1,1,1,1,1", "outcomes=1,1,1,1,1,99"
+            ),
+            PROCESS_EVENT_JOURNAL_LINE.replace(
+                "owner_ok=1,1,1,1,1,1", "owner_ok=1,1,1,1,1,0"
+            ),
+            PROCESS_EVENT_JOURNAL_LINE.replace(
+                "capture_seqs=0,1,1,0,2,2", "capture_seqs=0,1,0,2,2"
+            ),
+            PROCESS_EVENT_JOURNAL_LINE.replace(
+                "snapshot_refs=0,1,1,0,1,1", "snapshot_refs=0,1,0,0,1,1"
+            ),
+            PROCESS_EVENT_JOURNAL_LINE.replace(
+                "stale_owner=0", "stale_owner=1"
+            ),
+            PROCESS_EVENT_JOURNAL_LINE.replace(
+                "capture_seq_separate=1", "capture_seq_separate=0"
+            ),
+            PROCESS_EVENT_JOURNAL_LINE.replace(
+                "events=6", "events=999999999999999999999999"
+            ),
+            PROCESS_EVENT_JOURNAL_LINE.replace(
+                "kinds=1,2,3,1,2,3",
+                "kinds=1,2,3,1,2,3 kinds=1,2,3,1,2,3",
+            ),
+        )
+        for line in mutations:
+            with self.subTest(line=line):
+                summary = parse_boot_log_text(line, "full", "synthetic.log")
+                self.assertFalse(summary["process_event_journal"]["ready"])
+
+        unknown_kind = parse_boot_log_text(
+            PROCESS_EVENT_JOURNAL_LINE.replace(
+                "kinds=1,2,3,1,2,3", "kinds=1,2,99,1,2,3"
+            ),
+            "full",
+            "synthetic.log",
+        )["process_event_journal"]
+        unknown_reason = parse_boot_log_text(
+            PROCESS_EVENT_JOURNAL_LINE.replace(
+                "reasons=1,2,3,1,2,3", "reasons=1,2,99,1,2,3"
+            ),
+            "full",
+            "synthetic.log",
+        )["process_event_journal"]
+        unknown_outcome = parse_boot_log_text(
+            PROCESS_EVENT_JOURNAL_LINE.replace(
+                "outcomes=1,1,1,1,1,1", "outcomes=1,1,1,1,1,99"
+            ),
+            "full",
+            "synthetic.log",
+        )["process_event_journal"]
+        self.assertEqual([99], unknown_kind["unknown_kind_ids"])
+        self.assertEqual([99], unknown_reason["unknown_reason_ids"])
+        self.assertEqual([99], unknown_outcome["unknown_outcome_ids"])
+
+    def test_process_event_journal_duplicates_are_not_ready(self) -> None:
+        for duplicate in (
+            PROCESS_EVENT_JOURNAL_LINE,
+            "[PROC] process event journal PASS schema=1 events=6",
+        ):
+            with self.subTest(duplicate=duplicate):
+                summary = parse_boot_log_text(
+                    f"{PROCESS_EVENT_JOURNAL_LINE}\n{duplicate}",
+                    "full",
+                    "synthetic.log",
+                )
+                journal = summary["process_event_journal"]
+                self.assertFalse(journal["ready"])
+                self.assertEqual(2, journal["record_count"])
+                self.assertTrue(journal["duplicate"])
 
 class BootLogPressureTests(unittest.TestCase):
     def test_pressure_record_is_structured(self) -> None:

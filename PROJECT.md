@@ -88,7 +88,7 @@ Windows: `pwsh -File .\tools\testkit\kernel\build-windows.ps1 -Target test`
 - **정책 게이트** — `store/` 다운로드와 자율 행위는 `SYS_SLM_NODEBIT_LOOKUP` + Kernel Room 게이트를 통과한다.
 - **AI resource ledger는 aggregate 관측 전용** — kind/unit/owner-validity ID는 append-only이고 validity flag가 없는 수치는 지원된 값으로 해석하지 않는다. `SYS_INFO_RESOURCE=0x706`과 `state resource`는 read-only CURRENT이며 owner attribution과 quota/reserve/apply는 아직 없다.
 - **AI pressure는 관측 전용** — plane ID는 append-only이며, pressure ranking과 gate eligibility bitmap을 섞지 않는다. 별도 apply 검증 전에는 scheduler migration/budget 변경에 연결하지 않는다.
-- **process trap snapshot은 증거 전용** — descriptor-owned 176B snapshot은 ISR 시점 owner/CR3/TSS `rsp0`/IF=0 검증과 `resume_ready=0`을 유지한다. append-only transition event와 live continuation/switch가 별도로 검증되기 전에는 snapshot을 schedulable saved state로 해석하지 않는다.
+- **process snapshot/journal은 증거 전용** — descriptor-owned 176B snapshot은 ISR 시점 owner/CR3/TSS `rsp0`/IF=0 검증과 `resume_ready=0`을 유지한다. per-boot process event journal v1의 schema/kind/reason/outcome 숫자 ID는 append-only이며, capacity 8 안에서 여섯 lifecycle/capture record를 덮어쓰지 않는다. journal은 `evidence_only=1 switch_events=0 resume_ready=0`이고 `0→1→0→2→0` 순차 bootstrap owner lifecycle만 증명한다. resumable saved context와 runnable-state 결속, live continuation/switch, 실제 A→B→A가 별도로 검증되기 전에는 snapshot이나 journal을 schedulable state 또는 CPU-switch trace로 해석하지 않는다.
 
 ---
 

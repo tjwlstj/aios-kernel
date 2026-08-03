@@ -99,6 +99,31 @@ typedef struct {
     uint32_t saved_current_pid;
     bool     saved_stale_owner;
     bool     saved_resume_ready;
+    /* Append-only process event journal evidence. This records the existing
+     * synchronous lifecycle and #BP capture; it is not a live switch log. */
+    uint32_t event_schema;
+    uint32_t event_count;
+    uint32_t event_lifecycle;
+    uint32_t event_captures;
+    uint64_t event_first_sequence;
+    uint64_t event_last_sequence;
+    uint64_t event_dropped;
+    uint32_t event_current_pid;
+    uint32_t event_switch_events;
+    bool     event_ordered;
+    bool     event_kind_reason_ok;
+    bool     event_owner_ok;
+    bool     event_cr3_ok;
+    bool     event_rsp0_ok;
+    bool     event_if0;
+    bool     event_frame_valid;
+    bool     event_snapshot_refs;
+    bool     event_outcomes_ok;
+    bool     event_capture_seq_separate;
+    bool     event_stale_owner;
+    bool     event_overflow;
+    bool     event_evidence_only;
+    bool     event_resume_ready;
 } user_exec_pair_info_t;
 
 /* Run both static bootstrap processes sequentially. This proves that slot 1

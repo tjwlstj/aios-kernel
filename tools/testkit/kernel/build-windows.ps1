@@ -157,6 +157,7 @@ function Get-SmokeRequiredPatterns {
         '\[USER\] bootstrap process pair PASS runs=2 order=1,2 pid_a=1 slot_a=0 pid_b=2 slot_b=1 distinct_pid=1 distinct_slot=1 distinct_cr3=1 distinct_backing=1 distinct_stack=1 int80_a=3 int80_b=3 between_clean=1 current_pid=0 last_pid=2 rsp0_publishes=2 rsp0_restores=2 tss_rsp0_baseline=1 both_restored=1',
         '^\[TRAP\] user frame capture PASS pid_a=1 pid_b=2 captures_a=1 captures_b=1 from_user=1 cs=0x23 ss=0x1b rsp_user=1 rip_user=1 canary_ok=1 frame_in_kstack=1 frame_addr_exact=1 contract=1$',
         '^\[PROC\] trap evidence snapshot PASS schema=1 captures=2 pid_a=1 slot_a=0 seq_a=1 valid_a=1 owner_a=1 frame_a=1 cr3_a=1 rsp0_a=1 pid_b=2 slot_b=1 seq_b=2 valid_b=1 owner_b=1 frame_b=1 cr3_b=1 rsp0_b=1 distinct_storage=1 current_pid=0 stale_owner=0 resume_ready=0$',
+        '^\[PROC\] process event journal PASS schema=1 events=6 lifecycle=4 captures=2 seqs=1,2,3,4,5,6 kinds=1,2,3,1,2,3 reasons=1,2,3,1,2,3 from_pids=0,1,1,0,2,2 to_pids=1,1,0,2,2,0 slots=0,0,0,1,1,1 generations=1,1,1,1,1,1 capture_seqs=0,1,1,0,2,2 owner_ok=1,1,1,1,1,1 cr3_ok=1,1,1,1,1,1 rsp0_ok=1,1,1,1,1,1 if0=1,1,1,1,1,1 snapshot_refs=0,1,1,0,1,1 outcomes=1,1,1,1,1,1 capture_seq_separate=1 current_pid=0 stale_owner=0 dropped=0 overflow=0 evidence_only=1 switch_events=0 resume_ready=0$',
         '\[SHELL\] Interactive shell started'
     )
 
@@ -261,6 +262,8 @@ function Test-NormalSmokeVerdict {
             $exactRecordName = 'user_trap_capture'
         } elseif ($pattern.StartsWith('^\[PROC\] trap evidence snapshot PASS ')) {
             $exactRecordName = 'process_trap_snapshot'
+        } elseif ($pattern.StartsWith('^\[PROC\] process event journal PASS ')) {
+            $exactRecordName = 'process_event_journal'
         }
         if ($null -ne $exactRecordName -and $matches.Count -gt 1) {
             $duplicateEvidenceRecords += [pscustomobject]@{
@@ -278,6 +281,34 @@ function Test-NormalSmokeVerdict {
     }
     if ($missingPatterns.Count -gt 0) {
         $reasons += "missing-required-patterns:$($missingPatterns -join ',')"
+    }
+
+    # A canonical row plus any malformed/truncated row from the same journal
+    # family must not pass merely because the exact required row still exists.
+    $journalFamilyLines = @()
+    for ($lineIndex = 0; $lineIndex -lt $lines.Count; $lineIndex++) {
+        $lineText = [string]$lines[$lineIndex]
+        if ($lineText.StartsWith(
+                '[PROC] process event journal ',
+                [StringComparison]::Ordinal)) {
+            $journalFamilyLines += [pscustomobject]@{
+                LineNumber = $lineIndex + 1
+                Text       = $lineText
+            }
+            $null = $duplicateFieldLines.Add($lineIndex + 1)
+        }
+    }
+    if ($journalFamilyLines.Count -ne 1) {
+        $familyLinesText =
+            ($journalFamilyLines | ForEach-Object { $_.LineNumber }) -join ','
+        $reasons += "evidence-family-count:process_event_journal:count=$($journalFamilyLines.Count):lines=$familyLinesText"
+        if ($journalFamilyLines.Count -gt 1) {
+            $duplicateEvidenceRecords += [pscustomobject]@{
+                Record = 'process_event_journal_family'
+                Lines  = @($journalFamilyLines | ForEach-Object { $_.LineNumber })
+                Texts  = @($journalFamilyLines | ForEach-Object { $_.Text })
+            }
+        }
     }
 
     $fatalPattern = '\*\*\* KERNEL PANIC \*\*\*|!!! EXCEPTION|\bFAIL\b|\bFATAL\b'
@@ -304,6 +335,7 @@ function Test-NormalSmokeVerdict {
         [pscustomobject]@{ Name = 'bootstrap-process-pair'; Pattern = '\[USER\] bootstrap process pair PASS'; ValuePrefix = $false },
         [pscustomobject]@{ Name = 'user-trap-capture'; Pattern = '\[TRAP\] user frame capture PASS'; ValuePrefix = $false },
         [pscustomobject]@{ Name = 'process-trap-snapshot'; Pattern = '\[PROC\] trap evidence snapshot PASS'; ValuePrefix = $false },
+        [pscustomobject]@{ Name = 'process-event-journal'; Pattern = '\[PROC\] process event journal PASS'; ValuePrefix = $false },
         [pscustomobject]@{ Name = 'kernel-room'; Pattern = '\[ROOM\] snapshot stability=stable'; ValuePrefix = $false },
         [pscustomobject]@{ Name = 'health'; Pattern = '\[HEALTH\] stability='; ValuePrefix = $true },
         [pscustomobject]@{ Name = 'kernel-ready'; Pattern = '=== AIOS Kernel Ready ==='; ValuePrefix = $false },
