@@ -1,6 +1,6 @@
 # Codex 작업 핸드오프 팁 (2026-07-15)
 
-최종 갱신: 2026-08-03 (trapframe beta/main 체크포인트 + 외부 프로젝트 조사)
+최종 갱신: 2026-08-03 (process-owned trap evidence snapshot v0)
 
 이 커널에서 Claude가 M1~M3 작업 중 실제로 밟은 지뢰와 관례를 모았다. 다음 작업자(Codex)가 같은 함정에 빠지지 않도록 하는 실전 노트다. **CLAUDE.md의 규칙이 정본이고, 이 문서는 "왜 그런지"와 "어떻게 디버깅했는지"를 보완한다.**
 
@@ -104,7 +104,8 @@ PID 1 실행 뒤 PID 2를 호출하는 것만으로는 scheduler 전환을 증�
 - **시스콜 추가 시:** 번호는 추가만(재번호 금지), 그리고 **커버하는 Kernel Room 게이트의 `syscall_end`를 확장**해야 한다(`kernel/core/kernel_room.c`). 이걸 빼먹으면 ROOM 스냅샷이 새 시스콜을 분류에서 누락한다(체크포인트 때 실제로 드리프트가 났던 부분).
 - **ABI 불변식:** SLM 스냅샷 구조체(`slm_hw_snapshot_t`)나 health 구조체 레이아웃을 바꾸면 소비자와 baseline이 깨진다. 관측 필드는 스냅샷 안이 아니라 별도 접근자로 노출하는 패턴을 따랐다(예: `slm_plan_observation_read`).
 - **bootstrap run-state C/NASM ABI:** `kernel/include/kernel/process.h`의 explicit offset + size static assert와 `kernel/core/user_entry.asm`의 `RUN_STATE_*`가 한 쌍이다. 기존 offset은 재번호하지 말고 append-only로 늘린다. 실제 값은 process-local이지만 `g_active_user_run_state`는 현재 동기 runner 한 개를 가리키는 단일 active pointer다.
-- **trapframe C/NASM 계약 (2026-08-02):** `interrupt_frame_t`의 모든 offset과 176B 크기는 `kernel/include/interrupt/trapframe.h`에 static assert되고 `isr_stub.asm`이 byte 상수를 mirror한다. 이 레이아웃은 append-only가 아니라 **exact 계약**이다(스텁 push 순서 + 하드웨어 frame이 고정). 함정 셋: ① `#BP` 게이트는 DPL=3이다 — ring3 `int3`가 CPL3 증거 경로라서, DPL=0로 되돌리면 유저 int3가 `#GP` panic이 된다. ② verdict가 로그 전체에서 `!!! EXCEPTION`을 금지하므로 셀프테스트 int3는 반드시 armed capture로 **조용히** 소비해야 한다(`trapframe_capture_consume`). ③ long mode는 frame push 전에 RSP를 16B로 내림 정렬한다 — same-CPL 기대 frame 주소는 `(rsp & ~15) - 176`이고, CPL3 진입은 TSS `rsp0`(=stack_top, 16B 정렬)라서 정확히 `stack_top - 176`이다. 데모의 int3는 int80 카운터를 건드리지 않는다(`int80_entries`는 여전히 3). 알려진 latent 항목: ring3에서 도달 가능한 공통 스텁/int 0x80 진입은 `cld`만 하고 `clac`은 하지 않으므로 유저가 세팅한 RFLAGS.AC가 핸들러까지 살아온다 — 현재 두 경로 모두 커널이 유저 메모리를 만지지 않아 무해하지만, 핸들러가 uaccess 밖에서 유저 페이지를 만지게 되는 순간 SMAP을 무력화한다. 후속 하드닝 후보.
+- **trapframe C/NASM 계약 (2026-08-02):** `interrupt_frame_t`의 모든 offset과 176B 크기는 `kernel/include/interrupt/trapframe.h`에 static assert되고 `isr_stub.asm`이 byte 상수를 mirror한다. 이 레이아웃은 append-only가 아니라 **exact 계약**이다(스텁 push 순서 + 하드웨어 frame이 고정). 함정 셋: ① `#BP` 게이트는 DPL=3이다 — ring3 `int3`가 CPL3 증거 경로라서, DPL=0로 되돌리면 유저 int3가 `#GP` panic이 된다. ② verdict가 로그 전체에서 `!!! EXCEPTION`을 금지하므로 셀프테스트 int3는 반드시 armed capture로 **조용히** 소비해야 한다(`trapframe_capture_consume`). ③ long mode는 frame push 전에 RSP를 16B로 내림 정렬한다 — same-CPL 기대 frame 주소는 `(rsp & ~15) - 176`이고, CPL3 진입은 TSS `rsp0`(=stack_top, 16B 정렬)라서 정확히 `stack_top - 176`이다. 데모의 int3는 int80 카운터를 건드리지 않는다(`int80_entries`는 여전히 3). 알려진 latent 항목: ring3에서 도달 가능한 공통 스텁/int 0x80 진입은 `cld`만 하고 `clac`은 하지 않으므로 유저가 세팅한 RFLAGS.AC가 핸들러까지 살아온다 — 현재 두 경로 모두 커널이 유저 메모리를 만지지 않아 무해하지만, 더 풍부한 ring3 IRQ 경로나 uaccess 밖 유저-page 접근을 넣기 전에는 SMAP 지원 CPU에서만 실행되는 feature-gated entry `clac` 하드닝을 별도 선행 후보로 검증한다.
+- **process-owned trap evidence snapshot v0 (2026-08-03):** ring3 `int3`의 armed capture를 global 결과로만 끝내지 않고 ISR 안에서 live process descriptor에 full 176B 복사한다. 이때 current owner, private CR3, BSP TSS `rsp0`, IF=0, exact `stack_top-176`, CPL3 RFLAGS 경계를 함께 확인한다. snapshot은 각 finish 뒤와 두 번째 실행이 끝난 최종 pair 경계에서 양쪽 모두 다시 읽어 같은 값임을 확인하며, per-boot sequence 1,2는 캡처 순서 증거일 뿐 switch event sequence가 아니다. prepare 코드 경로는 이전 snapshot을 지우고 run generation을 올리지만, live slot reuse/re-prepare와 stale-generation 거부는 아직 부팅으로 증명하지 않았다. exact marker는 `[PROC] trap evidence snapshot PASS ... stale_owner=0 resume_ready=0`이다. 이 상태를 continuation/saved-state switch로 과장하지 말 것.
 
 ---
 
@@ -123,12 +124,12 @@ PID 1 실행 뒤 PID 2를 호출하는 것만으로는 scheduler 전환을 증�
 owner attribution, quota를 함께 넣지 않는다. 프로세스 실행축은 M3-b-3b2c를
 계속 따른다.
 
-2026-08-03 최신 조사 기준 프로세스 실행축의 가장 작은 다음 조각은
-**process-owned saved-state capture v0**다. 기존 ring3 `int3` frame을 각 static
-process의 snapshot/validity/capture sequence에 결속하되 아직 resume/switch라고
-부르지 않는다. 이후 append-only process transition event v1과 verifier 반례를 먼저
-고정하고 bounded A→B→A, 마지막으로 timer preemption을 연결한다. 근거와 외부
-참고선은 [AIOS 빌드 참고 프로젝트 최신 조사](aios_build_project_landscape_2026_08_03_ko.md)를 본다.
+2026-08-03 최신 조사에서 고른 가장 작은 조각인 **process-owned trap evidence
+snapshot v0**는 완료됐다. 기존 ring3 `int3` frame을 각 static process의
+snapshot/validity/capture sequence에 결속했지만 `resume_ready=0`이고 전체 process
+모델은 계속 `PARTIAL`이다. 다음은 append-only process transition event v1과 verifier
+반례를 먼저 고정하고 bounded A→B→A, 마지막으로 timer preemption을 연결한다.
+근거와 외부 참고선은 [AIOS 빌드 참고 프로젝트 최신 조사](aios_build_project_landscape_2026_08_03_ko.md)를 본다.
 
 `address_space_selftest`는 부트 PML4 복제 + CR3 왕복까지 증명했다(공유 매핑). 다음은:
 1. **정적 주소공간 슬롯별 private user leaf proof ✅ M3-b-3b1 완료 (2026-07-14)** — 정적 2슬롯에서 유저 영역(현재 고정 64MiB)을 서로 다른 2MiB backing에 매핑하고 canary 격리를 검증했다. 범용 주소공간 객체, PMM, 실제 프로세스 실행 연결은 아직 아니다.
@@ -136,7 +137,8 @@ process의 snapshot/validity/capture sequence에 결속하되 아직 resume/swit
 3. **static bootstrap process + BSP TSS entry stack ✅ M3-b-3b2b 완료 (2026-07-15)** — 정적 descriptor 2개가 unique CR3/backing, process-local run state, unique 16KiB ring0 entry stack을 소유한다. 이 완료 시점에는 PID 1/slot 0에서만 `rsp0` exact publish/restore와 3회 `int 0x80`의 `stack_top-40` 진입을 증명했다.
 4. **slot 1 순차 ring3 실행 + pair cleanup proof ✅ 완료 (2026-07-26)** — PID 1 teardown이 exact clean state인지 확인한 뒤 PID 2/slot 1도 동일 ELF를 독립 CR3/backing/entry stack에서 실행한다. 두 process 각각 syscall/uaccess/exit/복원을 통과하고 `[USER] bootstrap process pair PASS ... between_clean=1 ... both_restored=1`과 `state user`의 `pair_*` 필드로 노출한다. 이는 선점이 아니다.
 5. **trapframe C/NASM 계약 + from_user 판별 ✅ 진입 게이트 완료 (2026-08-02)** — `interrupt_frame_t` 전 필드 offset과 176B 크기를 static assert + NASM mirror로 고정하고, CPL0 canary `int3`(`[TRAP] frame contract selftest PASS`)와 두 process의 ring3 `int3` 캡처(`[TRAP] user frame capture PASS`, `cs=0x23`/`ss=0x1b`/user RSP·RIP/`stack_top-176` exact)로 실경로를 증명했다. `state user`의 `trap_*` 필드로 노출된다. 이는 계약·판별 증거이며 아직 trapframe 기반 전환이 아니다.
-6. **full saved-register 전환 + ring3 프로세스 2개 선점 교대** — process에 trapframe 기반 saved state와 runnable state를 결속하고, kthread 선점(M3-b-2) + CR3 스위치(M3-b-3a) + BSP TSS `rsp0` 교대를 결합한다. sequence 있는 기계 판독 전환 이벤트(§10)가 선행 조건으로 남아 있다.
-7. 완료 기준: 두 ring3 프로세스가 각자 주소공간에서 시스콜을 왕복하며 타이머 선점 교대하고, 순서 이벤트와 `[SCHED]`/`[MM]`/`state user` 마커로 검증.
+6. **process-owned trap evidence snapshot v0 ✅ 완료 (2026-08-03)** — ISR 시점 owner/current/private CR3/TSS `rsp0`/IF=0 검사를 통과한 full 176B frame을 해당 descriptor에 복사한다. per-boot seq 1,2, finish 뒤 보존, final pair 경계 양쪽 재조회, distinct storage, final current owner=0을 exact `[PROC]` record와 `state user`의 `saved_*` 필드로 고정한다. next-prepare reset과 run generation 증가는 구현됐지만 live reuse/re-prepare 증거는 `PLANNED`다. `resume_ready=0`이며 schedulable continuation이 아니다.
+7. **append-only process transition event v1** — capture sequence와 실제 transition sequence를 분리하고, missing/duplicate/truncation/역순/stale-owner/aggregate-only 반례를 verifier에 먼저 고정한다.
+8. **live continuation + ring3 process 2개 선점 교대** — process에 full trapframe continuation/runnable state를 결속하고, IF=0 원자 집합에 current process·CR3·BSP TSS `rsp0`·saved frame·`g_active_user_run_state`를 함께 넣는다. bounded A→B→A 후 kthread 선점(M3-b-2)과 timer IRQ를 연결하고, 두 ring3 process의 syscall 왕복과 순서 이벤트를 `[SCHED]`/`[MM]`/`state user`로 검증한다.
 
-주의: 두 static process 모두 실제 ring3 실행은 하지만 현재 resume 모델은 여전히 순차 동기 C 호출 프레임이다. interrupt trapframe 계약은 2026-08-02에 정의·증명됐으므로, 다음 단계는 이 스택을 schedulable continuation으로 과장하지 말고 그 trapframe을 process saved state로 결속한 뒤 current process·CR3·BSP `rsp0`를 IF=0에서 함께 교대해야 한다.
+주의: 두 static process 모두 실제 ring3 실행은 하지만 현재 resume 모델은 여전히 순차 동기 C 호출 프레임이다. descriptor의 trap snapshot은 증거 소유권만 고정하며 `resume_ready=0`이다. 다음 단계는 먼저 transition event를 고정하고, 그 이후에만 current process·CR3·BSP `rsp0`·saved frame·`g_active_user_run_state`를 IF=0에서 함께 교대하는 live continuation으로 나아가야 한다.

@@ -43,6 +43,12 @@ USER_TRAP_CAPTURE_PATTERN = (
     "captures_b=1 from_user=1 cs=0x23 ss=0x1b rsp_user=1 rip_user=1 "
     "canary_ok=1 frame_in_kstack=1 frame_addr_exact=1 contract=1"
 )
+PROCESS_TRAP_SNAPSHOT_PATTERN = (
+    "[PROC] trap evidence snapshot PASS schema=1 captures=2 pid_a=1 "
+    "slot_a=0 seq_a=1 valid_a=1 owner_a=1 frame_a=1 cr3_a=1 rsp0_a=1 "
+    "pid_b=2 slot_b=1 seq_b=2 valid_b=1 owner_b=1 frame_b=1 cr3_b=1 "
+    "rsp0_b=1 distinct_storage=1 current_pid=0 stale_owner=0 resume_ready=0"
+)
 
 
 def ensure_smoke_profile(smoke_profile: str) -> str:
@@ -109,6 +115,7 @@ def required_smoke_patterns(smoke_profile: str) -> list[str]:
         "[USER] bootstrap process stack PASS pid=1 slot=0 process_bound=1 kstack_bytes=16384 rsp0_changed=1 rsp0_published=1 int80_entries=3 all_int80_entries_in_stack=1 rsp0_restored=1 kstack_floor_canary=1",
         "[USER] bootstrap process pair PASS runs=2 order=1,2 pid_a=1 slot_a=0 pid_b=2 slot_b=1 distinct_pid=1 distinct_slot=1 distinct_cr3=1 distinct_backing=1 distinct_stack=1 int80_a=3 int80_b=3 between_clean=1 current_pid=0 last_pid=2 rsp0_publishes=2 rsp0_restores=2 tss_rsp0_baseline=1 both_restored=1",
         USER_TRAP_CAPTURE_PATTERN,
+        PROCESS_TRAP_SNAPSHOT_PATTERN,
         "[SHELL] Interactive shell started",
     ]
     if smoke_profile == "storage-only":

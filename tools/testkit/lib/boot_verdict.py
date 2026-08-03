@@ -35,6 +35,7 @@ TERMINAL_CHECKPOINTS: tuple[tuple[str, str], ...] = (
     ("bootstrap_process_stack", "[USER] bootstrap process stack PASS"),
     ("bootstrap_process_pair", "[USER] bootstrap process pair PASS"),
     ("user_trap_capture", "[TRAP] user frame capture PASS"),
+    ("process_trap_snapshot", "[PROC] trap evidence snapshot PASS"),
     ("kernel_room", "[ROOM] snapshot stability=stable"),
     ("health", "[HEALTH] stability="),
     ("kernel_ready", "=== AIOS Kernel Ready ==="),
@@ -57,6 +58,7 @@ EXACT_REQUIRED_RECORDS = (
     ("[PRESSURE] tracker selftest PASS ", "pressure_tracker"),
     ("[TRAP] frame contract selftest PASS ", "trapframe_contract"),
     ("[TRAP] user frame capture PASS ", "user_trap_capture"),
+    ("[PROC] trap evidence snapshot PASS ", "process_trap_snapshot"),
 )
 
 

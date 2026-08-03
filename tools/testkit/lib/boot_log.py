@@ -40,6 +40,7 @@ CHECKPOINT_PATTERNS = {
     "bootstrap_process_stack": "[USER] bootstrap process stack PASS",
     "bootstrap_process_pair": "[USER] bootstrap process pair PASS",
     "user_trap_capture": "[TRAP] user frame capture PASS",
+    "process_trap_snapshot": "[PROC] trap evidence snapshot PASS",
     "kernel_room": "[ROOM] snapshot stability=",
     "health": "[HEALTH] stability=",
     "ready": "AIOS Kernel Ready",
@@ -125,6 +126,23 @@ PROCESS_PAIR_RE = re.compile(
     r"rsp0_restores=(?P<rsp0_restores>\d+) "
     r"tss_rsp0_baseline=(?P<tss_rsp0_baseline>\d+) "
     r"both_restored=(?P<both_restored>\d+)"
+)
+PROCESS_TRAP_SNAPSHOT_PREFIX = "[PROC] trap evidence snapshot "
+PROCESS_TRAP_SNAPSHOT_RE = re.compile(
+    r"^\[PROC\] trap evidence snapshot (?P<status>\w+) "
+    r"schema=(?P<schema>\d+) captures=(?P<captures>\d+) "
+    r"pid_a=(?P<pid_a>\d+) slot_a=(?P<slot_a>\d+) "
+    r"seq_a=(?P<seq_a>\d+) valid_a=(?P<valid_a>\d+) "
+    r"owner_a=(?P<owner_a>\d+) frame_a=(?P<frame_a>\d+) "
+    r"cr3_a=(?P<cr3_a>\d+) rsp0_a=(?P<rsp0_a>\d+) "
+    r"pid_b=(?P<pid_b>\d+) slot_b=(?P<slot_b>\d+) "
+    r"seq_b=(?P<seq_b>\d+) valid_b=(?P<valid_b>\d+) "
+    r"owner_b=(?P<owner_b>\d+) frame_b=(?P<frame_b>\d+) "
+    r"cr3_b=(?P<cr3_b>\d+) rsp0_b=(?P<rsp0_b>\d+) "
+    r"distinct_storage=(?P<distinct_storage>\d+) "
+    r"current_pid=(?P<current_pid>\d+) "
+    r"stale_owner=(?P<stale_owner>\d+) "
+    r"resume_ready=(?P<resume_ready>\d+)$"
 )
 ROOM_SNAPSHOT_RE = re.compile(
     r"\[ROOM\] snapshot stability=(?P<stability>\w+) ok=(?P<ok>\d+) degraded=(?P<degraded>\d+) failed=(?P<failed>\d+) unknown=(?P<unknown>\d+) topology=(?P<topology>[\w\-]+) domains=(?P<domains>\d+) windows=(?P<windows>\d+) drivers=(?P<drivers_ready>\d+)/(?P<drivers>\d+) plans=(?P<plans>\d+) nodes=(?P<nodes>\d+) rings=(?P<rings>\d+) active=(?P<active>\d+) user=(?P<user>\d+)"
@@ -537,6 +555,55 @@ def parse_boot_log_text(log_text: str, smoke_profile: str, serial_log_path: str 
             }
         )
 
+    snapshot_checkpoint_seen = checkpoints["process_trap_snapshot"]["seen"]
+    snapshot_prefix_records = [
+        (index, line)
+        for index, line in enumerate(lines, start=1)
+        if line.startswith(PROCESS_TRAP_SNAPSHOT_PREFIX)
+    ]
+    snapshot_matches = _find_all_matches(lines, PROCESS_TRAP_SNAPSHOT_RE)
+    process_trap_snapshot: dict[str, object] = {
+        "ready": False,
+        "checkpoint_seen": snapshot_checkpoint_seen,
+        "record_count": len(snapshot_prefix_records),
+        "fullmatch_count": len(snapshot_matches),
+        "duplicate": len(snapshot_prefix_records) > 1,
+    }
+    if len(snapshot_matches) == 1:
+        index, line, match = snapshot_matches[0]
+        values = _int_groupdict(
+            match, "schema", "captures", "pid_a", "slot_a", "seq_a",
+            "valid_a", "owner_a", "frame_a", "cr3_a", "rsp0_a",
+            "pid_b", "slot_b", "seq_b", "valid_b", "owner_b",
+            "frame_b", "cr3_b", "rsp0_b", "distinct_storage",
+            "current_pid", "stale_owner", "resume_ready"
+        )
+        expected = {
+            "schema": 1, "captures": 2,
+            "pid_a": 1, "slot_a": 0, "seq_a": 1,
+            "valid_a": 1, "owner_a": 1, "frame_a": 1,
+            "cr3_a": 1, "rsp0_a": 1,
+            "pid_b": 2, "slot_b": 1, "seq_b": 2,
+            "valid_b": 1, "owner_b": 1, "frame_b": 1,
+            "cr3_b": 1, "rsp0_b": 1, "distinct_storage": 1,
+            "current_pid": 0, "stale_owner": 0, "resume_ready": 0,
+        }
+        process_trap_snapshot.update(
+            {
+                "ready": (
+                    snapshot_checkpoint_seen and
+                    len(snapshot_prefix_records) == 1 and
+                    len(snapshot_matches) == 1 and
+                    match.group("status") == "PASS" and
+                    values == expected
+                ),
+                "line": index,
+                "text": line,
+                "status": match.group("status"),
+                **values,
+            }
+        )
+
     kernel_room: dict[str, object] = {"ready": checkpoints["kernel_room"]["seen"]}
     index, line, match = _search_match(lines, ROOM_SNAPSHOT_RE)
     if match:
@@ -698,6 +765,7 @@ def parse_boot_log_text(log_text: str, smoke_profile: str, serial_log_path: str 
         "user_access": user_access,
         "process_stack": process_stack,
         "process_pair": process_pair,
+        "process_trap_snapshot": process_trap_snapshot,
         "kernel_room": kernel_room,
         "shell": shell_info,
         "nodebit": nodebit_info,

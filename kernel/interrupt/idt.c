@@ -6,6 +6,7 @@
 #include <interrupt/idt.h>
 #include <interrupt/trapframe.h>
 #include <kernel/time.h>
+#include <kernel/process.h>
 #include <sched/kthread.h>
 #include <drivers/vga.h>
 #include <drivers/serial.h>
@@ -260,6 +261,13 @@ void exception_handler(interrupt_frame_t *frame) {
      * of exception dumps; an unarmed breakpoint still takes the noisy
      * survivable path below. */
     if (int_no == 3 && trapframe_capture_consume(frame)) {
+        /* Bind CPL3 evidence while the live current owner, CR3, TSS rsp0,
+         * and IF=0 interrupt context are all still directly observable.
+         * A failed bind remains quiet here; the synchronous runner will
+         * fail closed when the process-owned snapshot is absent. */
+        if (interrupt_frame_from_user(frame)) {
+            (void)bootstrap_process_capture_current_trap(frame);
+        }
         return;
     }
 

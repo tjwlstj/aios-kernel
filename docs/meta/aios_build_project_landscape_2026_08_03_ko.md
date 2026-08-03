@@ -22,13 +22,16 @@
 
 ## 2. AIOS의 현재 출발점
 
-기준 체크포인트는 `5b345f3`의 trapframe 계약 조각이다.
+조사 시작 기준 체크포인트는 `5b345f3`의 trapframe 계약 조각이었다.
+아래 표는 2026-08-03 process-owned trap evidence snapshot v0 반영 후의
+현재 경계를 사용한다.
 
 | 상태 | 현재 범위 |
 |---|---|
 | `CURRENT` | x86_64 부팅, 정적 ELF64, 두 bootstrap process의 private CR3·16KiB ring0 entry stack, PID 1→PID 2 순차 ring3 실행, 176B C/NASM trapframe exact 계약, CPL0/CPL3 `from_user` 실경로 증거 |
+| `CURRENT` | ISR 시점 owner/current/private CR3/TSS `rsp0`/IF=0을 검증한 descriptor-owned trap evidence snapshot v0: full 176B frame 복사, per-boot sequence 1,2, finish 뒤 보존과 final pair 경계 양쪽 재조회, `resume_ready=0` |
 | `CURRENT` | 커널 kthread의 타이머 선점, strict boot/shell verdict, 세 프로파일 inventory, pressure/resource aggregate 관측 |
-| `PARTIAL` | process 모델은 정적 두 슬롯이며 실행은 순차 동기 호출이다. trapframe은 캡처할 수 있지만 process saved state나 재개 가능한 continuation으로 결속되지 않았다 |
+| `PARTIAL` | process 모델은 정적 두 슬롯이며 실행은 순차 동기 호출이다. descriptor snapshot은 증거 소유권만 가지며 scheduler runnable state나 재개 가능한 continuation으로 결속되지 않았다. next-prepare reset/run generation은 구현됐지만 live reuse/re-prepare와 stale-generation 거부의 부팅 증거는 없다 |
 | `PARTIAL` | pressure/resource는 `observation_only=1`이다. owner attribution, quota, reserve/apply, migration 입력은 없다 |
 | `PLANNED` | 두 ring3 process의 타이머 선점 교대, A→B→A 순서 이벤트, process fault teardown, bounded execution budget, 동적 PMM/VMM |
 | `PLANNED` | virtio-blk 읽기(M4), 디스크 ELF(M5), principal authorize(M6), 브라우저 콘솔·AIOS native runtime(W1~W5) |
@@ -149,21 +152,29 @@
 
 ## 6. 현재 성숙도에 맞춘 다음 작업 순서
 
-### 6.1 권장 다음 조각: process-owned saved-state capture v0
+### 6.1 완료된 첫 조각: process-owned trap evidence snapshot v0 (`CURRENT`)
 
-목표는 **선점 구현이 아니라 saved state 소유권을 먼저 증명하는 것**이다.
+목표는 **선점 구현이 아니라 trap evidence 소유권을 먼저 증명하는 것**이었다.
 
-1. 두 static process descriptor/run state에 각자의 `interrupt_frame_t` snapshot,
-   validity, capture sequence, owner PID/slot을 결속한다.
-2. 기존 ring3 `int3` 실경로가 global 성공 카운터만 남기지 않고 해당 process의
-   exact frame을 복사·검증하게 한다.
-3. PID 1과 PID 2의 frame, CR3, entry-stack 주소가 서로 다르고 teardown 뒤 stale
-   current owner가 없음을 exact record와 `state user`로 노출한다.
-4. 아직 resume하지 않으며 문서 상태는 `PARTIAL`로 둔다. snapshot을 continuation이나
-   context switch라고 부르지 않는다.
+1. 두 static process descriptor에 각자의 full `interrupt_frame_t` snapshot,
+   validity, per-boot capture sequence, run generation, owner PID/slot을 결속했다.
+2. 기존 ring3 `int3` ISR 실경로에서 current owner, private CR3, BSP TSS `rsp0`,
+   IF=0, exact frame address, CPL3 RFLAGS 경계를 확인한 뒤 full 176B frame을
+   해당 descriptor에 복사한다.
+3. PID 1→PID 2의 sequence 1,2, distinct snapshot storage, 각 finish 뒤 보존과
+   두 번째 실행 뒤 양쪽 descriptor의 최종 재조회,
+   최종 `current_pid=0`을 exact
+   `[PROC] trap evidence snapshot PASS ... stale_owner=0 resume_ready=0`과
+   `state user` `saved_*`로 노출한다.
+
+prepare 코드 경로는 이전 snapshot을 지우고 run generation을 올리지만,
+같은 slot의 live reuse/re-prepare와 stale-generation 거부 증거는 후속 검증으로 남아 있다.
+4. snapshot 조각은 `CURRENT`지만 전체 process 모델은 `PARTIAL`이다.
+   `resume_ready=0`이므로 continuation, context switch, preemption으로 부르지 않는다.
 
 이 조각은 Theseus의 saved-state 소유권 원칙을 작게 적용하면서도 현재 순차 runner와
-rollback 구조를 유지한다.
+rollback 구조를 유지한다. 이후 순서는 **evidence snapshot → append-only
+transition event → live continuation/switch**로 고정한다.
 
 ### 6.2 그 다음: process transition event v1
 
@@ -176,11 +187,14 @@ rollback 구조를 유지한다.
 
 ### 6.3 이후: bounded cooperative proof → timer preemption
 
-1. IF=0 구간에서 current process, CR3, BSP TSS `rsp0`, saved frame을 함께 교대한다.
+1. IF=0 구간에서 current process, CR3, BSP TSS `rsp0`, saved frame,
+   `g_active_user_run_state`를 함께 교대한다.
 2. 먼저 bounded A→B→A 순서를 기계 판독 이벤트로 증명한다.
 3. 그 다음 `ai_sched_tick()` 요청과 CPL3 timer IRQ entry-stack 귀속을 연결한다.
 4. full GPR canary, 동일 VA 격리, syscall 왕복, execution budget, process fault
    teardown과 첫 실패 trace를 완료 조건으로 둔다.
+5. 더 풍부한 ring3 IRQ 경로나 ISR 내 유저-page 접근 전에 공통 스텁/
+   `int 0x80` entry의 RFLAGS.AC 제거(`clac`) 하드닝을 SMAP feature-gated 경로로 별도 검증한다.
 
 이 단계가 성공한 뒤에만 M3-b-3b2c를 선점 가능한 두 userspace process로
 `CURRENT` 승격한다. 이후 기본 실행축은 M4 virtio-blk → M5 disk ELF 순서를 유지한다.

@@ -1,7 +1,7 @@
 # AIOS 검증 도구 진화 설계
 
 작성일: 2026-07-15  
-최종 갱신: 2026-08-02 (AI Resource read-only UAPI/state와 exact observation 계약)
+최종 갱신: 2026-08-03 (process-owned trap evidence snapshot v0와 fail-closed 판정 계약)
 기준 시작 체크포인트: `463a8b9`
 
 ## 1. 문서 역할
@@ -78,6 +78,12 @@ CI exit status + build artifacts
 - 각 process의 세 `int 0x80` entry가 자기 process stack 위치에 있음을 확인
 - 실행 사이와 최종 CR3, caller IF, private leaf policy, backing scrub, current owner, process stack canary 복원 proof
 - exact pair record의 PID/slot/CR3/backing/stack 고유성 및 `process_pair` 구조 파싱
+- 각 process descriptor에 복사한 176B trap evidence snapshot의 PID/slot,
+  run generation, CR3, BSP `rsp0`, capture sequence 귀속과 각 cleanup 및
+  최종 pair 경계의 양쪽 재조회 보존 proof
+- `[PROC] trap evidence snapshot PASS schema=1 ...` exact record와
+  `process_trap_snapshot` 구조 파싱. 이 snapshot은 `resume_ready=0`인 관찰 증거이며
+  재개 가능한 context나 switch state가 아니다.
 - health registry, Kernel Room snapshot, panic/exception serial output
 - C structure/enum static asserts, linker layout assert, stack protector
 
@@ -90,10 +96,13 @@ CI exit status + build artifacts
 - boot summary, matrix, inventory, perf, shell transcript/summary artifacts
 - cppcheck CI gate and Linux full smoke/minimal shell gate
 - normal boot verdict v1의 전체 로그 fatal, anchored/token-boundary evidence,
-  health, terminal-chain, duplicate-key/exact-record 판정과 56개 host unit test
+  health, terminal-chain, duplicate-key/exact-record 판정과 62개 host unit test
 - Python/PowerShell 공통 resource/pressure exact required marker, structured
-  boot-summary `resource`/`pressure` section, shell `state resource`/`state pressure`
-  same-record 계약
+  boot-summary `resource`/`pressure` section, process trap snapshot exact required
+  marker와 `process_trap_snapshot` section, shell `state resource`/`state pressure`와
+  `state user`의 `saved_*` same-record 계약
+- `process_trap_snapshot.ready`는 `record_count`(prefix 행 수)=1,
+  `fullmatch_count=1`, 모든 semantic 값 exact를 함께 만족할 때만 참
 - shell 전체 transcript verdict, 동일 response record 검증, reader drain,
   reboot acknowledgement, QEMU exit-code/termination gate
 - inventory/perf baseline의 strict matrix·profile·semantic record 완전성 guard와
@@ -125,7 +134,11 @@ CI exit status + build artifacts
 - health state는 후속 mark가 앞선 심각도를 낮출 수 있다.
 - ring3 synchronous runner에는 내부 실행 budget과 process fault teardown이 없다.
 - exception frame의 C/NASM offset·크기 계약과 CPL0/CPL3 `from_user` 판별은 2026-08-02에 `CURRENT`가 됐다(`trapframe.h` static assert + NASM mirror + `[TRAP]` canary 실경로 증명). long mode는 CPL0-origin frame에도 `rsp/ss`를 push하므로 두 frame은 같은 176B 레이아웃이고 CS RPL로만 구분한다. from_user fault teardown 분기는 아직 없다.
-- PID 1→PID 2 순차 실행은 검증하지만 trapframe 기반 전환과 두 process 타이머 선점은 아직 없다(176B frame 계약과 from_user 판별 자체는 2026-08-02 `CURRENT`). aggregate run counter는 A→B→A switch sequence 증거가 아니다.
+- PID 1→PID 2 순차 실행과 각 descriptor의 process-owned trap evidence snapshot은
+  검증하지만 trapframe 기반 재개·전환과 두 process 타이머 선점은 아직 없다.
+  snapshot의 `seq_a=1`, `seq_b=2`는 두 동기 실행에서 관찰 증거를 저장한 순서일 뿐
+  A→B→A switch sequence 증거가 아니다. 176B frame 계약과 `from_user` 판별,
+  non-resumable snapshot 귀속까지만 `CURRENT`다.
 - pressure schema 1은 system→plane 두 단계의 순간 snapshot과 NodeBit 누적
   counter만 제공한다. fast/slow EWMA, stall window, domain/entity child와
   scheduler apply/migration은 아직 없다.
@@ -179,6 +192,8 @@ CI exit status + build artifacts
 [USER] private address space exec PASS
 [USER] bootstrap process stack PASS
 [USER] bootstrap process pair PASS
+[TRAP] user frame capture PASS
+[PROC] trap evidence snapshot PASS
 [ROOM] snapshot stability=stable
 [HEALTH] stability=stable
 === AIOS Kernel Ready ===
@@ -192,11 +207,14 @@ CI exit status + build artifacts
 ```text
 [RESOURCE] ledger selftest PASS schema=1 kinds=5 units=2 entries=5 capacity=8 source_flags=31 limit_kinds=5 used_kinds=5 high_water_kinds=1 denied_kinds=0 owners_unattributed=1 observation_only=1
 [PRESSURE] tracker selftest PASS schema=1 planes=3 max_levels=4 active_levels=2 balanced=1 hotspot=1 overlap=1 gate_mask=1 observation_only=1
+[TRAP] frame contract selftest PASS size=176 canaries=15 int_no=3 err=0 cpl0=1 cs_match=1 ss_match=1 rip_exact=1 rsp_exact=1 frame_addr_exact=1 rflags_bit1=1 df_clear=1
 ```
 
-이 두 레코드는 행 전체가 정본과 일치해야 한다. 누락, 불완전 필드,
-`gate_mask=0`, `observation_only=0`, 정본 뒤 `apply_enabled=1` 같은 상충 필드는
-Python/PowerShell 양쪽에서 정상 PASS가 아니다.
+위 세 레코드와 terminal chain 안의 `[TRAP] user frame capture PASS`,
+`[PROC] trap evidence snapshot PASS`는 행 전체가 정본과 일치하고 정확히 한 번만
+나타나야 한다. 누락, 불완전·확장 필드, `gate_mask=0`, `observation_only=0`,
+snapshot owner/sequence/current/stale/resume 값 변조, 정본 뒤 `apply_enabled=1` 같은
+상충 증거는 Python/PowerShell 양쪽에서 정상 PASS가 아니다.
 
 드라이버와 초기 selftest 전체의 엄격한 전역 순서 검증은 v1 범위에 넣지 않는다. 먼저 process 이후 terminal chain만 고정해 false positive를 줄인다.
 
@@ -251,7 +269,7 @@ inventory와 perf가 같은 출처 신뢰 규칙을 공유해야 한다.
 | 구성요소 | 상태 | 역할 |
 |---|---|---|
 | 순수 boot verdict evaluator | `CURRENT` | 전체 로그 fatal, anchored evidence, duplicate key/exact record, health, terminal order/duplicate 판정 |
-| verdict host unit tests | `CURRENT` | panic-after-PASS, token/행 위장, 중복 키, health, resource/pressure, shell, baseline/perf 반례 56개 고정 |
+| verdict host unit tests | `CURRENT` | panic-after-PASS, token/행 위장, 중복 키, health, resource/pressure/process snapshot, shell, baseline/perf 반례 62개 고정 |
 | shell reboot/clean-exit gate | `CURRENT` | 전체 transcript verdict, reader drain, reboot ack, exit code 0을 PASS 조건으로 강제 |
 | baseline trusted-source guard | `CURRENT` | strict matrix/profile/verdict, profile-aware inventory와 comparable finite perf 검사 |
 | shared marker manifest | `PLANNED` | Python/PowerShell 중복 계약 제거 |
@@ -286,6 +304,10 @@ full trapframe과 두 ring3 process 선점 교대로 넘어가기 전에 최소�
 - C/NASM trapframe offset 및 전체 크기 계약 — `CURRENT` (2026-08-02, `[TRAP] frame contract selftest PASS` — 전 필드 static assert + NASM mirror + canary 15개 실경로 증명)
 - `from_user` 판별과 CPL0/CPL3 frame 차이 처리 — 판별과 양쪽 frame 증거는 `CURRENT` (2026-08-02, ring3 `int3` 캡처 `[TRAP] user frame capture PASS`); from_user fault teardown 분기 동작은 아직 없다
 - slot 1 실제 ring3 실행 — `CURRENT` (2026-07-26, 순차 pair proof)
+- process-owned trap evidence snapshot v0 — `CURRENT` (2026-08-03, 각 static
+  descriptor에 frame 사본과 owner/run generation/CR3/`rsp0`/capture sequence를
+  결속하고 cleanup 뒤에도 같은 사본임을 검증). `resume_ready=0`이며 재개 가능한
+  saved context는 아니다.
 - CPL3 timer IRQ의 process entry stack 귀속 증거
 - A -> B -> A의 PID, CR3, BSP `rsp0`, current owner 순서 이벤트
 - IF=0 원자 전환과 stale current 부재
@@ -366,13 +388,16 @@ kernel/build/test-runs/<run-id>/<profile>/
 구현 근거:
 
 - `tools/testkit/lib/boot_verdict.py`, `baseline_guard.py`
-- `tools/testkit/tests/` host unit test 56개
-- PowerShell 직접 verdict host selftest 17개와 CI 선행 gate
+- `tools/testkit/tests/` host unit test 62개
+- PowerShell 직접 verdict host selftest 27개와 CI 선행 gate
 - Resource Ledger exact marker/structured summary와 missing/truncated/
   observation-only/apply-capable 상충 반례
 - pressure marker도 같은 exact-record 규칙으로 강화해 trailing apply 필드를 거부
+- process trap snapshot의 세 profile 공통 required/exact-once 판정,
+  malformed/extended/duplicate/owner/sequence/current/stale/resume 반례와
+  structured `process_trap_snapshot`, shell `state user saved_*` mirror
 - Python boot matrix의 QEMU `full/minimal/storage-only` 통과와 PowerShell 직접
-  verdict host selftest 17개 통과
+  verdict host selftest 27개 통과
 - shell 16개 교환(`state resource`, `state pressure`, `state autonomy` 포함)과 `reader_drained=true reboot_ack=true clean_exit=true exit_code=0`,
   `termination.reason=guest-reboot-exit`, 전체 transcript boot verdict PASS
 - strict boot inventory 3프로필 baseline 일치
@@ -394,11 +419,13 @@ kernel/build/test-runs/<run-id>/<profile>/
 
 ### V3. 두 process proof harness — `PARTIAL`
 
-- full trapframe ABI
+- 176B full trapframe C/NASM ABI와 CPL0/CPL3 실경로 canary — `CURRENT`
 - slot 1 순차 실행 + exact cleanup pair record — `CURRENT`
 - `process_pair` structured boot summary + missing/incomplete record host negative test — `CURRENT`
-- A -> B -> A 전환 이벤트
-- timer IRQ entry stack 귀속
+- process-owned non-resumable trap evidence snapshot, exact record,
+  `process_trap_snapshot` summary와 `state user saved_*` mirror — `CURRENT`
+- 재개 가능한 saved context와 A -> B -> A 전환 이벤트 — `PLANNED`
+- timer IRQ entry stack 귀속과 실제 선점 — `PLANNED`
 - bounded repeat/stress
 
 ### V4. Fault/expected outcome — `PLANNED`

@@ -149,9 +149,11 @@ static void state_sched(void) {
 static void state_user(void) {
     user_exec_info_t u;
     user_exec_pair_info_t pair;
+    bootstrap_process_stats_t process;
     user_exec_get_info(&u);
     user_exec_get_pair_info(&pair);
-    STATE_EMIT("[STATE] user attempted=%u elf_loaded=%u elf_entry=%x segments=%u entered=%u returned=%u syscall_ok=%u boundary_ok=%u syscalls=%u exit_code=%u pipe_max=%u dur_ns=%u private_cr3=%u slot=%u cr3_restored=%u if_restored=%u leaf_sealed=%u nx_enforced=%u tensor_excluded=%u pid=%u process_bound=%u kstack_bytes=%u rsp0_changed=%u rsp0_published=%u int80_entries=%u all_int80_entries_in_stack=%u rsp0_restored=%u kstack_floor_canary=%u pair_attempted=%u pair_ready=%u pair_runs=%u second_pid=%u second_slot=%u second_exit_code=%u second_syscall_ok=%u second_boundary_ok=%u second_int80_entries=%u distinct_pid=%u distinct_slot=%u distinct_cr3=%u distinct_backing=%u distinct_stack=%u between_clean=%u pair_current_pid=%u pair_last_pid=%u pair_rsp0_publishes=%u pair_rsp0_restores=%u pair_tss_baseline=%u both_restored=%u trap_captured=%u trap_from_user=%u trap_rsp_user=%u trap_rip_user=%u trap_canary=%u trap_frame_in_kstack=%u trap_addr_exact=%u trap_contract=%u\n",
+    bootstrap_process_get_stats(&process);
+    STATE_EMIT("[STATE] user attempted=%u elf_loaded=%u elf_entry=%x segments=%u entered=%u returned=%u syscall_ok=%u boundary_ok=%u syscalls=%u exit_code=%u pipe_max=%u dur_ns=%u private_cr3=%u slot=%u cr3_restored=%u if_restored=%u leaf_sealed=%u nx_enforced=%u tensor_excluded=%u pid=%u process_bound=%u kstack_bytes=%u rsp0_changed=%u rsp0_published=%u int80_entries=%u all_int80_entries_in_stack=%u rsp0_restored=%u kstack_floor_canary=%u pair_attempted=%u pair_ready=%u pair_runs=%u second_pid=%u second_slot=%u second_exit_code=%u second_syscall_ok=%u second_boundary_ok=%u second_int80_entries=%u distinct_pid=%u distinct_slot=%u distinct_cr3=%u distinct_backing=%u distinct_stack=%u between_clean=%u pair_current_pid=%u pair_last_pid=%u pair_rsp0_publishes=%u pair_rsp0_restores=%u pair_tss_baseline=%u both_restored=%u trap_captured=%u trap_from_user=%u trap_rsp_user=%u trap_rip_user=%u trap_canary=%u trap_frame_in_kstack=%u trap_addr_exact=%u trap_contract=%u saved_captures=%u saved_pid_a=%u saved_slot_a=%u saved_seq_a=%u saved_valid_a=%u saved_owner_a=%u saved_frame_a=%u saved_cr3_a=%u saved_rsp0_a=%u saved_pid_b=%u saved_slot_b=%u saved_seq_b=%u saved_valid_b=%u saved_owner_b=%u saved_frame_b=%u saved_cr3_b=%u saved_rsp0_b=%u saved_distinct_storage=%u saved_current_pid=%u saved_stale_owner=%u saved_resume_ready=%u\n",
         (uint64_t)u.attempted,
         (uint64_t)u.elf_loaded,
         u.elf_entry,
@@ -208,7 +210,28 @@ static void state_user(void) {
         (uint64_t)u.trap_canary_ok,
         (uint64_t)u.trap_frame_in_kstack,
         (uint64_t)u.trap_frame_addr_exact,
-        (uint64_t)trapframe_contract_passed());
+        (uint64_t)trapframe_contract_passed(),
+        pair.saved_captures,
+        (uint64_t)pair.first_process_id,
+        (uint64_t)pair.first_address_space_slot,
+        pair.saved_seq_a,
+        (uint64_t)pair.saved_valid_a,
+        (uint64_t)pair.saved_owner_a,
+        (uint64_t)pair.saved_frame_a,
+        (uint64_t)pair.saved_cr3_a,
+        (uint64_t)pair.saved_rsp0_a,
+        (uint64_t)pair.second_process_id,
+        (uint64_t)pair.second_address_space_slot,
+        pair.saved_seq_b,
+        (uint64_t)pair.saved_valid_b,
+        (uint64_t)pair.saved_owner_b,
+        (uint64_t)pair.saved_frame_b,
+        (uint64_t)pair.saved_cr3_b,
+        (uint64_t)pair.saved_rsp0_b,
+        (uint64_t)pair.saved_distinct_storage,
+        (uint64_t)process.current_pid,
+        (uint64_t)pair.saved_stale_owner,
+        (uint64_t)pair.saved_resume_ready);
 }
 
 static void state_slm(void) {

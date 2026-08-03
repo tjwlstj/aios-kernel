@@ -11,6 +11,7 @@
 
 #include <kernel/types.h>
 #include <kernel/user_mode.h>
+#include <interrupt/trapframe.h>
 #include <mm/address_space.h>
 
 #define BOOTSTRAP_PROCESS_COUNT ADDRESS_SPACE_BOOTSTRAP_USER_SLOT_COUNT
@@ -70,6 +71,30 @@ AIOS_STATIC_ASSERT(sizeof(bootstrap_user_run_state_t) ==
         BOOTSTRAP_RUN_STATE_SIZE,
     "run-state C/NASM size ABI drift");
 
+/* Process-owned copy of one validated CPL3 trap. This is durable historical
+ * evidence after the entry stack and user mapping are reused; it is not a
+ * continuation and must never be used as an iretq source. C-only structure:
+ * no C/NASM or public ABI offsets are attached to it. */
+typedef struct bootstrap_process_trap_snapshot {
+    interrupt_frame_t frame;
+    uint64_t frame_addr;
+    uint64_t capture_sequence;
+    uint64_t run_generation;
+    uint64_t owner_cr3;
+    uint64_t owner_rsp0;
+    uint64_t captures;
+    pid_t owner_pid;
+    uint32_t owner_slot;
+    bool evidence_valid;
+    bool owner_bound;
+    bool frame_copied;
+    bool from_user;
+    bool frame_addr_exact;
+    bool cr3_matched;
+    bool rsp0_matched;
+    bool resume_ready;
+} bootstrap_process_trap_snapshot_t;
+
 typedef struct bootstrap_process {
     pid_t pid;
     uint32_t slot;
@@ -80,6 +105,8 @@ typedef struct bootstrap_process {
     uint64_t kernel_stack_size;
     bool prepared;
     bool active;
+    uint64_t run_generation;
+    bootstrap_process_trap_snapshot_t trap_snapshot;
 } bootstrap_process_t;
 
 typedef struct bootstrap_process_guard {
@@ -118,6 +145,12 @@ aios_status_t bootstrap_process_activate(
     bootstrap_process_t *process, bootstrap_process_guard_t *guard);
 aios_status_t bootstrap_process_finish(
     bootstrap_process_t *process, bootstrap_process_guard_t *guard);
+/* ISR-time ownership binding for the first armed CPL3 trap. */
+aios_status_t bootstrap_process_capture_current_trap(
+    const interrupt_frame_t *frame);
+/* Snapshot remains readable after finish until this slot is prepared again. */
+aios_status_t bootstrap_process_get_trap_snapshot(
+    uint32_t slot, bootstrap_process_trap_snapshot_t *out);
 bootstrap_process_t *bootstrap_process_current(void);
 void bootstrap_process_get_stats(bootstrap_process_stats_t *out);
 

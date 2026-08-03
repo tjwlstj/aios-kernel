@@ -191,8 +191,25 @@ class ShellExpectationTests(unittest.TestCase):
             record.replace("trap_frame_in_kstack=1", "trap_frame_in_kstack=0"),
             record.replace("trap_addr_exact=1", "trap_addr_exact=0"),
             record.replace("trap_contract=1", "trap_contract=0"),
+            record.replace("saved_captures=2", "saved_captures=1"),
+            record.replace("saved_seq_b=2", "saved_seq_b=1"),
+            record.replace("saved_valid_a=1", "saved_valid_a=0"),
+            record.replace("saved_valid_b=1", "saved_valid_b=0"),
+            record.replace("saved_owner_b=1", "saved_owner_b=0"),
+            record.replace("saved_frame_b=1", "saved_frame_b=0"),
+            record.replace("saved_cr3_b=1", "saved_cr3_b=0"),
+            record.replace("saved_rsp0_b=1", "saved_rsp0_b=0"),
+            record.replace(
+                "saved_distinct_storage=1", "saved_distinct_storage=0"
+            ),
+            record.replace("saved_current_pid=0", "saved_current_pid=2"),
+            record.replace("saved_stale_owner=0", "saved_stale_owner=1"),
+            record.replace("saved_resume_ready=0", "saved_resume_ready=1"),
             record.replace(
                 "trap_contract=1", "trap_contract=0 trap_contract=1"
+            ),
+            record.replace(
+                "saved_owner_b=1", "saved_owner_b=0 saved_owner_b=1"
             ),
         ):
             with self.subTest(invalid=invalid):

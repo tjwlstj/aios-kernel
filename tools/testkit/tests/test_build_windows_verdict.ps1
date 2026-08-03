@@ -58,6 +58,7 @@ $normalLines = @(
     '[USER] bootstrap process stack PASS pid=1 slot=0 process_bound=1 kstack_bytes=16384 rsp0_changed=1 rsp0_published=1 int80_entries=3 all_int80_entries_in_stack=1 rsp0_restored=1 kstack_floor_canary=1'
     '[USER] bootstrap process pair PASS runs=2 order=1,2 pid_a=1 slot_a=0 pid_b=2 slot_b=1 distinct_pid=1 distinct_slot=1 distinct_cr3=1 distinct_backing=1 distinct_stack=1 int80_a=3 int80_b=3 between_clean=1 current_pid=0 last_pid=2 rsp0_publishes=2 rsp0_restores=2 tss_rsp0_baseline=1 both_restored=1'
     '[TRAP] user frame capture PASS pid_a=1 pid_b=2 captures_a=1 captures_b=1 from_user=1 cs=0x23 ss=0x1b rsp_user=1 rip_user=1 canary_ok=1 frame_in_kstack=1 frame_addr_exact=1 contract=1'
+    '[PROC] trap evidence snapshot PASS schema=1 captures=2 pid_a=1 slot_a=0 seq_a=1 valid_a=1 owner_a=1 frame_a=1 cr3_a=1 rsp0_a=1 pid_b=2 slot_b=1 seq_b=2 valid_b=1 owner_b=1 frame_b=1 cr3_b=1 rsp0_b=1 distinct_storage=1 current_pid=0 stale_owner=0 resume_ready=0'
     '[ROOM] snapshot stability=stable ok=18 degraded=0 failed=0'
     '[HEALTH] stability=stable ok=18 degraded=0 failed=0 unknown=2'
     '=== AIOS Kernel Ready ==='
@@ -257,6 +258,50 @@ try {
     }
     Write-Output 'PASS mutating-user-trap-capture expected=False'
 
+    $missingTrapSnapshotLines = @(
+        $normalLines | Where-Object {
+            $_ -notmatch '^\[PROC\] trap evidence snapshot '
+        }
+    )
+    [IO.File]::WriteAllLines(
+        $tempPath,
+        $missingTrapSnapshotLines,
+        [Text.UTF8Encoding]::new($false)
+    )
+    $missingTrapSnapshotVerdict =
+        Test-NormalSmokeVerdict -SerialLog $tempPath
+    if ([bool]$missingTrapSnapshotVerdict.Passed) {
+        throw 'Missing process trap snapshot evidence unexpectedly passed'
+    }
+    Write-Output 'PASS missing-process-trap-snapshot expected=False'
+
+    foreach ($snapshotMutation in @(
+        '[PROC] trap evidence snapshot PASS schema=1 captures=2'
+        '[PROC] trap evidence snapshot PASS schema=1 captures=2 pid_a=1 slot_a=0 seq_a=1 valid_a=1 owner_a=1 frame_a=1 cr3_a=1 rsp0_a=1 pid_b=2 slot_b=1 seq_b=2 valid_b=1 owner_b=1 frame_b=1 cr3_b=1 rsp0_b=1 distinct_storage=1 current_pid=0 stale_owner=1 resume_ready=0'
+        '[PROC] trap evidence snapshot PASS schema=1 captures=2 pid_a=1 slot_a=0 seq_a=1 valid_a=1 owner_a=1 frame_a=1 cr3_a=1 rsp0_a=1 pid_b=2 slot_b=1 seq_b=2 valid_b=1 owner_b=1 frame_b=1 cr3_b=1 rsp0_b=1 distinct_storage=1 current_pid=0 stale_owner=0 resume_ready=1'
+    )) {
+        $mutatedTrapSnapshotLines = @(
+            $normalLines | ForEach-Object {
+                if ($_ -match '^\[PROC\] trap evidence snapshot ') {
+                    $snapshotMutation
+                } else {
+                    $_
+                }
+            }
+        )
+        [IO.File]::WriteAllLines(
+            $tempPath,
+            $mutatedTrapSnapshotLines,
+            [Text.UTF8Encoding]::new($false)
+        )
+        $mutatedTrapSnapshotVerdict =
+            Test-NormalSmokeVerdict -SerialLog $tempPath
+        if ([bool]$mutatedTrapSnapshotVerdict.Passed) {
+            throw 'Invalid process trap snapshot evidence unexpectedly passed'
+        }
+        Write-Output 'PASS invalid-process-trap-snapshot expected=False'
+    }
+
     $duplicateObservationCases = @(
         [pscustomobject]@{
             Name = 'duplicate-resource-ledger'
@@ -282,6 +327,12 @@ try {
                 $_ -match '^\[TRAP\] user frame capture '
             } | Select-Object -First 1
         }
+        [pscustomobject]@{
+            Name = 'duplicate-process-trap-snapshot'
+            Line = $normalLines | Where-Object {
+                $_ -match '^\[PROC\] trap evidence snapshot '
+            } | Select-Object -First 1
+        }
     )
     foreach ($duplicateCase in $duplicateObservationCases) {
         $duplicateObservationLines = @($normalLines) + @(
@@ -303,4 +354,4 @@ try {
     Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
 }
 
-Write-Output "PowerShell verdict selftest passed cases=$($cases.Count + 9 + $duplicateObservationCases.Count)"
+Write-Output "PowerShell verdict selftest passed cases=$($cases.Count + 13 + $duplicateObservationCases.Count)"

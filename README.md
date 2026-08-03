@@ -12,7 +12,7 @@ AIOS(AI-Native Operating System)는 AI 워크로드를 **1급 시민(First-class
 
 장기 방향은 embodied AI OS입니다. LLM/SLM 에이전트는 유저스페이스에서 단기 기억과 장기 기억을 분리해 유지하고, 세션을 넘어 연속성을 보존하며, 하드웨어에는 커널이 중재하는 정책 경계를 통해 접근합니다.
 
-이 저장소는 아직 범용 상용 OS가 아닙니다. 다만 2026-07 기준으로 bounded ring3 실행 조각은 동작합니다. 두 정적 bootstrap process descriptor가 각자 private CR3와 16KiB ring0 entry stack을 소유하고, PID 1/slot 0 다음 PID 2/slot 1이 커널 내장 static ELF64 데모를 각자의 주소공간에서 순차 실행해 `int 0x80` 관측 시스콜과 `exit(42)`를 왕복합니다. 장기 실행 유저스페이스 서비스, 두 process의 타이머 선점, 동적 주소공간/PMM, 디스크 프로그램, 영속 기억 런타임, 실시간 학습 승격 루프는 후속 영역입니다.
+이 저장소는 아직 범용 상용 OS가 아닙니다. 다만 bounded ring3 실행 조각은 동작합니다. 두 정적 bootstrap process descriptor가 각자 private CR3와 16KiB ring0 entry stack을 소유하고, PID 1/slot 0 다음 PID 2/slot 1이 커널 내장 static ELF64 데모를 각자의 주소공간에서 순차 실행해 `int 0x80` 관측 시스콜과 `exit(42)`를 왕복합니다. 각 descriptor는 ISR에서 검증된 176B trap evidence snapshot도 소유하지만 이는 재개 가능한 실행 상태가 아닙니다. 장기 실행 유저스페이스 서비스, 두 process의 타이머 선점, 동적 주소공간/PMM, 디스크 프로그램, 영속 기억 런타임, 실시간 학습 승격 루프는 후속 영역입니다.
 
 AI 작업자는 루트 [`AGENTS.md`](AGENTS.md)의 저장소 규칙과
 [`.agents/README.md`](.agents/README.md)의 프로젝트 스킬 색인을 먼저
@@ -25,7 +25,7 @@ Suggested repository description:
 
 > Kernel-first AI-native OS experiment for embodied LLM/SLM runtime: ring3 ELF demo, memory fabric, NodeBit policy gates, and mediated hardware access.
 
-## Current Status (2026-08-02)
+## Current Status (2026-08-03)
 
 - **Current beta:** `v0.2.0-beta.6` (`0.2.0-beta.6 "Genesis"` boot banner).
 - **Boot path:** x86_64 Multiboot2 커널, GDT/IDT/TSS, 페이징, PIT IRQ0 scheduler tick bootstrap, QEMU 스모크 테스트 기반.
@@ -34,7 +34,7 @@ Suggested repository description:
 - **Pressure observation:** schema 1의 `state pressure`가 workload queue, Memory Fabric reader/writer 중첩, 누적 NodeBit 거부율을 0..1024 정수 벡터로 읽는다. 현재는 system→plane 2단계 관측만 `CURRENT`이며 task migration이나 budget apply는 하지 않는다.
 - **Resource observation:** schema 1의 커널 내부 `ai_resource_snapshot_t`가 heap bytes, tensor bytes, active Memory Fabric windows, inference ring registrations, runnable scheduler tasks를 고정 5개 aggregate row로 읽는다. 모든 owner는 아직 `NONE/UNATTRIBUTED`이며 read-only `SYS_INFO_RESOURCE`(0x706) syscall과 `state resource` 셸 토픽은 `CURRENT`, owner attribution과 quota/reserve/apply는 `PLANNED`다.
 - **Autonomy and policy:** 헬스 스냅샷, 제한된 자율 제안/롤백 경로, SLM 하드웨어 스냅샷, NodeBit 정책 조회, Kernel Room syscall range classification.
-- **Userspace:** bounded bootstrap process pair slice 완료. 정적 descriptor 2개가 각자 private 2MiB user leaf/CR3와 16KiB ring0 entry stack을 소유하며, PID 1/slot 0과 PID 2/slot 1이 순차적으로 static ELF64 데모의 `int 0x80` 왕복, uaccess 거부, CR3·BSP `rsp0` 복원을 검증한다. M3-b-3b2c 진입 게이트의 trapframe C/NASM offset·크기 계약(176B)과 `from_user` CPL0/CPL3 판별은 `CURRENT`다 — CPL0 canary `int3` 셀프테스트와 두 process의 ring3 `int3` 캡처가 exact frame 주소까지 증명한다. `aios-init`, 디스크 기반 ELF 적재, 두 process의 타이머 선점 교대, sequence 있는 전환 이벤트, 동적 주소공간 수명주기, 장기 실행 유저스페이스 런타임은 아직 없다.
+- **Userspace:** bounded bootstrap process pair slice 완료. 정적 descriptor 2개가 각자 private 2MiB user leaf/CR3와 16KiB ring0 entry stack을 소유하며, PID 1/slot 0과 PID 2/slot 1이 순차적으로 static ELF64 데모의 `int 0x80` 왕복, uaccess 거부, CR3·BSP `rsp0` 복원을 검증한다. M3-b-3b2c 진입 게이트의 trapframe C/NASM offset·크기 계약(176B), `from_user` CPL0/CPL3 판별, process-owned trap evidence snapshot v0는 `CURRENT`다. 각 ring3 `int3`의 full frame은 ISR 시점 current owner/private CR3/TSS `rsp0`/IF=0 검사를 통과한 descriptor에 복사되고, per-boot sequence 1,2와 각 finish 뒤 보존, 두 번째 실행까지 끝난 최종 pair 경계의 양쪽 재조회를 증명한다. prepare 코드 경로는 이전 snapshot을 지우고 run generation을 올리지만, 같은 slot을 다시 prepare하는 실부팅 증거는 아직 `PLANNED`다. `resume_ready=0`이며 전체 process 모델은 `PARTIAL`이다. 다음 순서는 append-only transition event, live continuation/switch, timer preemption이다. `aios-init`, 디스크 기반 ELF 적재, 동적 주소공간 수명주기, 장기 실행 유저스페이스 런타임도 아직 없다.
 - **Hardware AI access:** 가속기 인터페이스는 추상화/탐색 스캐폴딩 단계. 실제 GPU/NPU/TPU 드라이버와 직접 클럭 제어 백엔드는 계획 상태.
 - **I/O:** e1000은 RX ring bootstrap + bounded RX poll/rearm + TX smoke 수준. USB/storage는 bootstrap/probe 중심이며, 다음 storage 목표는 virtio-blk 최소 read path.
 - **Continuity runtime:** 단기/장기 기억 분리, 저널링, distillation, self-learning promotion flow는 유저스페이스 AI 런타임 로드맵.
@@ -138,7 +138,8 @@ AIOS의 방향은 커널을 AI 시스템의 결정론적 body로 두고, 학습 
 - CPL3 `int 0x80` -> `ai_syscall_dispatch` -> ring3 buffer copy -> `exit(42)` 왕복 smoke
 - uaccess window + SMAP STAC/CLAC fence 기반의 유저 포인터 경계 검증
 - 정적 2개 bootstrap descriptor의 private CR3/run state/16KiB ring0 entry-stack ownership, PID 1→PID 2 순차 실행과 각 실행 사이/최종 BSP TSS `rsp0`·CR3·current owner 복원 증명
-- `aios-init`, 디스크에서 적재되는 ELF, 두 process 선점 교대와 trapframe 기반 전환(frame 계약 자체는 완료), 동적 주소공간/PMM, long-running userspace AI runtime은 후속 구현 대상
+- 각 ring3 `int3`의 176B frame을 ISR 시점 owner/current/private CR3/TSS `rsp0`/IF=0 검사 뒤 해당 descriptor에 복사하고, sequence 1,2·finish 뒤 보존·distinct storage·`resume_ready=0`을 `[PROC] trap evidence snapshot PASS`로 증명
+- 이 snapshot은 증거 소유권만 `CURRENT`다. append-only transition event, `g_active_user_run_state`까지 포함한 live continuation/switch, 두 process 선점 교대, `aios-init`, 디스크 ELF, 동적 주소공간/PMM, long-running userspace AI runtime은 후속 구현 대상
 
 ### AI System Call Interface
 > 이 표는 현재 ABI 공간과 스캐폴딩을 함께 보여줍니다. 모든 카테고리가 production-grade 구현을 의미하지는 않습니다.

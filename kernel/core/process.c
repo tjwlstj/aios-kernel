@@ -3,6 +3,7 @@
  */
 
 #include <kernel/process.h>
+#include <kernel/user_layout.h>
 #include <drivers/serial.h>
 #include <lib/string.h>
 
@@ -18,11 +19,28 @@ static uint8_t g_process_kernel_stacks[BOOTSTRAP_PROCESS_COUNT]
 static bootstrap_process_t *g_current_process;
 static bootstrap_process_stats_t g_stats;
 static uint64_t g_baseline_rsp0;
+static uint64_t g_trap_capture_sequence;
 static bool g_initialized;
+
+static inline uint64_t process_read_cr3(void) {
+    uint64_t value;
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(value) : : "memory");
+    return value;
+}
+
+static inline uint64_t process_read_rflags(void) {
+    uint64_t flags;
+    __asm__ volatile ("pushfq; popq %0" : "=r"(flags) : : "memory");
+    return flags;
+}
 
 static void run_state_reset(bootstrap_user_run_state_t *state) {
     memset(state, 0, sizeof(*state));
     state->entry_rsp_min = ~0ULL;
+}
+
+static void trap_snapshot_reset(bootstrap_process_t *process) {
+    memset(&process->trap_snapshot, 0, sizeof(process->trap_snapshot));
 }
 
 static void stack_reset(bootstrap_process_t *process) {
@@ -80,6 +98,7 @@ aios_status_t bootstrap_process_init(void) {
     memset(&g_stats, 0, sizeof(g_stats));
     g_current_process = NULL;
     g_baseline_rsp0 = user_mode_rsp0_read();
+    g_trap_capture_sequence = 0;
     g_initialized = false;
 
     if (!user_mode_scaffold_ready() || g_baseline_rsp0 == 0) {
@@ -98,6 +117,7 @@ aios_status_t bootstrap_process_init(void) {
         process->kernel_stack_top = process->kernel_stack_base +
                                     process->kernel_stack_size;
         run_state_reset(&process->run_state);
+        trap_snapshot_reset(process);
         stack_reset(process);
 
         status = address_space_bootstrap_slot_prepare(
@@ -164,6 +184,9 @@ aios_status_t bootstrap_process_prepare(
     if (process->active) {
         return AIOS_ERR_BUSY;
     }
+    if (process->run_generation == ~0ULL) {
+        return AIOS_ERR_IO;
+    }
     status = address_space_bootstrap_slot_prepare(
         slot, executable, &process->address_space);
     if (status != AIOS_OK) {
@@ -171,6 +194,8 @@ aios_status_t bootstrap_process_prepare(
     }
 
     run_state_reset(&process->run_state);
+    trap_snapshot_reset(process);
+    process->run_generation++;
     stack_reset(process);
     process->prepared = true;
     *out = process;
@@ -325,6 +350,116 @@ aios_status_t bootstrap_process_finish(
     if (irq_status != AIOS_OK) {
         return AIOS_ERR_IO;
     }
+    return AIOS_OK;
+}
+
+aios_status_t bootstrap_process_capture_current_trap(
+    const interrupt_frame_t *frame) {
+    bootstrap_process_t *process = g_current_process;
+    bootstrap_process_trap_snapshot_t *snapshot;
+    uint64_t live_cr3;
+    uint64_t live_rsp0;
+    uint64_t frame_addr;
+    uint64_t next_sequence;
+
+    if (!g_initialized || !frame || !process ||
+        !process_descriptor_valid(process) || !process->prepared ||
+        !process->active || process->run_generation == 0) {
+        return AIOS_ERR_INVAL;
+    }
+
+    snapshot = &process->trap_snapshot;
+    if (snapshot->evidence_valid) {
+        return AIOS_ERR_BUSY;
+    }
+    if (g_trap_capture_sequence == ~0ULL) {
+        return AIOS_ERR_IO;
+    }
+
+    live_cr3 = process_read_cr3();
+    live_rsp0 = user_mode_rsp0_read();
+    frame_addr = (uint64_t)(uintptr_t)frame;
+    if ((process_read_rflags() & BIT(9)) != 0 ||
+        live_cr3 != process->address_space.cr3 ||
+        live_rsp0 != process->kernel_stack_top ||
+        frame->int_no != 3ULL || frame->err_code != 0ULL ||
+        !interrupt_frame_from_user(frame) ||
+        frame->cs != (uint64_t)AIOS_USER_CS_RPL3 ||
+        frame->ss != (uint64_t)AIOS_USER_DS_RPL3 ||
+        frame->rip < AIOS_BOOTSTRAP_USER_BASE ||
+        frame->rip >= AIOS_BOOTSTRAP_USER_END ||
+        frame->rsp < AIOS_BOOTSTRAP_USER_BASE ||
+        frame->rsp >= AIOS_BOOTSTRAP_USER_END ||
+        frame_addr != process->kernel_stack_top -
+            (uint64_t)TRAPFRAME_SIZE ||
+        (frame->rflags & 0x2ULL) == 0 ||
+        (frame->rflags & (BIT(10) | BIT(18))) != 0) {
+        return AIOS_ERR_IO;
+    }
+
+    next_sequence = g_trap_capture_sequence + 1ULL;
+    memset(snapshot, 0, sizeof(*snapshot));
+    snapshot->frame = *frame;
+    snapshot->frame_addr = frame_addr;
+    snapshot->capture_sequence = next_sequence;
+    snapshot->run_generation = process->run_generation;
+    snapshot->owner_cr3 = live_cr3;
+    snapshot->owner_rsp0 = live_rsp0;
+    snapshot->captures = 1ULL;
+    snapshot->owner_pid = process->pid;
+    snapshot->owner_slot = process->slot;
+    snapshot->owner_bound = g_current_process == process;
+    snapshot->frame_copied =
+        memcmp(&snapshot->frame, frame, sizeof(snapshot->frame)) == 0;
+    snapshot->from_user = interrupt_frame_from_user(&snapshot->frame);
+    snapshot->frame_addr_exact =
+        snapshot->frame_addr == process->kernel_stack_top -
+            (uint64_t)TRAPFRAME_SIZE;
+    snapshot->cr3_matched = snapshot->owner_cr3 ==
+        process->address_space.cr3;
+    snapshot->rsp0_matched = snapshot->owner_rsp0 ==
+        process->kernel_stack_top;
+    snapshot->resume_ready = false;
+
+    if (!snapshot->owner_bound || !snapshot->frame_copied ||
+        !snapshot->from_user || !snapshot->frame_addr_exact ||
+        !snapshot->cr3_matched || !snapshot->rsp0_matched) {
+        trap_snapshot_reset(process);
+        return AIOS_ERR_IO;
+    }
+
+    g_trap_capture_sequence = next_sequence;
+    __asm__ volatile ("" : : : "memory");
+    snapshot->evidence_valid = true;
+    return AIOS_OK;
+}
+
+aios_status_t bootstrap_process_get_trap_snapshot(
+    uint32_t slot, bootstrap_process_trap_snapshot_t *out) {
+    const bootstrap_process_t *process;
+    const bootstrap_process_trap_snapshot_t *snapshot;
+
+    if (!out || !g_initialized || slot >= BOOTSTRAP_PROCESS_COUNT) {
+        return AIOS_ERR_INVAL;
+    }
+
+    process = &g_processes[slot];
+    snapshot = &process->trap_snapshot;
+    if (!process_descriptor_valid(process) || !snapshot->evidence_valid ||
+        !snapshot->owner_bound || !snapshot->frame_copied ||
+        !snapshot->from_user || !snapshot->frame_addr_exact ||
+        !snapshot->cr3_matched || !snapshot->rsp0_matched ||
+        snapshot->resume_ready || snapshot->captures != 1ULL ||
+        snapshot->capture_sequence == 0 ||
+        snapshot->run_generation != process->run_generation ||
+        snapshot->owner_pid != process->pid ||
+        snapshot->owner_slot != process->slot ||
+        snapshot->owner_cr3 != process->address_space.cr3 ||
+        snapshot->owner_rsp0 != process->kernel_stack_top) {
+        return AIOS_ERR_IO;
+    }
+
+    *out = *snapshot;
     return AIOS_OK;
 }
 

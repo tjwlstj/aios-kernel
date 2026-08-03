@@ -5,6 +5,7 @@ import unittest
 from lib.boot_verdict import evaluate_normal_boot
 from lib.kernel_lane import (
     PRESSURE_SELFTEST_PATTERN,
+    PROCESS_TRAP_SNAPSHOT_PATTERN,
     RESOURCE_SELFTEST_PATTERN,
     TRAPFRAME_CONTRACT_PATTERN,
     USER_TRAP_CAPTURE_PATTERN,
@@ -25,6 +26,7 @@ def normal_lines() -> list[str]:
         "[USER] bootstrap process stack PASS pid=1",
         "[USER] bootstrap process pair PASS runs=2",
         "[TRAP] user frame capture PASS pid_a=1 pid_b=2",
+        "[PROC] trap evidence snapshot PASS schema=1 captures=2",
         "[ROOM] snapshot stability=stable ok=18 degraded=0 failed=0",
         "[HEALTH] stability=stable ok=18 degraded=0 failed=0 unknown=2",
         "=== AIOS Kernel Ready ===",
@@ -105,7 +107,82 @@ class NormalBootVerdictTests(unittest.TestCase):
             [PRESSURE_SELFTEST_PATTERN],
         )
         self.assertFalse(duplicate["passed"])
+
+    def test_process_trap_snapshot_is_exact_and_fails_closed(self) -> None:
+        for profile in ("full", "minimal", "storage-only"):
+            with self.subTest(profile=profile):
+                self.assertIn(
+                    PROCESS_TRAP_SNAPSHOT_PATTERN,
+                    required_smoke_patterns(profile),
+                )
+
+        def snapshot_lines(record: str) -> list[str]:
+            lines = normal_lines()
+            index = lines.index(
+                "[PROC] trap evidence snapshot PASS schema=1 captures=2"
+            )
+            lines[index] = record
+            return lines
+
+        valid = evaluate_normal_boot(
+            "\n".join(snapshot_lines(PROCESS_TRAP_SNAPSHOT_PATTERN)),
+            [PROCESS_TRAP_SNAPSHOT_PATTERN],
+        )
+        self.assertTrue(valid["passed"])
+
+        for invalid in (
+            "[PROC] trap evidence snapshot PASS schema=1 captures=2",
+            PROCESS_TRAP_SNAPSHOT_PATTERN.replace("owner_b=1", "owner_b=0"),
+            PROCESS_TRAP_SNAPSHOT_PATTERN.replace("seq_b=2", "seq_b=1"),
+            PROCESS_TRAP_SNAPSHOT_PATTERN.replace(
+                "current_pid=0", "current_pid=2"
+            ),
+            PROCESS_TRAP_SNAPSHOT_PATTERN.replace(
+                "stale_owner=0", "stale_owner=1"
+            ),
+            PROCESS_TRAP_SNAPSHOT_PATTERN.replace(
+                "resume_ready=0", "resume_ready=1"
+            ),
+            f"{PROCESS_TRAP_SNAPSHOT_PATTERN} extra=1",
+            f"  {PROCESS_TRAP_SNAPSHOT_PATTERN}",
+            f'"{PROCESS_TRAP_SNAPSHOT_PATTERN}"',
+            PROCESS_TRAP_SNAPSHOT_PATTERN.replace(
+                "owner_b=1", "owner_b=0 owner_b=1"
+            ),
+        ):
+            with self.subTest(invalid_snapshot=invalid):
+                verdict = evaluate_normal_boot(
+                    "\n".join(snapshot_lines(invalid)),
+                    [PROCESS_TRAP_SNAPSHOT_PATTERN],
+                )
+                self.assertFalse(verdict["passed"])
+
+        duplicate = evaluate_normal_boot(
+            "\n".join(
+                [
+                    *snapshot_lines(PROCESS_TRAP_SNAPSHOT_PATTERN),
+                    PROCESS_TRAP_SNAPSHOT_PATTERN,
+                ]
+            ),
+            [PROCESS_TRAP_SNAPSHOT_PATTERN],
+        )
+        self.assertFalse(duplicate["passed"])
         self.assertIn("EVIDENCE_RECORD_DUPLICATED", reason_codes(duplicate))
+
+        conflicting_duplicate = evaluate_normal_boot(
+            "\n".join(
+                [
+                    *snapshot_lines(PROCESS_TRAP_SNAPSHOT_PATTERN),
+                    "[PROC] trap evidence snapshot PASS schema=1 captures=2",
+                ]
+            ),
+            [PROCESS_TRAP_SNAPSHOT_PATTERN],
+        )
+        self.assertFalse(conflicting_duplicate["passed"])
+        self.assertIn(
+            "TERMINAL_CHECKPOINTS_DUPLICATED",
+            reason_codes(conflicting_duplicate),
+        )
 
     def test_trapframe_contract_is_exact_and_fails_closed(self) -> None:
         for profile in ("full", "minimal", "storage-only"):

@@ -81,6 +81,24 @@ typedef struct {
     uint64_t rsp0_restores;
     bool     tss_rsp0_baseline;
     bool     both_restored;
+    /* Process-owned trap evidence; never a resumable continuation. */
+    uint64_t saved_captures;
+    uint64_t saved_seq_a;
+    uint64_t saved_seq_b;
+    bool     saved_valid_a;
+    bool     saved_valid_b;
+    bool     saved_owner_a;
+    bool     saved_owner_b;
+    bool     saved_frame_a;
+    bool     saved_frame_b;
+    bool     saved_cr3_a;
+    bool     saved_cr3_b;
+    bool     saved_rsp0_a;
+    bool     saved_rsp0_b;
+    bool     saved_distinct_storage;
+    uint32_t saved_current_pid;
+    bool     saved_stale_owner;
+    bool     saved_resume_ready;
 } user_exec_pair_info_t;
 
 /* Run both static bootstrap processes sequentially. This proves that slot 1

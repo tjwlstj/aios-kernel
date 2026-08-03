@@ -55,7 +55,7 @@ QEMU 기본 `-hda`와 즉시 호환되고 수십 줄로 섹터를 읽을 수 있
 - **반영:** `kernel/core/elf_loader.c` — Elf64_Ehdr/Phdr 검증(magic/class/machine=x86_64/type=EXEC), PT_LOAD 세그먼트를 `p_vaddr`로 복사 + `.bss`(memsz-filesz) 제로화 + image/region 경계 검사. 데모 프로그램을 `user_entry.asm`에 손수 조립한 **유효 ELF64 이미지**(`user_elf_image_start/end`)로 교체 — 별도 링크 단계 없이 make/PS1 동일 동작. `user_exec`가 blob memcpy 대신 `elf_load` 사용, `e_entry`로 ring3 진입.
 - **검증 완료:** `[ELF] loaded entry=0x4000078 segments=1 filesz=44 memsz=108`(.bss 제로화 포함), `[USER] ring3 exec PASS ... private_cr3=1 slot=0 cr3_restored=1 if_restored=1 leaf_sealed=1 nx_enforced=1 tensor_excluded=1`. 기본/`-cpu max`(SMAP) + 스모크 3종 + shell 레인 + cppcheck 클린.
 - **스코프 진화:** M2의 최초 ELF 왕복은 공유 부트 page table로 시작했고 M3-b-3b2a에서 정적 private CR3 실행, M3-b-3b2b에서 그 CR3·run state·ring0 entry stack을 묶는 bounded bootstrap process 실행으로 교체했다. 2026-07-26에는 두 정적 process를 각자 주소공간에서 순차 실행하는 pair proof까지 확장했다. 여전히 범용/동적 process table이나 동시 유저 태스크를 뜻하지 않는다.
-- **잔여:** per-segment 4KiB W^X(M6), 디스크에서 ELF 적재(M5).
+- **잔여:** 후속 per-segment 4KiB 세분화 W^X, 디스크에서 ELF 적재(M5).
 
 ### M3. 타이머 선점 + 문맥전환 + 프로세스별 주소공간 (+ 힙 스핀락)
 - **M3-a 힙 스핀락 ✅ 완료 (2026-07-04):** `mm/heap.c`의 kmalloc/kfree/get_stats를 `spinlock_irqsave`로 보호(향후 IRQ 컨텍스트 할당 대비 IRQ 마스킹), 락 획득 카운터 + `heap_lock_selftest`(락 유휴·정확히 1회 획득·해제 불변식 검증) + `[HEAP] lock selftest PASS acquires=4` 마커, `state mem`에 `lock_acquires` 노출. 선점의 독립 선행 조각으로 먼저 반영.
@@ -67,10 +67,13 @@ QEMU 기본 `-hda`와 즉시 호환되고 수십 줄로 섹터를 읽을 수 있
 - **M3-b-3b2b static bootstrap process + BSP TSS entry stack ✅ 완료 (2026-07-15):** 정적 descriptor 2개가 각 slot의 unique CR3/backing, process-local run state, unique 16KiB ring0 entry stack을 결속한다. 이 마일스톤 당시 실제 실행은 PID 1/slot 0 한 번이며, IF=0에서 기존 BSP boot-TSS `rsp0`와 다른 process stack top을 exact publish했다. 데모의 `int 0x80` 3회가 모두 `stack_top-40`의 동일 raw entry frame에서 시작했음을 확인하고 `rsp0 → CR3 → leaf seal/scrub → current owner 해제 → caller IF` 순으로 복원한다. 전역 resume/syscall/exit 값은 process run state로 이동했다. C layout은 explicit offset에 static-assert되고 NASM 상수는 이를 mirror하며 실제 boot proof가 양쪽 drift를 잡는다. `[PROC] bootstrap ownership selftest PASS slots=2 owned=2 stack_bytes=16384 unique_cr3=1 unique_backing=1 unique_stack=1`과 `[USER] bootstrap process stack PASS pid=1 slot=0 process_bound=1 kstack_bytes=16384 rsp0_changed=1 rsp0_published=1 int80_entries=3 all_int80_entries_in_stack=1 rsp0_restored=1 kstack_floor_canary=1`로 검증한다. 이는 static bootstrap binding/BSP 단일 TSS 증명이며, 후속 순차 slot 1 실행은 다음 항목에서 별도로 검증한다. 이 자체는 전체 register trapframe, 동적 lifecycle/PMM, guard page, SMP per-CPU TSS를 뜻하지 않는다.
 - **M3-b-3b2c 진입 전 순차 pair proof ✅ 완료 (2026-07-26):** 공통 slot runner로 PID 1/slot 0을 마친 뒤 current owner=0, last PID=1, boot CR3/BSP `rsp0` baseline, publish/restore=1을 확인하고서만 PID 2/slot 1을 실제 CPL3에서 실행한다. 두 실행은 같은 유저 VA를 쓰지만 서로 다른 CR3/backing/16KiB entry stack을 사용하며, 각각 `int 0x80` 3회·uaccess hostile pointer 거부·`exit(42)`·leaf seal/scrub·stack canary·CR3/IF/`rsp0` 복원을 검증한다. 최종 증거는 `[USER] bootstrap process pair PASS runs=2 order=1,2 pid_a=1 slot_a=0 pid_b=2 slot_b=1 distinct_pid=1 distinct_slot=1 distinct_cr3=1 distinct_backing=1 distinct_stack=1 int80_a=3 int80_b=3 between_clean=1 current_pid=0 last_pid=2 rsp0_publishes=2 rsp0_restores=2 tss_rsp0_baseline=1 both_restored=1`이다. 이는 순차 synchronous proof이며 trapframe 교대나 타이머 선점 증거가 아니다.
 - **M3-b-3b2c 진입 게이트: trapframe C/NASM 계약 + from_user 판별 ✅ 완료 (2026-08-02):** §10 게이트의 첫 두 증거 계약을 고정했다. `kernel/include/interrupt/trapframe.h`가 `interrupt_frame_t` 전 필드 offset과 176B 크기를 static assert하고 `isr_stub.asm`이 byte 상수를 mirror하며, `interrupt_frame_from_user`가 CS RPL로 CPL0/CPL3를 판별한다. CPL0 증명은 canary 15개를 실은 `int3`가 실제 `isr_common_stub`를 통과해 전 GPR offset·exact RIP/RSP·exact frame 주소(`(rsp&~15)-176`)를 맞춘다 → `[TRAP] frame contract selftest PASS size=176 canaries=15 ...`. CPL3 증명은 두 bootstrap process의 데모가 각각 canary `int3`를 발행해 ring3 frame(`cs=0x23 ss=0x1b`, user RSP/RIP)이 그 process의 entry stack `stack_top-176`에 정확히 착지함을 캡처한다 → `[TRAP] user frame capture PASS ... frame_addr_exact=1 contract=1`. `#BP` 게이트는 DPL=3로 승격했고(유일한 생존 예외 + 유저 증거 경로), armed capture가 예상된 breakpoint를 조용히 소비해 verdict의 exception 스캔을 깨지 않는다. 두 마커는 세 프로파일 공통 exact required record이며 `state user`의 `trap_*` 필드와 shell lane 교환으로도 고정된다. 이는 계약·판별·증거이지 아직 trapframe 기반 전환/teardown이 아니다.
-- **잔여 작업(M3-b-3b2c+):** sequence 있는 기계 판독 전환 이벤트(§10)를 갖춘 뒤, full saved-register/trapframe 기반 saved state와 scheduler runnable state를 process에 결속한다. 이후 두 ring3 process의 timer preemption에서 current process·CR3·BSP TSS `rsp0`를 원자적으로 교대하고 `ai_sched_tick()`의 reschedule 요청을 연결하며, CPL3 timer IRQ entry-stack 귀속, A→B→A sequence, full register canary, bounded budget와 process fault teardown을 검증한다. 장기 단계에서 동적 PMM/VMM, guard page, SMP per-CPU TSS로 일반화한다.
-- **착수 게이트:** M3-b-3b2c는 `docs/tools/verification_tooling_evolution_design_ko.md` §10의
-  trapframe/rollback/process-switch 증거 계약을 먼저 고정한 뒤 시작한다. 정상 부팅만으로
-  fault/hang 복구나 원자적 교대를 증명했다고 간주하지 않는다.
+- **M3-b-3b2c process-owned trap evidence snapshot v0 ✅ 완료 (2026-08-03):** 기존 ring3 `int3`의 full 176B frame을 ISR 안에서 현재 descriptor에 복사한다. 복사 전에 current owner, 해당 private CR3, BSP TSS `rsp0`, IF=0, exact `stack_top-176`, CPL3 RFLAGS 경계를 함께 검증한다. PID 1→PID 2 실행은 per-boot capture sequence 1,2, descriptor별 distinct storage, 각 finish 뒤 snapshot 보존과 두 번째 실행 뒤 양쪽 descriptor의 최종 재조회, 최종 `current_pid=0`을 `[PROC] trap evidence snapshot PASS schema=1 captures=2 ... seq_a=1 ... seq_b=2 ... distinct_storage=1 current_pid=0 stale_owner=0 resume_ready=0`과 `state user`의 `saved_*` 필드로 증명한다. prepare 코드 경로는 이전 snapshot을 지우고 run generation을 올리지만, 같은 slot의 live reuse/re-prepare와 stale-generation 거부 증거는 아직 `PLANNED`다. 이는 **증거 snapshot만 `CURRENT`**인 좁은 조각이다. 전체 process 모델은 `PARTIAL`이고, continuation/switch/timer preemption은 `PLANNED`다.
+- **잔여 작업(M3-b-3b2c+):** 순서는 **process-owned evidence snapshot → append-only process transition event → live continuation/switch**로 고정한다. 다음에는 §10의 sequence 있는 전환 이벤트를 먼저 고정하고, 그 뒤에 full saved-register/trapframe continuation과 scheduler runnable state를 process에 결속한다. 실제 교대의 IF=0 원자 집합에는 current process, CR3, BSP TSS `rsp0`, saved frame뿐 아니라 현재 동기 runner의 단일 active pointer인 `g_active_user_run_state`도 포함한다. bounded A→B→A 증명 뒤에만 `ai_sched_tick()` 요청과 CPL3 timer IRQ entry-stack 귀속을 연결하고, full register canary, bounded budget, process fault teardown을 검증한다. 장기 단계에서 동적 PMM/VMM, guard page, SMP per-CPU TSS로 일반화한다.
+- **착수 게이트:** 남은 M3-b-3b2c 작업은 `docs/tools/verification_tooling_evolution_design_ko.md` §10의
+  rollback/process-transition 증거 계약을 먼저 고정한 뒤 시작한다. 더 풍부한 ring3 IRQ
+  경로나 ISR의 유저 메모리 접근을 넣기 전에는 공통 스텁과 `int 0x80` 진입의 RFLAGS.AC
+  제거(`clac`) 하드닝을 SMAP 지원 여부에 맞춘 feature-gated 별도 선행 후보로 검증한다. 정상 부팅만으로 fault/hang 복구나
+  원자적 교대를 증명했다고 간주하지 않는다.
 - **완료 기준:** ring3 프로세스 2개가 각자 주소공간에서 선점 교대, 힙 동시성 셀프테스트(M3-a로 충족).
 
 ### M4. storage read — virtio-blk 최소 데이터 경로
@@ -87,14 +90,14 @@ QEMU 기본 `-hda`와 즉시 호환되고 수십 줄로 섹터를 읽을 수 있
 
 ## 3-B. AI 지속성·보안 축 (M6~M9) — 외부 평가 반영 (2026-07-14)
 
-`docs/meta/`의 외부 평가(체시)가 우리 실행-경로 로드맵(M1~M5)과 근거리에서 일치함을 확인했고, 우리 가이드가 느슨히 남겨둔 장기 축을 아래로 구체화한다. **핵심 원칙: 신원·정책·영속은 실행 기반(M3-b-2 멀티프로세스 + M5 디스크 실행) 위에서만 의미가 생긴다** — principal_id를 프로세스 이전에 넣는 것은 M1의 SMAP 교훈("진짜 유저 페이지가 있어야 SMAP이 의미")처럼 허공에 짓는 것이다. 그래서 이 축은 M5 이후에 배치한다.
+`docs/meta/`의 외부 평가(체시)가 우리 실행-경로 로드맵(M1~M5)과 근거리에서 일치함을 확인했고, 우리 가이드가 느슨히 남겨둔 장기 축을 아래로 구체화한다. **핵심 원칙: 신원·정책·영속은 실행 기반(M3-b-3b2c process 경계 + M5 디스크 실행) 위에서만 의미가 생긴다** — principal_id를 프로세스 이전에 넣는 것은 M1의 SMAP 교훈("진짜 유저 페이지가 있어야 SMAP이 의미")처럼 허공에 짓는 것이다. 그래서 이 축은 M5 이후에 배치한다.
 
 교차검증된 판단(우리 코드/최근 결정과 평가가 독립적으로 일치):
 - **Kernel Room은 현재 "계기판/관측실"이지 불가피한 단일 집행점이 아니다** (체크포인트 드리프트 수정 때 CLAUDE.md에 이미 명시). M6에서 진짜 게이트로 승격.
 - **두 NodeBit 체계(런타임 `nodebit.c` ↔ SLM `slm_nodebit`)가 독립 발전 중** (SLM 관측 작업 때 "distinct"로 확인, 억지 결합 회피). M7에서 단일 원본으로 통합.
 
 ### M6. principal/신원 모델 + Kernel Room 단일 authorize
-- **작업:** 프로세스에 `principal_id`/`security_domain` 도입(M3-b-2 프로세스 구조에 필드 추가), `kernel_room_authorize(principal, syscall, target_node, caps, policy_gen)` 공통 게이트 신설, 위험 시스콜(드라이버 재초기화/DMA/MMIO/저장 쓰기/네트워크 송신/모델 변경/정책 변경)이 반드시 이 게이트를 통과하도록 배선. 일반 AI 프로세스는 lookup/evaluate만, 정책 제안은 Policy Broker, commit은 Trusted Init/Guardian로 권한 분리.
+- **작업:** 프로세스에 `principal_id`/`security_domain` 도입(M3-b-3b2c process 구조에 필드 추가), `kernel_room_authorize(principal, syscall, target_node, caps, policy_gen)` 공통 게이트 신설, 위험 시스콜(드라이버 재초기화/DMA/MMIO/저장 쓰기/네트워크 송신/모델 변경/정책 변경)이 반드시 이 게이트를 통과하도록 배선. 일반 AI 프로세스는 lookup/evaluate만, 정책 제안은 Policy Broker, commit은 Trusted Init/Guardian로 권한 분리.
 - **완료 기준:** 위험 시스콜이 authorize를 우회할 수 없음을 셀프테스트로 증명(`[ROOM] authorize selftest PASS`), `state room`에 authorize 통계.
 
 ### M7. NodeBit 정책 원본 통합 (TOCTOU 방지 포함)
