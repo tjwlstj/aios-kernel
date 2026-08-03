@@ -61,6 +61,7 @@ C_SOURCES   = $(KERNEL_DIR)/main.c \
               $(KERNEL_DIR)/shell.c \
               $(LIB_DIR)/string.c \
               $(INTERRUPT_DIR)/idt.c \
+              $(INTERRUPT_DIR)/trapframe.c \
               $(MM_DIR)/tensor_mm.c \
               $(MM_DIR)/memory_fabric.c \
               $(MM_DIR)/heap.c \

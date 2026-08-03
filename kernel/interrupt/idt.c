@@ -4,6 +4,7 @@
  */
 
 #include <interrupt/idt.h>
+#include <interrupt/trapframe.h>
 #include <kernel/time.h>
 #include <sched/kthread.h>
 #include <drivers/vga.h>
@@ -17,6 +18,10 @@ static idt_ptr_t   idt_ptr;
 /* int 0x80 syscall gate: DPL=3 so ring3 can invoke it; 64-bit interrupt gate. */
 #define IDT_GATE_SYSCALL 0xEE
 #define SYSCALL_VECTOR   0x80
+/* #BP gate is also DPL=3: ring3 int3 is the CPL3 trapframe evidence path
+ * (and the only survivable exception), so a user breakpoint must reach the
+ * handler instead of faulting with #GP. */
+#define IDT_GATE_INT_DPL3 0xEE
 extern void isr_syscall(void);
 
 #define PIC1_COMMAND 0x20
@@ -144,7 +149,7 @@ static void idt_register_exceptions(void) {
     idt_set_gate(0,  (uint64_t)isr0,  cs, IDT_GATE_INT);
     idt_set_gate(1,  (uint64_t)isr1,  cs, IDT_GATE_INT);
     idt_set_gate(2,  (uint64_t)isr2,  cs, IDT_GATE_INT);
-    idt_set_gate(3,  (uint64_t)isr3,  cs, IDT_GATE_INT);
+    idt_set_gate(3,  (uint64_t)isr3,  cs, IDT_GATE_INT_DPL3);
     idt_set_gate(4,  (uint64_t)isr4,  cs, IDT_GATE_INT);
     idt_set_gate(5,  (uint64_t)isr5,  cs, IDT_GATE_INT);
     idt_set_gate(6,  (uint64_t)isr6,  cs, IDT_GATE_INT);
@@ -247,6 +252,14 @@ void exception_handler(interrupt_frame_t *frame) {
             keyboard_irq_handler();
         }
         pic_send_eoi(int_no);
+        return;
+    }
+
+    /* Armed #BP frame capture (boot selftests / ring3 evidence). Consumes
+     * the breakpoint quietly so the verdict-scanned serial log stays free
+     * of exception dumps; an unarmed breakpoint still takes the noisy
+     * survivable path below. */
+    if (int_no == 3 && trapframe_capture_consume(frame)) {
         return;
     }
 

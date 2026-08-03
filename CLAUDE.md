@@ -97,8 +97,9 @@ kernel/boot/boot.asm  (Multiboot2 entry, GDT, paging, SSE/AVX setup, long mode)
 - `heap.c` — general kernel heap; kmalloc/kfree/get_stats run under an IRQ-saving spinlock (`heap_lock_selftest` checks the locking invariants at boot). Ready for preemption/IRQ-context allocation.
 
 **Interrupt (`kernel/interrupt/`)**
-- `idt.c` — 32 CPU exceptions + legacy PIC IRQ0 (PIT timer at 100 Hz for scheduler bootstrap).
-- `isr_stub.asm` — assembly stubs that push context and call C handlers.
+- `idt.c` — 32 CPU exceptions + legacy PIC IRQ0 (PIT timer at 100 Hz for scheduler bootstrap). The `#BP` gate is DPL=3: a ring3 `int3` is the CPL3 trapframe evidence path and `#BP` is the only survivable exception.
+- `isr_stub.asm` — assembly stubs that push the full 176-byte trapframe (15 GPRs + vector/error + CPU iretq tail) and call C handlers.
+- `trapframe.c` / `include/interrupt/trapframe.h` — M3-b-3b2c entry-gate contract: every `interrupt_frame_t` offset and the 176-byte size are static-asserted and mirrored as NASM byte counts; `interrupt_frame_from_user` discriminates CPL0/CPL3 by CS RPL. A boot selftest fires a canary-loaded `int3` through the real stub and proves all 15 GPR offsets, exact RIP/RSP, and the exact frame address (`[TRAP] frame contract selftest PASS`). The armed one-shot capture consumes expected breakpoints quietly (the verdict scans the whole log for exception dumps); it is a single-BSP best-effort contract. Long mode aligns RSP down to 16 bytes before pushing a same-CPL frame — the CPL0 expected frame address is `(rsp & ~15) - 176`, while a CPL3 entry lands exactly at `stack_top - 176`.
 
 **Scheduler (`kernel/sched/ai_sched.c`)**
 - MLFQ + CFS-inspired fairness, 256-task slots. This is a **workload accounting** model (vruntime bookkeeping); it does not switch CPU context.
@@ -109,7 +110,7 @@ kernel/boot/boot.asm  (Multiboot2 entry, GDT, paging, SSE/AVX setup, long mode)
 - `kthread_selftest` runs a cooperative ping-pong (two threads, each with its own stack) whose per-stack loop counters prove correct save/restore — `[SCHED] context switch selftest PASS`.
 - **Preemption**: the timer IRQ handler calls `kthread_preempt_tick` (after EOI) which round-robins between runnable kernel threads via `kthread_switch`. `kthread_preempt_selftest` proves it: two workers that never yield both make progress — `[SCHED] preempt selftest PASS`. Observable via `state sched` (`kthread_switches`, `preempt_ticks`).
 - Invariants for this path: send the timer EOI **before** any preemptive switch; a freshly-switched thread inherits IF=0, so worker/thread entries must `sti` themselves to be preemptible; never `sti` before the PIC is remapped (subsystem 7) — IRQ0 would arrive as vector 8 (#DF).
-- A bounded static bootstrap process layer binds each of two private-CR3 slots to process-local run state and a unique 16KiB ring0 entry stack. PID 1 / slot 0 and PID 2 / slot 1 now complete separate synchronous runs in order, with clean ownership/CR3/TSS restoration between them. A full saved-register trapframe and two-process timer-preemptive switching remain the next M3-b sub-slice.
+- A bounded static bootstrap process layer binds each of two private-CR3 slots to process-local run state and a unique 16KiB ring0 entry stack. PID 1 / slot 0 and PID 2 / slot 1 now complete separate synchronous runs in order, with clean ownership/CR3/TSS restoration between them. The trapframe C/NASM contract and `from_user` discrimination are proven (M3-b-3b2c entry gate, 2026-08-02); trapframe-based saved-state switching between two processes remains the next M3-b sub-slice.
 
 **Hardware Abstraction (`kernel/hal/accel_hal.c`)**
 - PCI enumeration + accelerator abstraction (GPU/TPU/NPU/FPGA/CPU-SIMD).
@@ -121,7 +122,7 @@ kernel/boot/boot.asm  (Multiboot2 entry, GDT, paging, SSE/AVX setup, long mode)
 - The synchronous pair runner executes PID 1 / slot 0 and then PID 2 / slot 1. Each descriptor binds its own private CR3, process-local run state, backing, and 16KiB ring0 entry stack. Every teardown restores BSP boot-TSS `rsp0`, exact boot CR3, sealed/scrubbed leaf state, and clears current ownership with IF=0 before caller IF is restored. The inter-run checkpoint must be clean before PID 2 starts. This is not yet a concurrent or generally schedulable process model. Per-segment 4KiB W^X is a later step (the active user region is temporarily one W^X+U huge page).
 - `int 0x80` gate is DPL=3 (`idt.c`, vector 0x80) routed to `isr_syscall`, which re-maps ring3 args (rax=num, rdi/rsi/rdx/r10/r8) to `ai_syscall_dispatch`; `rax==0` restores the launcher resume RSP stored in process-owned run state. C/NASM run-state offsets in `process.h` / `user_entry.asm` are an append-only internal ABI.
 - `syscall_stack_top` in `boot.asm` remains the BSP boot-TSS baseline/fallback. Before each runner enters CPL3, it publishes that process's stack top to BSP `rsp0` with IF=0; all three demo `int 0x80` entries per process are proven to begin at exactly `stack_top-40`, then the baseline `rsp0` is restored. This is one BSP boot TSS, not SMP/per-CPU TSS support; the stack floor check is an 8-byte canary, not a guard page.
-- The demo program calls `SYS_PIPE_STATS` into a user buffer then `exit(42)`; the kernel verifies the buffer holds the real registry capacity — proof of a full round trip. Result is observable via `state user`.
+- The demo program calls `SYS_PIPE_STATS` into a user buffer, issues one canary-loaded `int3` (the CPL3 trapframe evidence — it does not touch the int80 counters, so `int80_entries` stays 3), attempts a hostile kernel-range pointer, then `exit(42)`; the kernel verifies the buffer holds the real registry capacity — proof of a full round trip. Per run the armed capture must show a ring3 frame (`cs=0x23 ss=0x1b`, user RSP/RIP, canaries intact) landing exactly at that process's `stack_top - 176` (`[TRAP] user frame capture PASS`). Results are observable via `state user` (`trap_*` fields).
 - The active user page is the one intentional W^X+U exception; keep it temporary and single-region, then reset the executable policy, scrub it, and enforce NX when the CPU supports it.
 
 **Runtime & Syscall Interface (`kernel/runtime/`)**
@@ -154,6 +155,7 @@ kernel/boot/boot.asm  (Multiboot2 entry, GDT, paging, SSE/AVX setup, long mode)
 A successful boot must emit all of:
 ```
 [BOOT] Multiboot2 handoff PASS
+[TRAP] frame contract selftest PASS size=176 canaries=15 int_no=3 err=0 cpl0=1 cs_match=1 ss_match=1 rip_exact=1 rsp_exact=1 frame_addr_exact=1 rflags_bit1=1 df_clear=1
 [TIMER] PIT IRQ ready
 [SELFTEST] Memory microbench PASS
 [HEAP] lock selftest PASS
@@ -176,6 +178,7 @@ A successful boot must emit all of:
 [USER] bootstrap process stack PASS pid=1 slot=0 process_bound=1 kstack_bytes=16384 rsp0_changed=1 rsp0_published=1 int80_entries=3 all_int80_entries_in_stack=1 rsp0_restored=1 kstack_floor_canary=1
 [USER] secondary process exec PASS pid=2 slot=1
 [USER] bootstrap process pair PASS runs=2 order=1,2 pid_a=1 slot_a=0 pid_b=2 slot_b=1 ... between_clean=1 current_pid=0 last_pid=2 ... both_restored=1
+[TRAP] user frame capture PASS pid_a=1 pid_b=2 captures_a=1 captures_b=1 from_user=1 cs=0x23 ss=0x1b rsp_user=1 rip_user=1 canary_ok=1 frame_in_kstack=1 frame_addr_exact=1 contract=1
 [SHELL] Interactive shell started
 [USER] Ring3 scaffold ready=1
 [ROOM] snapshot stability=...
@@ -270,4 +273,4 @@ replacement for QEMU or the normal verification path.
 - AI pressure schema/plane IDs are append-only; keep pressure ranking separate from gate eligibility and preserve `observation_only=1` until a separately verified apply path exists.
 - `store/` downloads and autonomy actions must pass the NodeBit + Kernel Room gates.
 - GPU/NPU driver code is scaffolding only; no real hardware interaction yet.
-- Ring3 execution and a bounded static ELF64 loader exist as a first slice (fixed in-kernel demo image). Two static bootstrap descriptors own distinct private 2MiB slots and 16KiB ring0 entry stacks, and PID 1 / slot 0 then PID 2 / slot 1 run synchronously with exact cleanup between runs. General/dynamic process address spaces, a full trapframe, two-process timer preemption, filesystem/disk-backed loading, and the learning promotion loop remain planned.
+- Ring3 execution and a bounded static ELF64 loader exist as a first slice (fixed in-kernel demo image). Two static bootstrap descriptors own distinct private 2MiB slots and 16KiB ring0 entry stacks, and PID 1 / slot 0 then PID 2 / slot 1 run synchronously with exact cleanup between runs. The 176-byte trapframe C/NASM contract and CPL0/CPL3 `from_user` discrimination are proven on the real ISR path. General/dynamic process address spaces, trapframe-based process switching, two-process timer preemption, filesystem/disk-backed loading, and the learning promotion loop remain planned.

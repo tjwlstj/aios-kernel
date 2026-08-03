@@ -71,6 +71,8 @@
 - `[DEV] Peripheral probe ready`
 - `[USER] Ring3 scaffold ready=1`
 - `[USER] bootstrap process pair PASS runs=2 order=1,2 ... between_clean=1 ... both_restored=1`
+- `[TRAP] frame contract selftest PASS size=176 canaries=15 ... frame_addr_exact=1 rflags_bit1=1 df_clear=1`
+- `[TRAP] user frame capture PASS pid_a=1 pid_b=2 ... from_user=1 cs=0x23 ss=0x1b ... frame_addr_exact=1 contract=1`
 - `[RESOURCE] ledger selftest PASS schema=1 kinds=5 units=2 entries=5 ... owners_unattributed=1 observation_only=1`
 - `[PRESSURE] tracker selftest PASS schema=1 planes=3 max_levels=4 active_levels=2 ... observation_only=1`
 - `[ROOM] snapshot stability=...`
@@ -81,8 +83,9 @@ exception, 대문자 단어 `FAIL`/`FATAL`을 금지하고, health가
 `stability=stable degraded=0 failed=0`인지 확인한다. ring3 scaffold부터 shell 시작까지의
 terminal checkpoint는 각각 정확히 한 번, 정의된 순서로 나타나야 한다. 증거 행과 토큰
 경계를 고정하고 contract-bearing 행의 중복 key를 거부하므로 인용·접두사 위장도 PASS하지 않는다.
-Resource와 pressure의 observation-only selftest는 행 전체 exact record라서 정본 뒤에
-`apply_enabled=1` 같은 상충 필드를 붙여도 PASS하지 않는다.
+Resource와 pressure의 observation-only selftest, 그리고 trapframe 계약의 두
+`[TRAP]` 마커는 행 전체 exact record라서 정본 뒤에 `apply_enabled=1` 같은 상충
+필드를 붙여도 PASS하지 않는다.
 
 부팅 매트릭스:
 

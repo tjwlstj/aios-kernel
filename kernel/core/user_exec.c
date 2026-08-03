@@ -14,6 +14,7 @@
 #include <runtime/node_pipeline.h>
 #include <drivers/serial.h>
 #include <interrupt/idt.h>
+#include <interrupt/trapframe.h>
 #include <lib/string.h>
 
 /* Ring3 entry / syscall path (kernel/core/user_entry.asm). */
@@ -43,6 +44,78 @@ static bool run_restored(const user_exec_info_t *info) {
     return info && info->cr3_restored && info->if_restored &&
         info->leaf_sealed && info->rsp0_restored &&
         info->kernel_stack_floor_canary_ok;
+}
+
+static bool run_trap_evidence_ok(const user_exec_info_t *info) {
+    return info && info->trap_captured && info->trap_from_user &&
+        info->trap_rsp_in_user && info->trap_rip_in_user &&
+        info->trap_canary_ok && info->trap_frame_in_kstack &&
+        info->trap_frame_addr_exact;
+}
+
+/* Fold the armed CPL3 #BP capture from this run into the run info. The demo
+ * program issues exactly one int3 with register canaries loaded; the frame
+ * must be a ring3 frame that landed at the exact top of this process's
+ * ring0 entry stack. */
+static void collect_trap_capture(
+    const bootstrap_process_t *process, user_exec_info_t *info) {
+    trapframe_capture_result_t cap = {0};
+    const interrupt_frame_t *f = &cap.frame;
+    uint64_t stack_top;
+    bool taken;
+
+    taken = trapframe_capture_take(&cap);
+    stack_top = process->kernel_stack_top;
+
+    info->trap_captures = cap.captures;
+    info->trap_captured = taken && cap.captures == 1ULL;
+    info->trap_cs = f->cs;
+    info->trap_ss = f->ss;
+    info->trap_from_user = taken && interrupt_frame_from_user(f) &&
+        f->cs == (uint64_t)AIOS_USER_CS_RPL3 &&
+        f->ss == (uint64_t)AIOS_USER_DS_RPL3;
+    info->trap_rsp_in_user = taken &&
+        f->rsp >= AIOS_BOOTSTRAP_USER_BASE &&
+        f->rsp < AIOS_BOOTSTRAP_USER_END;
+    info->trap_rip_in_user = taken &&
+        f->rip >= AIOS_BOOTSTRAP_USER_BASE &&
+        f->rip < AIOS_BOOTSTRAP_USER_END;
+    info->trap_canary_ok = taken &&
+        f->rbx == TRAPFRAME_SELFTEST_CANARY(13) &&
+        f->rcx == TRAPFRAME_SELFTEST_CANARY(12) &&
+        f->r8  == TRAPFRAME_SELFTEST_CANARY(7) &&
+        f->r12 == TRAPFRAME_SELFTEST_CANARY(3);
+    info->trap_frame_in_kstack = taken &&
+        cap.frame_addr >= process->kernel_stack_base &&
+        cap.frame_addr + (uint64_t)TRAPFRAME_SIZE <= stack_top;
+    /* A CPL3->0 breakpoint enters on TSS rsp0 == stack_top (16-byte
+     * aligned), so the frame base is exactly stack_top - TRAPFRAME_SIZE —
+     * the same exactness style as the int80 stack_top-40 entry proof. */
+    info->trap_frame_addr_exact = taken &&
+        cap.frame_addr == stack_top - (uint64_t)TRAPFRAME_SIZE;
+}
+
+static void emit_trap_capture_marker(
+    const user_exec_info_t *a, const user_exec_info_t *b) {
+    bool pass = run_trap_evidence_ok(a) && run_trap_evidence_ok(b) &&
+        a->trap_cs == b->trap_cs && a->trap_ss == b->trap_ss &&
+        trapframe_contract_passed();
+
+    serial_printf("[TRAP] user frame capture %s pid_a=%u pid_b=%u captures_a=%u captures_b=%u from_user=%u cs=%x ss=%x rsp_user=%u rip_user=%u canary_ok=%u frame_in_kstack=%u frame_addr_exact=%u contract=%u\n",
+        pass ? "PASS" : "FAIL",
+        (uint64_t)a->process_id,
+        (uint64_t)b->process_id,
+        a->trap_captures,
+        b->trap_captures,
+        (uint64_t)(a->trap_from_user && b->trap_from_user),
+        a->trap_cs,
+        a->trap_ss,
+        (uint64_t)(a->trap_rsp_in_user && b->trap_rsp_in_user),
+        (uint64_t)(a->trap_rip_in_user && b->trap_rip_in_user),
+        (uint64_t)(a->trap_canary_ok && b->trap_canary_ok),
+        (uint64_t)(a->trap_frame_in_kstack && b->trap_frame_in_kstack),
+        (uint64_t)(a->trap_frame_addr_exact && b->trap_frame_addr_exact),
+        (uint64_t)trapframe_contract_passed());
 }
 
 static void emit_pair_marker(void) {
@@ -168,9 +241,13 @@ static aios_status_t user_exec_run_slot(
                            AIOS_BOOTSTRAP_USER_SIZE);
     window_active = true;
     enter_ns = kernel_time_monotonic_ns();
+    /* Arm the one-shot #BP capture: the demo program issues exactly one
+     * canary-loaded int3, which is this run's CPL3 trapframe evidence. */
+    trapframe_capture_arm();
     user_mode_run(elf.entry, AIOS_BOOTSTRAP_USER_STACK_TOP,
                   &process->run_state);
     exit_ns = kernel_time_monotonic_ns();
+    collect_trap_capture(process, info);
 
     info->user_syscalls = (uint32_t)process->run_state.user_syscalls;
     info->exit_code = process->run_state.exit_code;
@@ -227,6 +304,7 @@ cleanup:
          info->int80_entries == 3U &&
          info->all_int80_entries_in_stack && info->rsp0_restored &&
          info->kernel_stack_floor_canary_ok &&
+         run_trap_evidence_ok(info) &&
          finish_status == AIOS_OK;
 
     if (emit_primary_markers) {
@@ -427,6 +505,7 @@ aios_status_t user_exec_run_bootstrap_pair(void) {
         g_user_exec_pair.both_restored;
 
     emit_pair_marker();
+    emit_trap_capture_marker(&first.info, &second.info);
     return g_user_exec_pair.passed ? AIOS_OK : AIOS_ERR_IO;
 }
 

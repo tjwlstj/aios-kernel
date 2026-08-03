@@ -6,6 +6,8 @@ from lib.boot_verdict import evaluate_normal_boot
 from lib.kernel_lane import (
     PRESSURE_SELFTEST_PATTERN,
     RESOURCE_SELFTEST_PATTERN,
+    TRAPFRAME_CONTRACT_PATTERN,
+    USER_TRAP_CAPTURE_PATTERN,
     required_smoke_patterns,
 )
 
@@ -22,6 +24,7 @@ def normal_lines() -> list[str]:
         "[USER] private address space exec PASS slot=0",
         "[USER] bootstrap process stack PASS pid=1",
         "[USER] bootstrap process pair PASS runs=2",
+        "[TRAP] user frame capture PASS pid_a=1 pid_b=2",
         "[ROOM] snapshot stability=stable ok=18 degraded=0 failed=0",
         "[HEALTH] stability=stable ok=18 degraded=0 failed=0 unknown=2",
         "=== AIOS Kernel Ready ===",
@@ -103,6 +106,88 @@ class NormalBootVerdictTests(unittest.TestCase):
         )
         self.assertFalse(duplicate["passed"])
         self.assertIn("EVIDENCE_RECORD_DUPLICATED", reason_codes(duplicate))
+
+    def test_trapframe_contract_is_exact_and_fails_closed(self) -> None:
+        for profile in ("full", "minimal", "storage-only"):
+            with self.subTest(profile=profile):
+                self.assertIn(
+                    TRAPFRAME_CONTRACT_PATTERN,
+                    required_smoke_patterns(profile),
+                )
+                self.assertIn(
+                    USER_TRAP_CAPTURE_PATTERN,
+                    required_smoke_patterns(profile),
+                )
+
+        contract_valid = evaluate_normal_boot(
+            "\n".join([*normal_lines(), TRAPFRAME_CONTRACT_PATTERN]),
+            [TRAPFRAME_CONTRACT_PATTERN],
+        )
+        self.assertTrue(contract_valid["passed"])
+
+        for invalid in (
+            TRAPFRAME_CONTRACT_PATTERN.replace("canaries=15", "canaries=14"),
+            TRAPFRAME_CONTRACT_PATTERN.replace("cpl0=1", "cpl0=0"),
+            TRAPFRAME_CONTRACT_PATTERN.replace(
+                "frame_addr_exact=1", "frame_addr_exact=0"
+            ),
+            "[TRAP] frame contract selftest PASS size=176",
+            f"{TRAPFRAME_CONTRACT_PATTERN} extra=1",
+            f"  {TRAPFRAME_CONTRACT_PATTERN}",
+        ):
+            with self.subTest(invalid_contract=invalid):
+                verdict = evaluate_normal_boot(
+                    "\n".join([*normal_lines(), invalid]),
+                    [TRAPFRAME_CONTRACT_PATTERN],
+                )
+                self.assertFalse(verdict["passed"])
+                self.assertTrue(
+                    {"MISSING_REQUIRED_PATTERNS", "EVIDENCE_RECORD_INVALID"}
+                    & set(reason_codes(verdict))
+                )
+
+        # The user capture is also a terminal checkpoint: swap the fixture's
+        # short chain line for the full record so the chain stays exact-once.
+        def capture_lines(record: str) -> list[str]:
+            lines = normal_lines()
+            index = lines.index("[TRAP] user frame capture PASS pid_a=1 pid_b=2")
+            lines[index] = record
+            return lines
+
+        capture_valid = evaluate_normal_boot(
+            "\n".join(capture_lines(USER_TRAP_CAPTURE_PATTERN)),
+            [USER_TRAP_CAPTURE_PATTERN],
+        )
+        self.assertTrue(capture_valid["passed"])
+
+        for invalid in (
+            USER_TRAP_CAPTURE_PATTERN.replace("from_user=1", "from_user=0"),
+            USER_TRAP_CAPTURE_PATTERN.replace("cs=0x23", "cs=0x8"),
+            USER_TRAP_CAPTURE_PATTERN.replace(
+                "frame_in_kstack=1", "frame_in_kstack=0"
+            ),
+            USER_TRAP_CAPTURE_PATTERN.replace("contract=1", "contract=0"),
+            f"{USER_TRAP_CAPTURE_PATTERN} extra=1",
+        ):
+            with self.subTest(invalid_capture=invalid):
+                verdict = evaluate_normal_boot(
+                    "\n".join(capture_lines(invalid)),
+                    [USER_TRAP_CAPTURE_PATTERN],
+                )
+                self.assertFalse(verdict["passed"])
+                self.assertTrue(
+                    {"MISSING_REQUIRED_PATTERNS", "EVIDENCE_RECORD_INVALID"}
+                    & set(reason_codes(verdict))
+                )
+
+        duplicate = evaluate_normal_boot(
+            "\n".join(
+                [*capture_lines(USER_TRAP_CAPTURE_PATTERN),
+                 USER_TRAP_CAPTURE_PATTERN]
+            ),
+            [USER_TRAP_CAPTURE_PATTERN],
+        )
+        self.assertFalse(duplicate["passed"])
 
     def test_resource_contract_is_exact_and_fails_closed(self) -> None:
         for profile in ("full", "minimal", "storage-only"):

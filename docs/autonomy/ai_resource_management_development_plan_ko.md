@@ -43,7 +43,7 @@ AI workload와 agent runtime에 맞는 리소스 관리를 어떤 순서로 확�
 
 - 장기 실행 `aios-init`과 일반 userspace task 수명주기
 - 동적 per-process address space/PMM, page fault recovery
-- 두 ring3 process의 timer-preemptive 전환과 full trapframe
+- 두 ring3 process의 timer-preemptive 전환과 trapframe 기반 saved-state 교대(176B frame 계약·from_user 판별 자체는 2026-08-02 `CURRENT`)
 - SMP/per-CPU TSS와 물리 CPU 간 task migration
 - per-node/task/model/ring resource attribution과 quota / budget accounting
 - 리소스 reserve / release / throttle UAPI

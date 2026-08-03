@@ -11,6 +11,16 @@ bits 64
 
 extern exception_handler
 
+; Trapframe C/NASM contract. Mirrors kernel/include/interrupt/trapframe.h;
+; the runtime canary selftest catches drift on the real ISR path.
+%define TRAPFRAME_SIZE          176
+%define TRAPFRAME_GPR_BYTES     120
+%define TRAPFRAME_VEC_ERR_BYTES 16
+%define TRAPFRAME_HW_FRAME_SIZE 40
+; Register canary base shared with trapframe.h; index = interrupt_frame_t
+; field position (r15=0 .. rax=14).
+%define TRAPFRAME_CANARY_BASE   0xC0DE5AFE00000000
+
 ; Macro for ISR without error code (CPU does not push one)
 %macro ISR_NOERR 1
 global isr%1
@@ -131,9 +141,57 @@ isr_common_stub:
     pop rax
 
     ; Remove interrupt number and error code from stack
-    add rsp, 16
+    add rsp, TRAPFRAME_VEC_ERR_BYTES
 
     ; Return from interrupt
     iretq
+
+; =============================================================================
+; Trapframe contract selftest trigger (CPL0)
+;
+; uint64_t trapframe_selftest_trigger(uint64_t *rsp_at_int3_out)
+;   Loads every GPR except rsp with its contract canary, records the exact
+;   RSP the int3 frame must report, and breaks through the real
+;   isr_common_stub path. The armed capture in trapframe.c consumes the
+;   breakpoint quietly; iretq restores the canaries, which the pops below
+;   then discard from the callee-saved registers.
+; =============================================================================
+global trapframe_selftest_trigger
+global trapframe_selftest_resume_rip
+trapframe_selftest_trigger:
+    push rbx
+    push rbp
+    push r12
+    push r13
+    push r14
+    push r15
+
+    ; The saved RSP in the frame is the pre-interrupt value at the int3.
+    mov [rdi], rsp
+
+    mov r15, TRAPFRAME_CANARY_BASE + 0
+    mov r14, TRAPFRAME_CANARY_BASE + 1
+    mov r13, TRAPFRAME_CANARY_BASE + 2
+    mov r12, TRAPFRAME_CANARY_BASE + 3
+    mov r11, TRAPFRAME_CANARY_BASE + 4
+    mov r10, TRAPFRAME_CANARY_BASE + 5
+    mov r9,  TRAPFRAME_CANARY_BASE + 6
+    mov r8,  TRAPFRAME_CANARY_BASE + 7
+    mov rbp, TRAPFRAME_CANARY_BASE + 8
+    mov rdi, TRAPFRAME_CANARY_BASE + 9
+    mov rsi, TRAPFRAME_CANARY_BASE + 10
+    mov rdx, TRAPFRAME_CANARY_BASE + 11
+    mov rcx, TRAPFRAME_CANARY_BASE + 12
+    mov rbx, TRAPFRAME_CANARY_BASE + 13
+    mov rax, TRAPFRAME_CANARY_BASE + 14
+    int3
+trapframe_selftest_resume_rip:
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbp
+    pop rbx
+    ret
 
 section .note.GNU-stack noalloc noexec nowrite progbits

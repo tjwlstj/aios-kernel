@@ -173,6 +173,31 @@ class ShellExpectationTests(unittest.TestCase):
             with self.subTest(invalid=invalid):
                 self.assertFalse(expectations_match(invalid, expectations))
 
+    def test_state_user_trap_evidence_is_fail_closed(self) -> None:
+        exchange = next(
+            item for item in DEFAULT_EXCHANGES
+            if item["command"] == "state user"
+        )
+        expectations = list(exchange["expect"])
+        record = " ".join(expectations) + "\n"
+        self.assertTrue(expectations_match(record, expectations))
+
+        for invalid in (
+            record.replace("trap_captured=1", "trap_captured=0"),
+            record.replace("trap_from_user=1", "trap_from_user=0"),
+            record.replace("trap_rsp_user=1", "trap_rsp_user=0"),
+            record.replace("trap_rip_user=1", "trap_rip_user=0"),
+            record.replace("trap_canary=1", "trap_canary=0"),
+            record.replace("trap_frame_in_kstack=1", "trap_frame_in_kstack=0"),
+            record.replace("trap_addr_exact=1", "trap_addr_exact=0"),
+            record.replace("trap_contract=1", "trap_contract=0"),
+            record.replace(
+                "trap_contract=1", "trap_contract=0 trap_contract=1"
+            ),
+        ):
+            with self.subTest(invalid=invalid):
+                self.assertFalse(expectations_match(invalid, expectations))
+
 
 class ShellVerdictTests(unittest.TestCase):
     def test_clean_exit_is_required_for_pass(self) -> None:

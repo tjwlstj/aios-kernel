@@ -33,6 +33,7 @@ $normalLines = @(
     '[HEAP] lock selftest PASS acquires=4'
     '[SCHED] context switch selftest PASS switches=8 ping=3 pong=3'
     '[SCHED] preempt selftest PASS ticks=2 switches=3'
+    '[TRAP] frame contract selftest PASS size=176 canaries=15 int_no=3 err=0 cpl0=1 cs_match=1 ss_match=1 rip_exact=1 rsp_exact=1 frame_addr_exact=1 rflags_bit1=1 df_clear=1'
     '[MM] address space selftest PASS switches=2'
     '[MM] user leaf isolation selftest PASS slots=2'
     '[MM] bootstrap user tensor exclusion PASS base=0x4000000 size=2097152 excluded=2097152 managed=1004535808 configured=1006632960 overflow=1 region=1 align=1 boundary=1 coalesce=1'
@@ -56,6 +57,7 @@ $normalLines = @(
     '[USER] private address space exec PASS slot=0 cr3_restored=1 if_restored=1 leaf_sealed=1 nx_enforced=1 tensor_excluded=1'
     '[USER] bootstrap process stack PASS pid=1 slot=0 process_bound=1 kstack_bytes=16384 rsp0_changed=1 rsp0_published=1 int80_entries=3 all_int80_entries_in_stack=1 rsp0_restored=1 kstack_floor_canary=1'
     '[USER] bootstrap process pair PASS runs=2 order=1,2 pid_a=1 slot_a=0 pid_b=2 slot_b=1 distinct_pid=1 distinct_slot=1 distinct_cr3=1 distinct_backing=1 distinct_stack=1 int80_a=3 int80_b=3 between_clean=1 current_pid=0 last_pid=2 rsp0_publishes=2 rsp0_restores=2 tss_rsp0_baseline=1 both_restored=1'
+    '[TRAP] user frame capture PASS pid_a=1 pid_b=2 captures_a=1 captures_b=1 from_user=1 cs=0x23 ss=0x1b rsp_user=1 rip_user=1 canary_ok=1 frame_in_kstack=1 frame_addr_exact=1 contract=1'
     '[ROOM] snapshot stability=stable ok=18 degraded=0 failed=0'
     '[HEALTH] stability=stable ok=18 degraded=0 failed=0 unknown=2'
     '=== AIOS Kernel Ready ==='
@@ -203,6 +205,58 @@ try {
     }
     Write-Output 'PASS mutating-resource-ledger expected=False'
 
+    $missingTrapContractLines = @(
+        $normalLines | Where-Object {
+            $_ -notmatch '^\[TRAP\] frame contract selftest '
+        }
+    )
+    [IO.File]::WriteAllLines(
+        $tempPath,
+        $missingTrapContractLines,
+        [Text.UTF8Encoding]::new($false)
+    )
+    $missingTrapContractVerdict = Test-NormalSmokeVerdict -SerialLog $tempPath
+    if ([bool]$missingTrapContractVerdict.Passed) {
+        throw 'Missing trapframe contract evidence unexpectedly passed'
+    }
+    Write-Output 'PASS missing-trapframe-contract expected=False'
+
+    $missingTrapCaptureLines = @(
+        $normalLines | Where-Object {
+            $_ -notmatch '^\[TRAP\] user frame capture '
+        }
+    )
+    [IO.File]::WriteAllLines(
+        $tempPath,
+        $missingTrapCaptureLines,
+        [Text.UTF8Encoding]::new($false)
+    )
+    $missingTrapCaptureVerdict = Test-NormalSmokeVerdict -SerialLog $tempPath
+    if ([bool]$missingTrapCaptureVerdict.Passed) {
+        throw 'Missing user trap capture evidence unexpectedly passed'
+    }
+    Write-Output 'PASS missing-user-trap-capture expected=False'
+
+    $mutatingTrapCaptureLines = @(
+        $normalLines | ForEach-Object {
+            if ($_ -match '^\[TRAP\] user frame capture ') {
+                "$_ extra=1"
+            } else {
+                $_
+            }
+        }
+    )
+    [IO.File]::WriteAllLines(
+        $tempPath,
+        $mutatingTrapCaptureLines,
+        [Text.UTF8Encoding]::new($false)
+    )
+    $mutatingTrapCaptureVerdict = Test-NormalSmokeVerdict -SerialLog $tempPath
+    if ([bool]$mutatingTrapCaptureVerdict.Passed) {
+        throw 'Extended user trap capture evidence unexpectedly passed'
+    }
+    Write-Output 'PASS mutating-user-trap-capture expected=False'
+
     $duplicateObservationCases = @(
         [pscustomobject]@{
             Name = 'duplicate-resource-ledger'
@@ -214,6 +268,18 @@ try {
             Name = 'duplicate-pressure-tracker'
             Line = $normalLines | Where-Object {
                 $_ -match '^\[PRESSURE\] tracker selftest '
+            } | Select-Object -First 1
+        }
+        [pscustomobject]@{
+            Name = 'duplicate-trapframe-contract'
+            Line = $normalLines | Where-Object {
+                $_ -match '^\[TRAP\] frame contract selftest '
+            } | Select-Object -First 1
+        }
+        [pscustomobject]@{
+            Name = 'duplicate-user-trap-capture'
+            Line = $normalLines | Where-Object {
+                $_ -match '^\[TRAP\] user frame capture '
             } | Select-Object -First 1
         }
     )
@@ -237,4 +303,4 @@ try {
     Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
 }
 
-Write-Output "PowerShell verdict selftest passed cases=$($cases.Count + 6 + $duplicateObservationCases.Count)"
+Write-Output "PowerShell verdict selftest passed cases=$($cases.Count + 9 + $duplicateObservationCases.Count)"

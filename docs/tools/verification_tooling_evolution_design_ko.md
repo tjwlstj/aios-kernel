@@ -124,8 +124,8 @@ CI exit status + build artifacts
 - required subsystem의 `UNKNOWN`이 required failure로 계산되지 않는다.
 - health state는 후속 mark가 앞선 심각도를 낮출 수 있다.
 - ring3 synchronous runner에는 내부 실행 budget과 process fault teardown이 없다.
-- 현재 exception frame은 CPL0-origin frame에도 `rsp/ss`가 있다고 표현하며 C/NASM offset 계약이 생성되지 않는다.
-- PID 1→PID 2 순차 실행은 검증하지만 full trapframe과 두 process 타이머 선점은 아직 없다. aggregate run counter는 A→B→A switch sequence 증거가 아니다.
+- exception frame의 C/NASM offset·크기 계약과 CPL0/CPL3 `from_user` 판별은 2026-08-02에 `CURRENT`가 됐다(`trapframe.h` static assert + NASM mirror + `[TRAP]` canary 실경로 증명). long mode는 CPL0-origin frame에도 `rsp/ss`를 push하므로 두 frame은 같은 176B 레이아웃이고 CS RPL로만 구분한다. from_user fault teardown 분기는 아직 없다.
+- PID 1→PID 2 순차 실행은 검증하지만 trapframe 기반 전환과 두 process 타이머 선점은 아직 없다(176B frame 계약과 from_user 판별 자체는 2026-08-02 `CURRENT`). aggregate run counter는 A→B→A switch sequence 증거가 아니다.
 - pressure schema 1은 system→plane 두 단계의 순간 snapshot과 NodeBit 누적
   counter만 제공한다. fast/slow EWMA, stall window, domain/entity child와
   scheduler apply/migration은 아직 없다.
@@ -283,8 +283,8 @@ full trapframe과 두 ring3 process 선점 교대로 넘어가기 전에 최소�
 
 - 정상 부트 verdict v1 host unit tests
 - fatal-after-PASS와 health 값 검증
-- C/NASM trapframe offset 및 전체 크기 계약
-- `from_user` 판별과 CPL0/CPL3 frame 차이 처리
+- C/NASM trapframe offset 및 전체 크기 계약 — `CURRENT` (2026-08-02, `[TRAP] frame contract selftest PASS` — 전 필드 static assert + NASM mirror + canary 15개 실경로 증명)
+- `from_user` 판별과 CPL0/CPL3 frame 차이 처리 — 판별과 양쪽 frame 증거는 `CURRENT` (2026-08-02, ring3 `int3` 캡처 `[TRAP] user frame capture PASS`); from_user fault teardown 분기 동작은 아직 없다
 - slot 1 실제 ring3 실행 — `CURRENT` (2026-07-26, 순차 pair proof)
 - CPL3 timer IRQ의 process entry stack 귀속 증거
 - A -> B -> A의 PID, CR3, BSP `rsp0`, current owner 순서 이벤트

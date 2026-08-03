@@ -34,6 +34,7 @@ TERMINAL_CHECKPOINTS: tuple[tuple[str, str], ...] = (
     ("private_address_space_exec", "[USER] private address space exec PASS"),
     ("bootstrap_process_stack", "[USER] bootstrap process stack PASS"),
     ("bootstrap_process_pair", "[USER] bootstrap process pair PASS"),
+    ("user_trap_capture", "[TRAP] user frame capture PASS"),
     ("kernel_room", "[ROOM] snapshot stability=stable"),
     ("health", "[HEALTH] stability="),
     ("kernel_ready", "=== AIOS Kernel Ready ==="),
@@ -54,6 +55,8 @@ ALLOWED_DUPLICATE_FIELDS_BY_PREFIX = {
 EXACT_REQUIRED_RECORDS = (
     ("[RESOURCE] ledger selftest PASS ", "resource_ledger"),
     ("[PRESSURE] tracker selftest PASS ", "pressure_tracker"),
+    ("[TRAP] frame contract selftest PASS ", "trapframe_contract"),
+    ("[TRAP] user frame capture PASS ", "user_trap_capture"),
 )
 
 

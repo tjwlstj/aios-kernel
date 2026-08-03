@@ -31,6 +31,10 @@ extern ai_syscall_dispatch
 %define RUN_STATE_ENTRY_RSP_MAX  40
 %define RUN_STATE_EXITED         48
 
+; Trapframe register canary base (kernel/include/interrupt/trapframe.h);
+; index = interrupt_frame_t field position (r15=0 .. rax=14).
+%define TRAPFRAME_CANARY_BASE   0xC0DE5AFE00000000
+
 ; -----------------------------------------------------------------------------
 ; void user_mode_run(uint64_t entry_rip, uint64_t user_stack_top,
 ;                    bootstrap_user_run_state_t *state)
@@ -131,8 +135,11 @@ isr_syscall:
 ; kernel elf_loader. The code segment loads at USER_CODE_VADDR; p_memsz is
 ; larger than p_filesz so the loader also exercises .bss zeroing.
 ;   1) SYS_PIPE_STATS(0x604) with the result buffer at 0x4001000
-;   2) hostile SYS_PIPE_STATS with a kernel-range pointer (must be denied)
-;   3) exit(42)
+;   2) int3 with register canaries loaded — the armed kernel capture proves
+;      the CPL3 trapframe layout, from_user discrimination, and that the
+;      frame landed on this process's ring0 entry stack
+;   3) hostile SYS_PIPE_STATS with a kernel-range pointer (must be denied)
+;   4) exit(42)
 ; -----------------------------------------------------------------------------
 %define USER_CODE_VADDR 0x4000000
 
@@ -169,6 +176,11 @@ elf_code:
     mov rax, 0x604          ; SYS_PIPE_STATS
     mov rdi, 0x4001000      ; user result buffer (USER_REGION + 4KB)
     int 0x80
+    mov rbx, TRAPFRAME_CANARY_BASE + 13
+    mov rcx, TRAPFRAME_CANARY_BASE + 12
+    mov r8,  TRAPFRAME_CANARY_BASE + 7
+    mov r12, TRAPFRAME_CANARY_BASE + 3
+    int3                    ; CPL3 trapframe capture evidence
     mov rax, 0x604          ; hostile: kernel-range pointer
     mov rdi, 0x100000
     int 0x80

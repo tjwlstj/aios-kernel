@@ -43,6 +43,17 @@ typedef struct {
     bool     all_int80_entries_in_stack; /* every int80 raw RSP on stack */
     bool     rsp0_restored;   /* exact boot rsp0 readback after run */
     bool     kernel_stack_floor_canary_ok; /* static floor canary survived */
+    /* CPL3 trapframe capture evidence (armed #BP during the run) */
+    uint64_t trap_captures;   /* armed #BP consumes during the run */
+    uint64_t trap_cs;         /* captured frame CS */
+    uint64_t trap_ss;         /* captured frame SS */
+    bool     trap_captured;   /* exactly one armed capture happened */
+    bool     trap_from_user;  /* frame CS RPL=3 with user cs/ss selectors */
+    bool     trap_rsp_in_user; /* frame RSP inside the user window */
+    bool     trap_rip_in_user; /* frame RIP inside the user window */
+    bool     trap_canary_ok;  /* user register canaries survived the frame */
+    bool     trap_frame_in_kstack; /* frame lay inside this process's stack */
+    bool     trap_frame_addr_exact; /* frame base == stack_top - frame size */
 } user_exec_info_t;
 
 typedef struct {

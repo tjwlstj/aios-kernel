@@ -26,6 +26,7 @@
 #include <drivers/serial.h>
 #include <drivers/platform_probe.h>
 #include <interrupt/idt.h>
+#include <interrupt/trapframe.h>
 #include <mm/tensor_mm.h>
 #include <mm/memory_fabric.h>
 #include <sched/ai_sched.h>
@@ -384,6 +385,16 @@ static void init_subsystems(uint64_t multiboot_magic, uint64_t multiboot_info) {
     /* 1. IDT - must be first to catch any exceptions during init */
     INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_IDT,
         "Interrupt Descriptor Table (IDT)", idt_init());
+
+    /* Prove the C/NASM trapframe contract on the real isr_common_stub path
+     * before anything else depends on frame layout. A broken contract means
+     * every later exception frame would be misread: fail-stop. Safe here:
+     * int3 is a software exception, so no sti/PIC ordering is involved. */
+    if (trapframe_contract_selftest() != AIOS_OK) {
+        kernel_health_mark(KERNEL_SUBSYSTEM_SELFTEST,
+            KERNEL_HEALTH_FAILED, AIOS_ERR_IO);
+        kernel_panic("Trapframe contract selftest failed");
+    }
 
     /* 2. Common monotonic time source */
     INIT_SUBSYSTEM(KERNEL_SUBSYSTEM_TIME,
