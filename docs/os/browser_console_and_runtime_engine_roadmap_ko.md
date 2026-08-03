@@ -132,6 +132,12 @@ flowchart LR
 
 ### W3. Browser-local Engine Pilot — `RESEARCH`
 
+> 2026-08-03 조사 체크포인트: [v86](https://github.com/copy/v86)는 공식 README 기준
+> 64-bit extensions를 지원하지 않으므로 현재 x86_64 AIOS ISO의 실행 후보가 아니다.
+> 이번 조사에서는 요구를 충족한다고 공식 자료로 확인된 full-system browser engine을
+> 찾지 못했다. 후보 미정 상태를 유지하고 32-bit 부팅이나 user-mode emulator를
+> AIOS 호환으로 과장하지 않는다.
+
 작업:
 
 - 기존 WebAssembly x86 실행 엔진의 AIOS ISO 부팅 가능성 조사

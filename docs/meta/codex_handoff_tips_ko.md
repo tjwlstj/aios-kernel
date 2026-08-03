@@ -1,6 +1,6 @@
 # Codex 작업 핸드오프 팁 (2026-07-15)
 
-최종 갱신: 2026-08-02 (AI Resource Ledger v0 + read-only UAPI/state)
+최종 갱신: 2026-08-03 (trapframe beta/main 체크포인트 + 외부 프로젝트 조사)
 
 이 커널에서 Claude가 M1~M3 작업 중 실제로 밟은 지뢰와 관례를 모았다. 다음 작업자(Codex)가 같은 함정에 빠지지 않도록 하는 실전 노트다. **CLAUDE.md의 규칙이 정본이고, 이 문서는 "왜 그런지"와 "어떻게 디버깅했는지"를 보완한다.**
 
@@ -122,6 +122,13 @@ PID 1 실행 뒤 PID 2를 호출하는 것만으로는 scheduler 전환을 증�
 다음 작은 후보는 bounded policy schema만 정의하는 Slice 3이며, handler/apply,
 owner attribution, quota를 함께 넣지 않는다. 프로세스 실행축은 M3-b-3b2c를
 계속 따른다.
+
+2026-08-03 최신 조사 기준 프로세스 실행축의 가장 작은 다음 조각은
+**process-owned saved-state capture v0**다. 기존 ring3 `int3` frame을 각 static
+process의 snapshot/validity/capture sequence에 결속하되 아직 resume/switch라고
+부르지 않는다. 이후 append-only process transition event v1과 verifier 반례를 먼저
+고정하고 bounded A→B→A, 마지막으로 timer preemption을 연결한다. 근거와 외부
+참고선은 [AIOS 빌드 참고 프로젝트 최신 조사](aios_build_project_landscape_2026_08_03_ko.md)를 본다.
 
 `address_space_selftest`는 부트 PML4 복제 + CR3 왕복까지 증명했다(공유 매핑). 다음은:
 1. **정적 주소공간 슬롯별 private user leaf proof ✅ M3-b-3b1 완료 (2026-07-14)** — 정적 2슬롯에서 유저 영역(현재 고정 64MiB)을 서로 다른 2MiB backing에 매핑하고 canary 격리를 검증했다. 범용 주소공간 객체, PMM, 실제 프로세스 실행 연결은 아직 아니다.

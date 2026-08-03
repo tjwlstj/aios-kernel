@@ -1,7 +1,9 @@
 # AI-native OS GitHub 참고 페이지 정리
 
 > OLD (2026-07-03): 이 비교 문서의 AIOS 현재 상태 설명은 ring3/ELF 완료 이전 기준이다.
-> 최신 상태는 [OLD 문서 체크리스트](old_docs_check_2026_07_03_ko.md)와
+> 최신 외부 프로젝트 조사와 적용 순서는
+> [AIOS 빌드 참고 프로젝트 최신 조사](aios_build_project_landscape_2026_08_03_ko.md)를,
+> 구현 상태는 [OLD 문서 체크리스트](old_docs_check_2026_07_03_ko.md)와
 > [CLAUDE.md](../../CLAUDE.md)를 먼저 본다.
 
 확인일: 2026-04-21

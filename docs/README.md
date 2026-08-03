@@ -64,6 +64,7 @@
 ## meta/ — 점검 보고서 · 로드맵 · 외부 사례 · 릴리스
 - [maturity_levers_backlog_ko.md](meta/maturity_levers_backlog_ko.md)
 - [codex_handoff_tips_ko.md](meta/codex_handoff_tips_ko.md)
+- [aios_build_project_landscape_2026_08_03_ko.md](meta/aios_build_project_landscape_2026_08_03_ko.md) — 현재 성숙도에 맞춘 OS·runtime·브라우저 실행 프로젝트 최신 조사
 - [old_docs_check_2026_07_03_ko.md](meta/old_docs_check_2026_07_03_ko.md)
 - [minimal_io_and_maturity_workflow_ko.md](meta/minimal_io_and_maturity_workflow_ko.md)
 - [hardening_baseline_2026_07_02_ko.md](meta/hardening_baseline_2026_07_02_ko.md)
@@ -72,5 +73,5 @@
 - [inspection_and_gaps_ko.md](meta/inspection_and_gaps_ko.md)
 - [current_kernel_gap_report_ko.md](meta/current_kernel_gap_report_ko.md)
 - [commercial_stability_baseline_ko.md](meta/commercial_stability_baseline_ko.md)
-- [ai_native_os_github_landscape_ko.md](meta/ai_native_os_github_landscape_ko.md)
+- [ai_native_os_github_landscape_ko.md](meta/ai_native_os_github_landscape_ko.md) — 2026-04-21 역사적 조사(`OLD`)
 - [release_notes_v0.2.0_beta.6.md](meta/release_notes_v0.2.0_beta.6.md)
