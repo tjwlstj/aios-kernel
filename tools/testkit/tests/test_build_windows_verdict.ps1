@@ -13,7 +13,7 @@ if ($parseErrors.Count -ne 0) {
     throw "build-windows.ps1 parse failed: $($parseErrors[0].Message)"
 }
 
-foreach ($functionName in @('Get-SmokeRequiredPatterns', 'Test-NormalSmokeVerdict')) {
+foreach ($functionName in @('Get-QemuBootArguments', 'Get-SmokeRequiredPatterns', 'Test-NormalSmokeVerdict')) {
     $functionAst = $ast.Find({
         param($node)
         $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
@@ -26,9 +26,24 @@ foreach ($functionName in @('Get-SmokeRequiredPatterns', 'Test-NormalSmokeVerdic
 }
 
 $script:SmokeProfile = 'storage-only'
+$script:CpuProfile = 'default'
+$defaultQemuArgs = @(Get-QemuBootArguments -IsoPath 'kernel.iso' -SerialMode 'stdio' -DisplayMode 'none')
+if ($defaultQemuArgs -contains '-cpu') {
+    throw 'Default CPU profile unexpectedly added a QEMU -cpu argument'
+}
+$script:CpuProfile = 'max-smap'
+$maxQemuArgs = @(Get-QemuBootArguments -IsoPath 'kernel.iso' -SerialMode 'stdio' -DisplayMode 'none')
+$cpuIndex = [Array]::IndexOf($maxQemuArgs, '-cpu')
+if ($cpuIndex -lt 0 -or $cpuIndex + 1 -ge $maxQemuArgs.Count -or
+        $maxQemuArgs[$cpuIndex + 1] -cne 'max' -or
+        @($maxQemuArgs | Where-Object { $_ -ceq '-cpu' }).Count -ne 1) {
+    throw 'max-smap CPU profile did not add exactly one `-cpu max` pair'
+}
+$script:CpuProfile = 'default'
 $validIde = '[STO] IDE channels primary=0x1f0/0x3f6 status=0x0 live=1 secondary=0x170/0x376 status=0x50 live=1'
 $normalLines = @(
     '[BOOT] Multiboot2 handoff PASS'
+    '[SEC] nx=1 smep=0 umip=0 smap_supported=0 smap=0'
     '[SELFTEST] Memory microbench PASS'
     '[HEAP] lock selftest PASS acquires=4'
     '[SCHED] context switch selftest PASS switches=8 ping=3 pong=3'
@@ -60,7 +75,8 @@ $normalLines = @(
     '[TRAP] user frame capture PASS pid_a=1 pid_b=2 captures_a=1 captures_b=1 from_user=1 cs=0x23 ss=0x1b rsp_user=1 rip_user=1 canary_ok=1 frame_in_kstack=1 frame_addr_exact=1 contract=1'
     '[PROC] trap evidence snapshot PASS schema=1 captures=2 pid_a=1 slot_a=0 seq_a=1 valid_a=1 owner_a=1 frame_a=1 cr3_a=1 rsp0_a=1 pid_b=2 slot_b=1 seq_b=2 valid_b=1 owner_b=1 frame_b=1 cr3_b=1 rsp0_b=1 distinct_storage=1 current_pid=0 stale_owner=0 resume_ready=0'
     '[PROC] process event journal PASS schema=1 events=6 lifecycle=4 captures=2 seqs=1,2,3,4,5,6 kinds=1,2,3,1,2,3 reasons=1,2,3,1,2,3 from_pids=0,1,1,0,2,2 to_pids=1,1,0,2,2,0 slots=0,0,0,1,1,1 generations=1,1,1,1,1,1 capture_seqs=0,1,1,0,2,2 owner_ok=1,1,1,1,1,1 cr3_ok=1,1,1,1,1,1 rsp0_ok=1,1,1,1,1,1 if0=1,1,1,1,1,1 snapshot_refs=0,1,1,0,1,1 outcomes=1,1,1,1,1,1 capture_seq_separate=1 current_pid=0 stale_owner=0 dropped=0 overflow=0 evidence_only=1 switch_events=0 resume_ready=0'
-    '[ROOM] snapshot stability=stable ok=18 degraded=0 failed=0'
+    '[SEC] ring3 entry AC hardening PASS schema=1 smap_supported=0 smap=0 gate_active=0 common_entries=2 common_saved_ac=2 common_clac=0 common_fallback=2 common_post_ac0=2 int80_entries=6 int80_saved_ac=4 int80_clac=0 int80_fallback=6 int80_post_ac0=6 gate_skips=8 gate_mismatch=0'
+    '[ROOM] snapshot stability=stable ok=18 degraded=0 failed=0 unknown=2 topology=segmented domains=4 windows=0 drivers=1/1 plans=5 nodes=10 rings=0 active=0 user=1 nodebit_active=1 nodebit_risky=0'
     '[HEALTH] stability=stable ok=18 degraded=0 failed=0 unknown=2'
     '=== AIOS Kernel Ready ==='
     '[KERNEL] Boot complete. Launching interactive shell...'
@@ -81,6 +97,7 @@ $cases = @(
 
 $tempPath = [IO.Path]::GetTempFileName()
 $journalExtraCases = 0
+$securityExtraCases = 0
 try {
     foreach ($case in $cases) {
         $candidateLines = @(
@@ -99,6 +116,220 @@ try {
         }
         Write-Output "PASS $($case.Name) expected=$($case.Expected)"
     }
+
+    $defaultSecurity = '[SEC] nx=1 smep=0 umip=0 smap_supported=0 smap=0'
+    $maxSecurity = '[SEC] nx=1 smep=1 umip=1 smap_supported=1 smap=1'
+    $defaultEntry = [string]($normalLines | Where-Object {
+        $_ -match '^\[SEC\] ring3 entry AC hardening '
+    } | Select-Object -First 1)
+    $roomLine = [string]($normalLines | Where-Object {
+        $_ -match '^\[ROOM\] snapshot '
+    } | Select-Object -First 1)
+    $maxEntry = '[SEC] ring3 entry AC hardening PASS schema=1 smap_supported=1 smap=1 gate_active=1 common_entries=2 common_saved_ac=2 common_clac=2 common_fallback=0 common_post_ac0=2 int80_entries=6 int80_saved_ac=4 int80_clac=6 int80_fallback=0 int80_post_ac0=6 gate_skips=0 gate_mismatch=0'
+
+    $maxProfileLines = @(
+        $normalLines | ForEach-Object {
+            if ($_ -ceq $defaultSecurity) { $maxSecurity }
+            elseif ($_ -ceq $defaultEntry) { $maxEntry }
+            else { $_ }
+        }
+    )
+    $script:CpuProfile = 'max-smap'
+    [IO.File]::WriteAllLines(
+        $tempPath,
+        $maxProfileLines,
+        [Text.UTF8Encoding]::new($false)
+    )
+    $maxProfileVerdict = Test-NormalSmokeVerdict -SerialLog $tempPath
+    if (-not [bool]$maxProfileVerdict.Passed) {
+        throw "Valid max-smap evidence failed: $($maxProfileVerdict.Reasons -join ';')"
+    }
+    $securityExtraCases++
+    Write-Output 'PASS valid-max-smap expected=True'
+
+    $script:CpuProfile = 'default'
+    $securityMutations = @(
+        [pscustomobject]@{ Name = 'missing-entry-ac'; Line = $null }
+        [pscustomobject]@{ Name = 'saved-ac'; Line = $defaultEntry.Replace('common_saved_ac=2', 'common_saved_ac=1') }
+        [pscustomobject]@{ Name = 'int80-saved-ac'; Line = $defaultEntry.Replace('int80_saved_ac=4', 'int80_saved_ac=3') }
+        [pscustomobject]@{ Name = 'post-ac'; Line = $defaultEntry.Replace('common_post_ac0=2', 'common_post_ac0=1') }
+        [pscustomobject]@{ Name = 'gate-skips'; Line = $defaultEntry.Replace('gate_skips=8', 'gate_skips=7') }
+        [pscustomobject]@{ Name = 'gate-mismatch'; Line = $defaultEntry.Replace('gate_mismatch=0', 'gate_mismatch=1') }
+        [pscustomobject]@{ Name = 'extended-entry-ac'; Line = "$defaultEntry extra=1" }
+        [pscustomobject]@{ Name = 'max-entry-on-default'; Line = $maxEntry }
+    )
+    foreach ($mutation in $securityMutations) {
+        $mutatedLines = @(
+            $normalLines | ForEach-Object {
+                if ($_ -ceq $defaultEntry) {
+                    if ($null -ne $mutation.Line) { [string]$mutation.Line }
+                } else { $_ }
+            }
+        )
+        [IO.File]::WriteAllLines(
+            $tempPath,
+            $mutatedLines,
+            [Text.UTF8Encoding]::new($false)
+        )
+        $verdict = Test-NormalSmokeVerdict -SerialLog $tempPath
+        if ([bool]$verdict.Passed) {
+            throw "$($mutation.Name) unexpectedly passed"
+        }
+        $securityExtraCases++
+        Write-Output "PASS $($mutation.Name) expected=False"
+    }
+
+    $roomMutations = @(
+        [pscustomobject]@{ Name = 'room-truncated'; Line = '[ROOM] snapshot stability=stable' }
+        [pscustomobject]@{ Name = 'room-ok-zero'; Line = $roomLine.Replace('ok=18', 'ok=0') }
+        [pscustomobject]@{ Name = 'room-uint32-overflow'; Line = $roomLine.Replace('ok=18', "ok=$(('9' * 100) -join '')") }
+        [pscustomobject]@{ Name = 'room-arabic-digit'; Line = $roomLine.Replace('ok=18', "ok=9$([char]0x0662)") }
+        [pscustomobject]@{ Name = 'room-fullwidth-digit'; Line = $roomLine.Replace('ok=18', "ok=9$([char]0xFF12)") }
+        [pscustomobject]@{ Name = 'room-degraded'; Line = $roomLine.Replace('degraded=0', 'degraded=1') }
+        [pscustomobject]@{ Name = 'room-failed'; Line = $roomLine.Replace('failed=0', 'failed=1') }
+        [pscustomobject]@{ Name = 'room-missing-field'; Line = $roomLine.Replace(' unknown=2', '') }
+        [pscustomobject]@{ Name = 'room-unknown-topology'; Line = $roomLine.Replace('topology=segmented', 'topology=unknown') }
+        [pscustomobject]@{ Name = 'room-zero-domains'; Line = $roomLine.Replace('domains=4', 'domains=0') }
+        [pscustomobject]@{ Name = 'room-driver-range'; Line = $roomLine.Replace('drivers=1/1', 'drivers=2/1') }
+        [pscustomobject]@{ Name = 'room-active-range'; Line = $roomLine.Replace('rings=0 active=0', 'rings=0 active=1') }
+        [pscustomobject]@{ Name = 'room-user-not-ready'; Line = $roomLine.Replace('user=1', 'user=0') }
+        [pscustomobject]@{ Name = 'room-nodebit-range'; Line = $roomLine.Replace('nodebit_risky=0', 'nodebit_risky=2') }
+        [pscustomobject]@{ Name = 'room-reordered'; Line = $roomLine.Replace('failed=0 unknown=2', 'unknown=2 failed=0') }
+        [pscustomobject]@{ Name = 'room-passfail-suffix'; Line = "$roomLine PASSFAIL" }
+        [pscustomobject]@{ Name = 'room-partial-suffix'; Line = "$roomLine PARTIAL" }
+        [pscustomobject]@{ Name = 'room-extra-field'; Line = "$roomLine extra=1" }
+    )
+    foreach ($mutation in $roomMutations) {
+        $mutatedLines = @(
+            $normalLines | ForEach-Object {
+                if ($_ -ceq $roomLine) { [string]$mutation.Line } else { $_ }
+            }
+        )
+        [IO.File]::WriteAllLines(
+            $tempPath,
+            $mutatedLines,
+            [Text.UTF8Encoding]::new($false)
+        )
+        $verdict = Test-NormalSmokeVerdict -SerialLog $tempPath
+        if ([bool]$verdict.Passed -or
+                @($verdict.Reasons | Where-Object {
+                    $_ -like 'evidence-record-invalid:*:kernel_room'
+                }).Count -eq 0) {
+            throw "$($mutation.Name) did not fail the ROOM record contract"
+        }
+        $securityExtraCases++
+        Write-Output "PASS $($mutation.Name) expected=False"
+    }
+
+    $securityFamilyCases = @(
+        [pscustomobject]@{
+            Name = 'duplicate-entry-ac-family'
+            Extra = '[SEC] ring3 entry AC hardening PARTIAL schema=1'
+        }
+        [pscustomobject]@{
+            Name = 'duplicate-cpu-security-family'
+            Extra = $defaultSecurity
+        }
+        [pscustomobject]@{
+            Name = 'malformed-cpu-security-family'
+            Extra = "$defaultSecurity extra=1"
+        }
+    )
+    foreach ($familyCase in $securityFamilyCases) {
+        $extraLines = @($normalLines) + @([string]$familyCase.Extra)
+        [IO.File]::WriteAllLines(
+            $tempPath,
+            $extraLines,
+            [Text.UTF8Encoding]::new($false)
+        )
+        $verdict = Test-NormalSmokeVerdict -SerialLog $tempPath
+        if ([bool]$verdict.Passed) {
+            throw 'Duplicate security family evidence unexpectedly passed'
+        }
+        $securityExtraCases++
+        Write-Output "PASS $($familyCase.Name) expected=False"
+    }
+
+    $featureAfterEntryLines = @()
+    foreach ($line in $normalLines) {
+        if ($line -ceq $defaultSecurity) {
+            continue
+        }
+        $featureAfterEntryLines += $line
+        if ($line -ceq $defaultEntry) {
+            $featureAfterEntryLines += $defaultSecurity
+        }
+    }
+    $featureAfterShellLines = @(
+        $normalLines | Where-Object { $_ -cne $defaultSecurity }
+    ) + @($defaultSecurity)
+    foreach ($orderCase in @(
+            [pscustomobject]@{
+                Name = 'cpu-security-after-entry-ac'
+                Lines = $featureAfterEntryLines
+            }
+            [pscustomobject]@{
+                Name = 'cpu-security-after-shell'
+                Lines = $featureAfterShellLines
+            }
+        )) {
+        [IO.File]::WriteAllLines(
+            $tempPath,
+            [string[]]$orderCase.Lines,
+            [Text.UTF8Encoding]::new($false)
+        )
+        $verdict = Test-NormalSmokeVerdict -SerialLog $tempPath
+        if ([bool]$verdict.Passed -or
+                @($verdict.Reasons | Where-Object {
+                    $_ -like 'security-order:*'
+                }).Count -eq 0) {
+            throw "$($orderCase.Name) did not fail the security order chain"
+        }
+        $securityExtraCases++
+        Write-Output "PASS $($orderCase.Name) expected=False"
+    }
+
+    $duplicateRoomFamilyLines = @()
+    foreach ($line in $normalLines) {
+        if ($line -match '^\[ROOM\] snapshot stability=stable') {
+            $duplicateRoomFamilyLines +=
+                $roomLine.Replace(
+                    'stability=stable ok=18 degraded=0',
+                    'stability=degraded ok=17 degraded=1'
+                )
+        }
+        $duplicateRoomFamilyLines += $line
+    }
+    [IO.File]::WriteAllLines(
+        $tempPath,
+        $duplicateRoomFamilyLines,
+        [Text.UTF8Encoding]::new($false)
+    )
+    $duplicateRoomVerdict = Test-NormalSmokeVerdict -SerialLog $tempPath
+    if ([bool]$duplicateRoomVerdict.Passed -or
+            @($duplicateRoomVerdict.Reasons | Where-Object {
+                $_ -like 'evidence-family-count:kernel_room:*'
+            }).Count -eq 0) {
+        throw 'Duplicate ROOM snapshot family unexpectedly passed'
+    }
+    $securityExtraCases++
+    Write-Output 'PASS duplicate-room-snapshot-family expected=False'
+
+    $featureMismatchLines = @(
+        $normalLines | ForEach-Object {
+            if ($_ -ceq $defaultSecurity) { $maxSecurity } else { $_ }
+        }
+    )
+    [IO.File]::WriteAllLines(
+        $tempPath,
+        $featureMismatchLines,
+        [Text.UTF8Encoding]::new($false)
+    )
+    if ([bool](Test-NormalSmokeVerdict -SerialLog $tempPath).Passed) {
+        throw 'max-smap feature row under default profile unexpectedly passed'
+    }
+    $securityExtraCases++
+    Write-Output 'PASS mismatched-cpu-security-row expected=False'
 
     $missingPairLines = @(
         $normalLines | Where-Object {
@@ -501,4 +732,4 @@ try {
     Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
 }
 
-Write-Output "PowerShell verdict selftest passed cases=$($cases.Count + 13 + $duplicateObservationCases.Count + $journalExtraCases)"
+Write-Output "PowerShell verdict selftest passed cases=$($cases.Count + 13 + $duplicateObservationCases.Count + $journalExtraCases + $securityExtraCases + 1)"

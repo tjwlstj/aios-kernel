@@ -26,6 +26,23 @@ IDE_CHANNELS_RECORD_RE = re.compile(
     r"status=(?P<secondary_status>0x[0-9A-Fa-f]+) "
     r"live=(?P<secondary_live>[01])$"
 )
+ROOM_SNAPSHOT_RECORD_RE = re.compile(
+    r"^\[ROOM\] snapshot stability=(?P<stability>[a-z][a-z0-9-]*) "
+    r"ok=(?P<ok>0|[1-9][0-9]{0,9}) degraded=(?P<degraded>0|[1-9][0-9]{0,9}) "
+    r"failed=(?P<failed>0|[1-9][0-9]{0,9}) unknown=(?P<unknown>0|[1-9][0-9]{0,9}) "
+    r"topology=(?P<topology>[a-z][a-z0-9-]*) "
+    r"domains=(?P<domains>0|[1-9][0-9]{0,9}) windows=(?P<windows>0|[1-9][0-9]{0,9}) "
+    r"drivers=(?P<drivers_ready>0|[1-9][0-9]{0,9})/(?P<drivers>0|[1-9][0-9]{0,9}) "
+    r"plans=(?P<plans>0|[1-9][0-9]{0,9}) nodes=(?P<nodes>0|[1-9][0-9]{0,9}) "
+    r"rings=(?P<rings>0|[1-9][0-9]{0,9}) active=(?P<active>0|[1-9][0-9]{0,9}) "
+    r"user=(?P<user>0|[1-9][0-9]{0,9}) "
+    r"nodebit_active=(?P<nodebit_active>0|[1-9][0-9]{0,9}) "
+    r"nodebit_risky=(?P<nodebit_risky>0|[1-9][0-9]{0,9})$"
+)
+ROOM_UINT32_MAX = (1 << 32) - 1
+ROOM_TOPOLOGIES = frozenset(
+    {"uniform", "segmented", "numa-hinted", "fabric-expandable"}
+)
 
 TERMINAL_CHECKPOINTS: tuple[tuple[str, str], ...] = (
     ("ring3_scaffold", "[USER] Ring3 scaffold ready=1"),
@@ -37,6 +54,7 @@ TERMINAL_CHECKPOINTS: tuple[tuple[str, str], ...] = (
     ("user_trap_capture", "[TRAP] user frame capture PASS"),
     ("process_trap_snapshot", "[PROC] trap evidence snapshot PASS"),
     ("process_event_journal", "[PROC] process event journal PASS"),
+    ("ring3_entry_ac_hardening", "[SEC] ring3 entry AC hardening PASS"),
     ("kernel_room", "[ROOM] snapshot stability=stable"),
     ("health", "[HEALTH] stability="),
     ("kernel_ready", "=== AIOS Kernel Ready ==="),
@@ -61,9 +79,19 @@ EXACT_REQUIRED_RECORDS = (
     ("[TRAP] user frame capture PASS ", "user_trap_capture"),
     ("[PROC] trap evidence snapshot PASS ", "process_trap_snapshot"),
     ("[PROC] process event journal PASS ", "process_event_journal"),
+    ("[SEC] nx=", "cpu_security"),
+    ("[SEC] ring3 entry AC hardening PASS ", "ring3_entry_ac_hardening"),
 )
 
 PROCESS_EVENT_JOURNAL_FAMILY_PREFIX = "[PROC] process event journal "
+CPU_SECURITY_FAMILY_PREFIX = "[SEC] nx="
+RING3_ENTRY_AC_HARDENING_FAMILY_PREFIX = "[SEC] ring3 entry AC hardening "
+ROOM_SNAPSHOT_FAMILY_PREFIX = "[ROOM] snapshot "
+SECURITY_CHECKPOINT_ORDER = (
+    "cpu_security",
+    "ring3_entry_ac_hardening",
+    "kernel_room",
+)
 
 
 def _sanitize_lines(log_text: str) -> list[str]:
@@ -260,6 +288,104 @@ def _invalid_process_event_journal_family_records(
     ]
 
 
+def _invalid_security_family_records(
+    lines: list[str],
+    required_occurrences: Mapping[str, list[dict[str, object]]],
+) -> list[dict[str, object]]:
+    invalid: list[dict[str, object]] = []
+    contracts = (
+        (CPU_SECURITY_FAMILY_PREFIX, "[SEC] nx=", "cpu_security"),
+        (
+            RING3_ENTRY_AC_HARDENING_FAMILY_PREFIX,
+            "[SEC] ring3 entry AC hardening PASS ",
+            "ring3_entry_ac_hardening",
+        ),
+    )
+    for family_prefix, canonical_prefix, record_name in contracts:
+        canonical_patterns = [
+            pattern
+            for pattern in required_occurrences
+            if pattern.startswith(canonical_prefix)
+        ]
+        if not canonical_patterns:
+            continue
+        canonical = canonical_patterns[0]
+        family_rows = [
+            {"line": index, "text": line}
+            for index, line in enumerate(lines, start=1)
+            if line.startswith(family_prefix)
+        ]
+        if len(family_rows) == 1 and family_rows[0]["text"] == canonical:
+            continue
+        invalid.extend(
+            {
+                "line": row["line"],
+                "text": row["text"],
+                "record": record_name,
+            }
+            for row in family_rows
+            if row["text"] != canonical or len(family_rows) != 1
+        )
+    return invalid
+
+
+def _invalid_room_snapshot_family_records(
+    lines: list[str],
+    terminal_occurrences: Mapping[str, list[dict[str, object]]],
+) -> list[dict[str, object]]:
+    family_rows = [
+        {"line": index, "text": line}
+        for index, line in enumerate(lines, start=1)
+        if line.startswith(ROOM_SNAPSHOT_FAMILY_PREFIX)
+    ]
+    canonical_rows = terminal_occurrences["kernel_room"]
+    record_match = (
+        ROOM_SNAPSHOT_RECORD_RE.fullmatch(str(family_rows[0]["text"]))
+        if len(family_rows) == 1
+        else None
+    )
+    semantic_valid = False
+    if record_match is not None:
+        values = {
+            name: int(record_match.group(name))
+            for name in (
+                "ok", "degraded", "failed", "unknown", "domains",
+                "windows", "drivers_ready", "drivers", "plans", "nodes",
+                "rings", "active", "user", "nodebit_active",
+                "nodebit_risky",
+            )
+        }
+        semantic_valid = (
+            all(value <= ROOM_UINT32_MAX for value in values.values())
+            and record_match.group("stability") == "stable"
+            and values["ok"] > 0
+            and values["degraded"] == 0
+            and values["failed"] == 0
+            and record_match.group("topology") in ROOM_TOPOLOGIES
+            and values["domains"] > 0
+            and values["drivers"] > 0
+            and values["drivers_ready"] <= values["drivers"]
+            and values["active"] <= values["rings"]
+            and values["user"] == 1
+            and values["nodebit_risky"] <= values["nodebit_active"]
+        )
+    if (
+        len(family_rows) == 1
+        and len(canonical_rows) == 1
+        and family_rows[0]["line"] == canonical_rows[0]["line"]
+        and semantic_valid
+    ):
+        return []
+    return [
+        {
+            "line": row["line"],
+            "text": row["text"],
+            "record": "kernel_room",
+        }
+        for row in family_rows
+    ]
+
+
 def _duplicate_exact_required_records(
     required_occurrences: Mapping[str, list[dict[str, object]]],
 ) -> list[dict[str, object]]:
@@ -283,6 +409,87 @@ def _duplicate_exact_required_records(
             }
         )
     return duplicate_records
+
+
+def _security_checkpoint_chain(
+    required_occurrences: Mapping[str, list[dict[str, object]]],
+    terminal_occurrences: Mapping[str, list[dict[str, object]]],
+) -> dict[str, object]:
+    cpu_patterns = [
+        pattern
+        for pattern in required_occurrences
+        if pattern.startswith("[SEC] nx=")
+    ]
+    entry_patterns = [
+        pattern
+        for pattern in required_occurrences
+        if pattern.startswith("[SEC] ring3 entry AC hardening PASS ")
+    ]
+    enabled = bool(cpu_patterns or entry_patterns)
+    occurrences: dict[str, list[dict[str, object]]] = {
+        "cpu_security": [
+            occurrence
+            for pattern in cpu_patterns
+            for occurrence in required_occurrences[pattern]
+        ],
+        "ring3_entry_ac_hardening": [
+            occurrence
+            for pattern in entry_patterns
+            for occurrence in required_occurrences[pattern]
+        ],
+        "kernel_room": list(terminal_occurrences["kernel_room"]),
+    }
+    missing = []
+    duplicates = []
+    order_violations: list[dict[str, object]] = []
+    if enabled:
+        if len(cpu_patterns) != 1:
+            missing.append("cpu_security")
+        if len(entry_patterns) != 1:
+            missing.append("ring3_entry_ac_hardening")
+        for name in SECURITY_CHECKPOINT_ORDER:
+            matches = occurrences[name]
+            if not matches and name not in missing:
+                missing.append(name)
+            if len(matches) > 1:
+                duplicates.append(
+                    {
+                        "checkpoint": name,
+                        "lines": [match["line"] for match in matches],
+                    }
+                )
+
+        previous_name = None
+        previous_line = None
+        for name in SECURITY_CHECKPOINT_ORDER:
+            matches = occurrences[name]
+            if not matches:
+                continue
+            current_line = int(matches[0]["line"])
+            if previous_line is not None and current_line <= previous_line:
+                order_violations.append(
+                    {
+                        "checkpoint": name,
+                        "line": current_line,
+                        "expected_after": previous_name,
+                        "expected_after_line": previous_line,
+                    }
+                )
+            previous_name = name
+            previous_line = current_line
+
+    return {
+        "enabled": enabled,
+        "expected_order": list(SECURITY_CHECKPOINT_ORDER),
+        "occurrences": occurrences,
+        "missing": missing,
+        "duplicates": duplicates,
+        "order_violations": order_violations,
+        "passed": (
+            not enabled
+            or (not missing and not duplicates and not order_violations)
+        ),
+    }
 
 
 def _fatal_events(lines: list[str]) -> list[dict[str, object]]:
@@ -414,6 +621,9 @@ def evaluate_normal_boot(
         )
         for name, needle in TERMINAL_CHECKPOINTS
     }
+    security_checkpoints = _security_checkpoint_chain(
+        required_occurrences, occurrences
+    )
     duplicate_field_required_occurrences = [
         required_occurrences[pattern]
         for pattern in required
@@ -428,6 +638,12 @@ def evaluate_normal_boot(
         _invalid_process_event_journal_family_records(
             lines, required_occurrences
         )
+    )
+    invalid_evidence_records.extend(
+        _invalid_security_family_records(lines, required_occurrences)
+    )
+    invalid_evidence_records.extend(
+        _invalid_room_snapshot_family_records(lines, occurrences)
     )
     duplicate_evidence_records = _duplicate_exact_required_records(
         required_occurrences
@@ -461,7 +677,12 @@ def evaluate_normal_boot(
         previous_name = name
         previous_line = current_line
 
-    checkpoints_passed = not missing_checkpoints and not duplicates and not order_violations
+    checkpoints_passed = (
+        not missing_checkpoints
+        and not duplicates
+        and not order_violations
+        and bool(security_checkpoints["passed"])
+    )
     health = _parse_health(occurrences["health"])
 
     reasons: list[dict[str, object]] = []
@@ -524,6 +745,18 @@ def evaluate_normal_boot(
                 "violations": order_violations,
             }
         )
+    if (
+        security_checkpoints["enabled"]
+        and not security_checkpoints["passed"]
+    ):
+        reasons.append(
+            {
+                "code": "SECURITY_CHECKPOINT_CHAIN_INVALID",
+                "missing": security_checkpoints["missing"],
+                "duplicates": security_checkpoints["duplicates"],
+                "order_violations": security_checkpoints["order_violations"],
+            }
+        )
 
     first_failure: dict[str, object] | None = None
     line_failures: list[dict[str, object]] = []
@@ -576,6 +809,10 @@ def evaluate_normal_boot(
             )
     for violation in order_violations:
         line_failures.append({"kind": "TERMINAL_CHECKPOINT_ORDER_INVALID", **violation})
+    for violation in security_checkpoints["order_violations"]:
+        line_failures.append(
+            {"kind": "SECURITY_CHECKPOINT_ORDER_INVALID", **violation}
+        )
 
     if line_failures:
         first_failure = min(line_failures, key=lambda item: int(item["line"]))
@@ -613,5 +850,6 @@ def evaluate_normal_boot(
             "order_violations": order_violations,
             "passed": checkpoints_passed,
         },
+        "security_checkpoints": security_checkpoints,
         "termination": _termination_payload(termination),
     }

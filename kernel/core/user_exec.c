@@ -9,6 +9,7 @@
 #include <kernel/time.h>
 #include <kernel/user_layout.h>
 #include <kernel/process.h>
+#include <kernel/cpu_sec.h>
 #include <mm/address_space.h>
 #include <mm/tensor_mm.h>
 #include <runtime/node_pipeline.h>
@@ -972,12 +973,14 @@ aios_status_t user_exec_run_bootstrap_pair(void) {
         g_user_exec_pair.saved_current_pid == 0 &&
         !g_user_exec_pair.saved_stale_owner &&
         !g_user_exec_pair.saved_resume_ready &&
-        event_journal_ok;
+        event_journal_ok &&
+        cpu_security_entry_ac_ready();
 
     emit_pair_marker();
     emit_trap_capture_marker(&first.info, &second.info);
     emit_trap_snapshot_marker();
     emit_process_event_journal_marker(events);
+    cpu_security_emit_entry_ac_marker();
     return g_user_exec_pair.passed ? AIOS_OK : AIOS_ERR_IO;
 }
 

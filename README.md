@@ -25,16 +25,16 @@ Suggested repository description:
 
 > Kernel-first AI-native OS experiment for embodied LLM/SLM runtime: ring3 ELF demo, memory fabric, NodeBit policy gates, and mediated hardware access.
 
-## Current Status (2026-08-03)
+## Current Status (2026-08-10)
 
 - **Current beta:** `v0.2.0-beta.6` (`0.2.0-beta.6 "Genesis"` boot banner).
 - **Boot path:** x86_64 Multiboot2 커널, GDT/IDT/TSS, 페이징, PIT IRQ0 scheduler tick bootstrap, QEMU 스모크 테스트 기반.
-- **Hardening:** stack protector, NX/W^X 2MB identity-map marking, SMEP/UMIP/SMAP 감지/활성화 경로, #PF CR2 dump, #DF IST1, cppcheck CI.
+- **Hardening:** stack protector, NX/W^X 2MB identity-map marking, SMEP/UMIP/SMAP 감지/활성화 경로, uaccess STAC/CLAC fence, 검증된 CPL3 `#BP`/`int 0x80` entry AC 제거, #PF CR2 dump, #DF IST1, cppcheck CI.
 - **Memory:** 물리/가상 할당 기반, 텐서 메모리 메타데이터, 수명 프로파일링, 메모리 패브릭 노드, 공유 영역 스캐폴딩.
 - **Pressure observation:** schema 1의 `state pressure`가 workload queue, Memory Fabric reader/writer 중첩, 누적 NodeBit 거부율을 0..1024 정수 벡터로 읽는다. 현재는 system→plane 2단계 관측만 `CURRENT`이며 task migration이나 budget apply는 하지 않는다.
 - **Resource observation:** schema 1의 커널 내부 `ai_resource_snapshot_t`가 heap bytes, tensor bytes, active Memory Fabric windows, inference ring registrations, runnable scheduler tasks를 고정 5개 aggregate row로 읽는다. 모든 owner는 아직 `NONE/UNATTRIBUTED`이며 read-only `SYS_INFO_RESOURCE`(0x706) syscall과 `state resource` 셸 토픽은 `CURRENT`, owner attribution과 quota/reserve/apply는 `PLANNED`다.
 - **Autonomy and policy:** 헬스 스냅샷, 제한된 자율 제안/롤백 경로, SLM 하드웨어 스냅샷, NodeBit 정책 조회, Kernel Room syscall range classification.
-- **Userspace:** bounded bootstrap process pair slice 완료. 정적 descriptor 2개가 각자 private 2MiB user leaf/CR3와 16KiB ring0 entry stack을 소유하며, PID 1/slot 0과 PID 2/slot 1이 순차적으로 static ELF64 데모의 `int 0x80` 왕복, uaccess 거부, CR3·BSP `rsp0` 복원을 검증한다. M3-b-3b2c 진입 게이트의 trapframe C/NASM offset·크기 계약(176B), `from_user` CPL0/CPL3 판별, process-owned trap evidence snapshot v0와 process event journal v1은 `CURRENT`다. 각 ring3 `int3`의 full frame은 ISR 시점 current owner/private CR3/TSS `rsp0`/IF=0 검사를 통과한 descriptor에 복사되고, per-boot capture sequence 1,2와 각 finish 뒤 보존, 두 번째 실행까지 끝난 최종 pair 경계의 양쪽 재조회를 증명한다. capacity 8/no-overwrite journal은 acquire/capture/release의 exact 6-event vector를 보존하며 `state user`의 `event_*` mirror와 fail-closed Python/PowerShell/structured 검증으로 고정된다. 그 owner lifecycle은 `0→1→0→2→0`이며 CPU switch가 아니다. prepare 코드 경로는 이전 snapshot을 지우고 run generation을 올리지만, 같은 slot을 다시 prepare하는 실부팅 증거는 아직 `PLANNED`다. journal은 `evidence_only=1 switch_events=0 resume_ready=0`이고 전체 process 모델은 `PARTIAL`이다. 다음 순서는 live continuation/switch, 실제 A→B→A, timer preemption이다. `aios-init`, 디스크 기반 ELF 적재, 동적 주소공간 수명주기, 장기 실행 유저스페이스 런타임도 아직 없다.
+- **Userspace:** bounded bootstrap process pair slice 완료. 정적 descriptor 2개가 각자 private 2MiB user leaf/CR3와 16KiB ring0 entry stack을 소유하며, PID 1/slot 0과 PID 2/slot 1이 순차적으로 static ELF64 데모의 `int 0x80` 왕복, uaccess 거부, CR3·BSP `rsp0` 복원을 검증한다. M3-b-3b2c 진입 게이트의 trapframe C/NASM offset·크기 계약(176B), `from_user` CPL0/CPL3 판별, process-owned trap evidence snapshot v0, process event journal v1, CPL3 entry AC hardening은 `CURRENT`다. pair의 ring3 `#BP` 2회와 `int 0x80` 6회는 saved user RFLAGS를 바꾸지 않으면서 entry live AC가 항상 0임을 증명한다. SMAP active이면 `clac`, 비활성·미지원이면 `pushfq/btr/popfq` fallback을 사용해 `#UD` 없이 같은 결과를 내며, `default`/`max-smap` CPU profile verifier가 두 분기를 재현한다. 각 ring3 `int3`의 full frame은 ISR 시점 current owner/private CR3/TSS `rsp0`/IF=0 검사를 통과한 descriptor에 복사되고, per-boot capture sequence 1,2와 각 finish 뒤 보존, 두 번째 실행까지 끝난 최종 pair 경계의 양쪽 재조회를 증명한다. capacity 8/no-overwrite journal은 acquire/capture/release의 exact 6-event vector를 보존하며 `state user`의 `event_*` mirror와 fail-closed Python/PowerShell/structured 검증으로 고정된다. 그 owner lifecycle은 `0→1→0→2→0`이며 CPU switch가 아니다. prepare 코드 경로는 이전 snapshot을 지우고 run generation을 올리지만, 같은 slot을 다시 prepare하는 실부팅 증거는 아직 `PLANNED`다. journal은 `evidence_only=1 switch_events=0 resume_ready=0`이고 전체 process 모델은 `PARTIAL`이다. 다음 순서는 live continuation/switch, 실제 A→B→A, timer preemption이다. future ring3 IRQ/NMI/IST entry와 실기기까지 이 proof가 일반화된 것은 아니다. `aios-init`, 디스크 기반 ELF 적재, 동적 주소공간 수명주기, 장기 실행 유저스페이스 런타임도 아직 없다.
 - **Hardware AI access:** 가속기 인터페이스는 추상화/탐색 스캐폴딩 단계. 실제 GPU/NPU/TPU 드라이버와 직접 클럭 제어 백엔드는 계획 상태.
 - **I/O:** e1000은 RX ring bootstrap + bounded RX poll/rearm + TX smoke 수준. USB/storage는 bootstrap/probe 중심이며, 다음 storage 목표는 virtio-blk 최소 read path.
 - **Continuity runtime:** 단기/장기 기억 분리, 저널링, distillation, self-learning promotion flow는 유저스페이스 AI 런타임 로드맵.
@@ -137,10 +137,12 @@ AIOS의 방향은 커널을 AI 시스템의 결정론적 body로 두고, 학습 
 - static ELF64 header/program-header 검증과 단일 PT_LOAD 세그먼트 적재 경로
 - CPL3 `int 0x80` -> `ai_syscall_dispatch` -> ring3 buffer copy -> `exit(42)` 왕복 smoke
 - uaccess window + SMAP STAC/CLAC fence 기반의 유저 포인터 경계 검증
+- CPL3 `#BP` 공통 entry 2회와 `int 0x80` entry 6회에서 saved user RFLAGS 보존 + live AC=0을 exact `[SEC] ring3 entry AC hardening PASS ...`와 `state sec entry_*`로 검증. SMAP active는 `clac`, 비활성·미지원은 `pushfq/btr/popfq` fallback이며 `default`/`max-smap` CPU profile이 양쪽을 재현
 - 정적 2개 bootstrap descriptor의 private CR3/run state/16KiB ring0 entry-stack ownership, PID 1→PID 2 순차 실행과 각 실행 사이/최종 BSP TSS `rsp0`·CR3·current owner 복원 증명
 - 각 ring3 `int3`의 176B frame을 ISR 시점 owner/current/private CR3/TSS `rsp0`/IF=0 검사 뒤 해당 descriptor에 복사하고, sequence 1,2·finish 뒤 보존·distinct storage·`resume_ready=0`을 `[PROC] trap evidence snapshot PASS`로 증명
 - capacity 8/no-overwrite process event journal v1이 여섯 acquire/capture/release record를 exact 순서로 보존하고 `[PROC] process event journal PASS`, structured `process_event_journal`, `state user event_*`로 검증됨
 - snapshot과 journal은 증거만 `CURRENT`이며 `evidence_only=1 switch_events=0 resume_ready=0`이다. `g_active_user_run_state`까지 포함한 live continuation/switch, 실제 A→B→A, 두 process 선점 교대, `aios-init`, 디스크 ELF, 동적 주소공간/PMM, long-running userspace AI runtime은 후속 구현 대상
+- entry AC hardening의 `CURRENT` 범위는 실제 QEMU CPL3 `#BP`/`int 0x80`과 `default`/`max-smap` 재현까지다. future ring3 IRQ/NMI/IST entry, 실기기, resumable context, A→B→A와 preemption은 계속 `PARTIAL`/`PLANNED`다
 
 ### AI System Call Interface
 > 이 표는 현재 ABI 공간과 스캐폴딩을 함께 보여줍니다. 모든 카테고리가 production-grade 구현을 의미하지는 않습니다.

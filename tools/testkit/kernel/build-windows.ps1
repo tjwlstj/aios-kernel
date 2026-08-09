@@ -3,6 +3,8 @@ param(
     [string]$Target = 'all',
     [ValidateSet('full', 'minimal', 'storage-only')]
     [string]$SmokeProfile = 'full',
+    [ValidateSet('default', 'max-smap')]
+    [string]$CpuProfile = 'default',
     [ValidateRange(1, 600)]
     [int]$TestTimeoutSec = 60,
     [switch]$SkipLock
@@ -106,6 +108,10 @@ function Get-QemuBootArguments {
         '-m', $Memory
     )
 
+    if ($script:CpuProfile -eq 'max-smap') {
+        $args += @('-cpu', 'max')
+    }
+
     if ($script:SmokeProfile -in @('minimal', 'storage-only')) {
         $args += @('-nic', 'none')
     } else {
@@ -127,8 +133,16 @@ function Get-QemuBootArguments {
 }
 
 function Get-SmokeRequiredPatterns {
+    if ($script:CpuProfile -eq 'max-smap') {
+        $cpuSecurityPattern = '^\[SEC\] nx=1 smep=1 umip=1 smap_supported=1 smap=1$'
+        $entryAcPattern = '^\[SEC\] ring3 entry AC hardening PASS schema=1 smap_supported=1 smap=1 gate_active=1 common_entries=2 common_saved_ac=2 common_clac=2 common_fallback=0 common_post_ac0=2 int80_entries=6 int80_saved_ac=4 int80_clac=6 int80_fallback=0 int80_post_ac0=6 gate_skips=0 gate_mismatch=0$'
+    } else {
+        $cpuSecurityPattern = '^\[SEC\] nx=1 smep=0 umip=0 smap_supported=0 smap=0$'
+        $entryAcPattern = '^\[SEC\] ring3 entry AC hardening PASS schema=1 smap_supported=0 smap=0 gate_active=0 common_entries=2 common_saved_ac=2 common_clac=0 common_fallback=2 common_post_ac0=2 int80_entries=6 int80_saved_ac=4 int80_clac=0 int80_fallback=6 int80_post_ac0=6 gate_skips=8 gate_mismatch=0$'
+    }
     $patterns = @(
         'AIOS Kernel Ready',
+        $cpuSecurityPattern,
         '\[BOOT\] Multiboot2 handoff PASS',
         '\[SELFTEST\] Memory microbench PASS',
         '\[HEAP\] lock selftest PASS',
@@ -158,6 +172,7 @@ function Get-SmokeRequiredPatterns {
         '^\[TRAP\] user frame capture PASS pid_a=1 pid_b=2 captures_a=1 captures_b=1 from_user=1 cs=0x23 ss=0x1b rsp_user=1 rip_user=1 canary_ok=1 frame_in_kstack=1 frame_addr_exact=1 contract=1$',
         '^\[PROC\] trap evidence snapshot PASS schema=1 captures=2 pid_a=1 slot_a=0 seq_a=1 valid_a=1 owner_a=1 frame_a=1 cr3_a=1 rsp0_a=1 pid_b=2 slot_b=1 seq_b=2 valid_b=1 owner_b=1 frame_b=1 cr3_b=1 rsp0_b=1 distinct_storage=1 current_pid=0 stale_owner=0 resume_ready=0$',
         '^\[PROC\] process event journal PASS schema=1 events=6 lifecycle=4 captures=2 seqs=1,2,3,4,5,6 kinds=1,2,3,1,2,3 reasons=1,2,3,1,2,3 from_pids=0,1,1,0,2,2 to_pids=1,1,0,2,2,0 slots=0,0,0,1,1,1 generations=1,1,1,1,1,1 capture_seqs=0,1,1,0,2,2 owner_ok=1,1,1,1,1,1 cr3_ok=1,1,1,1,1,1 rsp0_ok=1,1,1,1,1,1 if0=1,1,1,1,1,1 snapshot_refs=0,1,1,0,1,1 outcomes=1,1,1,1,1,1 capture_seq_separate=1 current_pid=0 stale_owner=0 dropped=0 overflow=0 evidence_only=1 switch_events=0 resume_ready=0$',
+        $entryAcPattern,
         '\[SHELL\] Interactive shell started'
     )
 
@@ -264,6 +279,10 @@ function Test-NormalSmokeVerdict {
             $exactRecordName = 'process_trap_snapshot'
         } elseif ($pattern.StartsWith('^\[PROC\] process event journal PASS ')) {
             $exactRecordName = 'process_event_journal'
+        } elseif ($pattern.StartsWith('^\[SEC\] nx=')) {
+            $exactRecordName = 'cpu_security'
+        } elseif ($pattern.StartsWith('^\[SEC\] ring3 entry AC hardening PASS ')) {
+            $exactRecordName = 'ring3_entry_ac_hardening'
         }
         if ($null -ne $exactRecordName -and $matches.Count -gt 1) {
             $duplicateEvidenceRecords += [pscustomobject]@{
@@ -283,30 +302,109 @@ function Test-NormalSmokeVerdict {
         $reasons += "missing-required-patterns:$($missingPatterns -join ',')"
     }
 
-    # A canonical row plus any malformed/truncated row from the same journal
-    # family must not pass merely because the exact required row still exists.
-    $journalFamilyLines = @()
-    for ($lineIndex = 0; $lineIndex -lt $lines.Count; $lineIndex++) {
-        $lineText = [string]$lines[$lineIndex]
-        if ($lineText.StartsWith(
-                '[PROC] process event journal ',
-                [StringComparison]::Ordinal)) {
-            $journalFamilyLines += [pscustomobject]@{
-                LineNumber = $lineIndex + 1
-                Text       = $lineText
+    # A canonical row plus any malformed/truncated row from the same family
+    # must not pass merely because the exact required row still exists.
+    $roomSnapshotRegex = [regex]::new(
+        '^\[ROOM\] snapshot stability=(?<stability>[a-z][a-z0-9-]*) ' +
+        'ok=(?<ok>0|[1-9][0-9]*) degraded=(?<degraded>0|[1-9][0-9]*) ' +
+        'failed=(?<failed>0|[1-9][0-9]*) unknown=(?<unknown>0|[1-9][0-9]*) ' +
+        'topology=(?<topology>[a-z][a-z0-9-]*) ' +
+        'domains=(?<domains>0|[1-9][0-9]*) windows=(?<windows>0|[1-9][0-9]*) ' +
+        'drivers=(?<drivers_ready>0|[1-9][0-9]*)/(?<drivers>0|[1-9][0-9]*) ' +
+        'plans=(?<plans>0|[1-9][0-9]*) nodes=(?<nodes>0|[1-9][0-9]*) ' +
+        'rings=(?<rings>0|[1-9][0-9]*) active=(?<active>0|[1-9][0-9]*) ' +
+        'user=(?<user>0|[1-9][0-9]*) ' +
+        'nodebit_active=(?<nodebit_active>0|[1-9][0-9]*) ' +
+        'nodebit_risky=(?<nodebit_risky>0|[1-9][0-9]*)$'
+    )
+    $invalidRoomRecords = @()
+    $familyContracts = @(
+        [pscustomobject]@{ Name = 'process_event_journal'; Prefix = '[PROC] process event journal ' }
+        [pscustomobject]@{ Name = 'cpu_security'; Prefix = '[SEC] nx=' }
+        [pscustomobject]@{ Name = 'ring3_entry_ac_hardening'; Prefix = '[SEC] ring3 entry AC hardening ' }
+        [pscustomobject]@{ Name = 'kernel_room'; Prefix = '[ROOM] snapshot ' }
+    )
+    $securityFamilyOccurrences = @{}
+    foreach ($family in $familyContracts) {
+        $familyLines = @()
+        for ($lineIndex = 0; $lineIndex -lt $lines.Count; $lineIndex++) {
+            $lineText = [string]$lines[$lineIndex]
+            if ($lineText.StartsWith(
+                    [string]$family.Prefix,
+                    [StringComparison]::Ordinal)) {
+                $familyLines += [pscustomobject]@{
+                    LineNumber = $lineIndex + 1
+                    Text       = $lineText
+                }
+                $null = $duplicateFieldLines.Add($lineIndex + 1)
             }
-            $null = $duplicateFieldLines.Add($lineIndex + 1)
+        }
+        if ($family.Name -in @(
+                'cpu_security',
+                'ring3_entry_ac_hardening',
+                'kernel_room'
+            )) {
+            $securityFamilyOccurrences[$family.Name] = $familyLines
+        }
+        if ($familyLines.Count -ne 1) {
+            $familyLinesText =
+                ($familyLines | ForEach-Object { $_.LineNumber }) -join ','
+            $reasons += "evidence-family-count:$($family.Name):count=$($familyLines.Count):lines=$familyLinesText"
+            if ($familyLines.Count -gt 1) {
+                $duplicateEvidenceRecords += [pscustomobject]@{
+                    Record = "$($family.Name)_family"
+                    Lines  = @($familyLines | ForEach-Object { $_.LineNumber })
+                    Texts  = @($familyLines | ForEach-Object { $_.Text })
+                }
+            }
         }
     }
-    if ($journalFamilyLines.Count -ne 1) {
-        $familyLinesText =
-            ($journalFamilyLines | ForEach-Object { $_.LineNumber }) -join ','
-        $reasons += "evidence-family-count:process_event_journal:count=$($journalFamilyLines.Count):lines=$familyLinesText"
-        if ($journalFamilyLines.Count -gt 1) {
-            $duplicateEvidenceRecords += [pscustomobject]@{
-                Record = 'process_event_journal_family'
-                Lines  = @($journalFamilyLines | ForEach-Object { $_.LineNumber })
-                Texts  = @($journalFamilyLines | ForEach-Object { $_.Text })
+
+    $roomFamilyLines = @($securityFamilyOccurrences['kernel_room'])
+    if ($roomFamilyLines.Count -eq 1) {
+        $roomLine = [string]$roomFamilyLines[0].Text
+        $roomMatch = $roomSnapshotRegex.Match($roomLine)
+        $roomSemanticValid = $roomMatch.Success
+        $roomValues = @{}
+        if ($roomSemanticValid) {
+            foreach ($fieldName in @(
+                    'ok', 'degraded', 'failed', 'unknown', 'domains',
+                    'windows', 'drivers_ready', 'drivers', 'plans', 'nodes',
+                    'rings', 'active', 'user', 'nodebit_active',
+                    'nodebit_risky'
+                )) {
+                $parsedValue = [uint32]0
+                if (-not [uint32]::TryParse(
+                        $roomMatch.Groups[$fieldName].Value,
+                        [ref]$parsedValue
+                    )) {
+                    $roomSemanticValid = $false
+                    break
+                }
+                $roomValues[$fieldName] = $parsedValue
+            }
+        }
+        if ($roomSemanticValid) {
+            $roomSemanticValid = (
+                $roomMatch.Groups['stability'].Value -ceq 'stable' -and
+                [uint64]$roomValues['ok'] -gt 0 -and
+                [uint64]$roomValues['degraded'] -eq 0 -and
+                [uint64]$roomValues['failed'] -eq 0 -and
+                (@('uniform', 'segmented', 'numa-hinted', 'fabric-expandable') -ccontains
+                    $roomMatch.Groups['topology'].Value) -and
+                [uint64]$roomValues['domains'] -gt 0 -and
+                [uint64]$roomValues['drivers'] -gt 0 -and
+                [uint64]$roomValues['drivers_ready'] -le [uint64]$roomValues['drivers'] -and
+                [uint64]$roomValues['active'] -le [uint64]$roomValues['rings'] -and
+                [uint64]$roomValues['user'] -eq 1 -and
+                [uint64]$roomValues['nodebit_risky'] -le [uint64]$roomValues['nodebit_active']
+            )
+        }
+        if (-not $roomSemanticValid) {
+            $invalidRoomRecords += [pscustomobject]@{
+                Line   = $roomFamilyLines[0].LineNumber
+                Text   = $roomLine
+                Record = 'kernel_room'
             }
         }
     }
@@ -336,6 +434,7 @@ function Test-NormalSmokeVerdict {
         [pscustomobject]@{ Name = 'user-trap-capture'; Pattern = '\[TRAP\] user frame capture PASS'; ValuePrefix = $false },
         [pscustomobject]@{ Name = 'process-trap-snapshot'; Pattern = '\[PROC\] trap evidence snapshot PASS'; ValuePrefix = $false },
         [pscustomobject]@{ Name = 'process-event-journal'; Pattern = '\[PROC\] process event journal PASS'; ValuePrefix = $false },
+        [pscustomobject]@{ Name = 'ring3-entry-ac-hardening'; Pattern = '\[SEC\] ring3 entry AC hardening PASS'; ValuePrefix = $false },
         [pscustomobject]@{ Name = 'kernel-room'; Pattern = '\[ROOM\] snapshot stability=stable'; ValuePrefix = $false },
         [pscustomobject]@{ Name = 'health'; Pattern = '\[HEALTH\] stability='; ValuePrefix = $true },
         [pscustomobject]@{ Name = 'kernel-ready'; Pattern = '=== AIOS Kernel Ready ==='; ValuePrefix = $false },
@@ -384,6 +483,51 @@ function Test-NormalSmokeVerdict {
         }
         $previousName = $checkpoint.Name
         $previousLine = $lineNumber
+    }
+
+    $securityOrderOccurrences = [ordered]@{
+        cpu_security = @($securityFamilyOccurrences['cpu_security'])
+        ring3_entry_ac_hardening = @(
+            $securityFamilyOccurrences['ring3_entry_ac_hardening']
+        )
+        kernel_room = @($securityFamilyOccurrences['kernel_room'])
+    }
+    $securityOrderMissing = @(
+        $securityOrderOccurrences.Keys | Where-Object {
+            @($securityOrderOccurrences[$_]).Count -eq 0
+        }
+    )
+    $securityOrderDuplicates = @(
+        $securityOrderOccurrences.Keys | Where-Object {
+            @($securityOrderOccurrences[$_]).Count -gt 1
+        }
+    )
+    $securityOrderViolations = @()
+    $securityPreviousName = $null
+    $securityPreviousLine = 0
+    foreach ($securityName in @(
+            'cpu_security',
+            'ring3_entry_ac_hardening',
+            'kernel_room'
+        )) {
+        $matches = @($securityOrderOccurrences[$securityName])
+        if ($matches.Count -eq 0) {
+            continue
+        }
+        $lineNumber = [int]$matches[0].LineNumber
+        if ($securityPreviousLine -gt 0 -and
+                $lineNumber -le $securityPreviousLine) {
+            $violation = [pscustomobject]@{
+                Checkpoint        = $securityName
+                Line              = $lineNumber
+                ExpectedAfter     = $securityPreviousName
+                ExpectedAfterLine = $securityPreviousLine
+            }
+            $securityOrderViolations += $violation
+            $reasons += "security-order:${securityName}:line=${lineNumber}:expected-after=${securityPreviousName}:$securityPreviousLine"
+        }
+        $securityPreviousName = $securityName
+        $securityPreviousLine = $lineNumber
     }
 
     $healthMatches = @($terminalOccurrences['health'])
@@ -443,7 +587,7 @@ function Test-NormalSmokeVerdict {
     }
 
     $duplicateEvidenceFields = @()
-    $invalidEvidenceRecords = @()
+    $invalidEvidenceRecords = @($invalidRoomRecords)
     foreach ($lineNumber in @($duplicateFieldLines | Sort-Object)) {
         $lineText = [string]$lines[$lineNumber - 1]
         $fieldValues = @{}
@@ -516,7 +660,7 @@ function Test-NormalSmokeVerdict {
         $reasons += "evidence-fields-duplicated:line=$($duplicateEvidenceFields[0].Line)"
     }
     if ($invalidEvidenceRecords.Count -gt 0) {
-        $reasons += "evidence-record-invalid:line=$($invalidEvidenceRecords[0].Line):ide_channels"
+        $reasons += "evidence-record-invalid:line=$($invalidEvidenceRecords[0].Line):$($invalidEvidenceRecords[0].Record)"
     }
 
     $firstFailure = $null
@@ -546,6 +690,9 @@ function Test-NormalSmokeVerdict {
     foreach ($violation in $orderViolations) {
         $lineFailures += [pscustomobject]@{ Kind = 'TERMINAL_CHECKPOINT_ORDER_INVALID'; Line = $violation.Line; Checkpoint = $violation.Checkpoint }
     }
+    foreach ($violation in $securityOrderViolations) {
+        $lineFailures += [pscustomobject]@{ Kind = 'SECURITY_CHECKPOINT_ORDER_INVALID'; Line = $violation.Line; Checkpoint = $violation.Checkpoint }
+    }
     if ($lineFailures.Count -gt 0) {
         $firstFailure = $lineFailures | Sort-Object Line | Select-Object -First 1
     } elseif ($missingPatterns.Count -gt 0) {
@@ -573,7 +720,22 @@ function Test-NormalSmokeVerdict {
             missing          = $missingCheckpoints
             duplicates       = $duplicateCheckpoints
             order_violations = $orderViolations
-            passed           = ($missingCheckpoints.Count -eq 0 -and $duplicateCheckpoints.Count -eq 0 -and $orderViolations.Count -eq 0)
+            passed           = (
+                $missingCheckpoints.Count -eq 0 -and
+                $duplicateCheckpoints.Count -eq 0 -and
+                $orderViolations.Count -eq 0 -and
+                $securityOrderMissing.Count -eq 0 -and
+                $securityOrderDuplicates.Count -eq 0 -and
+                $securityOrderViolations.Count -eq 0
+            )
+        }
+        security_checkpoints      = [pscustomobject]@{
+            expected_order   = @('cpu_security', 'ring3_entry_ac_hardening', 'kernel_room')
+            occurrences      = [pscustomobject]$securityOrderOccurrences
+            missing          = $securityOrderMissing
+            duplicates       = $securityOrderDuplicates
+            order_violations = $securityOrderViolations
+            passed           = ($securityOrderMissing.Count -eq 0 -and $securityOrderDuplicates.Count -eq 0 -and $securityOrderViolations.Count -eq 0)
         }
         termination               = [pscustomobject]@{
             reason      = 'not-evaluated'
@@ -602,7 +764,7 @@ function Enter-TestkitLock {
     }
 
     $ownerPayload = @{
-        label        = "windows-kernel:${Target}:${SmokeProfile}"
+        label        = "windows-kernel:${Target}:${SmokeProfile}:${CpuProfile}"
         pid          = $PID
         host         = $env:COMPUTERNAME
         cwd          = $script:RepoRoot
@@ -793,6 +955,7 @@ Write-Host "[INFO] Toolchain root: $ToolchainRoot"
 Write-Host "[INFO] make: $Make"
 Write-Host "[INFO] nasm: $Nasm"
 Write-Host "[INFO] smoke profile: $SmokeProfile"
+Write-Host "[INFO] CPU profile: $CpuProfile"
 Write-Host "[INFO] test timeout: ${TestTimeoutSec}s"
 if ($Qemu) {
     Write-Host "[INFO] qemu: $Qemu"

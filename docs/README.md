@@ -67,7 +67,7 @@
 - [aios_build_project_landscape_2026_08_03_ko.md](meta/aios_build_project_landscape_2026_08_03_ko.md) — 현재 성숙도에 맞춘 OS·runtime·브라우저 실행 프로젝트 최신 조사
 - [old_docs_check_2026_07_03_ko.md](meta/old_docs_check_2026_07_03_ko.md)
 - [minimal_io_and_maturity_workflow_ko.md](meta/minimal_io_and_maturity_workflow_ko.md)
-- [hardening_baseline_2026_07_02_ko.md](meta/hardening_baseline_2026_07_02_ko.md)
+- [hardening_baseline_2026_07_02_ko.md](meta/hardening_baseline_2026_07_02_ko.md) — OLD/REVIEW historical baseline; current SMAP/entry-AC status is in the maturity workflow and handoff notes
 - [inspection_report_2026_04_15.md](meta/inspection_report_2026_04_15.md)
 - [inspection_report_2026_03_30.md](meta/inspection_report_2026_03_30.md)
 - [inspection_and_gaps_ko.md](meta/inspection_and_gaps_ko.md)

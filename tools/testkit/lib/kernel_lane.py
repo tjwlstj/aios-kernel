@@ -3,7 +3,11 @@ from __future__ import annotations
 import subprocess
 import time
 
-from lib.boot_log import parse_boot_log_file, write_boot_summary
+from lib.boot_log import (
+    boot_summary_path,
+    parse_boot_log_file,
+    write_boot_summary,
+)
 from lib.boot_verdict import evaluate_normal_boot
 from lib.common import (
     BUILD_DIR,
@@ -22,6 +26,28 @@ from lib.common import (
 
 DEFAULT_SMOKE_PROFILE = "full"
 SUPPORTED_SMOKE_PROFILES = {"full", "minimal", "storage-only"}
+DEFAULT_CPU_PROFILE = "default"
+SUPPORTED_CPU_PROFILES = {"default", "max-smap"}
+CPU_SECURITY_PATTERNS = {
+    "default": "[SEC] nx=1 smep=0 umip=0 smap_supported=0 smap=0",
+    "max-smap": "[SEC] nx=1 smep=1 umip=1 smap_supported=1 smap=1",
+}
+RING3_ENTRY_AC_HARDENING_PATTERNS = {
+    "default": (
+        "[SEC] ring3 entry AC hardening PASS schema=1 smap_supported=0 "
+        "smap=0 gate_active=0 common_entries=2 common_saved_ac=2 "
+        "common_clac=0 common_fallback=2 common_post_ac0=2 "
+        "int80_entries=6 int80_saved_ac=4 int80_clac=0 int80_fallback=6 "
+        "int80_post_ac0=6 gate_skips=8 gate_mismatch=0"
+    ),
+    "max-smap": (
+        "[SEC] ring3 entry AC hardening PASS schema=1 smap_supported=1 "
+        "smap=1 gate_active=1 common_entries=2 common_saved_ac=2 "
+        "common_clac=2 common_fallback=0 common_post_ac0=2 "
+        "int80_entries=6 int80_saved_ac=4 int80_clac=6 int80_fallback=0 "
+        "int80_post_ac0=6 gate_skips=0 gate_mismatch=0"
+    ),
+}
 RESOURCE_SELFTEST_PATTERN = (
     "[RESOURCE] ledger selftest PASS schema=1 kinds=5 units=2 entries=5 "
     "capacity=8 source_flags=31 limit_kinds=5 used_kinds=5 "
@@ -70,8 +96,24 @@ def ensure_smoke_profile(smoke_profile: str) -> str:
     return smoke_profile
 
 
-def build_qemu_smoke_command(qemu: str, iso: str, serial_target: str, smoke_profile: str) -> list[str]:
+def ensure_cpu_profile(cpu_profile: str) -> str:
+    if cpu_profile not in SUPPORTED_CPU_PROFILES:
+        supported = ", ".join(sorted(SUPPORTED_CPU_PROFILES))
+        raise ToolError(
+            f"Unsupported CPU profile: {cpu_profile} (supported: {supported})"
+        )
+    return cpu_profile
+
+
+def build_qemu_smoke_command(
+    qemu: str,
+    iso: str,
+    serial_target: str,
+    smoke_profile: str,
+    cpu_profile: str = DEFAULT_CPU_PROFILE,
+) -> list[str]:
     smoke_profile = ensure_smoke_profile(smoke_profile)
+    cpu_profile = ensure_cpu_profile(cpu_profile)
     cmd = [
         qemu,
         "-cdrom",
@@ -81,6 +123,8 @@ def build_qemu_smoke_command(qemu: str, iso: str, serial_target: str, smoke_prof
         "-m",
         "256M",
     ]
+    if cpu_profile == "max-smap":
+        cmd += ["-cpu", "max"]
     if smoke_profile in {"minimal", "storage-only"}:
         cmd += ["-nic", "none"]
     else:
@@ -96,10 +140,15 @@ def build_qemu_smoke_command(qemu: str, iso: str, serial_target: str, smoke_prof
     return cmd
 
 
-def required_smoke_patterns(smoke_profile: str) -> list[str]:
+def required_smoke_patterns(
+    smoke_profile: str,
+    cpu_profile: str = DEFAULT_CPU_PROFILE,
+) -> list[str]:
     smoke_profile = ensure_smoke_profile(smoke_profile)
+    cpu_profile = ensure_cpu_profile(cpu_profile)
     required = [
         "AIOS Kernel Ready",
+        CPU_SECURITY_PATTERNS[cpu_profile],
         "[BOOT] Multiboot2 handoff PASS",
         "[SELFTEST] Memory microbench PASS",
         "[HEAP] lock selftest PASS",
@@ -129,6 +178,7 @@ def required_smoke_patterns(smoke_profile: str) -> list[str]:
         USER_TRAP_CAPTURE_PATTERN,
         PROCESS_TRAP_SNAPSHOT_PATTERN,
         PROCESS_EVENT_JOURNAL_PATTERN,
+        RING3_ENTRY_AC_HARDENING_PATTERNS[cpu_profile],
         "[SHELL] Interactive shell started",
     ]
     if smoke_profile == "storage-only":
@@ -152,19 +202,56 @@ def required_smoke_patterns(smoke_profile: str) -> list[str]:
     return required
 
 
-def collect_smoke_summary(smoke_profile: str) -> dict[str, object]:
+def collect_smoke_summary(
+    smoke_profile: str,
+    cpu_profile: str = DEFAULT_CPU_PROFILE,
+    qemu_command: list[str] | None = None,
+) -> dict[str, object]:
     if not SERIAL_LOG.exists():
         raise ToolError("Smoke test did not produce a serial log.")
     if SERIAL_LOG.stat().st_size == 0:
         raise ToolError("Smoke test produced an empty serial log.")
 
-    summary = parse_boot_log_file(SERIAL_LOG, smoke_profile)
+    cpu_profile = ensure_cpu_profile(cpu_profile)
+    summary = parse_boot_log_file(SERIAL_LOG, smoke_profile, cpu_profile)
     log_text = SERIAL_LOG.read_text(encoding="utf-8", errors="replace")
-    required_patterns = required_smoke_patterns(smoke_profile)
+    required_patterns = required_smoke_patterns(smoke_profile, cpu_profile)
     verdict = evaluate_normal_boot(log_text, required_patterns)
+    security = summary.get("security")
+    security_ready = (
+        isinstance(security, dict) and security.get("ready") is True
+    )
+    security_profile_match = (
+        isinstance(security, dict)
+        and security.get("profile_match") is True
+    )
+    security_gate_passed = security_ready and security_profile_match
+    summary["security_gate"] = {
+        "ready": security_ready,
+        "profile_match": security_profile_match,
+        "passed": security_gate_passed,
+    }
+    if not security_gate_passed:
+        security_reason = {
+            "code": "SECURITY_SUMMARY_INVALID",
+            "ready": security_ready,
+            "profile_match": security_profile_match,
+        }
+        verdict["reasons"].append(security_reason)
+        verdict["passed"] = False
+        verdict["outcome"] = "FAIL"
+        if verdict.get("first_failure") is None:
+            verdict["first_failure"] = {
+                "kind": "SECURITY_SUMMARY_INVALID",
+                "line": None,
+            }
     summary["required_patterns"] = required_patterns
     summary["missing_patterns"] = verdict["missing_patterns"]
     summary["verdict"] = verdict
+    summary["cpu_profile"] = cpu_profile
+    summary["qemu_cpu_args"] = ["-cpu", "max"] if cpu_profile == "max-smap" else []
+    if qemu_command is not None:
+        summary["qemu_command"] = qemu_command
     if not verdict["passed"]:
         tail = "\n".join(log_text.splitlines()[-40:])
         reason_codes = [reason["code"] for reason in verdict["reasons"]]
@@ -187,6 +274,7 @@ def run_windows_kernel(
     target: str,
     smoke_profile: str = DEFAULT_SMOKE_PROFILE,
     timeout_sec: int = DEFAULT_QEMU_TIMEOUT,
+    cpu_profile: str = DEFAULT_CPU_PROFILE,
 ) -> dict[str, object] | None:
     powershell = which_any("pwsh", "powershell")
     if not powershell:
@@ -203,13 +291,15 @@ def run_windows_kernel(
             target,
             "-SmokeProfile",
             ensure_smoke_profile(smoke_profile),
+            "-CpuProfile",
+            ensure_cpu_profile(cpu_profile),
             "-TestTimeoutSec",
             str(timeout_sec),
             "-SkipLock",
         ]
     )
     if target == "test":
-        return collect_smoke_summary(smoke_profile)
+        return collect_smoke_summary(smoke_profile, cpu_profile)
     return None
 
 
@@ -217,6 +307,7 @@ def run_qemu_smoke_test(
     timeout_sec: int = DEFAULT_QEMU_TIMEOUT,
     strict: bool = False,
     smoke_profile: str = DEFAULT_SMOKE_PROFILE,
+    cpu_profile: str = DEFAULT_CPU_PROFILE,
 ) -> dict[str, object]:
     qemu = which_any("qemu-system-x86_64")
     if not qemu:
@@ -225,6 +316,10 @@ def run_qemu_smoke_test(
         print_step("SKIP kernel smoke: qemu-system-x86_64 not found")
         return {
             "smoke_profile": smoke_profile,
+            "cpu_profile": ensure_cpu_profile(cpu_profile),
+            "qemu_cpu_args": (
+                ["-cpu", "max"] if cpu_profile == "max-smap" else []
+            ),
             "serial_log": str(SERIAL_LOG),
             "skipped": True,
             "reason": "qemu-system-x86_64 not found",
@@ -237,7 +332,13 @@ def run_qemu_smoke_test(
     if SERIAL_LOG.exists():
         SERIAL_LOG.unlink()
 
-    cmd = build_qemu_smoke_command(qemu, str(iso), f"file:{SERIAL_LOG}", smoke_profile)
+    cmd = build_qemu_smoke_command(
+        qemu,
+        str(iso),
+        f"file:{SERIAL_LOG}",
+        smoke_profile,
+        cpu_profile,
+    )
 
     print_step(f"RUN {shell_join(cmd)}")
     proc = subprocess.Popen(cmd, cwd=str(REPO_ROOT))
@@ -250,7 +351,7 @@ def run_qemu_smoke_test(
         proc.kill()
         proc.wait()
 
-    summary = collect_smoke_summary(smoke_profile)
+    summary = collect_smoke_summary(smoke_profile, cpu_profile, cmd)
     print_step("Kernel smoke test PASSED")
     return summary
 
@@ -261,16 +362,52 @@ def run_kernel_suite(
     strict: bool,
     smoke_profile: str = DEFAULT_SMOKE_PROFILE,
     export_boot_summary: bool = False,
+    cpu_profile: str = DEFAULT_CPU_PROFILE,
 ) -> dict[str, object] | None:
     if export_boot_summary and target != "test":
         raise ToolError("`--export-boot-summary` requires `--target test` (or `--kernel-target test`).")
 
+    smoke_profile = ensure_smoke_profile(smoke_profile)
+    cpu_profile = ensure_cpu_profile(cpu_profile)
+    if export_boot_summary:
+        output_path = boot_summary_path(target, smoke_profile, cpu_profile)
+        ensure_dir(output_path.parent)
+        output_path.unlink(missing_ok=True)
+        required_patterns = required_smoke_patterns(
+            smoke_profile, cpu_profile
+        )
+        pending_verdict = evaluate_normal_boot("", required_patterns)
+        write_boot_summary(
+            {
+                "smoke_profile": smoke_profile,
+                "cpu_profile": cpu_profile,
+                "serial_log": str(SERIAL_LOG),
+                "line_count": 0,
+                "artifact_state": "initialized-before-run",
+                "qemu_cpu_args": (
+                    ["-cpu", "max"]
+                    if cpu_profile == "max-smap"
+                    else []
+                ),
+                "required_patterns": required_patterns,
+                "missing_patterns": pending_verdict["missing_patterns"],
+                "verdict": pending_verdict,
+            },
+            target,
+            smoke_profile,
+            cpu_profile,
+        )
+
     host = host_name()
     if host == "windows":
-        summary = run_windows_kernel(target, smoke_profile, timeout_sec)
+        summary = run_windows_kernel(
+            target, smoke_profile, timeout_sec, cpu_profile
+        )
         if export_boot_summary and summary is not None:
             ensure_dir(BUILD_DIR / "boot-summary")
-            output_path = write_boot_summary(summary, target, smoke_profile)
+            output_path = write_boot_summary(
+                summary, target, smoke_profile, cpu_profile
+            )
             print_step(f"Boot summary exported -> {output_path}")
         return summary
 
@@ -290,10 +427,14 @@ def run_kernel_suite(
     if target == "test":
         run_kernel_make("all")
         run_kernel_make("iso")
-        summary = run_qemu_smoke_test(timeout_sec, strict, smoke_profile)
+        summary = run_qemu_smoke_test(
+            timeout_sec, strict, smoke_profile, cpu_profile
+        )
         if export_boot_summary:
             ensure_dir(BUILD_DIR / "boot-summary")
-            output_path = write_boot_summary(summary, target, smoke_profile)
+            output_path = write_boot_summary(
+                summary, target, smoke_profile, cpu_profile
+            )
             print_step(f"Boot summary exported -> {output_path}")
         return summary
 

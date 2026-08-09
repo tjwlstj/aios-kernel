@@ -1,5 +1,12 @@
 # 커널 하드닝 베이스라인 심층 점검 및 적용 보고서 (2026-07-02)
 
+> **OLD/REVIEW (2026-08-09):** 이 문서는 2026-07-02 시점의 점검 기록이라 아래
+> SMAP/uaccess 보류 상태는 현재 구현을 나타내지 않는다. 현재 경계는
+> [minimal_io_and_maturity_workflow_ko.md](minimal_io_and_maturity_workflow_ko.md)와
+> [codex_handoff_tips_ko.md](codex_handoff_tips_ko.md)를 따른다. uaccess SMAP fence와
+> QEMU CPL3 `#BP`/`int 0x80` entry-AC proof는 `CURRENT`지만, future ring3
+> IRQ/NMI/IST와 실기기 proof는 아직 아니다.
+
 **대상:** `kernel/` 도메인 (v0.2.0-beta.6 "Genesis")
 **방법:** 코드 심층 리뷰 + 최신 커널 하드닝 표준(Linux/OpenBSD 계열 프로덕션 커널의 기본 완화 기법) 대비 갭 분석 → 즉시 적용 가능한 항목 구현 → QEMU 스모크 3개 프로파일(full/minimal/storage-only) 검증 완료.
 

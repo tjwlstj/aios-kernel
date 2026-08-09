@@ -24,6 +24,12 @@
 
 static cpu_sec_info_t g_cpu_sec;
 
+/* Assembly-visible, boot-latched entry gate and bounded evidence. The gate
+ * starts false in BSS so an early interrupt can never execute CLAC before
+ * CPUID/CR4 readback proves it is supported and enabled. */
+uint8_t g_cpu_smap_entry_clac_active;
+cpu_sec_entry_ac_info_t g_cpu_sec_entry_ac;
+
 static void cpuid(uint32_t leaf, uint32_t subleaf,
                   uint32_t *eax, uint32_t *ebx, uint32_t *ecx, uint32_t *edx) {
     uint32_t a = 0, b = 0, c = 0, d = 0;
@@ -96,9 +102,12 @@ aios_status_t cpu_security_init(void) {
     g_cpu_sec.umip_enabled = (cr4 & CR4_UMIP) != 0;
     g_cpu_sec.smap_enabled = (cr4 & CR4_SMAP) != 0;
 
-    /* Tell the uaccess layer whether to emit STAC/CLAC around user-page
-     * touches (STAC/CLAC are #UD on CPUs without SMAP). */
-    user_access_set_smap_active(g_cpu_sec.smap_enabled);
+    /* Publish one readback-derived decision to both the C uaccess fences and
+     * the assembly entry stubs. STAC/CLAC are #UD without SMAP, so support
+     * alone is not sufficient: CR4.SMAP must also have latched. */
+    g_cpu_smap_entry_clac_active =
+        (uint8_t)(g_cpu_sec.smap_supported && g_cpu_sec.smap_enabled);
+    user_access_set_smap_active(g_cpu_smap_entry_clac_active != 0);
 
     serial_printf("[SEC] nx=%u smep=%u umip=%u smap_supported=%u smap=%u\n",
         (uint64_t)g_cpu_sec.nx_enabled,
@@ -116,6 +125,70 @@ aios_status_t cpu_security_info(cpu_sec_info_t *out) {
     }
     *out = g_cpu_sec;
     return AIOS_OK;
+}
+
+void cpu_security_entry_ac_info(cpu_sec_entry_ac_info_t *out) {
+    if (out) {
+        *out = g_cpu_sec_entry_ac;
+    }
+}
+
+bool cpu_security_entry_clac_active(void) {
+    return g_cpu_smap_entry_clac_active != 0;
+}
+
+static bool cpu_security_entry_gate_mismatch(void) {
+    bool gate = cpu_security_entry_clac_active();
+
+    return g_cpu_sec.smap_supported != g_cpu_sec.smap_enabled ||
+        gate != g_cpu_sec.smap_enabled;
+}
+
+bool cpu_security_entry_ac_ready(void) {
+    const cpu_sec_entry_ac_info_t *entry = &g_cpu_sec_entry_ac;
+    bool gate = cpu_security_entry_clac_active();
+    bool common_path_ok;
+    bool int80_path_ok;
+
+    common_path_ok = gate ?
+        entry->common_clac == 2ULL && entry->common_fallback == 0ULL :
+        entry->common_clac == 0ULL && entry->common_fallback == 2ULL;
+    int80_path_ok = gate ?
+        entry->int80_clac == 6ULL && entry->int80_fallback == 0ULL :
+        entry->int80_clac == 0ULL && entry->int80_fallback == 6ULL;
+
+    return !cpu_security_entry_gate_mismatch() &&
+        entry->common_entries == 2ULL &&
+        entry->common_saved_ac == 2ULL &&
+        entry->common_post_ac0 == 2ULL &&
+        entry->int80_entries == 6ULL &&
+        entry->int80_saved_ac == 4ULL &&
+        entry->int80_post_ac0 == 6ULL &&
+        common_path_ok && int80_path_ok;
+}
+
+void cpu_security_emit_entry_ac_marker(void) {
+    const cpu_sec_entry_ac_info_t *entry = &g_cpu_sec_entry_ac;
+    uint64_t gate_skips = entry->common_fallback + entry->int80_fallback;
+
+    serial_printf("[SEC] ring3 entry AC hardening %s schema=%u smap_supported=%u smap=%u gate_active=%u common_entries=%u common_saved_ac=%u common_clac=%u common_fallback=%u common_post_ac0=%u int80_entries=%u int80_saved_ac=%u int80_clac=%u int80_fallback=%u int80_post_ac0=%u gate_skips=%u gate_mismatch=%u\n",
+        cpu_security_entry_ac_ready() ? "PASS" : "FAIL",
+        (uint64_t)CPU_SEC_ENTRY_AC_SCHEMA,
+        (uint64_t)g_cpu_sec.smap_supported,
+        (uint64_t)g_cpu_sec.smap_enabled,
+        (uint64_t)cpu_security_entry_clac_active(),
+        entry->common_entries,
+        entry->common_saved_ac,
+        entry->common_clac,
+        entry->common_fallback,
+        entry->common_post_ac0,
+        entry->int80_entries,
+        entry->int80_saved_ac,
+        entry->int80_clac,
+        entry->int80_fallback,
+        entry->int80_post_ac0,
+        gate_skips,
+        (uint64_t)cpu_security_entry_gate_mismatch());
 }
 
 __asm__(".section .note.GNU-stack,\"\",@progbits\n\t.previous");

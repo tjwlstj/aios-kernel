@@ -4,17 +4,26 @@ import unittest
 
 from lib.boot_verdict import evaluate_normal_boot
 from lib.kernel_lane import (
+    CPU_SECURITY_PATTERNS,
     PRESSURE_SELFTEST_PATTERN,
     PROCESS_TRAP_SNAPSHOT_PATTERN,
     PROCESS_EVENT_JOURNAL_PATTERN,
     RESOURCE_SELFTEST_PATTERN,
+    RING3_ENTRY_AC_HARDENING_PATTERNS,
     TRAPFRAME_CONTRACT_PATTERN,
     USER_TRAP_CAPTURE_PATTERN,
+    build_qemu_smoke_command,
     required_smoke_patterns,
 )
 
 
 REQUIRED_PATTERNS = ["[BOOT] profile-required"]
+ROOM_SNAPSHOT_LINE = (
+    "[ROOM] snapshot stability=stable ok=18 degraded=0 failed=0 "
+    "unknown=2 topology=segmented domains=4 windows=0 drivers=1/1 "
+    "plans=5 nodes=10 rings=0 active=0 user=1 "
+    "nodebit_active=1 nodebit_risky=0"
+)
 
 
 def normal_lines() -> list[str]:
@@ -29,7 +38,8 @@ def normal_lines() -> list[str]:
         "[TRAP] user frame capture PASS pid_a=1 pid_b=2",
         "[PROC] trap evidence snapshot PASS schema=1 captures=2",
         "[PROC] process event journal PASS schema=1 events=6",
-        "[ROOM] snapshot stability=stable ok=18 degraded=0 failed=0",
+        RING3_ENTRY_AC_HARDENING_PATTERNS["default"],
+        ROOM_SNAPSHOT_LINE,
         "[HEALTH] stability=stable ok=18 degraded=0 failed=0 unknown=2",
         "=== AIOS Kernel Ready ===",
         "[KERNEL] Boot complete. Launching interactive shell...",
@@ -54,6 +64,200 @@ class NormalBootVerdictTests(unittest.TestCase):
         self.assertTrue(verdict["health"]["passed"])
         self.assertTrue(verdict["checkpoints"]["passed"])
         self.assertEqual("not-evaluated", verdict["termination"]["reason"])
+
+    def test_cpu_profile_commands_are_orthogonal_to_smoke_profiles(self) -> None:
+        default_cmd = build_qemu_smoke_command(
+            "qemu", "kernel.iso", "file:serial.log", "minimal", "default"
+        )
+        max_cmd = build_qemu_smoke_command(
+            "qemu", "kernel.iso", "file:serial.log", "minimal", "max-smap"
+        )
+
+        self.assertNotIn("-cpu", default_cmd)
+        self.assertEqual(1, max_cmd.count("-cpu"))
+        cpu_index = max_cmd.index("-cpu")
+        self.assertEqual("max", max_cmd[cpu_index + 1])
+        self.assertIn("-nic", default_cmd)
+        self.assertIn("-nic", max_cmd)
+
+    def test_security_cpu_profiles_require_distinct_exact_evidence(self) -> None:
+        for cpu_profile in ("default", "max-smap"):
+            with self.subTest(cpu_profile=cpu_profile):
+                lines = normal_lines()
+                lines.insert(1, CPU_SECURITY_PATTERNS["default"])
+                if cpu_profile == "max-smap":
+                    lines = [
+                        CPU_SECURITY_PATTERNS["max-smap"]
+                        if line == CPU_SECURITY_PATTERNS["default"]
+                        else RING3_ENTRY_AC_HARDENING_PATTERNS["max-smap"]
+                        if line == RING3_ENTRY_AC_HARDENING_PATTERNS["default"]
+                        else line
+                        for line in lines
+                    ]
+                required = [
+                    CPU_SECURITY_PATTERNS[cpu_profile],
+                    RING3_ENTRY_AC_HARDENING_PATTERNS[cpu_profile],
+                ]
+                verdict = evaluate_normal_boot("\n".join(lines), required)
+                self.assertTrue(verdict["passed"])
+
+                other = "max-smap" if cpu_profile == "default" else "default"
+                mismatched = evaluate_normal_boot(
+                    "\n".join(lines),
+                    [
+                        CPU_SECURITY_PATTERNS[other],
+                        RING3_ENTRY_AC_HARDENING_PATTERNS[other],
+                    ],
+                )
+                self.assertFalse(mismatched["passed"])
+                self.assertIn(
+                    "MISSING_REQUIRED_PATTERNS", reason_codes(mismatched)
+                )
+
+    def test_security_feature_entry_room_order_is_fail_closed(self) -> None:
+        feature = CPU_SECURITY_PATTERNS["default"]
+        entry = RING3_ENTRY_AC_HARDENING_PATTERNS["default"]
+        required = [feature, entry]
+        ordered = normal_lines()
+        ordered.insert(1, feature)
+        self.assertTrue(
+            evaluate_normal_boot("\n".join(ordered), required)["passed"]
+        )
+
+        feature_after_entry: list[str] = []
+        for line in ordered:
+            if line == feature:
+                continue
+            feature_after_entry.append(line)
+            if line == entry:
+                feature_after_entry.append(feature)
+        moved_after_shell = [
+            line for line in ordered if line != feature
+        ] + [feature]
+        for reordered in (feature_after_entry, moved_after_shell):
+            with self.subTest(reordered=reordered[-3:]):
+                verdict = evaluate_normal_boot(
+                    "\n".join(reordered), required
+                )
+                self.assertFalse(verdict["passed"])
+                self.assertIn(
+                    "SECURITY_CHECKPOINT_CHAIN_INVALID",
+                    reason_codes(verdict),
+                )
+                self.assertFalse(
+                    verdict["security_checkpoints"]["passed"]
+                )
+                self.assertFalse(verdict["checkpoints"]["passed"])
+
+        duplicate_family = [
+            *ordered,
+            f"{feature} extra=1",
+        ]
+        verdict = evaluate_normal_boot(
+            "\n".join(duplicate_family), required
+        )
+        self.assertFalse(verdict["passed"])
+        self.assertIn("EVIDENCE_RECORD_INVALID", reason_codes(verdict))
+
+        duplicate_room_family = []
+        for line in ordered:
+            if line.startswith("[ROOM] snapshot stability=stable"):
+                duplicate_room_family.append(
+                    ROOM_SNAPSHOT_LINE.replace(
+                        "stability=stable", "stability=degraded"
+                    ).replace("ok=18", "ok=17").replace(
+                        "degraded=0", "degraded=1"
+                    )
+                )
+            duplicate_room_family.append(line)
+        verdict = evaluate_normal_boot(
+            "\n".join(duplicate_room_family), required
+        )
+        self.assertFalse(verdict["passed"])
+        self.assertIn("EVIDENCE_RECORD_INVALID", reason_codes(verdict))
+
+    def test_room_snapshot_requires_full_stable_semantics(self) -> None:
+        canonical = ROOM_SNAPSHOT_LINE
+        mutations = (
+            "[ROOM] snapshot stability=stable",
+            canonical.replace("ok=18", "ok=0"),
+            canonical.replace("ok=18", "ok=" + ("9" * 100)),
+            canonical.replace("ok=18", "ok=9\u0662"),
+            canonical.replace("ok=18", "ok=9\uff12"),
+            canonical.replace("degraded=0", "degraded=1"),
+            canonical.replace("failed=0", "failed=1"),
+            canonical.replace("unknown=2 ", ""),
+            canonical.replace("topology=segmented", "topology=unknown"),
+            canonical.replace("domains=4", "domains=0"),
+            canonical.replace("drivers=1/1", "drivers=2/1"),
+            canonical.replace("rings=0 active=0", "rings=0 active=1"),
+            canonical.replace("user=1", "user=0"),
+            canonical.replace(
+                "nodebit_active=1 nodebit_risky=0",
+                "nodebit_active=1 nodebit_risky=2",
+            ),
+            canonical.replace(
+                "ok=18 degraded=0", "degraded=0 ok=18"
+            ),
+            canonical + " PASSFAIL",
+            canonical + " PARTIAL",
+            canonical + " extra=1",
+        )
+        for invalid in mutations:
+            with self.subTest(invalid=invalid):
+                lines = [
+                    invalid if line == canonical else line
+                    for line in normal_lines()
+                ]
+                verdict = evaluate(lines)
+                self.assertFalse(verdict["passed"])
+                self.assertIn(
+                    "EVIDENCE_RECORD_INVALID", reason_codes(verdict)
+                )
+
+    def test_entry_ac_hardening_contract_fails_closed(self) -> None:
+        canonical = RING3_ENTRY_AC_HARDENING_PATTERNS["default"]
+        required = [CPU_SECURITY_PATTERNS["default"], canonical]
+        mutations = (
+            canonical.replace("common_saved_ac=2", "common_saved_ac=1"),
+            canonical.replace("int80_saved_ac=4", "int80_saved_ac=3"),
+            canonical.replace("common_fallback=2", "common_fallback=1"),
+            canonical.replace("int80_fallback=6", "int80_fallback=5"),
+            canonical.replace("common_post_ac0=2", "common_post_ac0=1"),
+            canonical.replace("int80_post_ac0=6", "int80_post_ac0=5"),
+            canonical.replace("gate_skips=8", "gate_skips=7"),
+            canonical.replace("gate_mismatch=0", "gate_mismatch=1"),
+            canonical + " extra=1",
+            canonical.replace(
+                "gate_active=0", "gate_active=0 gate_active=0"
+            ),
+            "  " + canonical,
+            '"' + canonical + '"',
+        )
+        for invalid in mutations:
+            with self.subTest(invalid=invalid):
+                lines = [invalid if line == canonical else line for line in normal_lines()]
+                lines.insert(1, CPU_SECURITY_PATTERNS["default"])
+                verdict = evaluate_normal_boot("\n".join(lines), required)
+                self.assertFalse(verdict["passed"])
+
+        duplicate_family = [
+            CPU_SECURITY_PATTERNS["default"],
+            *normal_lines(),
+            "[SEC] ring3 entry AC hardening PARTIAL schema=1",
+        ]
+        verdict = evaluate_normal_boot("\n".join(duplicate_family), required)
+        self.assertFalse(verdict["passed"])
+        self.assertIn("EVIDENCE_RECORD_INVALID", reason_codes(verdict))
+
+        fatal_after = [
+            CPU_SECURITY_PATTERNS["default"],
+            *normal_lines(),
+            "!!! EXCEPTION: Invalid Opcode (#UD)",
+        ]
+        verdict = evaluate_normal_boot("\n".join(fatal_after), required)
+        self.assertFalse(verdict["passed"])
+        self.assertIn("FATAL_EVENTS_PRESENT", reason_codes(verdict))
 
     def test_required_marker_missing_fails(self) -> None:
         lines = normal_lines()

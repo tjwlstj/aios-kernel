@@ -10,7 +10,7 @@
 - `lib/common.py`
   - 호스트 탐지, 공통 실행 함수, build lock
 - `lib/kernel_lane.py`
-  - 커널 빌드/ISO/QEMU smoke
+  - 커널 빌드/ISO/QEMU smoke와 `default`/`max-smap` CPU profile
 - `lib/boot_matrix_lane.py`
   - `full/minimal/storage-only` 부팅 smoke를 순차 실행하고 matrix 요약을 생성
 - `lib/boot_inventory.py`
@@ -30,8 +30,8 @@
 - `kernel/build-windows.ps1`
   - Windows 커널 빌드/부팅용 전용 엔트리포인트
 - `tests/`
-  - QEMU 없이 verdict, baseline guard, matrix, shell 반례를 검증하는 Python host unit test 67개
-  - `test_build_windows_verdict.ps1`은 직접 PowerShell IDE/process-pair/pressure/resource/trap snapshot/process event journal 판정 40개를 검증
+  - QEMU 없이 verdict, baseline guard, matrix, shell 반례를 검증하는 Python host unit test
+  - `test_build_windows_verdict.ps1`은 직접 PowerShell IDE/process-pair/pressure/resource/trap snapshot/process event journal/ring3 entry AC 판정을 검증
 
 원칙:
 
@@ -57,14 +57,28 @@
   - `IDE channels`는 marker-only가 아니라 서로 다른 primary/secondary 주소와 각 채널의 `status/live`가 완전한 레코드여야 한다
   - 즉, "저장장치만 남은 최소 부팅 경로"를 별도 프로파일로 강하게 본다
 
+CPU 프로파일은 smoke profile과 직교한다.
+
+- `default`: QEMU 기본 CPU의 non-SMAP fallback. exact entry-AC marker는
+  `smap_supported=0 smap=0 gate_active=0 common_fallback=2
+  int80_fallback=6 gate_skips=8`을 요구한다.
+- `max-smap`: QEMU `-cpu max`의 SMAP/CLAC 경로. exact marker는
+  `smap_supported=1 smap=1 gate_active=1 common_clac=2 int80_clac=6
+  gate_skips=0`을 요구한다.
+- 양쪽 모두 saved user RFLAGS challenge와 live AC=0을 분리해
+  `common_entries=2 common_saved_ac=2 common_post_ac0=2 int80_entries=6
+  int80_saved_ac=4 int80_post_ac0=6 gate_mismatch=0`으로 검증한다.
+
 부팅 요약 내보내기:
 
 - `--export-boot-summary`
-  - smoke 성공 후 `kernel/build/boot-summary/test-<profile>.json` 생성
+  - `default` smoke 성공 후 `kernel/build/boot-summary/test-<profile>.json` 생성
+  - `max-smap` smoke 성공 후
+    `kernel/build/boot-summary/test-<profile>-max-smap.json` 생성
   - checkpoint, selftest, perf profile, device summary, health, user-mode scaffold,
     primary process stack, 두 process 순차 실행 `process_pair`, process-owned
     trap evidence `process_trap_snapshot`, lifecycle evidence `process_event_journal`,
-    Kernel Room snapshot,
+    CPU profile과 entry-AC를 결속한 `security`, Kernel Room snapshot,
     controller state, network/USB/storage bootstrap selection, SLM seed 결과,
     AI Resource Ledger와 AI Pressure Tracker schema/selftest를 저장
   - `process_trap_snapshot.ready`는 `record_count`(prefix 행 수)=1,
@@ -72,6 +86,11 @@
   - `process_event_journal.ready`도 prefix/fullmatch가 각각 정확히 하나이고 six-record
     ordered vector와 `dropped=0 overflow=0 evidence_only=1 switch_events=0
     resume_ready=0`이 exact일 때만 참
+  - `security.ready`는 CPU feature/entry-AC prefix와 fullmatch가 각각 하나이고,
+    ASCII uint32 anchored full-row와 안정성 의미 검사를 통과한 ROOM family도
+    정확히 하나이며,
+    `feature < entry-AC < ROOM` 순서와
+    요청한 `default`/`max-smap`의 exact 값이 맞아 `profile_match=true`일 때만 참
 
 공통 smoke marker:
 
@@ -82,6 +101,7 @@
 - `[TRAP] user frame capture PASS pid_a=1 pid_b=2 ... from_user=1 cs=0x23 ss=0x1b ... frame_addr_exact=1 contract=1`
 - `[PROC] trap evidence snapshot PASS schema=1 captures=2 pid_a=1 slot_a=0 seq_a=1 ... pid_b=2 slot_b=1 seq_b=2 ... current_pid=0 stale_owner=0 resume_ready=0`
 - `[PROC] process event journal PASS schema=1 events=6 lifecycle=4 captures=2 seqs=1,2,3,4,5,6 kinds=1,2,3,1,2,3 ... from_pids=0,1,1,0,2,2 to_pids=1,1,0,2,2,0 ... dropped=0 overflow=0 evidence_only=1 switch_events=0 resume_ready=0`
+- `[SEC] ring3 entry AC hardening PASS schema=1 smap_supported=... smap=... gate_active=... common_entries=2 common_saved_ac=2 ... common_post_ac0=2 int80_entries=6 int80_saved_ac=4 ... int80_post_ac0=6 gate_skips=... gate_mismatch=0`
 - `[RESOURCE] ledger selftest PASS schema=1 kinds=5 units=2 entries=5 ... owners_unattributed=1 observation_only=1`
 - `[PRESSURE] tracker selftest PASS schema=1 planes=3 max_levels=4 active_levels=2 ... observation_only=1`
 - `[ROOM] snapshot stability=...`
@@ -134,10 +154,16 @@ switch_events=0 resume_ready=0`까지 정본과 같아야 한다. 임의 필드�
     `event_*` 21개 필드는 schema/count/first·last sequence/lifecycle/captures/order와
     owner/CR3/`rsp0`/IF/snapshot/outcome/current/stale/drop/overflow 경계 및
     `event_evidence_only=1 event_switches=0 event_resume_ready=0`을 mirror한다
+  - `state sec`는 `schema=1 nx smep umip smap_supported smap canary`와
+    `entry_schema=1 entry_ready=1` 뒤의 common/int80 saved-AC, CLAC/fallback,
+    post-AC0, gate skip/mismatch 필드를 CPU profile별 canonical full row와
+    exact하게 mirror한다
   - 각 교환은 한 response record의 토큰 경계로 검증하고, 종료 전 reader를 drain한 뒤
     전체 transcript에 normal boot verdict를 다시 적용한다
-  - 아티팩트: `kernel/build/shell-smoke/transcript.log` (전체 시리얼 대화),
+  - `default` 아티팩트: `kernel/build/shell-smoke/transcript.log` (전체 시리얼 대화),
     `kernel/build/shell-smoke/summary.json` (교환별 pass/fail, boot verdict, termination)
+  - `max-smap` 아티팩트:
+    `kernel/build/shell-smoke/max-smap/{transcript.log,summary.json}`
   - `--skip-build`로 기존 ISO 재사용 가능
   - 새 `state` 토픽을 추가하면 `lib/shell_lane.py`의 `DEFAULT_EXCHANGES`에 교환을 등록한다
 
@@ -159,6 +185,8 @@ pwsh -NoProfile -File .\tools\testkit\tests\test_build_windows_verdict.ps1
 python .\tools\testkit\aios-testkit.py info
 python .\tools\testkit\aios-testkit.py kernel --target test --strict
 python .\tools\testkit\aios-testkit.py kernel --target test --strict --export-boot-summary
+python .\tools\testkit\aios-testkit.py kernel --target test --strict --cpu-profile default
+python .\tools\testkit\aios-testkit.py kernel --target test --strict --cpu-profile max-smap
 python .\tools\testkit\aios-testkit.py kernel --target test --strict --smoke-profile minimal
 python .\tools\testkit\aios-testkit.py kernel --target test --strict --smoke-profile minimal --export-boot-summary
 python .\tools\testkit\aios-testkit.py kernel --target test --strict --smoke-profile storage-only --export-boot-summary
@@ -174,6 +202,7 @@ python .\tools\testkit\aios-testkit.py all --strict
 python .\tools\testkit\aios-testkit.py all --strict --smoke-profile minimal --export-boot-summary
 pwsh -File .\tools\testkit\kernel\build-windows.ps1 -Target test
 pwsh -File .\tools\testkit\kernel\build-windows.ps1 -Target test -SmokeProfile minimal
+pwsh -File .\tools\testkit\kernel\build-windows.ps1 -Target test -CpuProfile max-smap
 ```
 
 추가 구상:

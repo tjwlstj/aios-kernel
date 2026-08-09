@@ -97,6 +97,12 @@ jobs:
       - name: Run interactive shell lane
         run: python tools/testkit/aios-testkit.py shell --strict --skip-build
 
+      - name: Run SMAP CPU security smoke
+        run: python tools/testkit/aios-testkit.py kernel --target test --strict --smoke-profile minimal --cpu-profile max-smap --export-boot-summary
+
+      - name: Run SMAP CPU security shell lane
+        run: python tools/testkit/aios-testkit.py shell --strict --skip-build --cpu-profile max-smap
+
       - name: Run boot inventory (all profiles + structural drift)
         run: python tools/testkit/aios-testkit.py boot-inventory --profiles full minimal storage-only --strict
 
@@ -109,6 +115,8 @@ jobs:
             kernel/build/aios-kernel.bin
             kernel/build/aios-kernel.iso
             kernel/build/serial_output.log
+            kernel/build/boot-summary/
+            kernel/build/shell-smoke/
             kernel/build/shell-smoke/transcript.log
             kernel/build/shell-smoke/summary.json
             kernel/build/boot-matrix/summary.json

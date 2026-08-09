@@ -10,6 +10,8 @@ section .text
 bits 64
 
 extern exception_handler
+extern g_cpu_smap_entry_clac_active
+extern g_cpu_sec_entry_ac
 
 ; Trapframe C/NASM contract. Mirrors kernel/include/interrupt/trapframe.h;
 ; the runtime canary selftest catches drift on the real ISR path.
@@ -17,9 +19,38 @@ extern exception_handler
 %define TRAPFRAME_GPR_BYTES     120
 %define TRAPFRAME_VEC_ERR_BYTES 16
 %define TRAPFRAME_HW_FRAME_SIZE 40
+%define TRAPFRAME_INT_NO_OFFSET 120
+%define TRAPFRAME_CS_OFFSET     144
+%define TRAPFRAME_RFLAGS_OFFSET 152
 ; Register canary base shared with trapframe.h; index = interrupt_frame_t
 ; field position (r15=0 .. rax=14).
 %define TRAPFRAME_CANARY_BASE   0xC0DE5AFE00000000
+
+; cpu_sec_entry_ac_info_t C/NASM contract (kernel/include/kernel/cpu_sec.h).
+%define CPU_SEC_ENTRY_COMMON_ENTRIES     0
+%define CPU_SEC_ENTRY_COMMON_SAVED_AC    8
+%define CPU_SEC_ENTRY_COMMON_CLAC       16
+%define CPU_SEC_ENTRY_COMMON_FALLBACK   24
+%define CPU_SEC_ENTRY_COMMON_POST_AC0   32
+%define RFLAGS_AC                       (1 << 18)
+
+; Clear live kernel AC without changing the CPU-saved user RFLAGS frame.
+; CLAC is #UD without SMAP, so the boot-latched gate selects a flags-only
+; fallback on unsupported/disabled CPUs. The caller supplies a saved scratch
+; GPR and receives 1 for CLAC or 0 for fallback.
+%macro CPU_SEC_CLEAR_ENTRY_AC 1
+    cmp byte [rel g_cpu_smap_entry_clac_active], 0
+    je %%fallback
+    clac
+    mov %1, 1
+    jmp %%done
+%%fallback:
+    pushfq
+    btr qword [rsp], 18
+    popfq
+    xor %1, %1
+%%done:
+%endmacro
 
 ; Macro for ISR without error code (CPU does not push one)
 %macro ISR_NOERR 1
@@ -115,9 +146,39 @@ isr_common_stub:
     push r14
     push r15
 
-    ; User RFLAGS may carry DF=1 across a privilege-changing interrupt.
-    ; Clear live DF before entering C; iretq restores the saved flag.
+    ; User RFLAGS may carry DF=1 or AC=1 across a privilege-changing
+    ; interrupt. Clear the live kernel flags before entering C; iretq keeps
+    ; the CPU-saved user flags untouched.
     cld
+    CPU_SEC_CLEAR_ENTRY_AC rax
+
+    ; Bounded proof: count only the two ring3 #BP challenges, not timer IRQs
+    ; or the earlier CPL0 trapframe selftest that share this common stub.
+    cmp qword [rsp + TRAPFRAME_INT_NO_OFFSET], 3
+    jne .entry_ac_evidence_done
+    mov rdx, [rsp + TRAPFRAME_CS_OFFSET]
+    and rdx, 3
+    cmp rdx, 3
+    jne .entry_ac_evidence_done
+
+    inc qword [rel g_cpu_sec_entry_ac + CPU_SEC_ENTRY_COMMON_ENTRIES]
+    test qword [rsp + TRAPFRAME_RFLAGS_OFFSET], RFLAGS_AC
+    jz .entry_ac_saved_done
+    inc qword [rel g_cpu_sec_entry_ac + CPU_SEC_ENTRY_COMMON_SAVED_AC]
+.entry_ac_saved_done:
+    test rax, rax
+    jz .entry_ac_fallback
+    inc qword [rel g_cpu_sec_entry_ac + CPU_SEC_ENTRY_COMMON_CLAC]
+    jmp .entry_ac_path_done
+.entry_ac_fallback:
+    inc qword [rel g_cpu_sec_entry_ac + CPU_SEC_ENTRY_COMMON_FALLBACK]
+.entry_ac_path_done:
+    pushfq
+    pop rdx
+    test rdx, RFLAGS_AC
+    jnz .entry_ac_evidence_done
+    inc qword [rel g_cpu_sec_entry_ac + CPU_SEC_ENTRY_COMMON_POST_AC0]
+.entry_ac_evidence_done:
 
     ; Pass pointer to interrupt frame as first argument
     mov rdi, rsp

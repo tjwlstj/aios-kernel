@@ -15,6 +15,8 @@ global isr_syscall
 global user_elf_image_start
 global user_elf_image_end
 extern ai_syscall_dispatch
+extern g_cpu_smap_entry_clac_active
+extern g_cpu_sec_entry_ac
 
 ; Selectors (must match kernel/include/kernel/user_mode.h)
 %define USER_CS_RPL3 0x23
@@ -34,6 +36,31 @@ extern ai_syscall_dispatch
 ; Trapframe register canary base (kernel/include/interrupt/trapframe.h);
 ; index = interrupt_frame_t field position (r15=0 .. rax=14).
 %define TRAPFRAME_CANARY_BASE   0xC0DE5AFE00000000
+
+; cpu_sec_entry_ac_info_t offsets (kernel/include/kernel/cpu_sec.h).
+%define CPU_SEC_ENTRY_INT80_ENTRIES     40
+%define CPU_SEC_ENTRY_INT80_SAVED_AC    48
+%define CPU_SEC_ENTRY_INT80_CLAC        56
+%define CPU_SEC_ENTRY_INT80_FALLBACK    64
+%define CPU_SEC_ENTRY_INT80_POST_AC0    72
+%define SYSCALL_FRAME_RFLAGS_OFFSET     16
+%define RFLAGS_AC                       (1 << 18)
+
+; r11 is already scratch in this bootstrap int80 ABI. Return 1 when CLAC was
+; selected, 0 when the #UD-safe flags fallback was selected.
+%macro CPU_SEC_CLEAR_SYSCALL_AC 0
+    cmp byte [rel g_cpu_smap_entry_clac_active], 0
+    je %%fallback
+    clac
+    mov r11, 1
+    jmp %%done
+%%fallback:
+    pushfq
+    btr qword [rsp], 18
+    popfq
+    xor r11, r11
+%%done:
+%endmacro
 
 ; -----------------------------------------------------------------------------
 ; void user_mode_run(uint64_t entry_rip, uint64_t user_stack_top,
@@ -70,6 +97,29 @@ user_mode_run:
 ;   Runs on TSS rsp0 (dedicated syscall stack) after the ring3 transition.
 ; -----------------------------------------------------------------------------
 isr_syscall:
+    ; Sanitize the live kernel ABI before touching run state or calling C.
+    ; The CPU frame at rsp (including the user's AC bit) is not modified.
+    cld
+    CPU_SEC_CLEAR_SYSCALL_AC
+
+    inc qword [rel g_cpu_sec_entry_ac + CPU_SEC_ENTRY_INT80_ENTRIES]
+    test qword [rsp + SYSCALL_FRAME_RFLAGS_OFFSET], RFLAGS_AC
+    jz .entry_ac_saved_done
+    inc qword [rel g_cpu_sec_entry_ac + CPU_SEC_ENTRY_INT80_SAVED_AC]
+.entry_ac_saved_done:
+    test r11, r11
+    jz .entry_ac_fallback
+    inc qword [rel g_cpu_sec_entry_ac + CPU_SEC_ENTRY_INT80_CLAC]
+    jmp .entry_ac_path_done
+.entry_ac_fallback:
+    inc qword [rel g_cpu_sec_entry_ac + CPU_SEC_ENTRY_INT80_FALLBACK]
+.entry_ac_path_done:
+    pushfq
+    pop r11
+    test r11, RFLAGS_AC
+    jnz .entry_ac_post_done
+    inc qword [rel g_cpu_sec_entry_ac + CPU_SEC_ENTRY_INT80_POST_AC0]
+.entry_ac_post_done:
     mov r11, [rel g_active_user_run_state]
     test r11, r11
     jz .fatal_state
@@ -85,9 +135,6 @@ isr_syscall:
     jbe .entry_max_done
     mov [r11 + RUN_STATE_ENTRY_RSP_MAX], rsp
 .entry_max_done:
-    ; Interrupt gates preserve DF. Kernel C and the non-iret exit path require
-    ; the System V invariant DF=0; the saved user RFLAGS remains untouched.
-    cld
     test rax, rax
     jz .exit
 
@@ -176,6 +223,12 @@ elf_code:
     mov rax, 0x604          ; SYS_PIPE_STATS
     mov rdi, 0x4001000      ; user result buffer (USER_REGION + 4KB)
     int 0x80
+    ; Challenge both entry stubs with user AC=1. Each iretq restores this
+    ; saved user flag; the exit int80 has no iretq, so its entry sanitizer
+    ; also proves the kernel resumes with live AC=0.
+    pushfq
+    bts qword [rsp], 18
+    popfq
     mov rbx, TRAPFRAME_CANARY_BASE + 13
     mov rcx, TRAPFRAME_CANARY_BASE + 12
     mov r8,  TRAPFRAME_CANARY_BASE + 7

@@ -3,6 +3,10 @@ from __future__ import annotations
 import unittest
 
 from lib.boot_log import parse_boot_log_text
+from lib.kernel_lane import (
+    CPU_SECURITY_PATTERNS,
+    RING3_ENTRY_AC_HARDENING_PATTERNS,
+)
 
 
 PROCESS_PAIR_LINE = (
@@ -40,6 +44,12 @@ RESOURCE_LINE = (
     "capacity=8 source_flags=31 limit_kinds=5 used_kinds=5 "
     "high_water_kinds=1 denied_kinds=0 owners_unattributed=1 "
     "observation_only=1"
+)
+ROOM_SNAPSHOT_LINE = (
+    "[ROOM] snapshot stability=stable ok=18 degraded=0 failed=0 "
+    "unknown=2 topology=segmented domains=4 windows=0 drivers=1/1 "
+    "plans=5 nodes=10 rings=0 active=0 user=1 "
+    "nodebit_active=1 nodebit_risky=0"
 )
 
 
@@ -272,6 +282,90 @@ class BootLogProcessEventJournalTests(unittest.TestCase):
                 self.assertFalse(journal["ready"])
                 self.assertEqual(2, journal["record_count"])
                 self.assertTrue(journal["duplicate"])
+
+class BootLogSecurityTests(unittest.TestCase):
+    def test_security_summary_is_profile_bound_and_exact(self) -> None:
+        room = ROOM_SNAPSHOT_LINE
+        for cpu_profile in ("default", "max-smap"):
+            with self.subTest(cpu_profile=cpu_profile):
+                log = "\n".join(
+                    (
+                        CPU_SECURITY_PATTERNS[cpu_profile],
+                        RING3_ENTRY_AC_HARDENING_PATTERNS[cpu_profile],
+                        room,
+                    )
+                )
+                summary = parse_boot_log_text(
+                    log, "minimal", cpu_profile=cpu_profile
+                )
+                security = summary["security"]
+                self.assertTrue(security["ready"])
+                self.assertTrue(summary["kernel_room"]["ready"])
+                self.assertTrue(security["profile_match"])
+                self.assertEqual(
+                    1, security["feature"]["record_count"]
+                )
+                self.assertEqual(
+                    1, security["feature"]["fullmatch_count"]
+                )
+                self.assertEqual(
+                    1,
+                    security["entry_ac_hardening"]["record_count"],
+                )
+                self.assertEqual(
+                    1,
+                    security["entry_ac_hardening"]["fullmatch_count"],
+                )
+                self.assertEqual(1, security["room"]["record_count"])
+                self.assertEqual(
+                    1, security["room"]["fullmatch_count"]
+                )
+                self.assertTrue(security["room"]["semantic_ready"])
+                self.assertTrue(security["order"]["passed"])
+
+                other = "max-smap" if cpu_profile == "default" else "default"
+                mismatch = parse_boot_log_text(
+                    log, "minimal", cpu_profile=other
+                )["security"]
+                self.assertFalse(mismatch["ready"])
+                self.assertFalse(mismatch["profile_match"])
+
+    def test_security_summary_rejects_malformed_and_duplicate_rows(self) -> None:
+        feature = CPU_SECURITY_PATTERNS["default"]
+        entry = RING3_ENTRY_AC_HARDENING_PATTERNS["default"]
+        room = ROOM_SNAPSHOT_LINE
+        cases = (
+            f"{feature}\n{entry} extra=1\n{room}",
+            f"{feature}\n{entry}\n{entry}\n{room}",
+            f"{feature}\n{feature}\n{entry}\n{room}",
+            f"{feature}\n{entry}\n{room}\n{feature} extra=1",
+            f"{feature}\n{entry.replace('gate_mismatch=0', 'gate_mismatch=1')}\n{room}",
+            f"{feature.replace('smap=0', 'smap=1')}\n{entry}\n{room}",
+            f"{entry}\n{feature}\n{room}",
+            f"{entry}\n{room}\n{feature}",
+            f"{feature}\n{entry}\n{room}\n{room}",
+            f"{feature}\n{entry}\n[ROOM] snapshot stability=stable",
+            f"{feature}\n{entry}\n{room.replace('ok=18', 'ok=' + ('9' * 100))}",
+            f"{feature}\n{entry}\n{room.replace('ok=18', 'ok=9٢')}",
+            f"{feature}\n{entry}\n{room.replace('ok=18', 'ok=9２')}",
+            f"{feature}\n{entry}\n{room.replace('failed=0', 'failed=1')}",
+            f"{feature}\n{entry}\n{room.replace('unknown=2 ', '')}",
+            f"{feature}\n{entry}\n{room} PASSFAIL",
+            f"{feature}\n{entry}\n{room} PARTIAL",
+            f"{feature}\n{entry}\n{room} extra=1",
+            f"{feature}\n{entry}\n{room.replace('topology=segmented', 'topology=unknown')}",
+            f"{feature}\n{entry.replace('schema=1', 'schema=01')}\n{room}",
+            f"{feature}\n{entry.replace('schema=1', 'schema=١')}\n{room}",
+            f"{feature}\n{entry.replace('gate_mismatch=0', 'gate_mismatch=000')}\n{room}",
+            f"{feature}\n{entry.replace('schema=1', 'schema=' + ('9' * 100))}\n{room}",
+        )
+        for log in cases:
+            with self.subTest(log=log):
+                security = parse_boot_log_text(
+                    log, "minimal", cpu_profile="default"
+                )["security"]
+                self.assertFalse(security["ready"])
+
 
 class BootLogPressureTests(unittest.TestCase):
     def test_pressure_record_is_structured(self) -> None:

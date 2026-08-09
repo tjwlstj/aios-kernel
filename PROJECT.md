@@ -89,6 +89,7 @@ Windows: `pwsh -File .\tools\testkit\kernel\build-windows.ps1 -Target test`
 - **AI resource ledger는 aggregate 관측 전용** — kind/unit/owner-validity ID는 append-only이고 validity flag가 없는 수치는 지원된 값으로 해석하지 않는다. `SYS_INFO_RESOURCE=0x706`과 `state resource`는 read-only CURRENT이며 owner attribution과 quota/reserve/apply는 아직 없다.
 - **AI pressure는 관측 전용** — plane ID는 append-only이며, pressure ranking과 gate eligibility bitmap을 섞지 않는다. 별도 apply 검증 전에는 scheduler migration/budget 변경에 연결하지 않는다.
 - **process snapshot/journal은 증거 전용** — descriptor-owned 176B snapshot은 ISR 시점 owner/CR3/TSS `rsp0`/IF=0 검증과 `resume_ready=0`을 유지한다. per-boot process event journal v1의 schema/kind/reason/outcome 숫자 ID는 append-only이며, capacity 8 안에서 여섯 lifecycle/capture record를 덮어쓰지 않는다. journal은 `evidence_only=1 switch_events=0 resume_ready=0`이고 `0→1→0→2→0` 순차 bootstrap owner lifecycle만 증명한다. resumable saved context와 runnable-state 결속, live continuation/switch, 실제 A→B→A가 별도로 검증되기 전에는 snapshot이나 journal을 schedulable state 또는 CPU-switch trace로 해석하지 않는다.
+- **ring3 entry AC 계약은 saved/live를 분리한다** — 현재 QEMU bootstrap pair의 CPL3 `#BP` 2회와 `int 0x80` 6회에서 saved user RFLAGS는 불변이고 entry live AC는 항상 0이어야 한다. SMAP active는 `clac`, 비활성·미지원은 `pushfq/btr/popfq` fallback을 사용하며 `default`/`max-smap` CPU profile과 exact marker/`state sec` mirror가 분기를 고정한다. 이 계약을 future ring3 IRQ/NMI/IST, 실기기, resumable context 또는 process switch 증거로 확장 해석하지 않는다.
 
 ---
 

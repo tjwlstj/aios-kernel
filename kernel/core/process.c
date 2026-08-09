@@ -109,7 +109,8 @@ static bool process_event_frame_valid(
         event->frame_addr == process->kernel_stack_top -
             (uint64_t)TRAPFRAME_SIZE &&
         (event->frame_rflags & 0x2ULL) != 0 &&
-        (event->frame_rflags & (BIT(10) | BIT(18))) == 0;
+        (event->frame_rflags & BIT(10)) == 0 &&
+        (event->frame_rflags & BIT(18)) != 0;
 }
 
 static bool process_event_fields_valid(
@@ -257,7 +258,8 @@ static void process_event_bind_frame(
         frame->rsp >= AIOS_BOOTSTRAP_USER_BASE &&
         frame->rsp < AIOS_BOOTSTRAP_USER_END &&
         (frame->rflags & 0x2ULL) != 0 &&
-        (frame->rflags & (BIT(10) | BIT(18))) == 0;
+        (frame->rflags & BIT(10)) == 0 &&
+        (frame->rflags & BIT(18)) != 0;
 }
 
 aios_status_t bootstrap_process_init(void) {
@@ -645,7 +647,10 @@ aios_status_t bootstrap_process_capture_current_trap(
     live_rsp0 = user_mode_rsp0_read();
     live_rflags = process_read_rflags();
     frame_addr = (uint64_t)(uintptr_t)frame;
-    if ((live_rflags & BIT(9)) != 0 ||
+    /* The entry stub sanitizes only live kernel AC; a saved user AC value is
+     * valid process evidence and must remain untouched. The dedicated entry
+     * counters prove that the bounded demo actually supplied AC=1. */
+    if ((live_rflags & (BIT(9) | BIT(18))) != 0 ||
         live_cr3 != process->address_space.cr3 ||
         live_rsp0 != process->kernel_stack_top ||
         frame->int_no != 3ULL || frame->err_code != 0ULL ||
@@ -659,7 +664,8 @@ aios_status_t bootstrap_process_capture_current_trap(
         frame_addr != process->kernel_stack_top -
             (uint64_t)TRAPFRAME_SIZE ||
         (frame->rflags & 0x2ULL) == 0 ||
-        (frame->rflags & (BIT(10) | BIT(18))) != 0) {
+        (frame->rflags & BIT(10)) != 0 ||
+        (frame->rflags & BIT(18)) == 0) {
         return AIOS_ERR_IO;
     }
 

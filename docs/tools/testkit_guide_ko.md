@@ -2,7 +2,7 @@
 
 작성일: 2026-04-10
 
-최종 갱신: 2026-08-03 (process event journal v1 검증 계약)
+최종 갱신: 2026-08-10 (ring3 entry AC + CPU profile 검증 계약)
 
 ## 목적
 
@@ -32,7 +32,7 @@
 - `tools/testkit/lib/boot_perf.py`
   - host-local perf baseline과 threshold 기반 비교
 - `tools/testkit/lib/boot_log.py`
-  - serial log를 checkpoint / health / inventory / selftest 요약 JSON으로 파싱
+  - serial log를 checkpoint / health / inventory / selftest / CPU security 요약 JSON으로 파싱
 - `tools/testkit/lib/boot_verdict.py`
   - 전체 serial log의 fatal, health, terminal checkpoint 순서·중복을 fail-closed로 판정
 - `tools/testkit/lib/baseline_guard.py`
@@ -93,10 +93,12 @@ clean-exit 누락, process pair 레코드 누락/불완전, pressure marker
 trapframe 계약/유저 캡처 marker의 값 변조·확장 변형, process-owned trap
 snapshot의 malformed/extended/duplicate/owner/sequence/current/stale/resume 반례,
 process event journal의 missing/duplicate/truncated/extended/reordered/stale/sequence/
-overflow/switch-capable 반례와 `state user` trap/`saved_*`/`event_*` 증거 flip을 Python
-host unit test 67개로 고정한다. 별도의 `test_build_windows_verdict.ps1` 40개 사례가 Windows 직접
+  overflow/switch-capable 반례, ring3 entry AC marker의 CPU-profile mismatch와
+  saved-AC/post-AC0/CLAC/fallback/skip/mismatch 변형, `state user`
+  trap/`saved_*`/`event_*` 및 `state sec entry_*` 증거 flip을 Python host unit test로
+고정한다. 별도의 `test_build_windows_verdict.ps1`도 Windows 직접
 판정기의 IDE evidence 문법과 process pair/pressure/resource/trapframe/process
-snapshot/event journal 필수성 및 exact record 단일성을 같은 의미론으로 검증한다.
+snapshot/event journal/entry-AC 필수성 및 exact record 단일성을 같은 의미론으로 검증한다.
 
 ### 전체
 
@@ -112,6 +114,8 @@ python .\tools\testkit\aios-testkit.py all --strict --smoke-profile minimal --ex
 python .\tools\testkit\aios-testkit.py kernel --target all --strict
 python .\tools\testkit\aios-testkit.py kernel --target test --strict
 python .\tools\testkit\aios-testkit.py kernel --target test --strict --export-boot-summary
+python .\tools\testkit\aios-testkit.py kernel --target test --strict --cpu-profile default
+python .\tools\testkit\aios-testkit.py kernel --target test --strict --cpu-profile max-smap
 python .\tools\testkit\aios-testkit.py kernel --target test --strict --smoke-profile minimal
 python .\tools\testkit\aios-testkit.py kernel --target test --strict --smoke-profile minimal --export-boot-summary
 python .\tools\testkit\aios-testkit.py kernel --target test --strict --smoke-profile storage-only --export-boot-summary
@@ -122,6 +126,7 @@ python .\tools\testkit\aios-testkit.py kernel --target test --strict --smoke-pro
 ```powershell
 python .\tools\testkit\aios-testkit.py shell --strict
 python .\tools\testkit\aios-testkit.py shell --strict --skip-build
+python .\tools\testkit\aios-testkit.py shell --strict --cpu-profile max-smap
 ```
 
 현재 레인은 `state resource`와 `state pressure`를 포함한 16개 교환을 수행한다.
@@ -134,6 +139,16 @@ queue/fabric/NodeBit raw 증거가 같은 `[STATE] pressure ...` 레코드에 �
 토큰 경계로 확인한다.
 shell 전체 transcript에는 normal boot verdict도 다시 적용해 exact resource/pressure
 boot marker와 런타임 state 레코드를 서로 독립적으로 검증한다.
+`state sec`는 기존 보안 기능과 entry-AC 증거를 한 레코드에 결속한다. 앞부분은
+`schema=1 nx smep umip smap_supported smap canary`, 뒤에는
+`entry_schema=1 entry_ready=1 entry_gate_active entry_common
+entry_common_saved_ac entry_common_clac entry_common_fallback
+entry_common_post_ac0 entry_int80 entry_int80_saved_ac entry_int80_clac
+entry_int80_fallback entry_int80_post_ac0 entry_gate_skips
+entry_gate_mismatch`를 요구한다. 전체 행은 선택한 CPU profile의 canonical record와
+exact하게 같아야 한다.
+`default` 결과는 `kernel/build/shell-smoke/`에, `max-smap` 결과는
+`kernel/build/shell-smoke/max-smap/`에 각각 transcript와 summary로 보존한다.
 
 ### 부팅 매트릭스
 
@@ -167,6 +182,7 @@ python .\tools\testkit\aios-testkit.py os
 pwsh -File .\tools\testkit\kernel\build-windows.ps1 -Target all
 pwsh -File .\tools\testkit\kernel\build-windows.ps1 -Target test
 pwsh -File .\tools\testkit\kernel\build-windows.ps1 -Target test -SmokeProfile minimal
+pwsh -File .\tools\testkit\kernel\build-windows.ps1 -Target test -CpuProfile max-smap
 ```
 
 ## 스모크 프로파일
@@ -188,6 +204,20 @@ optional 하드웨어 구성을 나눌 수 있다.
 이 프로파일은 "고장난 장치 시뮬레이션"이 아니라 "optional 장치가 없는 상태"를 검증하는 용도다.
 그래서 부팅 기준선과 optional 초기화 경로를 분리해 회귀를 찾기 좋다.
 
+### CPU 프로파일
+
+`--cpu-profile`/`-CpuProfile`은 위 smoke profile과 독립적으로 QEMU CPU 보안 기능을
+고른다.
+
+- `default`: QEMU 기본 CPU. `smap_supported=0 smap=0 gate_active=0`이며
+  `common_fallback=2 int80_fallback=6 gate_skips=8`을 요구한다.
+- `max-smap`: QEMU `-cpu max`. `smap_supported=1 smap=1 gate_active=1`이며
+  `common_clac=2 int80_clac=6 gate_skips=0`을 요구한다.
+
+양쪽 모두 `common_entries=2 common_saved_ac=2 common_post_ac0=2`,
+`int80_entries=6 int80_saved_ac=4 int80_post_ac0=6 gate_mismatch=0`이어야 한다.
+이는 실제 QEMU CPL3 `#BP`/int80 재현이지 future ring3 IRQ/NMI/IST나 실기기 증거가 아니다.
+
 현재 smoke 검증은 세 프로파일을 로그 패턴으로도 구분한다.
 
 - `공통`
@@ -198,6 +228,7 @@ optional 하드웨어 구성을 나눌 수 있다.
   - `[TRAP] user frame capture PASS pid_a=1 pid_b=2 ... from_user=1 cs=0x23 ss=0x1b ... frame_addr_exact=1 contract=1`
   - `[PROC] trap evidence snapshot PASS schema=1 captures=2 pid_a=1 slot_a=0 seq_a=1 ... pid_b=2 slot_b=1 seq_b=2 ... current_pid=0 stale_owner=0 resume_ready=0`
   - `[PROC] process event journal PASS schema=1 events=6 lifecycle=4 captures=2 seqs=1,2,3,4,5,6 kinds=1,2,3,1,2,3 ... from_pids=0,1,1,0,2,2 to_pids=1,1,0,2,2,0 ... dropped=0 overflow=0 evidence_only=1 switch_events=0 resume_ready=0`
+  - CPU profile별 exact `[SEC] ring3 entry AC hardening PASS schema=1 ... common_entries=2 common_saved_ac=2 ... int80_entries=6 int80_saved_ac=4 ... gate_mismatch=0`
   - `[RESOURCE] ledger selftest PASS schema=1 kinds=5 units=2 entries=5 ... owners_unattributed=1 observation_only=1`
   - `[PRESSURE] tracker selftest PASS schema=1 planes=3 max_levels=4 active_levels=2 ... observation_only=1`
   - `[ROOM] snapshot stability=stable`
@@ -245,6 +276,8 @@ record에 `apply_enabled=1`이나 `extra=1`을 덧붙이거나 같은 exact reco
 - `kernel/build/boot-summary/test-full.json`
 - `kernel/build/boot-summary/test-minimal.json`
 - `kernel/build/boot-summary/test-storage-only.json`
+- `max-smap`은 같은 profile 이름 뒤에 `-max-smap`을 붙인다.
+  예: `kernel/build/boot-summary/test-minimal-max-smap.json`
 
 현재 JSON에는 다음 정보가 들어간다.
 
@@ -401,6 +434,12 @@ repo 안의 baseline fixture와 비교하는 lane이다.
   marker, structured `process_trap_snapshot`, shell `state user saved_*` mirror
 - capacity 8/no-overwrite process event journal v1의 세 profile 공통 exact ordered-vector
   marker, structured `process_event_journal`, shell `state user event_*` mirror
+- ring3 entry AC hardening의 `default`/`max-smap` exact marker와 shell
+  `state sec entry_*` same-record mirror
+- boot summary `security`의 feature/entry record count, fullmatch,
+  ASCII uint32 anchored full-row·안정성 의미 검사를 통과한 ROOM exact-one,
+  `feature < entry-AC < ROOM` 순서, requested CPU profile,
+  `profile_match`, `ready` 결속
 - `state autonomy` schema 1의 read-only mode/support/counter/last-decision 계약
 - AI Pressure Tracker required marker, structured `pressure` summary,
   `state pressure` observation-only/gate-separation 계약
@@ -418,7 +457,9 @@ repo 안의 baseline fixture와 비교하는 lane이다.
 - fault injection과 expected outcome lane
 - trap snapshot/journal을 실제 재개 context로 사용하는 live switch, 실제 A→B→A와 timer preemption
 - generic `[EVT]{json}`, shared marker manifest, `events.jsonl` artifact
-- `-cpu max` 정규 CI profile
+- `max-smap` minimal kernel smoke와 shell은 정규 CI에 포함됨. 아직 없는 것은
+  smoke-profile×CPU-profile 전체 교차 CI matrix
+- future ring3 IRQ/NMI/IST entry와 실기기 AC proof
 - trace dataset 전용 lane
 - per-lane config file
 

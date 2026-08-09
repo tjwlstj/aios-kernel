@@ -1,6 +1,7 @@
 # AIOS 빌드 참고 프로젝트 최신 조사
 
-> 확인일: 2026-08-03
+> 조사 확인일: 2026-08-03
+> 구현 경계 재검증: 2026-08-10
 > 상태: `RESEARCH` — 외부 프로젝트에서 가져올 설계 힌트와 AIOS 적용 순서를
 > 정리한 문서다. 외부 프로젝트의 기능을 AIOS의 `CURRENT` 구현으로 간주하지 않는다.
 >
@@ -23,14 +24,15 @@
 ## 2. AIOS의 현재 출발점
 
 조사 시작 기준 체크포인트는 `5b345f3`의 trapframe 계약 조각이었다.
-아래 표는 2026-08-03 process-owned trap evidence snapshot v0와 process event journal v1 반영 후의
-현재 경계를 사용한다.
+아래 표는 2026-08-10 process-owned trap evidence snapshot v0, process event journal v1,
+ring3 entry AC hardening 반영 후의 현재 경계를 사용한다.
 
 | 상태 | 현재 범위 |
 |---|---|
 | `CURRENT` | x86_64 부팅, 정적 ELF64, 두 bootstrap process의 private CR3·16KiB ring0 entry stack, PID 1→PID 2 순차 ring3 실행, 176B C/NASM trapframe exact 계약, CPL0/CPL3 `from_user` 실경로 증거 |
 | `CURRENT` | ISR 시점 owner/current/private CR3/TSS `rsp0`/IF=0을 검증한 descriptor-owned trap evidence snapshot v0: full 176B frame 복사, per-boot sequence 1,2, finish 뒤 보존과 final pair 경계 양쪽 재조회, `resume_ready=0` |
 | `CURRENT` | per-boot capacity 8/no-overwrite process event journal v1: acquire/capture/release 여섯 record, event sequence 1..6과 별도 capture sequence 1,2, exact ordered-vector marker·structured `process_event_journal`·`state user event_*`, `evidence_only=1 switch_events=0 resume_ready=0` |
+| `CURRENT` | `default`/`max-smap` CPU profile별 ring3 entry AC hardening: common `#BP` 2회와 `int 0x80` 6회의 saved AC challenge, 진입 직후 AC=0, feature-gated CLAC/fallback exact counter, ordered security marker·structured `security`·`state sec entry_*` mirror |
 | `CURRENT` | 커널 kthread의 타이머 선점, strict boot/shell verdict, 세 프로파일 inventory, pressure/resource aggregate 관측 |
 | `PARTIAL` | process 모델은 정적 두 슬롯이며 실행은 순차 동기 호출이다. descriptor snapshot과 event journal은 증거 소유권·순서만 가지며 scheduler runnable state나 재개 가능한 continuation으로 결속되지 않았다. next-prepare reset/run generation은 구현됐지만 live reuse/re-prepare와 stale-generation 거부의 부팅 증거는 없다 |
 | `PARTIAL` | pressure/resource는 `observation_only=1`이다. owner attribution, quota, reserve/apply, migration 입력은 없다 |
@@ -196,7 +198,21 @@ live continuation/switch로 나아가도록 순서를 유지했다.
   순차 bootstrap 증거일 뿐 CPU switch event는 하나도 없고,
   `evidence_only=1 switch_events=0 resume_ready=0`을 유지한다.
 
-### 6.3 이후: bounded cooperative proof → timer preemption
+### 6.3 완료된 세 번째 조각: ring3 entry AC hardening (`CURRENT`)
+
+- 실제 QEMU bootstrap pair에서 CPL3 `#BP` common entry 2회와 `int 0x80` entry
+  6회를 계측한다. saved user RFLAGS는 변경하지 않고 entry live AC는 항상 0이다.
+- 첫 int80는 AC=0이며 이후 각 process의 `int3`, hostile syscall, exit는 AC=1이다.
+  따라서 exact aggregate는 `common_saved_ac=2 int80_saved_ac=4`다.
+- SMAP active이면 `clac`, 비활성·미지원이면 `pushfq/btr/popfq` fallback을 사용해
+  `#UD` 없이 같은 postcondition을 만든다.
+- `[SEC] ring3 entry AC hardening PASS schema=1 ... gate_mismatch=0`와
+  `state sec entry_*` mirror를 `default`/`max-smap` CPU profile verifier가
+  profile별 exact CLAC/fallback 값으로 fail-closed 판정한다.
+- `CURRENT` 범위는 이 두 실제 CPL3 진입 경로와 QEMU 두 CPU profile 재현까지다.
+  future ring3 IRQ/NMI/IST, 실기기, resumable context와 process switch는 포함하지 않는다.
+
+### 6.4 이후: bounded cooperative proof → timer preemption
 
 1. IF=0 구간에서 current process, CR3, BSP TSS `rsp0`, saved frame,
    `g_active_user_run_state`를 함께 교대한다.
@@ -204,8 +220,8 @@ live continuation/switch로 나아가도록 순서를 유지했다.
 3. 그 다음 `ai_sched_tick()` 요청과 CPL3 timer IRQ entry-stack 귀속을 연결한다.
 4. full GPR canary, 동일 VA 격리, syscall 왕복, execution budget, process fault
    teardown과 첫 실패 trace를 완료 조건으로 둔다.
-5. 더 풍부한 ring3 IRQ 경로나 ISR 내 유저-page 접근 전에 공통 스텁/
-   `int 0x80` entry의 RFLAGS.AC 제거(`clac`) 하드닝을 SMAP feature-gated 경로로 별도 검증한다.
+5. future ring3 IRQ/NMI/IST 또는 새 ISR user-page 접근을 추가할 때는 완료된
+   `#BP`/int80 saved/live AC 계약을 해당 진입 경로로 별도 확장 검증한다.
 
 이 단계가 성공한 뒤에만 M3-b-3b2c를 선점 가능한 두 userspace process로
 `CURRENT` 승격한다. 이후 기본 실행축은 M4 virtio-blk → M5 disk ELF 순서를 유지한다.
@@ -219,6 +235,8 @@ live continuation/switch로 나아가도록 순서를 유지했다.
 - Windows kernel build, `git diff --check`, cppcheck를 통과한다.
 - QEMU full/minimal/storage-only, interactive shell, strict inventory를 통과한다.
 - 기본 CPU와 `-cpu max`에서 trapframe/process 증거와 SMAP 경계를 확인한다.
+- 정규 `default`/`max-smap` CPU profile에서 ring3 entry AC exact marker와
+  `state sec` mirror의 CLAC/fallback 분기를 각각 확인한다.
 - beta의 exact SHA가 terminal CI success일 때만 같은 SHA를 main으로 fast-forward한다.
 - baseline은 구현을 통과시키기 위한 수단으로 갱신하지 않고, 의도된 계약 변화와
   새 trusted artifact가 함께 있을 때만 별도 검토한다.

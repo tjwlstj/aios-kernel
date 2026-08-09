@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -14,7 +16,9 @@ from lib.shell_lane import (
     SerialSession,
     expectation_matches,
     expectations_match,
+    shell_exchanges,
     shell_result_passed,
+    state_sec_expectations,
 )
 
 
@@ -39,6 +43,59 @@ class ShellExpectationTests(unittest.TestCase):
                 "[SHELL] Interactive shell started",
             )
         )
+
+    def test_state_sec_contract_is_cpu_profile_bound(self) -> None:
+        records: dict[str, str] = {}
+        for cpu_profile in ("default", "max-smap"):
+            expectations = state_sec_expectations(cpu_profile)
+            record = " ".join(expectations) + "\n"
+            records[cpu_profile] = record
+            self.assertTrue(expectations_match(record, expectations))
+            exchange = next(
+                item
+                for item in shell_exchanges(cpu_profile)
+                if item["command"] == "state sec"
+            )
+            self.assertEqual(expectations, exchange["expect"])
+
+        self.assertFalse(
+            expectations_match(
+                records["default"], state_sec_expectations("max-smap")
+            )
+        )
+        self.assertFalse(
+            expectations_match(
+                records["default"]
+                + "[STATE] sec schema=1 entry_ready=0\n",
+                state_sec_expectations("default"),
+            )
+        )
+        default_expectations = state_sec_expectations("default")
+        for invalid in (
+            records["default"].replace(
+                "entry_common_saved_ac=2", "entry_common_saved_ac=1"
+            ),
+            records["default"].replace(
+                "entry_int80_saved_ac=4", "entry_int80_saved_ac=3"
+            ),
+            records["default"].replace(
+                "entry_gate_skips=8", "entry_gate_skips=7"
+            ),
+            records["default"].replace(
+                "entry_gate_mismatch=0", "entry_gate_mismatch=1"
+            ),
+            records["default"].replace(
+                "entry_gate_active=0",
+                "entry_gate_active=1 entry_gate_active=0",
+            ),
+            records["default"].replace(
+                " entry_int80=6", "\n[STATE] sec entry_int80=6"
+            ),
+        ):
+            with self.subTest(invalid=invalid):
+                self.assertFalse(
+                    expectations_match(invalid, default_expectations)
+                )
         self.assertFalse(
             expectation_matches(
                 "ERROR missing [SHELL] reboot requested marker\n",
@@ -51,6 +108,36 @@ class ShellExpectationTests(unittest.TestCase):
                 "[STATE] health stability=stable",
             )
         )
+
+    def test_state_sec_requires_exact_canonical_record(self) -> None:
+        for cpu_profile in ("default", "max-smap"):
+            expectations = state_sec_expectations(cpu_profile)
+            canonical = " ".join(expectations)
+            reordered = list(expectations)
+            reordered[8], reordered[9] = reordered[9], reordered[8]
+            invalid_records = (
+                canonical + " PASSFAIL",
+                canonical + " PARTIAL",
+                canonical + " failed=1",
+                canonical + " entry_apply=1",
+                " ".join(expectations[:-1]),
+                " ".join(
+                    token for index, token in enumerate(expectations)
+                    if index != 8
+                ),
+                " ".join(reordered),
+            )
+            self.assertTrue(
+                expectations_match(canonical + "\n", expectations)
+            )
+            for invalid in invalid_records:
+                with self.subTest(
+                    cpu_profile=cpu_profile,
+                    invalid=invalid,
+                ):
+                    self.assertFalse(
+                        expectations_match(invalid + "\n", expectations)
+                    )
 
     def test_state_health_and_autonomy_contracts_are_fail_closed(self) -> None:
         exchange = next(item for item in DEFAULT_EXCHANGES if item["command"] == "state health")
@@ -276,6 +363,49 @@ class ShellVerdictTests(unittest.TestCase):
         try:
             self.assertTrue(session.drain())
             self.assertTrue(expectation_matches(session.text(), SHELL_REBOOT_MARKER))
+        finally:
+            reader.close()
+
+    def test_state_sec_waits_for_prompt_before_rejecting_delayed_family(self) -> None:
+        read_fd, write_fd = os.pipe()
+        reader = os.fdopen(read_fd, "rb", buffering=0)
+
+        class FakeProcess:
+            stdout = reader
+
+            @staticmethod
+            def poll() -> None:
+                return None
+
+        expectations = state_sec_expectations("default")
+        canonical = " ".join(expectations) + "\n"
+        delayed_conflict = "[STATE] sec schema=1 entry_ready=0\n"
+        session = SerialSession(FakeProcess())  # type: ignore[arg-type]
+
+        def emit_response() -> None:
+            try:
+                os.write(write_fd, canonical.encode("ascii"))
+                time.sleep(0.1)
+                os.write(
+                    write_fd,
+                    (delayed_conflict + shell_lane.SHELL_PROMPT).encode(
+                        "ascii"
+                    ),
+                )
+            finally:
+                os.close(write_fd)
+
+        writer = threading.Thread(target=emit_response)
+        writer.start()
+        try:
+            self.assertFalse(
+                session.wait_for_response(
+                    expectations, timeout_sec=1.0, start_at=0
+                )
+            )
+            writer.join(timeout=1.0)
+            self.assertFalse(writer.is_alive())
+            self.assertTrue(session.drain())
         finally:
             reader.close()
 

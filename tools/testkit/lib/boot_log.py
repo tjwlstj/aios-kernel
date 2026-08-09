@@ -42,6 +42,7 @@ CHECKPOINT_PATTERNS = {
     "user_trap_capture": "[TRAP] user frame capture PASS",
     "process_trap_snapshot": "[PROC] trap evidence snapshot PASS",
     "process_event_journal": "[PROC] process event journal PASS",
+    "ring3_entry_ac_hardening": "[SEC] ring3 entry AC hardening PASS",
     "kernel_room": "[ROOM] snapshot stability=",
     "health": "[HEALTH] stability=",
     "ready": "AIOS Kernel Ready",
@@ -172,10 +173,123 @@ PROCESS_EVENT_JOURNAL_RE = re.compile(
     r"switch_events=(?P<switch_events>\d+) "
     r"resume_ready=(?P<resume_ready>\d+)$"
 )
-ROOM_SNAPSHOT_RE = re.compile(
-    r"\[ROOM\] snapshot stability=(?P<stability>\w+) ok=(?P<ok>\d+) degraded=(?P<degraded>\d+) failed=(?P<failed>\d+) unknown=(?P<unknown>\d+) topology=(?P<topology>[\w\-]+) domains=(?P<domains>\d+) windows=(?P<windows>\d+) drivers=(?P<drivers_ready>\d+)/(?P<drivers>\d+) plans=(?P<plans>\d+) nodes=(?P<nodes>\d+) rings=(?P<rings>\d+) active=(?P<active>\d+) user=(?P<user>\d+)"
-    r"(?: nodebit_active=(?P<nodebit_active>\d+) nodebit_risky=(?P<nodebit_risky>\d+))?"
+CPU_SECURITY_PREFIX = "[SEC] nx="
+CPU_SECURITY_RE = re.compile(
+    r"^\[SEC\] nx=(?P<nx>[01]) smep=(?P<smep>[01]) "
+    r"umip=(?P<umip>[01]) smap_supported=(?P<smap_supported>[01]) "
+    r"smap=(?P<smap>[01])$"
 )
+RING3_ENTRY_AC_HARDENING_PREFIX = "[SEC] ring3 entry AC hardening "
+SECURITY_ROOM_PREFIX = "[ROOM] snapshot "
+RING3_ENTRY_AC_HARDENING_RE = re.compile(
+    r"^\[SEC\] ring3 entry AC hardening (?P<status>PASS) "
+    r"schema=(?P<schema>0|[1-9][0-9]{0,9}) "
+    r"smap_supported=(?P<smap_supported>0|[1-9][0-9]{0,9}) "
+    r"smap=(?P<smap>0|[1-9][0-9]{0,9}) "
+    r"gate_active=(?P<gate_active>0|[1-9][0-9]{0,9}) "
+    r"common_entries=(?P<common_entries>0|[1-9][0-9]{0,9}) "
+    r"common_saved_ac=(?P<common_saved_ac>0|[1-9][0-9]{0,9}) "
+    r"common_clac=(?P<common_clac>0|[1-9][0-9]{0,9}) "
+    r"common_fallback=(?P<common_fallback>0|[1-9][0-9]{0,9}) "
+    r"common_post_ac0=(?P<common_post_ac0>0|[1-9][0-9]{0,9}) "
+    r"int80_entries=(?P<int80_entries>0|[1-9][0-9]{0,9}) "
+    r"int80_saved_ac=(?P<int80_saved_ac>0|[1-9][0-9]{0,9}) "
+    r"int80_clac=(?P<int80_clac>0|[1-9][0-9]{0,9}) "
+    r"int80_fallback=(?P<int80_fallback>0|[1-9][0-9]{0,9}) "
+    r"int80_post_ac0=(?P<int80_post_ac0>0|[1-9][0-9]{0,9}) "
+    r"gate_skips=(?P<gate_skips>0|[1-9][0-9]{0,9}) "
+    r"gate_mismatch=(?P<gate_mismatch>0|[1-9][0-9]{0,9})$"
+)
+CPU_PROFILE_EXPECTATIONS = {
+    "default": {
+        "feature": {
+            "nx": 1, "smep": 0, "umip": 0,
+            "smap_supported": 0, "smap": 0,
+        },
+        "entry": {
+            "schema": 1, "smap_supported": 0, "smap": 0,
+            "gate_active": 0, "common_entries": 2,
+            "common_saved_ac": 2, "common_clac": 0,
+            "common_fallback": 2, "common_post_ac0": 2,
+            "int80_entries": 6, "int80_saved_ac": 4,
+            "int80_clac": 0, "int80_fallback": 6,
+            "int80_post_ac0": 6, "gate_skips": 8,
+            "gate_mismatch": 0,
+        },
+    },
+    "max-smap": {
+        "feature": {
+            "nx": 1, "smep": 1, "umip": 1,
+            "smap_supported": 1, "smap": 1,
+        },
+        "entry": {
+            "schema": 1, "smap_supported": 1, "smap": 1,
+            "gate_active": 1, "common_entries": 2,
+            "common_saved_ac": 2, "common_clac": 2,
+            "common_fallback": 0, "common_post_ac0": 2,
+            "int80_entries": 6, "int80_saved_ac": 4,
+            "int80_clac": 6, "int80_fallback": 0,
+            "int80_post_ac0": 6, "gate_skips": 0,
+            "gate_mismatch": 0,
+        },
+    },
+}
+ROOM_SNAPSHOT_RE = re.compile(
+    r"^\[ROOM\] snapshot stability=(?P<stability>[a-z][a-z0-9-]*) "
+    r"ok=(?P<ok>0|[1-9][0-9]{0,9}) degraded=(?P<degraded>0|[1-9][0-9]{0,9}) "
+    r"failed=(?P<failed>0|[1-9][0-9]{0,9}) unknown=(?P<unknown>0|[1-9][0-9]{0,9}) "
+    r"topology=(?P<topology>[a-z][a-z0-9-]*) "
+    r"domains=(?P<domains>0|[1-9][0-9]{0,9}) windows=(?P<windows>0|[1-9][0-9]{0,9}) "
+    r"drivers=(?P<drivers_ready>0|[1-9][0-9]{0,9})/(?P<drivers>0|[1-9][0-9]{0,9}) "
+    r"plans=(?P<plans>0|[1-9][0-9]{0,9}) nodes=(?P<nodes>0|[1-9][0-9]{0,9}) "
+    r"rings=(?P<rings>0|[1-9][0-9]{0,9}) active=(?P<active>0|[1-9][0-9]{0,9}) "
+    r"user=(?P<user>0|[1-9][0-9]{0,9}) "
+    r"nodebit_active=(?P<nodebit_active>0|[1-9][0-9]{0,9}) "
+    r"nodebit_risky=(?P<nodebit_risky>0|[1-9][0-9]{0,9})$"
+)
+ROOM_UINT32_MAX = (1 << 32) - 1
+ROOM_TOPOLOGIES = {
+    "uniform",
+    "segmented",
+    "numa-hinted",
+    "fabric-expandable",
+}
+
+
+def room_snapshot_semantics(
+    match: re.Match[str] | None,
+) -> dict[str, object]:
+    if match is None:
+        return {"parsed": False, "passed": False}
+    values = _int_groupdict(
+        match,
+        "ok", "degraded", "failed", "unknown", "domains", "windows",
+        "drivers_ready", "drivers", "plans", "nodes", "rings", "active",
+        "user", "nodebit_active", "nodebit_risky",
+    )
+    topology = match.group("topology")
+    stability = match.group("stability")
+    passed = (
+        all(value <= ROOM_UINT32_MAX for value in values.values())
+        and stability == "stable"
+        and values["ok"] > 0
+        and values["degraded"] == 0
+        and values["failed"] == 0
+        and topology in ROOM_TOPOLOGIES
+        and values["domains"] > 0
+        and values["drivers"] > 0
+        and values["drivers_ready"] <= values["drivers"]
+        and values["active"] <= values["rings"]
+        and values["user"] == 1
+        and values["nodebit_risky"] <= values["nodebit_active"]
+    )
+    return {
+        "parsed": True,
+        "passed": passed,
+        "stability": stability,
+        "topology": topology,
+        **values,
+    }
 ROOM_GATES_RE = re.compile(
     r"\[ROOM\] gates total=(?P<total>\d+) stable_only=(?P<stable_only>\d+) completion=(?P<completion>\d+) shared=(?P<shared>\d+) risky_io=(?P<risky_io>\d+) observe=(?P<observe>\d+) control=(?P<control>\d+) data=(?P<data>\d+)"
 )
@@ -374,12 +488,136 @@ def _parse_controller_states(lines: list[str]) -> dict[str, object]:
     return controllers
 
 
-def parse_boot_log_text(log_text: str, smoke_profile: str, serial_log_path: str | None = None) -> dict[str, object]:
+def parse_boot_log_text(
+    log_text: str,
+    smoke_profile: str,
+    serial_log_path: str | None = None,
+    cpu_profile: str = "default",
+) -> dict[str, object]:
     lines = _sanitize_lines(log_text)
     checkpoints = {
         name: _line_info(lines, lambda candidate, needle=needle: needle in candidate)
         for name, needle in CHECKPOINT_PATTERNS.items()
     }
+
+    profile_expectation = CPU_PROFILE_EXPECTATIONS.get(cpu_profile)
+    feature_prefix_records = [
+        (index, line)
+        for index, line in enumerate(lines, start=1)
+        if line.startswith(CPU_SECURITY_PREFIX)
+    ]
+    feature_matches = _find_all_matches(lines, CPU_SECURITY_RE)
+    entry_prefix_records = [
+        (index, line)
+        for index, line in enumerate(lines, start=1)
+        if line.startswith(RING3_ENTRY_AC_HARDENING_PREFIX)
+    ]
+    entry_matches = _find_all_matches(lines, RING3_ENTRY_AC_HARDENING_RE)
+    room_prefix_records = [
+        (index, line)
+        for index, line in enumerate(lines, start=1)
+        if line.startswith(SECURITY_ROOM_PREFIX)
+    ]
+    room_matches = _find_all_matches(lines, ROOM_SNAPSHOT_RE)
+    security: dict[str, object] = {
+        "ready": False,
+        "requested_cpu_profile": cpu_profile,
+        "profile_known": profile_expectation is not None,
+        "profile_match": False,
+        "feature": {
+            "record_count": len(feature_prefix_records),
+            "fullmatch_count": len(feature_matches),
+            "duplicate": len(feature_prefix_records) > 1,
+        },
+        "entry_ac_hardening": {
+            "checkpoint_seen": checkpoints["ring3_entry_ac_hardening"]["seen"],
+            "record_count": len(entry_prefix_records),
+            "fullmatch_count": len(entry_matches),
+            "duplicate": len(entry_prefix_records) > 1,
+        },
+        "room": {
+            "record_count": len(room_prefix_records),
+            "fullmatch_count": len(room_matches),
+            "duplicate": len(room_prefix_records) > 1,
+            "semantic_ready": False,
+        },
+        "order": {
+            "expected": ["feature", "entry_ac_hardening", "room"],
+            "feature_line": None,
+            "entry_ac_hardening_line": None,
+            "room_line": None,
+            "passed": False,
+        },
+    }
+    feature_values: dict[str, int] | None = None
+    if len(feature_matches) == 1:
+        index, line, match = feature_matches[0]
+        feature_values = _int_groupdict(
+            match, "nx", "smep", "umip", "smap_supported", "smap"
+        )
+        security["feature"].update(  # type: ignore[union-attr]
+            {"line": index, "text": line, **feature_values}
+        )
+        security["order"]["feature_line"] = index  # type: ignore[index]
+    entry_values: dict[str, int] | None = None
+    entry_status: str | None = None
+    if len(entry_matches) == 1:
+        index, line, match = entry_matches[0]
+        entry_status = match.group("status")
+        entry_values = _int_groupdict(
+            match,
+            "schema", "smap_supported", "smap", "gate_active",
+            "common_entries", "common_saved_ac", "common_clac",
+            "common_fallback", "common_post_ac0", "int80_entries",
+            "int80_saved_ac", "int80_clac", "int80_fallback",
+            "int80_post_ac0", "gate_skips", "gate_mismatch",
+        )
+        security["entry_ac_hardening"].update(  # type: ignore[union-attr]
+            {"line": index, "text": line, "status": entry_status,
+             **entry_values}
+        )
+        security["order"]["entry_ac_hardening_line"] = index  # type: ignore[index]
+    if len(room_matches) == 1:
+        room_index, room_line, room_match = room_matches[0]
+        room_semantics = room_snapshot_semantics(room_match)
+        security["room"].update(  # type: ignore[union-attr]
+            {
+                "line": room_index,
+                "text": room_line,
+                "semantic_ready": room_semantics["passed"],
+                "semantics": room_semantics,
+            }
+        )
+        security["order"]["room_line"] = room_index  # type: ignore[index]
+    feature_line = security["order"]["feature_line"]  # type: ignore[index]
+    entry_line = security["order"]["entry_ac_hardening_line"]  # type: ignore[index]
+    room_line = security["order"]["room_line"]  # type: ignore[index]
+    order_passed = (
+        isinstance(feature_line, int)
+        and isinstance(entry_line, int)
+        and isinstance(room_line, int)
+        and feature_line < entry_line < room_line
+    )
+    security["order"]["passed"] = order_passed  # type: ignore[index]
+    if profile_expectation is not None:
+        profile_match = (
+            feature_values == profile_expectation["feature"]
+            and entry_values == profile_expectation["entry"]
+        )
+        security["profile_match"] = profile_match
+        security["ready"] = (
+            len(feature_prefix_records) == 1
+            and len(feature_matches) == 1
+            and len(entry_prefix_records) == 1
+            and len(entry_matches) == 1
+            and entry_status == "PASS"
+            and checkpoints["ring3_entry_ac_hardening"]["seen"]
+            and len(room_prefix_records) == 1
+            and len(room_matches) == 1
+            and bool(security["room"].get("semantic_ready"))  # type: ignore[union-attr]
+            and order_passed
+            and profile_match
+        )
 
     selftest: dict[str, object] = {"metrics": {}}
     index, line, match = _search_match(lines, SELFTEST_RESULT_RE)
@@ -766,15 +1004,26 @@ def parse_boot_log_text(log_text: str, smoke_profile: str, serial_log_path: str 
             }
         )
 
-    kernel_room: dict[str, object] = {"ready": checkpoints["kernel_room"]["seen"]}
-    index, line, match = _search_match(lines, ROOM_SNAPSHOT_RE)
-    if match:
+    kernel_room: dict[str, object] = {
+        "ready": False,
+        "record_count": len(room_prefix_records),
+        "fullmatch_count": len(room_matches),
+        "duplicate": len(room_prefix_records) > 1,
+    }
+    if len(room_matches) == 1:
+        index, line, match = room_matches[0]
+        semantics = room_snapshot_semantics(match)
         kernel_room.update(
             {
+                "ready": (
+                    len(room_prefix_records) == 1
+                    and bool(semantics["passed"])
+                ),
                 "line": index,
                 "text": line,
                 "stability": match.group("stability"),
                 "topology": match.group("topology"),
+                "semantics": semantics,
                 **_int_groupdict(
                     match,
                     "ok",
@@ -914,6 +1163,7 @@ def parse_boot_log_text(log_text: str, smoke_profile: str, serial_log_path: str 
 
     summary = {
         "smoke_profile": smoke_profile,
+        "cpu_profile": cpu_profile,
         "serial_log": serial_log_path,
         "line_count": len(lines),
         "checkpoints": checkpoints,
@@ -929,6 +1179,7 @@ def parse_boot_log_text(log_text: str, smoke_profile: str, serial_log_path: str 
         "process_pair": process_pair,
         "process_trap_snapshot": process_trap_snapshot,
         "process_event_journal": process_event_journal,
+        "security": security,
         "kernel_room": kernel_room,
         "shell": shell_info,
         "nodebit": nodebit_info,
@@ -938,17 +1189,31 @@ def parse_boot_log_text(log_text: str, smoke_profile: str, serial_log_path: str 
     return summary
 
 
-def parse_boot_log_file(path: Path, smoke_profile: str) -> dict[str, object]:
+def parse_boot_log_file(
+    path: Path,
+    smoke_profile: str,
+    cpu_profile: str = "default",
+) -> dict[str, object]:
     text = path.read_text(encoding="utf-8", errors="replace")
-    return parse_boot_log_text(text, smoke_profile, str(path))
+    return parse_boot_log_text(text, smoke_profile, str(path), cpu_profile)
 
 
-def boot_summary_path(target: str, smoke_profile: str) -> Path:
-    return BUILD_DIR / "boot-summary" / f"{target}-{smoke_profile}.json"
+def boot_summary_path(
+    target: str,
+    smoke_profile: str,
+    cpu_profile: str = "default",
+) -> Path:
+    suffix = "" if cpu_profile == "default" else f"-{cpu_profile}"
+    return BUILD_DIR / "boot-summary" / f"{target}-{smoke_profile}{suffix}.json"
 
 
-def write_boot_summary(summary: dict[str, object], target: str, smoke_profile: str) -> Path:
-    output_path = boot_summary_path(target, smoke_profile)
+def write_boot_summary(
+    summary: dict[str, object],
+    target: str,
+    smoke_profile: str,
+    cpu_profile: str = "default",
+) -> Path:
+    output_path = boot_summary_path(target, smoke_profile, cpu_profile)
     ensure_dir(output_path.parent)
     output_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     return output_path

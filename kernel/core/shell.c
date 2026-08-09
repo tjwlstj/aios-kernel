@@ -486,13 +486,40 @@ static void state_mem(void) {
 
 static void state_sec(void) {
     cpu_sec_info_t s;
+    cpu_sec_entry_ac_info_t entry;
+    bool gate_active;
+    bool gate_mismatch;
+    uint64_t gate_skips;
+
     cpu_security_info(&s);
-    STATE_EMIT("[STATE] sec nx=%u smep=%u umip=%u smap=%u canary=%u\n",
+    cpu_security_entry_ac_info(&entry);
+    gate_active = cpu_security_entry_clac_active();
+    gate_mismatch = s.smap_supported != s.smap_enabled ||
+        gate_active != s.smap_enabled;
+    gate_skips = entry.common_fallback + entry.int80_fallback;
+
+    STATE_EMIT("[STATE] sec schema=1 nx=%u smep=%u umip=%u smap_supported=%u smap=%u canary=%u entry_schema=%u entry_ready=%u entry_gate_active=%u entry_common=%u entry_common_saved_ac=%u entry_common_clac=%u entry_common_fallback=%u entry_common_post_ac0=%u entry_int80=%u entry_int80_saved_ac=%u entry_int80_clac=%u entry_int80_fallback=%u entry_int80_post_ac0=%u entry_gate_skips=%u entry_gate_mismatch=%u\n",
         (uint64_t)s.nx_enabled,
         (uint64_t)s.smep_enabled,
         (uint64_t)s.umip_enabled,
+        (uint64_t)s.smap_supported,
         (uint64_t)s.smap_enabled,
-        (uint64_t)stack_guard_armed());
+        (uint64_t)stack_guard_armed(),
+        (uint64_t)CPU_SEC_ENTRY_AC_SCHEMA,
+        (uint64_t)cpu_security_entry_ac_ready(),
+        (uint64_t)gate_active,
+        entry.common_entries,
+        entry.common_saved_ac,
+        entry.common_clac,
+        entry.common_fallback,
+        entry.common_post_ac0,
+        entry.int80_entries,
+        entry.int80_saved_ac,
+        entry.int80_clac,
+        entry.int80_fallback,
+        entry.int80_post_ac0,
+        gate_skips,
+        (uint64_t)gate_mismatch);
 }
 
 static void state_time(void) {

@@ -35,6 +35,7 @@ from lib.common import (
 )
 from lib.kernel_lane import (
     build_qemu_smoke_command,
+    ensure_cpu_profile,
     required_smoke_patterns,
     run_kernel_make,
     run_windows_kernel,
@@ -43,6 +44,7 @@ from lib.kernel_lane import (
 SHELL_SMOKE_DIR = BUILD_DIR / "shell-smoke"
 SHELL_READY_MARKER = "[SHELL] Interactive shell started"
 SHELL_REBOOT_MARKER = "[SHELL] reboot requested"
+SHELL_PROMPT = "aios# "
 
 # Well-known Windows install locations (mirrors build-windows.ps1).
 QEMU_FALLBACK_PATHS = [
@@ -61,6 +63,7 @@ def find_qemu() -> str | None:
     return None
 COMMAND_TIMEOUT_SEC = 15
 REBOOT_EXIT_TIMEOUT_SEC = 10
+EXACT_ONE_RESPONSE_FAMILIES = ("[STATE] sec ",)
 
 
 def shell_result_passed(
@@ -95,6 +98,31 @@ def expectation_matches(text: str, expectation: str) -> bool:
 
 def expectations_match(text: str, expectations: list[str]) -> bool:
     lines = text.splitlines()
+    if expectations and expectations[0] == "[STATE] sec schema=1":
+        state_sec_records = [
+            line for line in lines if line.startswith("[STATE] sec ")
+        ]
+        if (
+            len(state_sec_records) != 1
+            or state_sec_records[0] != " ".join(expectations)
+        ):
+            return False
+
+    for family_prefix in EXACT_ONE_RESPONSE_FAMILIES:
+        if not any(
+            expectation.startswith(family_prefix)
+            for expectation in expectations
+        ):
+            continue
+        family_records = [
+            line for line in lines if line.startswith(family_prefix)
+        ]
+        if (
+            len(family_records) != 1
+            or _record_has_duplicate_fields(family_records[0])
+        ):
+            return False
+
     record_lines: list[str] | None = None
     for expectation in expectations:
         if expectation.startswith(("[STATE]", "[SHELL]")):
@@ -148,6 +176,57 @@ DEFAULT_EXCHANGES: list[dict[str, object]] = [
 ]
 
 
+def state_sec_expectations(cpu_profile: str) -> list[str]:
+    cpu_profile = ensure_cpu_profile(cpu_profile)
+    if cpu_profile == "max-smap":
+        smap_supported, smap, gate_active = 1, 1, 1
+        common_clac, common_fallback = 2, 0
+        int80_clac, int80_fallback, gate_skips = 6, 0, 0
+    else:
+        smap_supported, smap, gate_active = 0, 0, 0
+        common_clac, common_fallback = 0, 2
+        int80_clac, int80_fallback, gate_skips = 0, 6, 8
+    return [
+        "[STATE] sec schema=1",
+        "nx=1",
+        f"smep={1 if cpu_profile == 'max-smap' else 0}",
+        f"umip={1 if cpu_profile == 'max-smap' else 0}",
+        f"smap_supported={smap_supported}",
+        f"smap={smap}",
+        "canary=1",
+        "entry_schema=1",
+        "entry_ready=1",
+        f"entry_gate_active={gate_active}",
+        "entry_common=2",
+        "entry_common_saved_ac=2",
+        f"entry_common_clac={common_clac}",
+        f"entry_common_fallback={common_fallback}",
+        "entry_common_post_ac0=2",
+        "entry_int80=6",
+        "entry_int80_saved_ac=4",
+        f"entry_int80_clac={int80_clac}",
+        f"entry_int80_fallback={int80_fallback}",
+        "entry_int80_post_ac0=6",
+        f"entry_gate_skips={gate_skips}",
+        "entry_gate_mismatch=0",
+    ]
+
+
+def shell_exchanges(cpu_profile: str) -> list[dict[str, object]]:
+    cpu_profile = ensure_cpu_profile(cpu_profile)
+    return [
+        {
+            "command": exchange["command"],
+            "expect": (
+                state_sec_expectations(cpu_profile)
+                if exchange["command"] == "state sec"
+                else list(exchange["expect"])  # type: ignore[arg-type]
+            ),
+        }
+        for exchange in DEFAULT_EXCHANGES
+    ]
+
+
 class SerialSession:
     """Line-agnostic pump over a QEMU `-serial stdio` process."""
 
@@ -188,6 +267,34 @@ class SerialSession:
                 return False
             time.sleep(0.05)
 
+    def wait_for_prompt(self, timeout_sec: float, start_at: int = 0) -> bool:
+        deadline = time.time() + timeout_sec
+        while True:
+            if SHELL_PROMPT in self.text()[start_at:]:
+                return True
+            if self.proc.poll() is not None or time.time() >= deadline:
+                return False
+            time.sleep(0.05)
+
+    def wait_for_response(
+        self,
+        expectations: list[str],
+        timeout_sec: float,
+        start_at: int,
+    ) -> bool:
+        """Wait for the next prompt, then judge the complete response."""
+
+        deadline = time.time() + timeout_sec
+        while True:
+            window = self.text()[start_at:]
+            prompt_index = window.find(SHELL_PROMPT)
+            if prompt_index >= 0:
+                response = window[:prompt_index]
+                return expectations_match(response, expectations)
+            if self.proc.poll() is not None or time.time() >= deadline:
+                return False
+            time.sleep(0.05)
+
     def drain(self, timeout_sec: float = 1.0) -> bool:
         self._reader.join(timeout=timeout_sec)
         return not self._reader.is_alive()
@@ -202,9 +309,9 @@ class SerialSession:
             time.sleep(0.002)
 
 
-def build_kernel_iso(timeout_sec: int) -> None:
+def build_kernel_iso(timeout_sec: int, cpu_profile: str = "default") -> None:
     if host_name() == "windows":
-        run_windows_kernel("iso", "minimal", timeout_sec)
+        run_windows_kernel("iso", "minimal", timeout_sec, cpu_profile)
         return
     run_kernel_make("all")
     run_kernel_make("iso")
@@ -214,10 +321,17 @@ def run_shell_lane(
     timeout_sec: int = DEFAULT_QEMU_TIMEOUT,
     strict: bool = False,
     skip_build: bool = False,
+    cpu_profile: str = "default",
 ) -> dict[str, object]:
-    ensure_dir(SHELL_SMOKE_DIR)
-    transcript_path = SHELL_SMOKE_DIR / "transcript.log"
-    summary_path = SHELL_SMOKE_DIR / "summary.json"
+    cpu_profile = ensure_cpu_profile(cpu_profile)
+    artifact_dir = (
+        SHELL_SMOKE_DIR
+        if cpu_profile == "default"
+        else SHELL_SMOKE_DIR / cpu_profile
+    )
+    ensure_dir(artifact_dir)
+    transcript_path = artifact_dir / "transcript.log"
+    summary_path = artifact_dir / "summary.json"
     transcript_path.unlink(missing_ok=True)
     summary_path.unlink(missing_ok=True)
 
@@ -231,6 +345,8 @@ def run_shell_lane(
     }
     summary: dict[str, object] = {
         "lane": "shell",
+        "cpu_profile": cpu_profile,
+        "qemu_cpu_args": ["-cpu", "max"] if cpu_profile == "max-smap" else [],
         "qemu": None,
         "ready": False,
         "exchanges": [],
@@ -251,7 +367,7 @@ def run_shell_lane(
         summary["failures"] = list(failures)
         boot_verdict = evaluate_normal_boot(
             transcript,
-            required_smoke_patterns("minimal"),
+            required_smoke_patterns("minimal", cpu_profile),
             termination=termination,
         )
         summary["boot_verdict"] = boot_verdict
@@ -283,7 +399,7 @@ def run_shell_lane(
 
     try:
         if not skip_build:
-            build_kernel_iso(timeout_sec)
+            build_kernel_iso(timeout_sec, cpu_profile)
     except Exception as exc:
         termination["reason"] = "kernel-build-error"
         summary["error"] = {"type": type(exc).__name__, "message": str(exc)}
@@ -301,8 +417,11 @@ def run_shell_lane(
     # Minimal hardware profile: the lane exercises the shell, not drivers.
     # Drop -no-shutdown so the final `reboot` (with -no-reboot) makes QEMU
     # exit instead of pausing, giving the lane a clean teardown.
-    cmd = [arg for arg in build_qemu_smoke_command(qemu, str(iso), "stdio", "minimal")
+    cmd = [arg for arg in build_qemu_smoke_command(
+        qemu, str(iso), "stdio", "minimal", cpu_profile
+    )
            if arg != "-no-shutdown"]
+    summary["qemu_command"] = cmd
     print_step(f"RUN {shell_join(cmd)}")
 
     proc: subprocess.Popen | None = None
@@ -335,15 +454,22 @@ def run_shell_lane(
                 f"Kernel shell did not become ready within {timeout_sec}s "
                 f"(missing marker: {SHELL_READY_MARKER})"
             )
+        if not session.wait_for_prompt(timeout_sec):
+            raise ToolError(
+                f"Kernel shell did not emit its initial prompt within "
+                f"{timeout_sec}s (missing prompt: {SHELL_PROMPT!r})"
+            )
         summary["ready"] = True
 
         stage = "shell-exchanges"
-        for exchange in DEFAULT_EXCHANGES:
+        for exchange in shell_exchanges(cpu_profile):
             command = str(exchange["command"])
             expect = list(exchange["expect"])  # type: ignore[arg-type]
             cursor = session.cursor()
             session.send_line(command)
-            ok = session.wait_for(expect, COMMAND_TIMEOUT_SEC, start_at=cursor)
+            ok = session.wait_for_response(
+                expect, COMMAND_TIMEOUT_SEC, start_at=cursor
+            )
             response = session.text()[cursor:]
             summary["exchanges"].append(
                 {
@@ -427,7 +553,7 @@ def run_shell_lane(
         )
         persist_artifacts(transcript)
 
-    print_step(f"Shell lane artifacts -> {SHELL_SMOKE_DIR}")
+    print_step(f"Shell lane artifacts -> {artifact_dir}")
 
     if failures:
         raise ToolError(

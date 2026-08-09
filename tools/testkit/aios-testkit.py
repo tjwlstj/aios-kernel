@@ -73,6 +73,12 @@ def parse_args() -> argparse.Namespace:
         help="QEMU optional-hardware profile used when the kernel lane boots a smoke VM.",
     )
     all_cmd.add_argument(
+        "--cpu-profile",
+        choices=["default", "max-smap"],
+        default="default",
+        help="QEMU CPU/security profile; max-smap maps to `-cpu max`.",
+    )
+    all_cmd.add_argument(
         "--export-boot-summary",
         action="store_true",
         help="When the kernel lane boots a smoke VM, export a parsed boot summary JSON under build/boot-summary/.",
@@ -91,6 +97,12 @@ def parse_args() -> argparse.Namespace:
         choices=["full", "minimal", "storage-only"],
         default="full",
         help="QEMU optional-hardware profile used when the kernel lane boots a smoke VM.",
+    )
+    kernel_cmd.add_argument(
+        "--cpu-profile",
+        choices=["default", "max-smap"],
+        default="default",
+        help="QEMU CPU/security profile; max-smap maps to `-cpu max`.",
     )
     kernel_cmd.add_argument(
         "--export-boot-summary",
@@ -161,6 +173,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Reuse the existing kernel ISO instead of rebuilding first.",
     )
+    shell_cmd.add_argument(
+        "--cpu-profile",
+        choices=["default", "max-smap"],
+        default="default",
+        help="QEMU CPU/security profile; max-smap maps to `-cpu max`.",
+    )
     shell_cmd.add_argument("--timeout", type=int, default=DEFAULT_QEMU_TIMEOUT)
     shell_cmd.add_argument("--strict", action="store_true")
 
@@ -171,9 +189,15 @@ def parse_args() -> argparse.Namespace:
 
 def lock_label(args: argparse.Namespace) -> str:
     if args.command == "kernel":
-        return f"kernel:{args.target}:{getattr(args, 'smoke_profile', 'full')}"
+        return (
+            f"kernel:{args.target}:{getattr(args, 'smoke_profile', 'full')}:"
+            f"{getattr(args, 'cpu_profile', 'default')}"
+        )
     if args.command == "all":
-        return f"all:{args.kernel_target}:{getattr(args, 'smoke_profile', 'full')}"
+        return (
+            f"all:{args.kernel_target}:{getattr(args, 'smoke_profile', 'full')}:"
+            f"{getattr(args, 'cpu_profile', 'default')}"
+        )
     if args.command == "boot-matrix":
         profiles = ",".join(getattr(args, "profiles", []))
         return f"boot-matrix:{profiles}"
@@ -187,7 +211,7 @@ def lock_label(args: argparse.Namespace) -> str:
         return f"boot-perf:{mode}:{profiles}"
     if args.command == "shell":
         mode = "reuse" if getattr(args, "skip_build", False) else "build"
-        return f"shell:{mode}"
+        return f"shell:{mode}:{getattr(args, 'cpu_profile', 'default')}"
     return args.command
 
 
@@ -209,6 +233,7 @@ def main() -> int:
                     args.strict,
                     args.smoke_profile,
                     args.export_boot_summary,
+                    args.cpu_profile,
                 )
                 return 0
             if args.command == "all":
@@ -218,6 +243,7 @@ def main() -> int:
                     args.strict,
                     args.smoke_profile,
                     args.export_boot_summary,
+                    args.cpu_profile,
                 )
                 run_os_tool_suite()
                 return 0
@@ -231,7 +257,12 @@ def main() -> int:
                 run_boot_perf(args.profiles, args.timeout, args.strict, args.write_baseline)
                 return 0
             if args.command == "shell":
-                run_shell_lane(args.timeout, args.strict, args.skip_build)
+                run_shell_lane(
+                    args.timeout,
+                    args.strict,
+                    args.skip_build,
+                    args.cpu_profile,
+                )
                 return 0
             raise ToolError(f"Unsupported command: {args.command}")
     except (ToolError, subprocess.CalledProcessError, FileNotFoundError) as exc:

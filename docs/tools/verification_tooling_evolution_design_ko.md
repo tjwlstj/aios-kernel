@@ -76,6 +76,9 @@ CI exit status + build artifacts
 - PID 1 / slot 0 뒤 PID 2 / slot 1의 private CR3 synchronous ring3 실행
 - process별 16KiB ring0 entry stack, TSS `rsp0` publish/readback/restore
 - 각 process의 세 `int 0x80` entry가 자기 process stack 위치에 있음을 확인
+- ring3 entry AC hardening: CPL3 `#BP` common entry 2회와 `int 0x80` 6회에서
+  saved user RFLAGS 불변, live AC=0을 확인. SMAP active는 `clac`, 비활성·미지원은
+  `pushfq/btr/popfq` fallback이며 `common_saved_ac=2 int80_saved_ac=4`
 - 실행 사이와 최종 CR3, caller IF, private leaf policy, backing scrub, current owner, process stack canary 복원 proof
 - exact pair record의 PID/slot/CR3/backing/stack 고유성 및 `process_pair` 구조 파싱
 - 각 process descriptor에 복사한 176B trap evidence snapshot의 PID/slot,
@@ -96,17 +99,27 @@ CI exit status + build artifacts
 
 - `all`, `kernel`, `os`, `info`
 - `boot-matrix`, `boot-inventory`, `boot-perf`, `shell`
-- `full`, `minimal`, `storage-only` smoke profiles
+- `full`, `minimal`, `storage-only` smoke profiles와 별도 `default`, `max-smap` CPU profiles
 - Python/Linux QEMU path and Windows PowerShell kernel path
 - boot summary, matrix, inventory, perf, shell transcript/summary artifacts
 - cppcheck CI gate and Linux full smoke/minimal shell gate
 - normal boot verdict v1의 전체 로그 fatal, anchored/token-boundary evidence,
-  health, terminal-chain, duplicate-key/exact-record 판정과 67개 host unit test
+  health, terminal-chain, duplicate-key/exact-record 판정과 host unit test
 - Python/PowerShell 공통 resource/pressure exact required marker, structured
   boot-summary `resource`/`pressure` section, process trap snapshot과 event journal의
   exact required marker, `process_trap_snapshot`/`process_event_journal` section,
   shell `state resource`/`state pressure`와 `state user`의 `saved_*`/`event_*`
   same-record 계약
+- CPU profile별 exact `[SEC] ring3 entry AC hardening PASS ...`와 `state sec`
+  canonical full-row 계약. `default`는 fallback 2/6과 `gate_skips=8`,
+  `max-smap`은 CLAC 2/6과 `gate_skips=0`을 요구하고 양쪽 모두
+  `common_post_ac0=2 int80_post_ac0=6 gate_mismatch=0`이어야 함
+- structured boot-summary `security`의 feature/entry record count, fullmatch,
+  ASCII uint32 anchored full-row·안정성 의미 검사를 통과한 ROOM exact-one,
+  `feature < entry-AC < ROOM` 순서, requested profile,
+  `profile_match`, `ready` 결속
+- Linux CI의 기본 CPU all/shell에 더해 `max-smap` minimal kernel smoke와
+  `max-smap` shell lane
 - `process_trap_snapshot.ready`는 `record_count`(prefix 행 수)=1,
   `fullmatch_count=1`, 모든 semantic 값 exact를 함께 만족할 때만 참
 - `process_event_journal.ready`도 prefix record와 fullmatch가 각각 정확히 하나이고,
@@ -142,6 +155,9 @@ CI exit status + build artifacts
 - required subsystem의 `UNKNOWN`이 required failure로 계산되지 않는다.
 - health state는 후속 mark가 앞선 심각도를 낮출 수 있다.
 - ring3 synchronous runner에는 내부 실행 budget과 process fault teardown이 없다.
+- entry AC hardening의 `CURRENT` 범위는 QEMU CPL3 `#BP`와 `int 0x80`,
+  `default`/`max-smap` 재현까지다. future ring3 IRQ/NMI/IST entry와 실기기에서
+  같은 계약이 성립한다는 증거는 아직 없다.
 - exception frame의 C/NASM offset·크기 계약과 CPL0/CPL3 `from_user` 판별은 2026-08-02에 `CURRENT`가 됐다(`trapframe.h` static assert + NASM mirror + `[TRAP]` canary 실경로 증명). long mode는 CPL0-origin frame에도 `rsp/ss`를 push하므로 두 frame은 같은 176B 레이아웃이고 CS RPL로만 구분한다. from_user fault teardown 분기는 아직 없다.
 - PID 1→PID 2 순차 실행, 각 descriptor의 process-owned trap evidence snapshot,
   capacity 8/no-overwrite process event journal v1은 검증하지만 trapframe 기반 재개·전환과
@@ -206,6 +222,8 @@ CI exit status + build artifacts
 [TRAP] user frame capture PASS
 [PROC] trap evidence snapshot PASS
 [PROC] process event journal PASS
+[SEC] nx=... smap_supported=... smap=...
+[SEC] ring3 entry AC hardening PASS
 [ROOM] snapshot stability=stable
 [HEALTH] stability=stable
 === AIOS Kernel Ready ===
@@ -220,9 +238,12 @@ CI exit status + build artifacts
 [RESOURCE] ledger selftest PASS schema=1 kinds=5 units=2 entries=5 capacity=8 source_flags=31 limit_kinds=5 used_kinds=5 high_water_kinds=1 denied_kinds=0 owners_unattributed=1 observation_only=1
 [PRESSURE] tracker selftest PASS schema=1 planes=3 max_levels=4 active_levels=2 balanced=1 hotspot=1 overlap=1 gate_mask=1 observation_only=1
 [TRAP] frame contract selftest PASS size=176 canaries=15 int_no=3 err=0 cpl0=1 cs_match=1 ss_match=1 rip_exact=1 rsp_exact=1 frame_addr_exact=1 rflags_bit1=1 df_clear=1
+[SEC] ring3 entry AC hardening PASS schema=1 smap_supported=0 smap=0 gate_active=0 common_entries=2 common_saved_ac=2 common_clac=0 common_fallback=2 common_post_ac0=2 int80_entries=6 int80_saved_ac=4 int80_clac=0 int80_fallback=6 int80_post_ac0=6 gate_skips=8 gate_mismatch=0
+[SEC] ring3 entry AC hardening PASS schema=1 smap_supported=1 smap=1 gate_active=1 common_entries=2 common_saved_ac=2 common_clac=2 common_fallback=0 common_post_ac0=2 int80_entries=6 int80_saved_ac=4 int80_clac=6 int80_fallback=0 int80_post_ac0=6 gate_skips=0 gate_mismatch=0
 ```
 
-위 세 레코드와 terminal chain 안의 `[TRAP] user frame capture PASS`,
+위 resource/pressure/trapframe 레코드와 선택된 CPU profile에 해당하는 entry-AC
+레코드 하나, terminal chain 안의 `[TRAP] user frame capture PASS`,
 `[PROC] trap evidence snapshot PASS`, `[PROC] process event journal PASS`는 행 전체가
 정본과 일치하고 정확히 한 번만 나타나야 한다. journal 정본은 여섯 record의
 sequence/kind/reason/from/to PID/slot/generation/capture sequence/owner/CR3/`rsp0`/IF/
@@ -230,6 +251,10 @@ snapshot reference/outcome vector와 `dropped=0 overflow=0 evidence_only=1
 switch_events=0 resume_ready=0`을 한 행에서 결속한다. 누락, 불완전·확장 필드,
 `gate_mask=0`, `observation_only=0`, snapshot 또는 journal 값 변조, 정본 뒤
 `apply_enabled=1` 같은 상충 증거는 Python/PowerShell 양쪽에서 정상 PASS가 아니다.
+entry-AC 레코드는 `smap_supported`, `smap`, `gate_active`, CLAC/fallback/skip
+카운터가 선택된 CPU profile과 맞지 않거나 saved-AC challenge, post-AC0,
+`gate_mismatch=0` 중 하나라도 다르면 FAIL한다. saved user RFLAGS와 live kernel
+AC는 서로 다른 증거이므로 saved AC를 지운 결과를 hardening 성공으로 인정하지 않는다.
 
 드라이버와 초기 selftest 전체의 엄격한 전역 순서 검증은 v1 범위에 넣지 않는다. 먼저 process 이후 terminal chain만 고정해 false positive를 줄인다.
 
@@ -284,7 +309,7 @@ inventory와 perf가 같은 출처 신뢰 규칙을 공유해야 한다.
 | 구성요소 | 상태 | 역할 |
 |---|---|---|
 | 순수 boot verdict evaluator | `CURRENT` | 전체 로그 fatal, anchored evidence, duplicate key/exact record, health, terminal order/duplicate 판정 |
-| verdict host unit tests | `CURRENT` | panic-after-PASS, token/행 위장, 중복 키, health, resource/pressure/process snapshot/event journal, shell, baseline/perf 반례 67개 고정 |
+| verdict host unit tests | `CURRENT` | panic-after-PASS, token/행 위장, 중복 키, health, resource/pressure/process snapshot/event journal, security order/family, stale artifact, shell, baseline/perf 반례 80개 고정 |
 | shell reboot/clean-exit gate | `CURRENT` | 전체 transcript verdict, reader drain, reboot ack, exit code 0을 PASS 조건으로 강제 |
 | baseline trusted-source guard | `CURRENT` | strict matrix/profile/verdict, profile-aware inventory와 comparable finite perf 검사 |
 | shared marker manifest | `PLANNED` | Python/PowerShell 중복 계약 제거 |
@@ -328,6 +353,9 @@ full trapframe과 두 ring3 process 선점 교대로 넘어가기 전에 최소�
   structured `process_event_journal`, `state user event_*` mirror를 Python/PowerShell
   fail-closed 반례로 검증). event sequence와 capture sequence는 별도이며
   `evidence_only=1 switch_events=0 resume_ready=0`이다.
+- ring3 `#BP` common entry + `int 0x80` entry AC hardening — `CURRENT`
+  (2026-08-09, saved user RFLAGS 불변과 live AC=0, SMAP `clac`/non-SMAP
+  fallback을 `default`/`max-smap` exact marker와 `state sec`로 재현)
 - CPL3 timer IRQ의 process entry stack 귀속 증거
 - 실제 A -> B -> A의 PID, CR3, BSP `rsp0`, current owner live-switch 순서 이벤트
 - IF=0 원자 전환과 stale current 부재
@@ -354,7 +382,8 @@ lifecycle은 순차 bootstrap 관찰이다. 실제 process 전환은 resumable c
 ### PR matrix — 목표
 
 - `full`, `minimal`, `storage-only`
-- 기본 CPU와 `-cpu max` security profile
+- `default`, `max-smap` CPU profile verifier와 CI의 `max-smap` minimal/shell은
+  `CURRENT`; smoke-profile×CPU-profile 전체 교차 matrix는 목표
 - inventory strict comparison
 
 ### nightly/advisory — 목표
@@ -410,8 +439,8 @@ kernel/build/test-runs/<run-id>/<profile>/
 구현 근거:
 
 - `tools/testkit/lib/boot_verdict.py`, `baseline_guard.py`
-- `tools/testkit/tests/` host unit test 67개
-- PowerShell 직접 verdict host selftest 40개와 CI 선행 gate
+- `tools/testkit/tests/` host unit test 80개
+- PowerShell 직접 verdict host selftest 75개와 CI 선행 gate
 - Resource Ledger exact marker/structured summary와 missing/truncated/
   observation-only/apply-capable 상충 반례
 - pressure marker도 같은 exact-record 규칙으로 강화해 trailing apply 필드를 거부
@@ -421,8 +450,13 @@ kernel/build/test-runs/<run-id>/<profile>/
 - process event journal의 세 profile 공통 exact ordered-vector 판정,
   missing/duplicate/truncated/extended/reordered/stale/sequence/overflow/
   switch-capable 반례, structured `process_event_journal`, shell `state user event_*` mirror
+- ring3 entry-AC marker의 `default`/`max-smap` profile별 exact 판정,
+  saved-AC/post-AC0/CLAC/fallback/skip/mismatch 반례와 shell `state sec entry_*` mirror
+- structured `security.ready/profile_match`, ASCII uint32 anchored full-row·안정성 의미 검사를
+  통과한 ROOM exact-one와 `feature < entry-AC < ROOM` 순서,
+  Linux CI `max-smap` minimal/shell gate
 - Python boot matrix의 QEMU `full/minimal/storage-only` 통과와 PowerShell 직접
-  verdict host selftest 40개 통과
+  verdict host selftest 75개 통과
 - shell 16개 교환(`state resource`, `state pressure`, `state autonomy` 포함)과 `reader_drained=true reboot_ack=true clean_exit=true exit_code=0`,
   `termination.reason=guest-reboot-exit`, 전체 transcript boot verdict PASS
 - strict boot inventory 3프로필 baseline 일치
@@ -454,9 +488,12 @@ kernel/build/test-runs/<run-id>/<profile>/
 - process event journal v1의 capacity 8/no-overwrite six-record lifecycle/capture evidence,
   exact ordered-vector record, `process_event_journal` summary와 `state user event_*`
   mirror — `CURRENT`
+- 실제 QEMU CPL3 `#BP`/`int 0x80` entry AC hardening과 `default`/`max-smap`
+  재현 — `CURRENT`
 - 재개 가능한 saved context, runnable-state 결속, live continuation/switch와 실제
   A -> B -> A 전환 이벤트 — `PLANNED`
 - timer IRQ entry stack 귀속과 실제 선점 — `PLANNED`
+- future ring3 IRQ/NMI/IST entry와 실기기 AC proof — `PLANNED`
 - bounded repeat/stress
 
 ### V4. Fault/expected outcome — `PLANNED`
