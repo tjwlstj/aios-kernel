@@ -6,6 +6,9 @@
 - 새 작업 전에 현재 브랜치, 작업 트리, 최근 커밋을 확인한다.
 - `CLAUDE.md`, `PROJECT.md`, `docs/meta/codex_handoff_tips_ko.md`와 관련
   설계 문서를 현재 구현과 함께 읽는다.
+- Kernel Room, Cell, Node, NodeBit, Axis Gate, Orbit 또는 리소스 귀속을
+  다룰 때는 `docs/kernel-room/kernel_room_management_model_ko.md`를 정본으로
+  먼저 읽는다.
 - 사용자가 조사나 대기만 요청했다면 파일, Git, 원격 상태를 변경하지 않는다.
 
 ## 프로젝트 스킬
@@ -14,6 +17,7 @@
 스킬만 선택하고, 선택한 `SKILL.md`를 끝까지 읽은 뒤 작업한다.
 
 - 넓거나 탐색적인 요청: `aios-repo-triage-planner`
+- Kernel Room·Cell·Node·NodeBit 구조/방향: `aios-kernel-room-architecture`
 - 커널·런타임·드라이버 변경: `aios-kernel-change-guardian`
 - 숫자 ID·enum·ABI 변경: `aios-enum-abi-integrity`
 - 드라이버·QEMU bring-up: `aios-driver-bringup-qemu`
@@ -43,3 +47,5 @@
 - 검증 증거와 host verdict를 분리하고 fail-closed로 판정한다.
 - 사용자 변경을 보존하고, 관련 없는 파일을 임의로 stage하거나 정리하지 않는다.
 - 최소의 되돌릴 수 있는 수직 조각을 우선하며, 실행하지 않은 검증은 명시한다.
+- 커널 실행 기반 작업은 Kernel Room 관리 모델의 `SUPPORTING` 축일 수 있으나,
+  `Room → Cell → Node → NodeBit`의 직접 마일스톤을 자동으로 대신하지 않는다.

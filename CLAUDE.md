@@ -85,6 +85,19 @@ add an exchange to `DEFAULT_EXCHANGES` in `tools/testkit/lib/shell_lane.py`.
 
 **AIOS** is a bare-metal x86_64 kernel designed for AI/LLM workloads as first-class citizens. Current version: v0.2.0-beta.6 "Genesis".
 
+The canonical product-management hierarchy is **Kernel Room → Cell → Node →
+NodeBit**. Overall Kernel Room topology maturity is `PARTIAL` because its
+aggregate substrate and snapshot are `CURRENT`; the Room-owned hierarchy
+runtime itself is `PLANNED`. Kernel Room currently emits an aggregate snapshot
+and nine syscall-range classification descriptors, but owns no persistent
+Cell/Node/NodeBit registry, parent binding, lifecycle, or reconciliation state.
+The existing Memory Fabric, SLM, runtime NodeBit,
+pipeline, scheduler, PID, and ring IDs are independent namespaces. Never infer
+identity from equal integers; introduce an explicit namespace, binding, and
+generation first. The M3-M5 execution work remains a substrate lane, not the
+sole project-direction queue. Orbit remains `RESEARCH`. The canonical detail is
+`docs/kernel-room/kernel_room_management_model_ko.md`.
+
 ### Boot → Kernel Flow
 ```
 kernel/boot/boot.asm  (Multiboot2 entry, GDT, paging, SSE/AVX setup, long mode)
@@ -100,7 +113,7 @@ kernel/boot/boot.asm  (Multiboot2 entry, GDT, paging, SSE/AVX setup, long mode)
 
 **Memory (`kernel/mm/`)**
 - `tensor_mm.c` — 64-byte aligned tensor allocator with named pools (Tensor, Model, Inference, KV-Cache, etc.), best-fit + buddy, lifetime tagging (SHORT_TERM / LONG_TERM / REALTIME). The 64-byte alignment is a hard invariant for AVX-512 correctness.
-- `memory_fabric.c` — per-agent memory domains (seeds), zero-copy shared windows, NUMA-ready.
+- `memory_fabric.c` — per-agent memory domains (seeds), zero-copy shared windows, NUMA-ready. A Memory Fabric `domain_id` is not yet a Kernel Room Cell or canonical Node binding.
 - `heap.c` — general kernel heap; kmalloc/kfree/get_stats run under an IRQ-saving spinlock (`heap_lock_selftest` checks the locking invariants at boot). Ready for preemption/IRQ-context allocation.
 
 **Interrupt (`kernel/interrupt/`)**
@@ -139,18 +152,20 @@ kernel/boot/boot.asm  (Multiboot2 entry, GDT, paging, SSE/AVX setup, long mode)
 - `autonomy.c` — bounded autonomy control plane. The shell's read-only `state autonomy`
   schema 1 exposes the current mode, target support matrix, counters, and last decision/reason;
   it does not add a new action or bypass the default observation-only gate. The agent-facing
-  contract and intentional M6 authorization gap are in
+  contract and the planned Kernel Room Axis Gate authorization gap are in
   `docs/autonomy/agent_operating_contract_ko.md`.
 - `slm_orchestrator.c` — 84 KB hardware + SLM snapshot, plan submit/validate/rollback. Plan *apply* is TSC-timed into a high-precision observation rollup (apply ok/failed/rejected, last/min/avg/max latency ns); read via `slm_plan_observation_read` or the shell's `state slm`. A boot selftest applies one read-only CORE_AUDIT plan — the only automated coverage of the apply path.
-- `nodebit.c` — fast per-node policy bitmap lookup (`SYS_SLM_NODEBIT_LOOKUP`). Every gate decision is timed with the TSC-backed monotonic clock into per-node stats (permits/denies/health blocks, gate latency min/avg/max ns, attributed work via `nodebit_observe_work`); read them with `SYS_NODEBIT_STATS` or the shell's `state nodes`.
+- `slm_orchestrator.c` also owns the SLM effective policy-node catalog used by `SYS_SLM_NODEBIT_LOOKUP` (API/tool/device/memory/clock/policy IDs). It is distinct from the runtime capability registry and from `agent_tree.node_id`.
+- `nodebit.c` — runtime capability registry reached through `SYS_NODEBIT_REGISTER`, `SYS_NODEBIT_UPDATE`, and `SYS_NODEBIT_STATS`; it does **not** implement `SYS_SLM_NODEBIT_LOOKUP`. Every runtime gate decision is timed with the TSC-backed monotonic clock into per-node stats (permits/denies/health blocks, gate latency min/avg/max ns, attributed work via `nodebit_observe_work`). The only real consumer gate today is the pipeline capability path.
 - `node_pipeline.c` — node-owned pipeline registry backing `SYS_PIPE_*` (0x600-0x603); every create/add-stage/execute/destroy needs a NodeBit PERMIT with `NODEBIT_CAP_PIPELINE`, and execute/destroy require the caller's node to own the pipeline. Stage execution is a control-plane accounting walk until the model runtime lands.
 - `ai_resource.c` — schema 1 observation-only aggregate ledger. It exposes five append-only rows (heap bytes, tensor bytes, active Memory Fabric windows, registered inference rings, runnable scheduler tasks) through an internal fixed snapshot. Owners remain `NONE/UNATTRIBUTED`; only tensor has a source-native high-water value. Read it via the read-only `SYS_INFO_RESOURCE` (0x706) syscall or the shell's `state resource`; owner attribution and any quota, denial accounting, reserve, or apply edge still do not exist.
 - `ai_pressure.c` — schema 1 observation-only pressure tracker. It reads exact workload queue occupancy, exact Memory Fabric reader/writer overlap, and cumulative NodeBit denial counters into a fixed-point system→plane snapshot. `max_levels=4` is expansion capacity; only `active_levels=2` is current. Gate bitmap eligibility remains a separate intersection, and no scheduler apply/migration edge consumes this snapshot yet. Read it with `state pressure`.
 
 **Kernel Room (`kernel/core/kernel_room.c`)**
+- `kernel_room_snapshot_read()` assembles aggregate subsystem/health/fabric/scheduler/ring/runtime-NodeBit counts. It is a stateless read model, not a Cell manager; there are no persistent Cell, canonical Node, or child NodeBit records yet.
 - 9 gate descriptors mapping syscall ranges to risk classifications (OBSERVE / BOUNDED_CONTROL / BOUNDED_DATA / IO_PATH).
 - Gate count must match the enum exactly, and gate ranges must cover every defined syscall number — extend the covering gate's `syscall_end` when adding syscalls.
-- The gate table is **classification metadata** consumed by the ROOM snapshot; the dispatcher does not check it per call. Runtime enforcement lives in the NodeBit capability gate (`nodebit_evaluate`), the autonomy safe-mode, and the health flags (`autonomy_allowed` / `risky_io_allowed`). Per-syscall gate enforcement is future work — do not describe it as existing.
+- The gate table is **classification metadata** summarized by `kernel_room_dump()` alongside the aggregate ROOM snapshot; `kernel_room_snapshot_read()` carries only `gate_count`, and the dispatcher does not check descriptors per call. Pipeline runtime NodeBit checks, autonomy safe-mode, and health flags are separate narrow controls, not a universal Kernel Room enforcement path. Axis Gate authorize/enforcement is `PLANNED` only after canonical hierarchy binding, principal, ownership, and generation exist.
 
 **Health (`kernel/core/health.c`)**
 - Produces stability snapshots: HEALTHY / DEGRADED / CRITICAL.
@@ -232,17 +247,21 @@ subsystem-count guard, fault-injection gate, UBSan lane, 4K W^X) with priority,
 owner, and Claude/Codex alignment points are in
 `docs/meta/maturity_levers_backlog_ko.md`. Check it before proposing new
 verification or hardening work so it stays deduplicated against the verdict
-design doc (V0-V5) and the workflow guide (M-levels).
+design doc (V0-V5) and the workflow guide (K/M/C/W lanes).
 
 ### Current Workflow Plan
-The maturity-first roadmap (M1 uaccess/SMAP → M2 ELF loader → M3 preemption →
-M4 virtio-blk storage read → M5 load programs from disk) and the per-step
-working conventions (selftest marker + smoke pattern + `state` topic + shell
-lane exchange + cppcheck clean) are pinned in
-`docs/meta/minimal_io_and_maturity_workflow_ko.md`. Follow it when picking up
-the next task. The process-owned evidence snapshot and process event journal v1
-are complete; the remaining M3 process path starts at live continuation/switch.
-Before that high-risk continuation slice, apply the entry gate in
+The project has two coordinated lanes in
+`docs/meta/minimal_io_and_maturity_workflow_ko.md`. The preferred management
+lane builds K1 full hierarchy registry v0 (Cell 1 + bound Node 1 + parent-bound
+NodeBit 1-2 in one proof) → K2 source-binding hardening/expansion → K3 legacy
+NodeBit namespace projection → K4 observation-only attribution → K5
+principal/ownership and Axis Gate authorization. The M1-M5 sequence
+(uaccess/ELF/process/storage/disk loading)
+remains the execution substrate lane and may advance when it unlocks a concrete
+binding, but it does not automatically own the next task. The process-owned
+evidence snapshot and process event journal v1 are complete; live
+continuation/switch remains `PLANNED`. Before that high-risk execution slice,
+apply the entry gate in
 `docs/tools/verification_tooling_evolution_design_ko.md`.
 
 ### Browser / Runtime Engine Roadmap
@@ -250,7 +269,8 @@ The browser-facing W1-W5 axis is defined in
 `docs/os/browser_console_and_runtime_engine_roadmap_ko.md`. W1 is a planned
 host-side COM1/WebSocket console and does not imply a kernel TCP/IP or HTTP
 server. The long-term native runtime engine belongs in AIOS userspace after the
-M3-M6 process, storage, disk-ELF, identity, and authorization foundations.
+required K1-K5 management bindings and M3-M5 process/storage/disk-ELF substrate
+foundations.
 Browser-local x86 execution remains an optional research track, not a claimed
 replacement for QEMU or the normal verification path.
 
@@ -279,12 +299,14 @@ replacement for QEMU or the normal verification path.
 ## Key Invariants
 
 - Tensor allocations must remain 64-byte aligned (AVX-512 requirement).
-- Kernel Room gate count must equal the gate enum size, and gate syscall ranges must cover the full syscall surface (`kernel/core/kernel_room.c`).
+- Kernel Room's canonical hierarchy is Room→Cell→Node→NodeBit. Until a persistent registry exists, never describe aggregate counts or equal IDs from independent namespaces as parent-child bindings.
+- Kernel Room gate count must equal the gate enum size, and gate syscall ranges must cover the full syscall surface (`kernel/core/kernel_room.c`). These descriptors classify; they do not enforce per syscall.
 - AI syscall number ranges are ABI-stable — do not renumber or overlap them. This is the only
   contract between `kernel/` and `os/`.
 - Health snapshot ABI must remain stable across builds (consumed by SLM orchestrator).
 - AI resource kind/unit IDs are append-only. Keep aggregate owner IDs at `NONE/UNATTRIBUTED` until attribution exists, honor validity flags, and preserve `observation_only=1` until a separately authorized resource-control UAPI is verified.
 - AI pressure schema/plane IDs are append-only; keep pressure ranking separate from gate eligibility and preserve `observation_only=1` until a separately verified apply path exists.
-- `store/` downloads and autonomy actions must pass the NodeBit + Kernel Room gates.
+- `SYS_SLM_NODEBIT_LOOKUP` belongs to the SLM policy catalog; runtime NodeBit register/update/stats and pipeline gating are a separate namespace. Do not alias them.
+- Common Kernel Room authorization for `store/` downloads and risky autonomy actions is `PLANNED`; implement it only after canonical binding, principal, ownership, and generation are verifiable.
 - GPU/NPU driver code is scaffolding only; no real hardware interaction yet.
 - Ring3 execution and a bounded static ELF64 loader exist as a first slice (fixed in-kernel demo image). Two static bootstrap descriptors own distinct private 2MiB slots, 16KiB ring0 entry stacks, and post-finish trap-evidence snapshots, while PID 1 / slot 0 then PID 2 / slot 1 run synchronously with exact cleanup between runs. The 176-byte trapframe C/NASM contract, CPL0/CPL3 `from_user` discrimination, ISR-time descriptor ownership copy, capacity-8/no-overwrite process event journal v1, and QEMU CPL3 `#BP`/`int 0x80` entry-AC proof under `default`/`max-smap` are proven on the real path. The journal records six lifecycle/capture observations and explicitly remains `evidence_only=1 switch_events=0 resume_ready=0`. Future ring3 IRQ/NMI/IST entry coverage, real-hardware entry proof, general/dynamic process address spaces, resumable saved contexts, runnable-state binding, live continuation/process switching, actual A→B→A, two-process timer preemption, filesystem/disk-backed loading, and the learning promotion loop remain planned.

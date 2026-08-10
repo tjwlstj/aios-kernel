@@ -6,8 +6,11 @@
 > 정리한 문서다. 외부 프로젝트의 기능을 AIOS의 `CURRENT` 구현으로 간주하지 않는다.
 >
 > 구현 상태의 정본은 [CLAUDE.md](../../CLAUDE.md),
+> [Kernel Room 관리 모델](../kernel-room/kernel_room_management_model_ko.md),
 > [최소 I/O·성숙도 워크플로](minimal_io_and_maturity_workflow_ko.md),
 > [검증 툴링 진화 설계](../tools/verification_tooling_evolution_design_ko.md)다.
+> 아래 §6은 실행 substrate 조사 당시의 세부 진행 순서이며, 프로젝트 전체의 다음
+> 마일스톤 K1 hierarchy registry v0를 대체하지 않는다.
 
 ## 1. 조사 목적과 판정 원칙
 
@@ -37,9 +40,9 @@ ring3 entry AC hardening 반영 후의 현재 경계를 사용한다.
 | `PARTIAL` | process 모델은 정적 두 슬롯이며 실행은 순차 동기 호출이다. descriptor snapshot과 event journal은 증거 소유권·순서만 가지며 scheduler runnable state나 재개 가능한 continuation으로 결속되지 않았다. next-prepare reset/run generation은 구현됐지만 live reuse/re-prepare와 stale-generation 거부의 부팅 증거는 없다 |
 | `PARTIAL` | pressure/resource는 `observation_only=1`이다. owner attribution, quota, reserve/apply, migration 입력은 없다 |
 | `PLANNED` | resumable saved context, runnable-state 결속, live continuation/switch, 두 ring3 process의 타이머 선점 교대, 실제 A→B→A switch sequence, process fault teardown, bounded execution budget, 동적 PMM/VMM |
-| `PLANNED` | virtio-blk 읽기(M4), 디스크 ELF(M5), principal authorize(M6), 브라우저 콘솔·AIOS native runtime(W1~W5) |
+| `PLANNED` | Kernel Room K1~K5 관리 hierarchy/binding/attribution/authorize, virtio-blk 읽기(M4), 디스크 ELF(M5), 브라우저 콘솔·AIOS native runtime(W1~W5) |
 
-따라서 지금 필요한 외부 참고점은 “완성형 AI agent platform”보다 **saved-state 소유권,
+따라서 이 실행 substrate 조사에서 가까운 외부 참고점은 “완성형 AI agent platform”보다 **saved-state 소유권,
 전환 증거, bounded execution, 작은 신뢰 경계**에 가깝다.
 
 ## 3. 가까운 커널 작업에 직접 참고할 프로젝트
@@ -80,7 +83,7 @@ ring3 entry AC hardening 반영 후의 현재 경계를 사용한다.
 
 - 공식 자료: [Redox OS GitHub 조직](https://github.com/redox-os)
 - 관찰: 작은 커널과 분리된 userspace 구성요소를 통해 서비스 경계를 만든다.
-- AIOS에 가져올 것: M5 이후 `aios-init`, storage/network service, agent runtime을
+- AIOS에 가져올 것: K1~K5 관리 경계와 M5 실행 기반 이후 `aios-init`, storage/network service, agent runtime을
   ring0에 밀어 넣지 않고 process/principal 경계로 분리하는 방향.
 - 지금 가져오지 않을 것: M3-b-3b2c보다 앞선 대규모 userspace 재구성.
 
@@ -101,7 +104,7 @@ ring3 entry AC hardening 반영 후의 현재 경계를 사용한다.
   분리한다. full/diff state와 dirty tracking도 명시적으로 취급한다.
 - AIOS 적용 후보: W2 Host Session Runtime에서 pause 시점, ISO/kernel hash, QEMU
   설정, memory/snapshot artifact, 외부 disk identity를 하나의 run manifest로 결속한다.
-- 경계: host VM snapshot은 AIOS 내부 process saved state나 M9 AI Flow checkpoint가 아니다.
+- 경계: host VM snapshot은 AIOS 내부 process saved state나 C2 AI Flow checkpoint가 아니다.
 
 ### 4.3 v86 — 현재 x86_64 비지원 기준선
 
@@ -121,7 +124,7 @@ ring3 entry AC hardening 반영 후의 현재 경계를 사용한다.
 
 - 공식 자료: [Wasmtime 문서](https://docs.wasmtime.dev/),
   [WASI releases](https://wasi.dev/releases)
-- 적용 시점: M5 디스크 ELF, M6 principal authorize, 안정적인 장기 userspace service 뒤.
+- 적용 시점: M5 디스크 ELF, K5 principal/ownership authorize, 안정적인 장기 userspace service 뒤.
 - 가져올 것: capability가 명시된 component/plugin 실행, host call 경계, runtime 격리.
 - 가져오지 않을 것: Wasm runtime을 kernel에 넣거나 W4의 선행 조건을 건너뛰는 것.
 
@@ -141,7 +144,7 @@ ring3 entry AC hardening 반영 후의 현재 경계를 사용한다.
   [LMCache GitHub](https://github.com/LMCache/LMCache)
 - 관찰: inference 요청 라우팅, 분리된 실행 단계, KV cache를 GPU/CPU/storage 계층에
   걸쳐 다루는 구조가 있다.
-- AIOS 적용 후보: M9 AI Flow 이후 resource kind, queue depth, cache residency,
+- AIOS 적용 후보: C2 AI Flow 이후 resource kind, queue depth, cache residency,
   transfer/stall을 구조화된 관측값으로 확장할 때 참고한다.
 - 경계: 현재 pressure/resource snapshot을 이 자료만으로 scheduler migration, quota,
   reserve/apply에 연결하지 않는다. `observation_only=1`을 유지한다.
@@ -153,7 +156,11 @@ ring3 entry AC hardening 반영 후의 현재 경계를 사용한다.
 - 경계: 외부 README의 성능·모델 지원 주장은 독립 검증 전까지 참고 정보다. AIOS는
   모델 실행을 ring0 기본 경로로 만들지 않고 mediated I/O와 userspace runtime 원칙을 유지한다.
 
-## 6. 현재 성숙도에 맞춘 다음 작업 순서
+## 6. 실행 substrate 축의 조사 참고 순서
+
+이 절은 M3~M5 실행축 내부의 의존 순서를 보존한다. Kernel Room 관리축의 직접 다음
+마일스톤은 K1의 Cell + bound Node + parent-bound NodeBit 전체 vertical proof이며,
+아래 process 작업이 그 우선순위나 관리 성숙도를 대신하지 않는다.
 
 ### 6.1 완료된 첫 조각: process-owned trap evidence snapshot v0 (`CURRENT`)
 
@@ -224,7 +231,8 @@ live continuation/switch로 나아가도록 순서를 유지했다.
    `#BP`/int80 saved/live AC 계약을 해당 진입 경로로 별도 확장 검증한다.
 
 이 단계가 성공한 뒤에만 M3-b-3b2c를 선점 가능한 두 userspace process로
-`CURRENT` 승격한다. 이후 기본 실행축은 M4 virtio-blk → M5 disk ELF 순서를 유지한다.
+`CURRENT` 승격한다. 이후 실행축 내부에서는 M4 virtio-blk → M5 disk ELF 순서를
+유지하되 이를 프로젝트 전체의 자동 다음 순서로 해석하지 않는다.
 
 ## 7. 검증·릴리스 가이드
 
@@ -250,6 +258,6 @@ budget/fault, Asterinas의 작은 privileged frame 경계다. Redox·Unikraft·F
 
 v86는 W3의 x86_64 비지원 기준선이며 실제 browser-local engine 후보는 아직 미정이다.
 Wasmtime/WASI와 agiresearch 계열은 W4 이후 userspace runtime, Dynamo/LMCache는
-M9 이후 분산 AI flow/resource 관측에 배치한다. 이 순서를 지키면
+C2 이후 분산 AI flow/resource 관측에 배치한다. 이 순서를 지키면
 외부 프로젝트의 규모에 끌려가지 않고 AIOS가 이미 가진 exact evidence와 rollback
 중심의 강점을 유지한 채 확장할 수 있다.

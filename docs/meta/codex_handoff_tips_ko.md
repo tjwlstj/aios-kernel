@@ -89,8 +89,11 @@ PID 1 실행 뒤 PID 2를 호출하는 것만으로는 scheduler 전환을 증�
 ## 3. 알아두면 좋은 구조
 
 - **두 스케줄러 개념이 분리돼 있다:** `sched/ai_sched.c`는 vruntime 장부질만 하는 **워크로드 회계 모델**(실제 CPU 전환 없음). 진짜 문맥전환은 `sched/kthread.c`(+`kthread_switch.asm`)다. 헷갈리지 말 것.
-- **두 NodeBit 체계가 병존한다:** 런타임 capability 게이트(`runtime/nodebit.c`)와 SLM 하드웨어 정책(`slm_orchestrator.c`의 `slm_nodebit`)은 별개 네임스페이스다. 억지로 합치지 말 것 — 통합은 로드맵 M7의 명시적 작업이다.
-- **Kernel Room 게이트 테이블은 분류 메타데이터**다. 디스패처가 per-call로 검사하지 않는다. 실제 강제는 NodeBit 게이트/autonomy safe-mode/health 플래그가 한다. "모든 시스콜 전에 검사한다"고 서술하지 말 것.
+- **Kernel Room의 정본은 Room→Cell→Node→NodeBit 관리축이다:** 하지만 현재 `kernel_room_snapshot_read()`는 subsystem/health/Memory Fabric/scheduler/ring/runtime-NodeBit aggregate를 매번 조립할 뿐, persistent Cell/Node/NodeBit registry나 parent-child lifecycle을 소유하지 않는다. 현재를 “Cell 관리자”라고 쓰지 말 것.
+- **Node/owner ID 공간이 여러 개다:** Memory Fabric `domain_id`, SLM `agent_tree.node_id`, SLM `slm_nodebit_id`, runtime NodeBit `node_id`, pipeline `owner_node`, scheduler `task_id`, process PID, ring ID는 서로 독립이다. 숫자 일치는 identity/binding 증거가 아니다. 교차 연결은 `(namespace, id, generation)`과 명시적 parent binding을 요구한다.
+- **두 NodeBit 체계가 병존한다:** `runtime/nodebit.c`의 capability registry와 `slm_orchestrator.c`의 effective policy-node catalog는 별개다. canonical NodeBit로 곧바로 합치지 말고 관리축 K3에서 namespace adapter/projection으로 연결한다.
+- **`SYS_SLM_NODEBIT_LOOKUP`는 runtime `nodebit.c`가 아니다:** `ai_syscall.c`는 이 번호를 `sys_slm_nodebit_lookup()`으로 보내 SLM policy catalog를 읽는다. runtime NodeBit의 syscall 표면은 `SYS_NODEBIT_REGISTER/UPDATE/STATS`(0x726~0x728)다.
+- **Kernel Room 게이트 테이블은 분류 메타데이터**다. 디스패처가 per-call로 검사하지 않는다. 현재 pipeline의 runtime NodeBit check, autonomy safe-mode, health flag는 서로 다른 좁은 제어이며 universal Axis Gate가 아니다. canonical binding, principal, ownership, generation 이전에 “모든 시스콜 전에 검사한다”고 서술하거나 enforcement부터 구현하지 말 것.
 - **pressure와 gate bitmap은 별도 축이다:** `runtime/ai_pressure.c`의 점수는 부하/중첩 관측이고, eligibility는 `online & affinity & policy_gate & health & budget` 교집합이다. 거부된 목적지를 낮은 pressure로 위장하거나 두 값을 한 scalar로 섞지 말 것. 현재 tracker는 `observation_only=1`이며 scheduler apply/migration 호출자가 없다.
 - **Memory Fabric `map_count`는 순간 동시성이 아니다:** attach는 증가시키지만 detach API가 없으므로 누적 logical-map 사건이다. pressure에는 reader/writer mask popcount, writer pair, read/write pair, weighted shared bytes만 사용한다.
 - **pressure 계층 깊이를 과장하지 말 것:** schema 1은 `max_levels=4`지만 `active_levels=2`인 system→plane까지만 CURRENT다. domain/task/window/ring child, fast/slow EWMA, stall window, SMP migration은 PLANNED다.
@@ -119,23 +122,50 @@ PID 1 실행 뒤 PID 2를 호출하는 것만으로는 scheduler 전환을 증�
 
 ---
 
-## 5. 다음 실행축 작업
+## 5. 다음 방향 선택
+
+### 5.1 우선 관리축: 첫 검증 가능한 vertical slice
+
+현재 우선 후보는 enforcement가 아니라 **하나의 Room-owned `main` Cell 안에 하나의
+declared `main-ai` Node와 1~2개의 parent-bound typed management NodeBit record를 등록·조회하는
+management-only 조각**이다. 최소 순서는 다음과 같다.
+
+아래 1~4는 별도 완료 마일스톤이 아니라 **K1 hierarchy registry v0 하나의 완료
+계약**이다. Cell만 등록되거나 NodeBit parent 증거가 빠지면 K1은 미완료다.
+
+1. 고정 용량 hierarchy registry와 append-only 상태/이유 ID를 만든다. duplicate ID,
+   잘못된 상태 전이, capacity 초과는 fail-closed다.
+2. canonical Node를 Cell에 명시적으로 bind하고 typed canonical namespace, ID,
+   generation을 고정한다. legacy source 숫자를 canonical ID로 재사용하지 않는다.
+3. canonical Node 아래 typed NodeBit 1~2개를 exact parent와 bounded seed source로
+   등록한다. orphan/duplicate/stale generation은 거부한다.
+4. `[ROOM] management hierarchy selftest PASS ... management_only=1` boot evidence와 `state room` mirror에서
+   exact Room/Cell/Node/NodeBit count, parent, generation을 교차검증한다.
+
+이 조각에는 dispatcher hook, authorize, quota, resource apply, scheduler migration을
+넣지 않는다. K1~K4의 hierarchy/binding/observation attribution이 먼저이며,
+principal/ownership와 Axis Gate enforcement는 그 뒤의 K5 `PLANNED`다. Orbit은
+Cell/Node placement를 탐구하는 `RESEARCH`이므로 이 vertical slice의 완료 조건이 아니다.
+K2는 이 최소 계층의 external source binding과 generation/reconciliation을 강화·확대하고,
+K3에서만 runtime/SLM NodeBit를 namespace adapter로 read-only projection한다.
+
+### 5.2 병행 가능한 실행 substrate backlog
 
 리소스 관리축의 Slice 2 read-only UAPI/`state resource`는 2026-08-02에 완료됐다.
-다음 작은 후보는 bounded policy schema만 정의하는 Slice 3이며, handler/apply,
-owner attribution, quota를 함께 넣지 않는다. 프로세스 실행축은 M3-b-3b2c를
-계속 따른다.
+bounded policy schema, owner attribution, quota/apply는 아직 별도 `PLANNED`이며 위
+management hierarchy 없이 임의 ID에 귀속하지 않는다.
 
 2026-08-03 최신 조사에서 고른 **process-owned trap evidence snapshot v0**와
 **process event journal v1**은 완료됐다. 기존 ring3 `int3` frame을 각 static process의
 snapshot/validity/capture sequence에 결속하고, capacity 8/no-overwrite journal로
 여섯 lifecycle/capture record를 보존한다. 둘 다 `evidence_only=1 switch_events=0
-resume_ready=0` 경계이며 전체 process 모델은 계속 `PARTIAL`이다. 다음은 resumable
-saved context와 runnable-state 결속을 포함한 live continuation/switch이고, bounded 실제
-A→B→A를 증명한 뒤 마지막으로 timer preemption을 연결한다.
-근거와 외부 참고선은 [AIOS 빌드 참고 프로젝트 최신 조사](aios_build_project_landscape_2026_08_03_ko.md)를 본다.
+resume_ready=0` 경계이며 전체 process 모델은 계속 `PARTIAL`이다. 실행 substrate의
+후속 후보는 resumable saved context와 runnable-state 결속을 포함한 live
+continuation/switch이고, bounded 실제 A→B→A를 증명한 뒤 timer preemption을 연결한다.
+이는 자동으로 다음 프로젝트 방향이 되지 않는다. 근거와 외부 참고선은
+[AIOS 빌드 참고 프로젝트 최신 조사](aios_build_project_landscape_2026_08_03_ko.md)를 본다.
 
-`address_space_selftest`는 부트 PML4 복제 + CR3 왕복까지 증명했다(공유 매핑). 다음은:
+`address_space_selftest`는 부트 PML4 복제 + CR3 왕복까지 증명했다(공유 매핑). 실행 substrate의 세부 이력은:
 1. **정적 주소공간 슬롯별 private user leaf proof ✅ M3-b-3b1 완료 (2026-07-14)** — 정적 2슬롯에서 유저 영역(현재 고정 64MiB)을 서로 다른 2MiB backing에 매핑하고 canary 격리를 검증했다. 범용 주소공간 객체, PMM, 실제 프로세스 실행 연결은 아직 아니다.
 2. **private CR3 단일 runner ✅ M3-b-3b2a 완료 (2026-07-15)** — slot 0에서 기존 ELF를 동기 실행한다. exact raw boot CR3와 IF bit를 readback한 뒤에만 leaf policy reset/backing scrub을 수행하고, `leaf_sealed`와 hardware `nx_enforced`를 분리해 관측한다. 물리 64–66MiB는 tensor free/active set에서 제외하지만 PMM 예약으로 과장하지 않는다.
 3. **static bootstrap process + BSP TSS entry stack ✅ M3-b-3b2b 완료 (2026-07-15)** — 정적 descriptor 2개가 unique CR3/backing, process-local run state, unique 16KiB ring0 entry stack을 소유한다. 이 완료 시점에는 PID 1/slot 0에서만 `rsp0` exact publish/restore와 3회 `int 0x80`의 `stack_top-40` 진입을 증명했다.

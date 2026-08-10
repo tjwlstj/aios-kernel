@@ -3,6 +3,44 @@
 작성일: 2026-04-12
 갱신: 2026-04-18
 
+> [!WARNING]
+> **REVIEW / 역사적 탐색 문서**
+>
+> 이 문서는 2026-04 당시의 저장소와 Gemini 보조 검토를 바탕으로 남긴 탐색 기록이다.
+> 현재 Kernel Room의 정체성, 성숙도, 구현 순서는
+> [AIOS Kernel Room 관리 모델](kernel_room_management_model_ko.md)이 정본이다.
+> 아래 원문의 `Kernel Room registry -> Axis Gate -> Cell` 순서를 현재 작업 지침으로
+> 사용하지 않는다.
+
+## 2026-08-10 재검토
+
+이 문서가 남긴 유효한 판단은 다음과 같다.
+
+- Cell은 Memory Fabric domain 하나의 별칭이 아니며 상태·자원 책임의 관리 범위다.
+- Node는 먼저 단일 머신 안의 logical execution/resource unit으로 다룬다.
+- 분산 Node mesh, self-modifying kernel, explicit Orbit runtime은 지금 구현하지 않는다.
+- 기존 subsystem의 read-only 상태를 adapter로 재사용한다.
+
+현재 코드와 맞지 않거나 정본에서 교체된 판단은 다음과 같다.
+
+- read-only Kernel Room aggregate snapshot과 static Axis Gate descriptor는 이미
+  `CURRENT` substrate다. 아래 원문의 “중앙 레지스트리가 아직 없다”는 2026-04 중간
+  상태 문장이다.
+- Cell registry, Node-to-Cell binding, management NodeBit view는 여전히 `PLANNED`다.
+- SLM agent tree, runtime NodeBit, SLM NodeBit은 각자 `CURRENT` subsystem이지만 서로
+  다른 namespace이며, Kernel Room hierarchy의 Node/NodeBit으로 결속되지 않았다.
+- Axis Gate는 관리 모델의 본체가 아니라 후속 전이·보안 경계다. per-syscall
+  enforcement는 `PLANNED`이며 Cell/Node identity보다 먼저 구현하지 않는다.
+- Orbit는 구현 maturity가 아니라 선택적 `RESEARCH`다.
+
+새 구현의 첫 조각은 enforcement가 아니라
+`management_only read-only hierarchy registry v0`다. 정확한 경계와 verifier 요구는
+정본과 [개발 가이드](development_guide_ko.md)를 따른다. Cell-only table은 완료로
+간주하지 않으며, 최소 Cell 1개 + bound Node 1개 + parent-bound typed NodeBit 1~2개의
+전체 hierarchy proof가 함께 필요하다.
+
+## 2026-04 탐색 원문
+
 ## 목적
 
 이 문서는 `Kernel Room Topology` 아래에서 다루는

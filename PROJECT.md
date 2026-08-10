@@ -6,13 +6,25 @@
 제품 개요/기능 설명은 [README.md](README.md), 세부 설계는 [docs/README.md](docs/README.md),
 AI 에이전트(Claude Code)용 작업 규칙은 [CLAUDE.md](CLAUDE.md)를 본다.
 
+제품 구조의 정본은 **Kernel Room → Cell → Node → NodeBit** 관리축이다. 이 계층은
+저장소 디렉터리 구조와 다른 논리 구조다. aggregate substrate가 있어 전체 Kernel Room
+topology 성숙도는 `PARTIAL`이지만 Room-owned hierarchy runtime은 `PLANNED`다. 현 코드는
+Room aggregate snapshot과 각자 `CURRENT`인 Memory Fabric domain, SLM agent
+profile/policy catalog, runtime capability NodeBit, pipeline ownership을 제공하며 Room
+adapter seam은 `SCAFFOLD`다. 새 작업은 이들을
+숫자 ID가 같다는 이유로 결합하지 말고 namespace + explicit binding + generation으로 연결한다.
+첫 vertical slice는 Cell 1 + bound Node 1 + parent-bound NodeBit 1~2를 한
+`management_only` hierarchy proof로 검증해야 하며 Cell-only 완료는 허용하지 않는다.
+용어와 성숙도 정본은
+[Kernel Room 관리 모델](docs/kernel-room/kernel_room_management_model_ko.md)이다.
+
 ---
 
 ## 1. 도메인 맵
 
 | 도메인 | 책임 | 대표 산출물 | 빌드/실행 |
 |---|---|---|---|
-| **`kernel/`** | 베어메탈 x86_64 커널. 클럭·메모리 보호·인터럽트·드라이버·AI 시스콜 표면 | `kernel/build/aios-kernel.bin` | `make` (→ `kernel/Makefile`) |
+| **`kernel/`** | 베어메탈 x86_64 커널. Kernel Room 관리축, 클럭·메모리 보호·인터럽트·드라이버·AI 시스콜 표면 | `kernel/build/aios-kernel.bin` | `make` (→ `kernel/Makefile`) |
 | **`os/`** | ring3 유저스페이스 런타임 + 전용 프로그램(`os/apps/`) | 파이썬 도구, (예정) ELF 앱 | `python os/tools/*.py` |
 | **`models/`** | AI/SLM 모델 매니페스트(가중치는 비추적) | `models/manifests/*.json` | — (데이터) |
 | **`store/`** | 부팅 후 온라인 드라이버/프로그램/모델 다운로드 카탈로그 | `store/catalog/*.json` | (예정) 런타임 클라이언트 |
@@ -55,6 +67,7 @@ AI 에이전트(Claude Code)용 작업 규칙은 [CLAUDE.md](CLAUDE.md)를 본�
 | 부팅 후 받아올 항목 | `store/catalog/<id>.catalog.json` |
 | 테스트/빌드 자동화 | `tools/testkit/` |
 | 설계 노트 | `docs/<domain>/` + `docs/README.md` 인덱스 갱신 |
+| Room/Cell/Node/NodeBit 관리 설계 | `docs/kernel-room/` + 상위 성숙도 문서 동기화 |
 
 ---
 
@@ -83,9 +96,12 @@ Windows: `pwsh -File .\tools\testkit\kernel\build-windows.ps1 -Target test`
 
 - **AI 시스콜 번호 범위는 ABI-stable** — 재번호/중첩 금지. `kernel/`↔`os/`의 유일한 접점.
 - **텐서 64바이트 정렬** — AVX-512 불변식 (`kernel/mm/tensor_mm.c`).
-- **Kernel Room 게이트 수 = enum 크기** (`kernel/core/kernel_room.c`).
+- **Kernel Room 정본 계층은 Room→Cell→Node→NodeBit** — Cell/Node/NodeBit parent-child 관계는 명시적 binding과 generation이 있어야 한다. 현재 persistent registry는 없으므로 구현된 것으로 서술하지 않는다.
+- **Kernel Room 게이트 수 = enum 크기** (`kernel/core/kernel_room.c`). 현재 9개 gate descriptor는 syscall-range **분류 메타데이터**이며 dispatcher-level Axis Gate enforcement가 아니다.
 - **헬스 스냅샷 ABI 안정** — SLM 오케스트레이터가 소비.
-- **정책 게이트** — `store/` 다운로드와 자율 행위는 `SYS_SLM_NODEBIT_LOOKUP` + Kernel Room 게이트를 통과한다.
+- **Node 네임스페이스 분리** — Memory Fabric `domain_id`, SLM `agent_tree.node_id`, SLM `slm_nodebit_id`, runtime NodeBit `node_id`, pipeline `owner_node`, task/PID/ring ID는 독립이다. 명시적 adapter 없이 교차 비교하지 않는다.
+- **NodeBit 시스콜 분리** — `SYS_SLM_NODEBIT_LOOKUP`는 `slm_orchestrator.c`의 SLM policy catalog를 조회한다. `runtime/nodebit.c`는 `SYS_NODEBIT_REGISTER/UPDATE/STATS`와 현재 pipeline capability gate를 제공하는 별도 체계다.
+- **Axis Gate enforcement는 `PLANNED`** — canonical parent binding, principal, ownership, generation이 먼저다. `store/` 다운로드와 위험 autonomy action의 공통 Kernel Room authorize 경로도 아직 구현되지 않았다.
 - **AI resource ledger는 aggregate 관측 전용** — kind/unit/owner-validity ID는 append-only이고 validity flag가 없는 수치는 지원된 값으로 해석하지 않는다. `SYS_INFO_RESOURCE=0x706`과 `state resource`는 read-only CURRENT이며 owner attribution과 quota/reserve/apply는 아직 없다.
 - **AI pressure는 관측 전용** — plane ID는 append-only이며, pressure ranking과 gate eligibility bitmap을 섞지 않는다. 별도 apply 검증 전에는 scheduler migration/budget 변경에 연결하지 않는다.
 - **process snapshot/journal은 증거 전용** — descriptor-owned 176B snapshot은 ISR 시점 owner/CR3/TSS `rsp0`/IF=0 검증과 `resume_ready=0`을 유지한다. per-boot process event journal v1의 schema/kind/reason/outcome 숫자 ID는 append-only이며, capacity 8 안에서 여섯 lifecycle/capture record를 덮어쓰지 않는다. journal은 `evidence_only=1 switch_events=0 resume_ready=0`이고 `0→1→0→2→0` 순차 bootstrap owner lifecycle만 증명한다. resumable saved context와 runnable-state 결속, live continuation/switch, 실제 A→B→A가 별도로 검증되기 전에는 snapshot이나 journal을 schedulable state 또는 CPU-switch trace로 해석하지 않는다.

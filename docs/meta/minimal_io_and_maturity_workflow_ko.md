@@ -1,10 +1,13 @@
-# 최소 I/O 점검과 성숙도 우선 작업흐름 가이드 (2026-07-03)
+# AIOS 성숙도 우선 작업흐름 가이드 (2026-08-10 재정렬)
 
-**결정 배경:** ring3 첫 실행 슬라이스가 반영된 시점에서 "하드웨어 드라이버 확장 vs 기술 성숙도·정밀화" 중 **성숙도 우선**으로 결정했다. 이 문서는 그 결정의 근거가 되는 최소 I/O 실태 점검 결과, 2026-07 시점의 최신 기술 조사, 그리고 이후 작업흐름을 단계별 가이드로 고정한다.
+**결정 배경:** 2026-07에는 ring3 첫 실행 슬라이스 뒤 "하드웨어 드라이버 확장 vs 기술 성숙도·정밀화" 중 **성숙도 우선**으로 결정했다. 2026-08-10에는 그 실행 M축이 프로젝트 방향을 독점하면서 본래의 Kernel Room 관리 구조가 뒤로 밀린 점을 바로잡았다. 이 문서는 **Room→Cell→Node→NodeBit 관리축을 우선 정본**으로 두고, 기존 M1~M5를 폐기하지 않은 채 실행 substrate 레인으로 유지한다.
 
 ---
 
-## 1. 최소 I/O 실태 점검 (2026-07-03 기준)
+## 1. 최소 I/O 실태 점검 (2026-07-03 역사적 스냅샷)
+
+이 절은 M축이 만들어질 당시의 판단 근거를 보존한다. 현재 구현 성숙도는
+루트 `README.md`와 `CLAUDE.md`를 우선하며, 아래 표를 2026-08 현재 상태로 재해석하지 않는다.
 
 | 서브시스템 | 있는 것 | 없는 것 | 판정 |
 |---|---|---|---|
@@ -16,6 +19,9 @@
 **시사점:** "부팅 후 디스크에서 무언가를 읽는다"가 현재 커널이 못 하는 가장 기초적인 I/O다. 이것이 ELF 로더(디스크에서 유저 프로그램 적재)와 store/ 카탈로그(온라인 다운로드 후 저장) 비전의 공통 전제 조건이므로, 드라이버 작업의 올바른 재진입점은 **storage read 단 하나**다.
 
 ## 2. 최신 기술 조사 요약 (2026-07)
+
+이 절도 당시 substrate 선택 근거다. 실제 드라이버 착수 전에는 현재 스펙과 QEMU
+지원 상태를 다시 확인한다.
 
 ### 2.1 스토리지 데이터 경로: virtio-blk 우선 (권장)
 
@@ -43,7 +49,97 @@ QEMU 기본 `-hda`와 즉시 호환되고 수십 줄로 섹터를 읽을 수 있
 
 ## 3. 이후 작업흐름 가이드 (성숙도 우선 로드맵)
 
-각 단계는 이번에 확립한 작업 규약(§4)을 따른다. 순서는 의존 관계로 고정되어 있다.
+각 단계는 §4 작업 규약을 따른다. 관리 K축 내부와 실행 M축 내부의 의존 순서는
+유지하지만, 두 축은 서로 다른 레인이다. “M3의 다음 번호”가 곧 “프로젝트의 다음
+방향”이라는 뜻은 아니다.
+
+## 3-A. Kernel Room 관리축 (K0~K5) — 우선 정본
+
+목표 계층은 **Room → Cell → Node → NodeBit**다. 현재 코드에는 Room의 aggregate
+snapshot과 각자 `CURRENT`인 subsystem, 이를 Room에 연결할 `SCAFFOLD` adapter
+seam이 있다. Memory Fabric `domain_id`, SLM
+`agent_tree.node_id`, SLM `slm_nodebit_id`, runtime NodeBit `node_id`, pipeline
+`owner_node`, scheduler task/PID/ring ID는 서로 다른 네임스페이스이며 숫자 일치로
+관계를 추론하지 않는다.
+
+| 단계 | 상태 | 관리 의미 |
+|---|---|---|
+| K0 문서/namespace 재정렬 | 문서 기준선 완료 | 정본 계층과 현재 구현의 간극을 명시한다. 코드 성숙도 `CURRENT` 판정이 아니다. |
+| K1 hierarchy registry v0 | `PLANNED` (첫 vertical slice) | Cell 1 + bound Node 1 + parent-bound NodeBit 1~2를 한 번에 소유·조회한다. |
+| K2 source binding hardening/expansion | `PLANNED` | canonical Node의 외부 source binding과 generation/reconciliation을 확장한다. |
+| K3 legacy NodeBit namespace projection | `PLANNED` | 선택한 legacy NodeBit를 namespace adapter로 canonical NodeBit에 read-only projection한다. |
+| K4 resource/pressure attribution | `PLANNED` | canonical Cell/Node owner에 관측치를 귀속하되 `observation_only=1`을 유지한다. |
+| K5 principal/ownership + Axis Gate | `PLANNED` | 검증된 identity/binding/generation 위에서만 authorize/enforcement를 추가한다. |
+
+### K0. 문서 정본과 ID 경계 — 문서 기준선 완료, 런타임 미구현
+
+- Kernel Room의 현재 실체는 aggregate snapshot + 9개 syscall-range 분류 descriptor다.
+- persistent Cell/Node/NodeBit registry, parent-child binding, lifecycle/reconciliation,
+  principal/ownership는 없다.
+- `SYS_SLM_NODEBIT_LOOKUP`는 `slm_orchestrator.c`의 SLM policy catalog를 읽는다.
+  `runtime/nodebit.c`의 별도 syscall은 `SYS_NODEBIT_REGISTER/UPDATE/STATS`다.
+
+### K1. Room-owned hierarchy registry v0 — 첫 검증 가능한 vertical slice
+
+- **작업:** 하나의 `main` Cell, 그 Cell에 bound된 `main-ai` Node 하나, 그 Node에
+  parent-bound된 read-only canonical NodeBit 1~2개를 **같은 고정 용량 registry와
+  같은 vertical proof**에 넣는다. 각 record는 append-only ID/state/reason,
+  generation, exact parent를 가진다. Cell-only 성공을 K1 완료로 판정하지 않는다.
+- **경계:** 첫 조각은 management-only이며 scheduler/resource/policy apply 호출자가
+  없어야 한다. legacy SLM/runtime source 연결은 아직 필요하지 않으며 K1 record는
+  명시적인 bounded bootstrap/management source를 사용한다. unknown source를 성공으로
+  축약하지 않는다.
+- **실패 경계:** duplicate ID, capacity 초과, 잘못된 상태 전이, missing/orphan parent,
+  stale generation, 초기화 전 조회를 fail-closed로 거부한다.
+- **완료 기준:** `[ROOM] management hierarchy selftest PASS ... cells=1 nodes=1
+  bound=1 nodebits=N ... observation_only=1 management_only=1` 형태의
+  boot record, read-only `state room` mirror, host parser 반례 검증. NodeBit seed 수는
+  v0 schema 확정 때 하나로 고정하고 verifier가 exact 값으로 검사한다.
+
+### K2. source binding hardening/expansion
+
+- **작업:** K1의 canonical `main-ai` Node에 선택한 기존 입력 source를
+  `(namespace, source_id, source_generation)`으로 bind하고 source refresh/reconcile
+  규약을 더한다. 필요하면 여러 Node로 확장하되 Cell parent는 계속 exact해야 한다.
+- **완료 기준:** exact parent/generation/source 증거와 duplicate/orphan/stale binding
+  반례 거부. SLM agent profile이나 runtime node의 숫자를 canonical ID로 재사용하지 않는다.
+
+### K3. legacy NodeBit namespace projection
+
+- **작업:** runtime capability registry와 SLM effective policy catalog를 합치지 않고,
+  선택한 legacy 항목만 namespace adapter를 통해 K1 canonical NodeBit의 read-only
+  source projection으로 연결한다.
+- **완료 기준:** canonical NodeBit ID, source namespace/ID/generation, parent Node가
+  exact evidence로 일치하며 unknown namespace/orphan/stale projection을 거부한다.
+
+### K4. Cell/Node 관측 귀속
+
+- **작업:** K1~K3 identity가 안정된 뒤 resource/pressure snapshot에 optional canonical
+  owner reference를 더한다. validity flag가 없는 값은 미지원이며 기존 aggregate row는
+  계속 보존한다.
+- **완료 기준:** aggregate 합계와 owner projection 합계가 일치하고 unknown/stale owner는
+  `UNATTRIBUTED` 또는 fail-closed 규약대로 처리된다. quota/reserve/migration/apply는 없다.
+
+### K5. principal/ownership + Kernel Room Axis Gate
+
+- **선행 조건:** K1~K4 canonical hierarchy, process/agent principal, target ownership,
+  decision generation과 stale-token 거부가 먼저 검증되어야 한다.
+- **작업:** 그 뒤에만 `kernel_room_authorize(principal, target, action, generation)`과
+  dispatcher/actuator enforcement를 추가한다. 현재 9개 descriptor는 이 단계의 입력
+  분류일 뿐 enforcement가 아니다.
+- **완료 기준:** 허용/거부뿐 아니라 우회 불가, stale generation, rollback/teardown을
+  fail-closed selftest와 `state room` 통계로 증명한다.
+
+### Orbit — `RESEARCH`
+
+Orbit은 Cell/Node placement, 분산 배치, fractal/vector 탐색을 위한 장기 연구축이다.
+K1~K4 관리 증거와 bounded simulator 없이는 scheduler 기능이나 지원 topology로
+승격하지 않는다.
+
+## 3-B. 실행 substrate 축 (M1~M5) — 유지, 방향 독점 금지
+
+M1~M5는 관리축을 실제 실행·저장·I/O에 연결하는 중요한 기반이다. 독립 안전 조각이나
+K축 binding을 직접 여는 작업은 병행할 수 있지만, 아래 잔여 항목이 자동으로 최우선은 아니다.
 
 ### M1. uaccess 유저/커널 주소 경계 + SMAP  ✅ 완료 (2026-07-03)
 - **왜 지금:** ring3 유저 페이지(64MiB 주소의 고정 영역)가 생겨 "유저 포인터는 유저 영역만"이 처음으로 정의 가능해짐.
@@ -87,33 +183,32 @@ QEMU 기본 `-hda`와 즉시 호환되고 수십 줄로 섹터를 읽을 수 있
 ### 성숙도 축(실행 경로) 후순위 — 순서 유연
 - e1000 일반 RX 경로(연속 수신), 4K 단위 W^X 정밀화, UBSan 디버그 레인, xHCI transfer ring, KASLR, 간단한 파일시스템(또는 tar 아카이브 파싱).
 
-## 3-B. AI 지속성·보안 축 (M6~M9) — 외부 평가 반영 (2026-07-14)
+## 3-C. AI 지속성·보안 축 — K축과 M축 뒤에 연결
 
-`docs/meta/`의 외부 평가(체시)가 우리 실행-경로 로드맵(M1~M5)과 근거리에서 일치함을 확인했고, 우리 가이드가 느슨히 남겨둔 장기 축을 아래로 구체화한다. **핵심 원칙: 신원·정책·영속은 실행 기반(M3-b-3b2c process 경계 + M5 디스크 실행) 위에서만 의미가 생긴다** — principal_id를 프로세스 이전에 넣는 것은 M1의 SMAP 교훈("진짜 유저 페이지가 있어야 SMAP이 의미")처럼 허공에 짓는 것이다. 그래서 이 축은 M5 이후에 배치한다.
+신원과 정책의 순서가 바뀌었다. canonical Cell/Node identity와 binding은 실행 M5를
+기다릴 필요가 없는 **관리 상태**이므로 K1~K3에서 먼저 만든다. 반대로 실제
+principal authorization은 허공의 ID나 syscall 번호만으로 만들지 않고 K1~K4와 필요한
+process 경계가 준비된 뒤 K5에서 시작한다. 이전의 authorize-first 및 두 NodeBit
+source 즉시 단일-table 통합 순서는 이 문서에서 폐기한다.
 
-교차검증된 판단(우리 코드/최근 결정과 평가가 독립적으로 일치):
-- **Kernel Room은 현재 "계기판/관측실"이지 불가피한 단일 집행점이 아니다** (체크포인트 드리프트 수정 때 CLAUDE.md에 이미 명시). M6에서 진짜 게이트로 승격.
-- **두 NodeBit 체계(런타임 `nodebit.c` ↔ SLM `slm_nodebit`)가 독립 발전 중** (SLM 관측 작업 때 "distinct"로 확인, 억지 결합 회피). M7에서 단일 원본으로 통합.
+### C1. 영속 정책/관리 저널 (기존 M8) — `PLANNED`
 
-### M6. principal/신원 모델 + Kernel Room 단일 authorize
-- **작업:** 프로세스에 `principal_id`/`security_domain` 도입(M3-b-3b2c process 구조에 필드 추가), `kernel_room_authorize(principal, syscall, target_node, caps, policy_gen)` 공통 게이트 신설, 위험 시스콜(드라이버 재초기화/DMA/MMIO/저장 쓰기/네트워크 송신/모델 변경/정책 변경)이 반드시 이 게이트를 통과하도록 배선. 일반 AI 프로세스는 lookup/evaluate만, 정책 제안은 Policy Broker, commit은 Trusted Init/Guardian로 권한 분리.
-- **완료 기준:** 위험 시스콜이 authorize를 우회할 수 없음을 셀프테스트로 증명(`[ROOM] authorize selftest PASS`), `state room`에 authorize 통계.
+- **작업:** M4 virtio-blk와 K5 action model 위에 append-only 저널
+  (PROPOSED→VALIDATED→PREPARED→APPLIED→VERIFIED→COMMITTED/ROLLED_BACK)을 둔다.
+  hierarchy/binding generation도 함께 기록해 재부팅 뒤 stale 대상에 재적용하지 않는다.
+- **완료 기준:** 재부팅 경계를 넘어 미완료 action과 hierarchy generation을 찾아
+  rollback 또는 안전한 재검증으로 복구하는 셀프테스트.
 
-### M7. NodeBit 정책 원본 통합 (TOCTOU 방지 포함)
-- **작업:** 런타임 NodeBit과 SLM NodeBit을 `aios_policy_node`(node_id/parent/owner/caps/observe/apply/risky/required_health/generation/flags) 단일 테이블로 합치고 Kernel Room·SLM·Pipeline은 이를 서로 다른 뷰로 읽게 한다. 결정-실행 사이 정책 generation 확인(decision token + generation)으로 TOCTOU 차단.
-- **완료 기준:** 두 체계 판정 불일치 불가, generation 불일치 시 재평가 셀프테스트.
+### C2. AI Flow 지속 실행 컨텍스트 (기존 M9) — `PLANNED`
 
-### M8. 영속 정책 저널 (append-only)
-- **작업:** M4 virtio-blk 위에 append-only 저널(POLICY_PROPOSED→VALIDATED→ACTION_PREPARED→APPLIED→VERIFIED→COMMITTED/ROLLED_BACK). 재부팅 시 `APPLIED`인데 `COMMITTED` 없는 액션을 찾아 rollback 또는 commit 재개.
-- **완료 기준:** 재부팅 경계를 넘어 미완료 액션 복원 셀프테스트.
+- **작업:** `process`(주소공간/레지스터/커널스택/capabilities)와
+  `ai_flow`(flow_id/canonical node/state/continuation/compute·io queue/memory
+  handles/deadline)를 분리한다. 공통 SQ/CQ 비동기 I/O, checkpoint
+  begin/attach/commit/restore, speculative branch + commit gate를 사용한다.
+- **완료 기준:** 프로세스 재시작 후 동일 flow_id와 canonical Node binding으로
+  continuation을 재개하고 stale Cell/Node generation을 거부한다.
 
-### M9. AI Flow 지속 실행 컨텍스트
-- **작업:** `process`(주소공간/레지스터/커널스택/capabilities)와 `ai_flow`(flow_id/agent_id/state/continuation/compute·io queue/memory handles/deadline)를 분리. 프로세스가 죽어도 flow_id로 동일 AI 작업 재개. 공통 SQ/CQ 비동기 I/O(ai_ring 확장), checkpoint begin/attach/commit/restore, speculative branch + commit gate.
-- **완료 기준:** 프로세스 재시작 후 동일 flow_id로 continuation 재개 셀프테스트. (이 단계가 "AI 지속성을 OS 차원에서 보증"의 핵심.)
-
-> 상세 근거와 성숙도 스코어카드(종합 ~4.5/10)는 외부 평가 원문 참조. 이 축은 실행 기반이 선 뒤 착수하되, 규약(§4)은 동일하게 적용한다.
-
-## 3-C. 브라우저 콘솔·자체 실행 엔진 축 (W1~W5) — `PLANNED` (2026-07-25)
+## 3-D. 브라우저 콘솔·자체 실행 엔진 축 (W1~W5) — `PLANNED` (2026-07-25)
 
 브라우저 접근과 장기 자체 런타임은 실행 M축을 대체하지 않는 별도 제품 표면이다.
 상세 구조, 보안 경계와 완료 조건의 정본은
@@ -126,10 +221,10 @@ QEMU 기본 `-hda`와 즉시 호환되고 수십 줄로 섹터를 읽을 수 있
 - **W3 Browser-local Engine Pilot:** WebAssembly x86 실행 엔진에서 AIOS ISO를
   부팅하는 선택적 `RESEARCH` 트랙이다. QEMU verdict와 같은 증거를 통과하기
   전에는 지원 플랫폼으로 선언하지 않는다.
-- **W4 AIOS Native Runtime Engine:** M3 다중 프로세스, M4 storage, M5 disk ELF,
-  M6 principal authorize와 실제 네트워크 기반 위에서 AIOS 유저스페이스가
+- **W4 AIOS Native Runtime Engine:** K1~K5 관리 binding/authorize와 M3 다중
+  프로세스, M4 storage, M5 disk ELF, 실제 네트워크 기반 위에서 AIOS 유저스페이스가
   gateway, session, model, flow를 소유한다.
-- **W5 Self-hosted Continuity:** M8/M9 저널과 AI Flow를 이용해 재부팅 뒤
+- **W5 Self-hosted Continuity:** C1/C2 저널과 AI Flow를 이용해 재부팅 뒤
   세션·작업을 명시적으로 복구한다.
 
 여기서 "자체 엔진"은 ring0 LLM이나 단기 QEMU 대체 에뮬레이터가 아니다.
@@ -145,6 +240,9 @@ SQ/CQ, 자원, authorize, rollback 경계를 제공한다.
 5. **정적 분석 클린 유지:** cppcheck exit 0.
 6. **검증 세트:** host unit test를 먼저 통과시키고 스모크 3종(full/minimal/storage-only) + shell 레인 + (구조 변경 시) boot-inventory를 실행한다. normal verdict는 전체 로그 fatal, stable health, terminal 순서·중복을 fail-closed로 판정한다.
 7. **ABI 불변식:** 시스콜 번호는 추가만, 재번호 금지. Kernel Room 게이트 수 = enum 크기.
+8. **관리 계층 불변식:** canonical child는 정확히 하나의 parent와 generation을 가진다. 독립 namespace의 같은 숫자를 binding으로 해석하지 않는다.
+9. **관리와 집행 분리:** K1~K4는 `management_only`/`observation_only`다. principal/ownership와 stale-token 증거 전에는 scheduler, quota, dispatcher, actuator에 apply edge를 만들지 않는다.
+10. **Orbit 상태:** bounded 연구 artifact와 K축 연결 증거 전에는 항상 `RESEARCH`로 표기한다.
 
 ## Sources
 - [Implementing a virtio-blk driver in my own operating system — Stephen Brennan](https://brennan.io/2020/03/22/sos-block-device/)

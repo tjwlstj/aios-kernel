@@ -1,11 +1,15 @@
-# 기술 성숙도 레버 백로그 (2026-07-15)
+# 기술 성숙도 레버 백로그 (2026-07-15, 2026-08-10 관리축 정렬)
 
 이 문서는 특정 기능(M-레벨)이 아니라 **바닥을 올리는 성숙도 레버**를 한곳에 모아 우선순위·착수점·담당·조율지점을 고정한다. Claude가 회귀 정비 중 관찰한 것을 근거로 정리했고, Codex와 의견을 조율한 뒤 착수한다.
+
+이 백로그는 관리 K축을 대체하지 않는 `SUPPORTING`/`ORTHOGONAL` 품질 작업 모음이다.
+프로젝트의 다음 직접 관리 마일스톤은 [Kernel Room 관리 모델](../kernel-room/kernel_room_management_model_ko.md)의
+K1 hierarchy registry v0이며, 아래 레버의 착수 가능 표시는 그 우선순위를 뒤집지 않는다.
 
 ## 문서 관계 (중복 금지)
 
 - **검증 축(V0~V5)**은 `docs/tools/verification_tooling_evolution_design_ko.md`가 정본이다. 아래 레버 ①③은 그 로드맵의 V1/V2/V4와 겹치므로 **여기서 재설계하지 않고 참조만** 한다.
-- **기능 축(M1~M9)**은 `docs/meta/minimal_io_and_maturity_workflow_ko.md`가 정본이다. 레버 ⑤는 그 M6+에 있으나 미상세라 여기서 구체화한다.
+- **관리 K0~K5, 실행 M1~M5, 지속성 C1~C2 축**은 `docs/meta/minimal_io_and_maturity_workflow_ko.md`가 정본이다. 레버 ⑤는 실행 substrate의 M3 후속 하드닝이며 여기서 구체화한다.
 - **커널 지뢰/관례**는 `docs/meta/codex_handoff_tips_ko.md`가 정본이다.
 - 이 문서는 위 축을 가로지르는 "품질 바닥" 항목만 다룬다.
 
@@ -23,7 +27,7 @@
 | ② | 구조적 서브시스템 카운트 가드 | 검증/커널 | verdict V2 + 인벤토리 baseline | **착수 가능** | Codex 또는 Claude |
 | ③ | Fault-injection 게이트(실패 경로 증명) | 검증 | verdict V4 (test-only fault catalog) | **조율 필요** | Codex(verdict 인프라 소유) |
 | ④ | UBSan 디버그 빌드 레인 | 커널/빌드 | (신규) | **착수 가능** | Claude |
-| ⑤ | 4K 단위 W^X 정밀화 | 커널/하드닝 | workflow M6+ | **착수 가능(주의)** | Claude |
+| ⑤ | 4K 단위 W^X 정밀화 | 커널/하드닝 | workflow §3-B 후순위 하드닝 | **착수 가능(주의)** | Claude |
 
 ## 레버 상세
 
@@ -37,7 +41,7 @@
 
 ### ② 구조적 서브시스템 카운트 가드 — 작고 즉효
 - **왜:** 지금 서브시스템을 하나 지워도 health `ok` 숫자가 줄 뿐 의도/회귀 구분 불가. 체크포인트 때 게이트 범위 드리프트를 겪은 것과 같은 계열.
-- **착수점:** `KERNEL_SUBSYSTEM_COUNT`와 정상 부팅의 health `ok` 기대값을 인벤토리 baseline에 **명시 고정**하고, boot_verdict/baseline_guard가 이 값 불일치를 FAIL로 판정. Kernel Room 게이트 범위가 전 시스콜을 덮는지도 같은 가드로 검사(현재는 수동 규칙).
+- **착수점:** `KERNEL_SUBSYSTEM_COUNT`와 정상 부팅의 health `ok` 기대값을 인벤토리 baseline에 **명시 고정**하고, boot_verdict/baseline_guard가 이 값 불일치를 FAIL로 판정. Kernel Room gate descriptor의 선언 범위가 전체 시스콜 번호 공간을 분류하는지도 같은 가드로 검사한다(현재는 수동 규칙). 이는 descriptor coverage 검증이며 per-call enforcement 증거가 아니다.
 - **조율지점:** 거의 없음. baseline 필드 추가라 안전. Codex의 baseline_guard 위에 얹으면 자연스러움.
 
 ### ③ Fault-injection 게이트 — 실패 경로를 신뢰가 아니라 증명으로

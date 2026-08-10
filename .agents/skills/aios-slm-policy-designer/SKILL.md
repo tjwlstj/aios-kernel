@@ -15,6 +15,21 @@ Keep model influence narrower than the kernel risk boundary.
 - Treat an in-kernel model as an optional bounded policy component, not a
   general code writer or direct hardware operator.
 
+When a policy names Kernel Room, Cell, Node, NodeBit, Axis Gate, or resource
+ownership, first read `docs/kernel-room/kernel_room_management_model_ko.md` and
+use `$aios-kernel-room-architecture`.
+
+## Establish identity before enforcement
+
+- Bind every actionable Node to an existing Cell through an explicit namespace.
+- Bind every NodeBit to one parent Node and record its source and generation.
+- Do not equate runtime NodeBit, SLM policy nodes, agent-profile nodes,
+  pipelines, tasks, processes, or rings by matching numeric IDs.
+- Keep Axis Gate as a consumer of canonical state, not a replacement for the
+  Cell/Node management graph.
+- Require principal, target ownership, operation class, stale-generation
+  revalidation, and rollback before adding a broad authorize path.
+
 ## Define the action contract
 
 Specify fixed fields such as:

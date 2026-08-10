@@ -1,203 +1,290 @@
-# AIOS Kernel Room Topology 개발 가이드
+# AIOS Kernel Room 개발 가이드
 
 작성일: 2026-04-18
+재정비: 2026-08-10
+
+> 이 가이드는 [AIOS Kernel Room 관리 모델](kernel_room_management_model_ko.md)을
+> 따른다. 정체성, 용어, 성숙도 또는 구현 순서가 충돌하면 정본을 우선한다.
 
 ## 목적
 
-이 문서는 `Kernel Room Topology` 관련 개발 규칙을 정규화한다.
+Kernel Room 작업이 커널 작동 증명이나 enforcement 자체를 목표로 삼지 않고,
+`Room -> Cell -> Node -> NodeBit` 관리 계층을 작은 검증 조각으로 완성하도록 한다.
 
-핵심은 세 가지다.
+핵심 규칙은 다섯 가지다.
 
-1. 현재 구현 범위를 과장하지 않는다
-2. 구조 이름과 로그 marker를 안정적으로 유지한다
-3. 다음 단계 구현이 같은 방향으로 이어지게 한다
+1. 관리 모델과 커널 substrate를 분리한다.
+2. Cell/Node identity와 binding을 gate enforcement보다 먼저 고정한다.
+3. 기존 subsystem의 원본 상태와 Kernel Room 관리 record를 구분한다.
+4. `CURRENT`, `PARTIAL`, `SCAFFOLD`, `PLANNED`, `RESEARCH`를 섞지 않는다.
+5. 첫 구현은 management-only, read-only, fail-closed다.
 
-## 현재 구현 범위
+## 현재 출발점
 
-2026-04-18 기준 현재 코드에 실제로 들어간 기반은 아래까지다.
+### `CURRENT`
 
-- `kernel/kernel_room.c`
-  - read-only `Kernel Room snapshot`
-  - `Axis Gate descriptor` table
-  - boot / `sys_info_dump()` observable marker
-- `include/kernel/kernel_room.h`
-  - snapshot / gate public contract
-- `runtime/ai_syscall.c`
-  - `SYS_INFO_ROOM` read-only info surface
+- `kernel/core/kernel_room.c`
+  - aggregate read-only `kernel_room_snapshot_read()`
+  - 9개 Axis Gate descriptor
+  - `[ROOM] snapshot`, `[ROOM] gates`
+- `kernel/include/kernel/kernel_room.h`
+  - 현재 aggregate snapshot과 gate public contract
+- `kernel/runtime/ai_syscall.c`
+  - `SYS_INFO_ROOM` read-only surface
 
-아직 없는 것:
+### subsystem에서는 `CURRENT`, 관리 adapter로는 `SCAFFOLD`
 
-- explicit Orbit runtime
-- Cell lifecycle runtime
-- Node-to-Cell binding runtime
-- ring3 userspace supervisor integration
+- Memory Fabric domain/window
+- SLM agent tree
+- runtime NodeBit capability table와 per-node stats
+- SLM NodeBit catalog와 generation
+- process/pipeline ownership, pressure/resource snapshot
 
-즉, 이 가이드는 "완성된 새 런타임"이 아니라
-"작은 foundation을 흔들리지 않게 키우기 위한 규칙"을 다룬다.
+### 아직 `PLANNED`
+
+- Room-to-Cell registry
+- Cell lifecycle/state schema
+- Node-to-Cell binding
+- typed management NodeBit view
+- per-Cell/per-Node pressure와 resource ownership
+- principal/authorize와 Axis Gate enforcement
+
+### `RESEARCH`
+
+- Orbit runtime
+- distributed Cell/Node mesh
+- 프랙탈·거리 기반 배치
+
+## 작업 전 분류
+
+Kernel Room 변경을 시작하기 전에 요청을 아래 중 하나로 분류한다.
+
+### A. management model 변경
+
+- Cell/Node/NodeBit ID, record, binding, generation, validity
+- hierarchy snapshot과 verifier
+- source adapter와 ownership 관계
+
+이 가이드의 주 대상이다.
+
+### B. substrate 변경
+
+- process switching, storage, driver, MM, scheduler, hardening
+- 각 subsystem의 raw snapshot
+
+Kernel Room 입력을 개선할 수 있지만, 그 자체로 관리 모델을 승격하지 않는다.
+
+### C. transition/enforcement 변경
+
+- principal, authorize, per-syscall gate, apply, rollback
+
+관리 registry와 identity 계약 뒤의 단계다. Cell/Node 의미가 정해지지 않았다면 먼저
+enforcement를 구현하지 않는다.
+
+## 관리 record 규칙
+
+### Namespace
+
+- Cell, management Node, source Node, NodeBit의 ID 타입을 구분한다.
+- public numeric ID는 append-only로 유지한다.
+- 서로 다른 namespace의 숫자가 같다는 이유로 binding하지 않는다.
+- source binding은 `source_kind + source_id`처럼 명시적이어야 한다.
+
+### 관계
+
+- managed Node는 정확히 하나의 active Cell에 결속한다.
+- 아직 결속되지 않은 source는 `UNBOUND`로 관측하되 managed/bound count에서 제외한다.
+- NodeBit은 존재하는 managed Node를 가리켜야 한다.
+- duplicate, orphan, unknown source는 fail-closed다.
+
+### State와 validity
+
+- lifecycle, health, risk, resource, pressure, capability, eligibility를 한 scalar나
+  무구분 bitmap으로 합치지 않는다.
+- 각 필드는 source와 validity를 가져야 한다.
+- 값 0을 지원됨, 없음, 미관측의 세 의미로 동시에 사용하지 않는다.
+- pressure ranking과 eligibility bitmap은 별도 축으로 유지한다.
+
+### Versioning과 consistency
+
+- public snapshot은 `schema_version`, `struct_size`, `generation`을 가진다.
+- bounded capacity와 실제 count를 분리한다.
+- extension, truncation, stale generation을 검출할 수 있어야 한다.
+- current aggregate room snapshot은 multi-source atomic transaction이 아니다. 새로운
+  hierarchy snapshot이 best-effort이면 그렇게 기록하고, 강한 원자성을 주장하려면
+  writer가 참여하는 generation/seqlock 계약을 별도로 검증한다.
 
 ## 파일 책임
 
-### `include/kernel/kernel_room.h`
+### 현재 `kernel/include/kernel/kernel_room.h`
 
-여기에는 아래만 둔다.
+현재 aggregate snapshot과 gate descriptor ABI를 보존한다. management registry v0를
+같은 ABI에 무심코 끼워 넣지 않는다. 새 public record가 필요하면 별도 versioned contract로
+정의하고 기존 snapshot 호환성을 유지한다.
 
-- gate id
-- gate risk enum
-- read-only snapshot struct
-- descriptor struct
-- public helper / dump / snapshot API
+### 현재 `kernel/core/kernel_room.c`
 
-여기에는 두지 않는다.
+현재 책임은 aggregate snapshot glue, static gate metadata, boot/dump 관측이다.
+이 파일에 다른 subsystem의 private state machine이나 lock을 옮기지 않는다.
 
-- syscall dispatch 구현
-- SLM 정책 로직
-- memory_fabric의 세부 상태 머신
+management registry 구현 위치는 첫 slice 설계 때 결정하되, 아래를 분리한다.
 
-### `kernel/kernel_room.c`
+- registry가 소유하는 identity/relation/generation
+- subsystem adapter가 제공하는 copied read-only state
+- 후속 Axis Gate가 수행하는 transition/authorize
 
-여기에는 아래만 둔다.
+### 기존 subsystem
 
-- 현재 커널 상태를 모으는 snapshot glue
-- gate descriptor 정적 테이블
-- boot / dump용 관측 출력
+Memory Fabric, SLM, scheduler, resource, pressure, process, pipeline은 자기 mutable state의
+원본 소유자다. Kernel Room 때문에 private 배열을 외부에 노출하지 말고 bounded read API나
+명시적인 adapter를 사용한다.
 
-여기에는 두지 않는다.
+## 첫 수직 조각
 
-- 새로운 policy apply 로직
-- 드라이버 직접 제어
-- userspace handoff
+첫 조각은 `management_only read-only hierarchy registry v0`다.
 
-### `runtime/ai_syscall.c`
+Cell table만 있는 상태는 이 조각의 완료가 아니다. 동일한 hierarchy snapshot에서 최소
+`Cell 1개`, 그 Cell에 exact-one binding된 `managed Node 1개`, 그 Node를 부모로
+가리키는 typed `NodeBit 1~2개`를 함께 증명해야 한다. 이후 adapter 단계는 이 최소
+계층을 새로 만드는 단계가 아니라 실제 source coverage를 확대하는 단계다.
 
-여기서는 아래만 연결한다.
+### 목표
 
-- `SYS_INFO_ROOM`
-- `sys_info_dump()`에서의 room dump 호출
+- bounded Room/Cell/Node/NodeBit record
+- typed namespace와 explicit source binding
+- boot-seeded 최소 Cell 1개, exact-one binding을 가진 managed Node 1개,
+  parent-bound typed NodeBit 1~2개
+- schema/size/generation/validity
+- read-only hierarchy snapshot
+- `observation_only=1`, `management_only=1`
 
-즉, `runtime/`는 Kernel Room을 "사용"만 하고,
-정의와 집계는 `kernel/`에 둔다.
+### 금지
 
-## 네이밍 규칙
+- per-syscall Axis Gate enforcement
+- runtime/SLM NodeBit table 통합 또는 mutation
+- scheduler migration과 budget apply
+- allocator reserve/release/throttle
+- process principal 도입
+- Orbit scheduling
 
-상위 구조:
+### 최소 불변식
 
-- `Kernel Room Topology`
+- unique Cell/Node ID
+- managed Node 전부 exact-one Cell binding
+- NodeBit 전부 valid managed Node 참조
+- source namespace collision 없음
+- capacity overflow와 stale generation 거부
+- 기존 aggregate Room marker와 ABI 유지
 
-하위 실행 모델:
+## 관측과 검증
 
-- `Orbit-Cell Node Model`
+새 관리 구조는 boot-observable이어야 하지만 marker를 만드는 것 자체가 목표는 아니다.
+marker는 hierarchy invariant를 증명해야 한다.
 
-코드 심볼:
+예상 record:
 
-- `kernel_room_*`
-- `KERNEL_ROOM_GATE_*`
+```text
+[ROOM] management hierarchy selftest PASS schema=1 cells=... nodes=... bound=... orphan=0 duplicate=0 stale=0 observation_only=1 management_only=1
+```
 
-로그 marker:
+검증기는 최소한 아래 반례를 거부한다.
 
-- `[ROOM] snapshot ...`
-- `[ROOM] gates ...`
+- required record 누락, 중복, 순서 위반
+- 잘린 record와 예상하지 않은 필드 확장
+- duplicate Cell/Node ID
+- orphan Node와 unknown NodeBit target
+- namespace를 무시한 implicit binding
+- stale generation
+- capacity overflow 또는 dropped record
+- `observation_only=0`이나 `management_only=0`
 
-이 marker는 testkit과 문서가 참조하므로
-필드 순서와 키 이름을 자주 바꾸지 않는 편이 좋다.
+관측면 권장 순서:
 
-## Gate 규칙
+1. internal selftest
+2. exact boot marker
+3. structured boot summary의 별도 `kernel_room_management` field
+4. `state room`의 같은 의미 mirror
+5. 필요성이 증명된 뒤에만 read-only UAPI
 
-`Axis Gate`는 "정책 엔진"이 아니라 "정적 메타데이터"로 먼저 유지한다.
+기존 `[ROOM] snapshot`, `[ROOM] gates`, `SYS_INFO_ROOM`은 새 hierarchy proof와 별개의
+호환 표면으로 유지한다.
 
-초기 단계에서 gate는 아래만 가져야 한다.
+## 후속 구현 순서
 
-- syscall range
-- risk class
-- minimum stability
-- completion/shared-memory 가능 여부
-- risky I/O 여부
+1. 정본과 typed namespace 대응표
+2. management-only hierarchy registry v0
+3. Cell state adapter와 validity/source flags
+4. Node-to-Cell binding source 확대
+5. runtime/SLM NodeBit의 typed management view와 generation 연결
+6. per-Cell/per-Node pressure·resource attribution observation
+7. principal과 state-transition request 계약
+8. Axis Gate authorize/enforcement + deny/rollback proof
+9. 선택적 Orbit 연구
 
-초기 단계에서 gate에 넣지 않는 것:
+2단계의 완료 조건은 최소 Cell/Node/NodeBit 전체 hierarchy proof다. 3~5단계를
+Cell-only -> Node-only -> NodeBit-only의 별도 완성 단계로 해석하지 않는다.
 
-- 동적 권한 계산
-- per-process capability bitmap
-- live policy mutation
+`snapshot -> gate metadata -> enforcement`를 Kernel Room의 기본 성장 순서로 쓰지 않는다.
+현재 snapshot과 gate는 보존할 substrate이며, 다음 중심 순서는
+`identity -> relation -> state -> observation -> transition -> enforcement`다.
 
-즉, gate는 먼저 "설명 가능한 지도"가 되고,
-그 다음에야 verifier/capability와 연결한다.
+## Axis Gate 규칙
 
-## Snapshot 규칙
+현재 descriptor는 `CURRENT` classification metadata다. dispatcher가 per-call로 이를
+검사한다고 서술하지 않는다.
 
-`Kernel Room snapshot`은 가능한 한
-기존 모듈의 read-only API만 재사용해서 만들어야 한다.
+후속 enforcement는 아래 조건이 모두 갖춰진 뒤에만 시작한다.
 
-좋은 입력:
+- principal/caller identity
+- target managed Node와 Cell binding
+- NodeBit capability/validity/generation
+- Cell health/risk state
+- deny reason과 rollback boundary
+- bypass 불가를 증명하는 negative test
 
-- `kernel_health_get_summary()`
-- `memory_fabric_profile()`
-- `memory_fabric_domain_count()`
-- `memory_fabric_window_count()`
-- `driver_model_snapshot_read()`
-- `slm_snapshot_read()`
-- `slm_plan_list()`
-- `ai_infer_ring_runtime()`
-- `user_mode_scaffold_info()`
+Gate descriptor와 NodeBit은 같은 정책표가 아니다. Gate는 요청의 종류와 전이 경계를,
+NodeBit은 Node의 상태와 capability를 표현한다. 둘은 typed decision contract로 연결하되
+무조건 하나의 bitmap으로 합치지 않는다.
 
-피할 것:
+## Orbit 규칙
 
-- 내부 static 배열을 직접 노출
-- 다른 모듈의 private lock에 직접 의존
-- snapshot을 위해 새 mutable state를 늘리는 것
+Orbit는 `RESEARCH`다. 다음이 생기기 전에는 runtime이나 ABI를 만들지 않는다.
 
-## 로그 / 테스트 규칙
+- 실제 Cell/Node hierarchy evidence
+- risk/latency/locality source와 validity
+- 기존 scheduler로 표현할 수 없는 구체적 요구
+- 비교 가능한 실험과 rollback 기준
 
-새 기반 구조는 반드시 boot-observable 해야 한다.
+## 문서 동기화
 
-최소 기준:
+Kernel Room 문서를 바꿀 때는 아래 다섯 파일을 함께 확인한다.
 
-- serial log에 `[ROOM] snapshot`
-- serial log에 `[ROOM] gates`
-- testkit strict smoke가 `[ROOM] snapshot`을 요구
-- boot summary JSON에 `kernel_room` 필드가 들어감
-
-즉, 이 구조는 "코드만 존재"하는 게 아니라
-"부팅에서 관측 가능"해야 한다.
-
-## 다음 구현 순서
-
-현재 foundation 위에서 다음으로 자연스러운 순서는 아래다.
-
-1. `Cell metadata`
-   - `memory_fabric` domain과 연결
-2. `Node-to-Cell binding`
-   - `slm_orchestrator` plan / agent tree에 logical binding 추가
-3. `room snapshot UAPI` 확장
-   - 필요 시 read-only dump 구조 확장
-4. `Axis Gate verifier`
-   - health / risk / capability를 gate 메타데이터와 연결
-
-반대로 아직 이른 것:
-
-- full Orbit scheduler/runtime rewrite
-- distributed node mesh
-- self-modifying kernel narrative
-
-## 문서 동기화 규칙
-
-`Kernel Room` 관련 문서를 갱신할 때는 아래를 함께 본다.
-
+- `docs/kernel-room/kernel_room_management_model_ko.md`
 - `docs/kernel-room/README.md`
 - `docs/kernel-room/kernel_room_topology_ko.md`
+- `docs/kernel-room/development_guide_ko.md`
 - `docs/kernel-room/orbit_cell_node_feasibility_ko.md`
-- 이 문서
 
-그리고 구현 변화가 있으면 최소한 아래 중 하나는 같이 갱신한다.
+구현이나 maturity가 바뀌는 후속 패치에서는 mirror 문서와 verifier를 같은 패치에서
+갱신한다.
 
-- 루트 `README.md`
-- `tools/testkit/README.md`
-- `docs/testkit_guide_ko.md`
+- `README.md`
+- `CLAUDE.md`
+- `PROJECT.md`
+- `docs/meta/codex_handoff_tips_ko.md`
+- 현재 roadmap
+- `tools/testkit` parser/verdict/summary/shell 문서
 
-## 결론
+## 완료 보고 규칙
 
-현재 AIOS에서 `Kernel Room Topology`는
-"큰 서사를 먼저 넣는 구조"가 아니라
-"작은 read-only foundation을 흔들림 없이 키우는 구조"로 다루는 편이 맞다.
+작업자는 다음을 분리해 보고한다.
 
-그래서 지금 개발 기준도
-`snapshot -> gate metadata -> test observable -> doc sync`
-순서로 유지하는 것이 가장 안전하다.
+- 새로 `CURRENT`가 된 정확한 record와 verifier
+- 여전히 `PARTIAL`인 전체 모델
+- adapter만 있는 `SCAFFOLD`
+- 구현하지 않은 `PLANNED`
+- 선택적 `RESEARCH`
+- 실행하지 않은 검증 lane
+
+정상 부팅, marker 개수, process switching 또는 driver probe를 Cell/Node hierarchy가
+완성됐다는 증거로 사용하지 않는다.

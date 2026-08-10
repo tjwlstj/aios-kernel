@@ -1,14 +1,14 @@
-# AIOS - Kernel-first AI-Native Operating System
+# AIOS - AI-Native Operating System
 
 <p align="center">
-  <strong>Embodied LLM/SLM runtime을 위한 x86_64 베어메탈 커널 실험</strong>
+  <strong>Room → Cell → Node → NodeBit 관리 모델을 위한 x86_64 베어메탈 OS 실험</strong>
 </p>
 
 ---
 
 ## Overview
 
-AIOS(AI-Native Operating System)는 AI 워크로드를 **1급 시민(First-class citizen)**으로 취급하는 커널 우선형 x86_64 베어메탈 OS 실험입니다. 현재 베타는 부팅 가능한 커널 기반, 텐서 지향 메모리 메타데이터, 메모리 패브릭, 헬스 스냅샷, SLM 하드웨어 스냅샷, NodeBit 정책 게이트, 관측 전용 AI pressure tracker와 resource ledger, 제한된 AI 시스콜 표면을 중심으로 발전하고 있습니다.
+AIOS(AI-Native Operating System)는 AI 워크로드를 **1급 시민(First-class citizen)**으로 취급하고 관리 모델을 중심에 둔 x86_64 베어메탈 OS 실험입니다. 제품의 정본 관리 모델은 **Kernel Room → Cell → Node → NodeBit**입니다. 현재 베타에는 부팅 가능한 커널 기반, 텐서 지향 메모리 메타데이터, 메모리 패브릭, 헬스/SLM 스냅샷, 각자 `CURRENT`인 서로 독립적인 SLM policy catalog와 runtime capability NodeBit, 관측 전용 AI pressure tracker와 resource ledger, 제한된 AI 시스콜 표면이 있습니다. 이 기존 subsystem을 Room 계층으로 투영하는 adapter는 `SCAFFOLD`이며, Room이 Cell 상태와 그 안의 Node/NodeBit를 실제로 소유·조정하는 hierarchy runtime은 `PLANNED`입니다.
 
 장기 방향은 embodied AI OS입니다. LLM/SLM 에이전트는 유저스페이스에서 단기 기억과 장기 기억을 분리해 유지하고, 세션을 넘어 연속성을 보존하며, 하드웨어에는 커널이 중재하는 정책 경계를 통해 접근합니다.
 
@@ -23,7 +23,7 @@ fast-forward합니다.
 
 Suggested repository description:
 
-> Kernel-first AI-native OS experiment for embodied LLM/SLM runtime: ring3 ELF demo, memory fabric, NodeBit policy gates, and mediated hardware access.
+> AI-native OS experiment centered on Room → Cell → Node → NodeBit management, built on a bounded ring3 and hardware substrate.
 
 ## Current Status (2026-08-10)
 
@@ -31,43 +31,41 @@ Suggested repository description:
 - **Boot path:** x86_64 Multiboot2 커널, GDT/IDT/TSS, 페이징, PIT IRQ0 scheduler tick bootstrap, QEMU 스모크 테스트 기반.
 - **Hardening:** stack protector, NX/W^X 2MB identity-map marking, SMEP/UMIP/SMAP 감지/활성화 경로, uaccess STAC/CLAC fence, 검증된 CPL3 `#BP`/`int 0x80` entry AC 제거, #PF CR2 dump, #DF IST1, cppcheck CI.
 - **Memory:** 물리/가상 할당 기반, 텐서 메모리 메타데이터, 수명 프로파일링, 메모리 패브릭 노드, 공유 영역 스캐폴딩.
+- **Kernel Room topology maturity:** aggregate substrate와 ROOM snapshot은 `CURRENT`이므로 전체 topology는 `PARTIAL`이다. 그러나 Room-owned Cell/Node/NodeBit hierarchy runtime, parent-child binding, lifecycle/reconciliation, principal/ownership는 `PLANNED`다. 현재 `kernel_room_snapshot_read()`는 subsystem/health/Memory Fabric/스케줄러/ring/runtime NodeBit aggregate와 `gate_count`만 합성하고, `kernel_room_dump()`가 별도의 9개 syscall-range descriptor를 `[ROOM] gates` 요약으로 관측한다.
+- **Identity boundary:** Memory Fabric `domain_id`, SLM `agent_tree.node_id`, SLM policy `slm_nodebit_id`, 런타임 capability `node_id`, pipeline `owner_node`, scheduler task/PID/ring ID는 독립 네임스페이스다. 숫자가 같아도 같은 주체가 아니며, 명시적 namespace/binding/generation 없이 결합하지 않는다.
 - **Pressure observation:** schema 1의 `state pressure`가 workload queue, Memory Fabric reader/writer 중첩, 누적 NodeBit 거부율을 0..1024 정수 벡터로 읽는다. 현재는 system→plane 2단계 관측만 `CURRENT`이며 task migration이나 budget apply는 하지 않는다.
 - **Resource observation:** schema 1의 커널 내부 `ai_resource_snapshot_t`가 heap bytes, tensor bytes, active Memory Fabric windows, inference ring registrations, runnable scheduler tasks를 고정 5개 aggregate row로 읽는다. 모든 owner는 아직 `NONE/UNATTRIBUTED`이며 read-only `SYS_INFO_RESOURCE`(0x706) syscall과 `state resource` 셸 토픽은 `CURRENT`, owner attribution과 quota/reserve/apply는 `PLANNED`다.
-- **Autonomy and policy:** 헬스 스냅샷, 제한된 자율 제안/롤백 경로, SLM 하드웨어 스냅샷, NodeBit 정책 조회, Kernel Room syscall range classification.
-- **Userspace:** bounded bootstrap process pair slice 완료. 정적 descriptor 2개가 각자 private 2MiB user leaf/CR3와 16KiB ring0 entry stack을 소유하며, PID 1/slot 0과 PID 2/slot 1이 순차적으로 static ELF64 데모의 `int 0x80` 왕복, uaccess 거부, CR3·BSP `rsp0` 복원을 검증한다. M3-b-3b2c 진입 게이트의 trapframe C/NASM offset·크기 계약(176B), `from_user` CPL0/CPL3 판별, process-owned trap evidence snapshot v0, process event journal v1, CPL3 entry AC hardening은 `CURRENT`다. pair의 ring3 `#BP` 2회와 `int 0x80` 6회는 saved user RFLAGS를 바꾸지 않으면서 entry live AC가 항상 0임을 증명한다. SMAP active이면 `clac`, 비활성·미지원이면 `pushfq/btr/popfq` fallback을 사용해 `#UD` 없이 같은 결과를 내며, `default`/`max-smap` CPU profile verifier가 두 분기를 재현한다. 각 ring3 `int3`의 full frame은 ISR 시점 current owner/private CR3/TSS `rsp0`/IF=0 검사를 통과한 descriptor에 복사되고, per-boot capture sequence 1,2와 각 finish 뒤 보존, 두 번째 실행까지 끝난 최종 pair 경계의 양쪽 재조회를 증명한다. capacity 8/no-overwrite journal은 acquire/capture/release의 exact 6-event vector를 보존하며 `state user`의 `event_*` mirror와 fail-closed Python/PowerShell/structured 검증으로 고정된다. 그 owner lifecycle은 `0→1→0→2→0`이며 CPU switch가 아니다. prepare 코드 경로는 이전 snapshot을 지우고 run generation을 올리지만, 같은 slot을 다시 prepare하는 실부팅 증거는 아직 `PLANNED`다. journal은 `evidence_only=1 switch_events=0 resume_ready=0`이고 전체 process 모델은 `PARTIAL`이다. 다음 순서는 live continuation/switch, 실제 A→B→A, timer preemption이다. future ring3 IRQ/NMI/IST entry와 실기기까지 이 proof가 일반화된 것은 아니다. `aios-init`, 디스크 기반 ELF 적재, 동적 주소공간 수명주기, 장기 실행 유저스페이스 런타임도 아직 없다.
+- **Autonomy and policy:** 헬스 스냅샷, 제한된 자율 제안/롤백 경로, SLM 하드웨어 스냅샷, 두 종류의 NodeBit 조회/통계, Kernel Room syscall-range 분류 메타데이터. Kernel Room Axis Gate의 dispatcher-level 강제는 아직 없다.
+- **Userspace:** bounded bootstrap process pair slice 완료. 정적 descriptor 2개가 각자 private 2MiB user leaf/CR3와 16KiB ring0 entry stack을 소유하며, PID 1/slot 0과 PID 2/slot 1이 순차적으로 static ELF64 데모의 `int 0x80` 왕복, uaccess 거부, CR3·BSP `rsp0` 복원을 검증한다. M3-b-3b2c 진입 게이트의 trapframe C/NASM offset·크기 계약(176B), `from_user` CPL0/CPL3 판별, process-owned trap evidence snapshot v0, process event journal v1, CPL3 entry AC hardening은 `CURRENT`다. pair의 ring3 `#BP` 2회와 `int 0x80` 6회는 saved user RFLAGS를 바꾸지 않으면서 entry live AC가 항상 0임을 증명한다. SMAP active이면 `clac`, 비활성·미지원이면 `pushfq/btr/popfq` fallback을 사용해 `#UD` 없이 같은 결과를 내며, `default`/`max-smap` CPU profile verifier가 두 분기를 재현한다. 각 ring3 `int3`의 full frame은 ISR 시점 current owner/private CR3/TSS `rsp0`/IF=0 검사를 통과한 descriptor에 복사되고, per-boot capture sequence 1,2와 각 finish 뒤 보존, 두 번째 실행까지 끝난 최종 pair 경계의 양쪽 재조회를 증명한다. capacity 8/no-overwrite journal은 acquire/capture/release의 exact 6-event vector를 보존하며 `state user`의 `event_*` mirror와 fail-closed Python/PowerShell/structured 검증으로 고정된다. 그 owner lifecycle은 `0→1→0→2→0`이며 CPU switch가 아니다. prepare 코드 경로는 이전 snapshot을 지우고 run generation을 올리지만, 같은 slot을 다시 prepare하는 실부팅 증거는 아직 `PLANNED`다. journal은 `evidence_only=1 switch_events=0 resume_ready=0`이고 전체 process 모델은 `PARTIAL`이다. 실행 substrate 레인의 잔여는 live continuation/switch, 실제 A→B→A, timer preemption이다. 이는 Kernel Room 관리축보다 자동으로 우선하는 “다음 프로젝트 방향”이 아니다. future ring3 IRQ/NMI/IST entry와 실기기까지 이 proof가 일반화된 것은 아니다. `aios-init`, 디스크 기반 ELF 적재, 동적 주소공간 수명주기, 장기 실행 유저스페이스 런타임도 아직 없다.
 - **Hardware AI access:** 가속기 인터페이스는 추상화/탐색 스캐폴딩 단계. 실제 GPU/NPU/TPU 드라이버와 직접 클럭 제어 백엔드는 계획 상태.
 - **I/O:** e1000은 RX ring bootstrap + bounded RX poll/rearm + TX smoke 수준. USB/storage는 bootstrap/probe 중심이며, 다음 storage 목표는 virtio-blk 최소 read path.
 - **Continuity runtime:** 단기/장기 기억 분리, 저널링, distillation, self-learning promotion flow는 유저스페이스 AI 런타임 로드맵.
 
 ## Project Direction
 
-AIOS의 방향은 커널을 AI 시스템의 결정론적 body로 두고, 학습 행동은 정책으로 제한하는 것입니다.
+AIOS의 우선 방향은 커널 기능을 더 많이 나열하는 것이 아니라, Kernel Room이 살아 있는 AI 구조를 **관리 가능한 계층**으로 다루게 만드는 것입니다.
 
-- **Kernel:** 클럭, 메모리 보호, 디바이스 중재, 헬스 스냅샷, 롤백 표면, 작은 정책 비트맵을 담당합니다.
-- **Userspace AI runtime:** LLM/SLM context, 단기 작업 기억, 장기 기억 저장소, semantic index, agent continuity를 담당합니다.
-- **Learning loop:** 경험을 기록하고 검증한 뒤, 메모리나 작은 정책 artifact로 distill하고, 감사 가능한 gate를 통과한 결과만 승격합니다.
-- **NodeBit policy:** API, tool, 하드웨어 액션을 실행 전에 빠르게 확인할 수 있도록 작은 노드형 정책 테이블을 메모리에 둡니다.
+- **Room:** 전체 Cell inventory, 상태 요약, lifecycle/reconciliation의 정본 소유자. 현재는 aggregate 관측실이며 관리자는 아직 아니다.
+- **Cell:** 격리·수명·자원·건강 상태를 함께 관리하는 bounded 단위. 첫 vertical slice는 `main` Cell 1 + 그 안에 bound된 `main-ai` Node 1 + parent-bound NodeBit 1~2를 하나의 management-only hierarchy proof로 검증한다. Cell-only 성공은 완료가 아니다.
+- **Node:** Cell 안에서 역할을 가진 agent/service/runtime 단위. 기존 여러 `node_id`는 canonical Node가 아니라 입력 스캐폴드이므로 명시적으로 bind한다.
+- **NodeBit:** Node 안의 가장 작은 capability/policy/resource projection. 기존 SLM policy node와 runtime capability node를 곧바로 동일시하지 않고 namespace가 있는 adapter로 연결한다.
+- **Execution substrate:** ring3 process, scheduler, memory, storage, network, HAL은 위 관리 모델이 실제 일을 수행하도록 받치는 기반이다. M3~M5의 완성도는 계속 높이되 방향 선택을 독점하지 않는다.
+- **Policy boundary:** Axis Gate의 실제 authorize/enforcement는 canonical identity, parent binding, generation, principal과 ownership이 생긴 뒤의 `PLANNED` 단계다. 현재 9개 descriptor는 분류 메타데이터다.
+- **Orbit:** Cell/Node placement와 분산 배치를 탐구하는 `RESEARCH` 축이다. Cell 관리 기반과 검증 증거 없이 지원 기능으로 선언하지 않는다.
 
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│ Planned userspace embodied AI runtime                         │
-│  - short memory / long memory / continuity journal             │
-│  - tools, APIs, agents, semantic stores                        │
-├──────────────────────────────────────────────────────────────┤
-│ AI syscall and policy boundary                                 │
-│  - health snapshot, SLM snapshot, NodeBit lookup               │
-│  - bounded proposal, verifier, rollback paths                  │
-├──────────────────────────────────────────────────────────────┤
-│ Current kernel foundation                                      │
-│  - boot, paging, interrupts, scheduler foundation              │
-│  - tensor memory, memory fabric, HAL scaffolds                  │
-│  - ring3 static ELF demo, uaccess guards, QEMU testkit          │
-├──────────────────────────────────────────────────────────────┤
-│ Hardware                                                       │
-│  CPU, memory, timers, PCI devices, storage/network bring-up     │
-└──────────────────────────────────────────────────────────────┘
+Target management plane (PLANNED)
+Kernel Room
+└── Cell
+    └── Node
+        └── NodeBit
+             │ explicit namespace + binding + generation
+             ▼
+Current substrate / evidence inputs
+memory fabric · health · SLM · runtime NodeBit · pipeline
+resource/pressure observation · scheduler · ring3 · drivers
 ```
 
 ## Key Features
@@ -100,11 +98,12 @@ AIOS의 방향은 커널을 AI 시스템의 결정론적 body로 두고, 학습 
 - exact required boot selftest와 structured `resource` boot summary로 검증
 - syscall, shell topic, reserve/release/throttle, allocator/scheduler policy 변경은 아직 없음
 
-### SLM Snapshot and NodeBit Policy Gate
+### SLM Snapshot and Two Distinct NodeBit Surfaces
 - `slm_hw_snapshot_t`로 커널 health, 메모리 패브릭, agent tree, device readiness를 한 번에 노출
 - SLM 런타임이 없거나 준비되지 않은 경우에도 안정적인 snapshot/fallback 값 제공
-- 작은 노드형 정책 비트맵(NodeBit)으로 API, tool, device action의 allow/observe/risky 상태를 빠르게 조회
-- `SYS_SLM_NODEBIT_LOOKUP`로 유저스페이스 AI가 정책 상태를 직접 확인할 수 있는 읽기 경로 제공
+- `SYS_SLM_NODEBIT_LOOKUP`는 `slm_orchestrator.c`의 API/tool/device/memory/clock/policy catalog에서 effective policy node를 읽는다
+- `runtime/nodebit.c`는 별도 runtime capability registry이며 `SYS_NODEBIT_REGISTER/UPDATE/STATS`와 pipeline capability gate를 제공한다
+- 두 ID 공간과 Memory Fabric/agent-tree/pipeline의 Node ID는 아직 canonical Room→Cell→Node→NodeBit 계층에 bind되지 않았다
 
 ### AI Workload Scheduler Foundation
 - 다단계 피드백 큐와 virtual runtime 추적 기반
@@ -157,7 +156,8 @@ AIOS의 방향은 커널을 AI 시스템의 결정론적 body로 두고, 학습 
 | `0x600-0x6FF` | 파이프라인 | `SYS_PIPE_CREATE`, `SYS_PIPE_EXECUTE` |
 | `0x700-0x7FF` | 시스템 정보 | `SYS_INFO_MEMORY`, `SYS_INFO_SYSTEM`, `SYS_INFO_ROOM`, `SYS_INFO_BOOTSTRAP` |
 | `0x710-0x715` | 자율 제어 | `SYS_AUTONOMY_ACTION_PROPOSE`, `SYS_AUTONOMY_ACTION_COMMIT`, `SYS_AUTONOMY_ROLLBACK_LAST` |
-| `0x720-0x725` | SLM/NodeBit | `SYS_SLM_HW_SNAPSHOT`, `SYS_SLM_PLAN_SUBMIT`, `SYS_SLM_PLAN_APPLY`, `SYS_SLM_NODEBIT_LOOKUP` |
+| `0x720-0x725`, `0x729` | SLM policy catalog | `SYS_SLM_HW_SNAPSHOT`, `SYS_SLM_PLAN_SUBMIT`, `SYS_SLM_PLAN_APPLY`, `SYS_SLM_NODEBIT_LOOKUP`, `SYS_SLM_PLAN_OBSERVE` |
+| `0x726-0x728` | Runtime NodeBit capability | `SYS_NODEBIT_REGISTER`, `SYS_NODEBIT_UPDATE`, `SYS_NODEBIT_STATS` |
 
 ## Project Structure
 
@@ -222,7 +222,7 @@ Windows에서도 빌드 점검이 가능합니다. 현재 저장소에는 PowerS
 ```powershell
 pwsh -File .\tools\testkit\kernel\build-windows.ps1 -Target all
 pwsh -File .\tools\testkit\kernel\build-windows.ps1 -Target test
-python .\tools\testkit\aios-testkit.py all --strict
+py -3 .\tools\testkit\aios-testkit.py all --strict
 ```
 
 Windows용 자세한 설치 및 경로 설정 방법은 [docs/tools/windows_build.md](docs/tools/windows_build.md)를 참고하세요.
@@ -232,14 +232,14 @@ Windows용 자세한 설치 및 경로 설정 방법은 [docs/tools/windows_buil
 Claude/Codex 작업과 CI에서 쓰는 주요 진입점은 `tools/testkit/aios-testkit.py`입니다.
 
 ```powershell
-python .\tools\testkit\aios-testkit.py all --strict
-python .\tools\testkit\aios-testkit.py kernel --target test --strict
-python .\tools\testkit\aios-testkit.py boot-matrix --profiles full minimal storage-only --strict
-python .\tools\testkit\aios-testkit.py boot-inventory --profiles full minimal storage-only --strict
-python .\tools\testkit\aios-testkit.py boot-perf --profiles full minimal storage-only --strict
-python .\tools\testkit\aios-testkit.py shell --strict
-python .\tools\testkit\aios-testkit.py shell --strict --skip-build
-python .\tools\testkit\aios-testkit.py os
+py -3 .\tools\testkit\aios-testkit.py all --strict
+py -3 .\tools\testkit\aios-testkit.py kernel --target test --strict
+py -3 .\tools\testkit\aios-testkit.py boot-matrix --profiles full minimal storage-only --strict
+py -3 .\tools\testkit\aios-testkit.py boot-inventory --profiles full minimal storage-only --strict
+py -3 .\tools\testkit\aios-testkit.py boot-perf --profiles full minimal storage-only --strict
+py -3 .\tools\testkit\aios-testkit.py shell --strict
+py -3 .\tools\testkit\aios-testkit.py shell --strict --skip-build
+py -3 .\tools\testkit\aios-testkit.py os
 ```
 
 Static analysis uses the same cppcheck lane as CI. If `cppcheck` is on `PATH`, run:
@@ -286,7 +286,8 @@ make debug          # GDB 디버깅 모드로 실행
 
 - [자율 OS 실행 로드맵](docs/autonomy/autonomous_os_execution_roadmap_ko.md)
 - [AI 친화 리소스 관리 개발 계획 (2026-04-27)](docs/autonomy/ai_resource_management_development_plan_ko.md)
-- [최소 I/O 점검과 성숙도 우선 작업흐름](docs/meta/minimal_io_and_maturity_workflow_ko.md)
+- [Kernel Room 관리 모델 정본](docs/kernel-room/kernel_room_management_model_ko.md)
+- [AIOS 성숙도 우선 작업흐름](docs/meta/minimal_io_and_maturity_workflow_ko.md)
 - [OLD 문서 체크리스트](docs/meta/old_docs_check_2026_07_03_ko.md)
 - [유저공간 OS 구현 방향](docs/os/user_space_os_direction_ko.md)
 - [브라우저 콘솔과 자체 런타임 엔진 로드맵](docs/os/browser_console_and_runtime_engine_roadmap_ko.md)

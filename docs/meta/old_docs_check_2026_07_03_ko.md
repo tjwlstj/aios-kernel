@@ -1,4 +1,4 @@
-# OLD 문서 체크리스트 (2026-07-03)
+# OLD 문서 체크리스트 (2026-07-03, 2026-08-10 재검토)
 
 이 문서는 현재 구현 기준보다 뒤처진 문서를 `OLD` 또는 `REVIEW`로 분류해 둔 체크리스트다.
 파일 이동은 하지 않는다. 기존 링크를 유지하되, 새 작업자는 먼저 최신 기준 문서를 읽고 아래 문서는
@@ -6,8 +6,9 @@
 
 ## 최신 기준
 
-- [CLAUDE.md](../../CLAUDE.md): 현재 빌드/테스트 명령, ring3/ELF/uaccess/SMAP 상태, 불변식.
-- [minimal_io_and_maturity_workflow_ko.md](minimal_io_and_maturity_workflow_ko.md): M1 uaccess/SMAP, M2 static ELF64 loader 완료와 M3/M4 다음 작업흐름.
+- [CLAUDE.md](../../CLAUDE.md): 현재 빌드/테스트 명령, 구현 성숙도, ID namespace와 불변식.
+- [Kernel Room 문서 허브](../kernel-room/README.md)와 [관리 모델 정본](../kernel-room/kernel_room_management_model_ko.md): Room→Cell→Node→NodeBit 관리 구조와 `CURRENT`/`PARTIAL`/`PLANNED` 경계.
+- [minimal_io_and_maturity_workflow_ko.md](minimal_io_and_maturity_workflow_ko.md): K1~K5 관리축, M1~M5 실행 substrate, C/W 후속축의 현재 우선순위.
 - [tools/testkit/README.md](../../tools/testkit/README.md): testkit lane과 산출물.
 - [testkit_guide_ko.md](../tools/testkit_guide_ko.md): testkit 세부 사용법.
 
@@ -29,7 +30,7 @@
 |---|---|---|
 | [x] REVIEW | [ai_resource_management_development_plan_ko.md](../autonomy/ai_resource_management_development_plan_ko.md) | resource/service 계획 자체는 유효하지만 ring3 이후 전제 문장이 일부 낡았다. |
 | [x] REVIEW | [code_boundary_and_structure_tree_ko.md](../kernel/code_boundary_and_structure_tree_ko.md) | 디렉토리 경계 설명은 유효하나 ring3 이전 표현이 일부 남아 있다. |
-| [x] REVIEW | [orbit_cell_node_feasibility_ko.md](../kernel-room/orbit_cell_node_feasibility_ko.md) | 독립 userspace node/process mesh 부재 설명은 여전히 대체로 맞지만, "ring3 scaffold" 표현은 첫 ring3 slice 완료 이후 재검토가 필요하다. |
+| [x] REVIEW | [orbit_cell_node_feasibility_ko.md](../kernel-room/orbit_cell_node_feasibility_ko.md) | Orbit 아이디어는 장기 탐색 자료로만 유효하다. 현재 상태는 `RESEARCH`이며 canonical Cell registry나 Node binding, 지원 topology가 아니다. |
 
 ## Claude/testkit 명령 확인
 
@@ -38,19 +39,19 @@ Claude가 주로 참고하는 테스트 진입점은 [CLAUDE.md](../../CLAUDE.md
 권장 명령:
 
 ```powershell
-python .\tools\testkit\aios-testkit.py all --strict
-python .\tools\testkit\aios-testkit.py kernel --target test --strict
-python .\tools\testkit\aios-testkit.py boot-matrix --profiles full minimal storage-only --strict
-python .\tools\testkit\aios-testkit.py boot-inventory --profiles full minimal storage-only --strict
-python .\tools\testkit\aios-testkit.py boot-perf --profiles full minimal storage-only --strict
-python .\tools\testkit\aios-testkit.py shell --strict
-python .\tools\testkit\aios-testkit.py shell --strict --skip-build
-python .\tools\testkit\aios-testkit.py os
+py -3 .\tools\testkit\aios-testkit.py all --strict
+py -3 .\tools\testkit\aios-testkit.py kernel --target test --strict
+py -3 .\tools\testkit\aios-testkit.py boot-matrix --profiles full minimal storage-only --strict
+py -3 .\tools\testkit\aios-testkit.py boot-inventory --profiles full minimal storage-only --strict
+py -3 .\tools\testkit\aios-testkit.py boot-perf --profiles full minimal storage-only --strict
+py -3 .\tools\testkit\aios-testkit.py shell --strict
+py -3 .\tools\testkit\aios-testkit.py shell --strict --skip-build
+py -3 .\tools\testkit\aios-testkit.py os
 pwsh -File .\tools\testkit\kernel\build-windows.ps1 -Target test
 pwsh -File .\tools\testkit\kernel\build-windows.ps1 -Target test -SmokeProfile minimal
 ```
 
-현재 Codex Windows 환경에서는 `python`이 Windows Store alias로 잡힐 수 있다. 그 경우 `py` 또는 Codex 번들 Python 경로를 사용한다.
+현재 Codex Windows 환경에서는 `python`이 Windows Store alias로 잡힐 수 있으므로 `py -3` 또는 Codex 번들 Python 경로를 사용한다.
 
 확인한 testkit 구조:
 
@@ -78,4 +79,4 @@ Bash(xargs grep *)
 - `beta` 브랜치의 `tools/testkit/README.md`에도 `kernel`, `boot-matrix`, `boot-inventory`, `boot-perf`, `os`, `all`, Windows `build-windows.ps1` 명령이 정리되어 있다.
 - GitHub Actions의 `Linux Boot Check`는 `python tools/testkit/aios-testkit.py os`, `python tools/testkit/aios-testkit.py all --strict`를 실행한다. 최신 `beta` 로컬 워크플로는 여기에 `cppcheck`와 `shell --strict --skip-build`까지 포함한다.
 - 기본 GitHub repo 페이지에 보이는 README는 브랜치/캐시/기본 브랜치 상태에 따라 오래된 `scripts/build-windows.ps1`, `scripts/aios-allinone.py` 경로가 보일 수 있다. 새 기준은 `tools/testkit/` 경로다.
-- 이 체크 문서와 OLD 배너는 아직 로컬 변경사항이다. GitHub에 보이려면 커밋/푸시가 필요하다.
+- 이 절은 2026-07-03 원격 점검의 역사적 기록이다. 현재 브랜치/원격 상태 판단에는 새로 `git status`, branch, SHA, CI를 확인한다.

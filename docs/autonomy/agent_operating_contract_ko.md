@@ -1,4 +1,4 @@
-# AI 에이전트 운용 계약 (2026-07-15)
+# AI 에이전트 운용 계약 (2026-07-15, 2026-08-10 관리축 정렬)
 
 ## 1. 목적
 
@@ -6,10 +6,11 @@ AIOS에서 "AI가 편하게 움직인다"는 것은 커널 내부를 자유 형�
 에이전트가 현재 상태와 허용 범위를 추측하지 않고 발견하고, 제한된 행동만 제안하며,
 결과와 거절 이유를 기계적으로 확인하고, 실패 시 되돌릴 수 있다는 뜻이다.
 
-이 문서는 그 관점에서 실행 중 인터페이스의 최소 계약을 고정한다. 기능 순서는
-`minimal_io_and_maturity_workflow_ko.md`, 검증 진화는
-`verification_tooling_evolution_design_ko.md`, 리소스 정책은
-`ai_resource_management_development_plan_ko.md`가 각각 정본이다.
+이 문서는 그 관점에서 실행 중 인터페이스의 최소 계약을 고정한다. Kernel Room의
+관리 의미와 우선순위는 [관리 모델](../kernel-room/kernel_room_management_model_ko.md)과
+[성숙도 작업흐름](../meta/minimal_io_and_maturity_workflow_ko.md), 검증 진화는
+[검증 툴링 진화 설계](../tools/verification_tooling_evolution_design_ko.md), 리소스 정책은
+[AI 리소스 관리 계획](ai_resource_management_development_plan_ko.md)이 각각 정본이다.
 
 ## 2. 에이전트가 편한 OS의 다섯 조건
 
@@ -31,12 +32,12 @@ AIOS에서 "AI가 편하게 움직인다"는 것은 커널 내부를 자유 형�
 | 자율 제어 관측 | `CURRENT` | `state autonomy` schema 1 |
 | 제한된 행동 제안 | `PARTIAL` | `SYS_AUTONOMY_ACTION_PROPOSE`; scheduler만 apply 지원, delta ±32 |
 | commit/rollback | `PARTIAL` | `SYS_AUTONOMY_ACTION_COMMIT`, `SYS_AUTONOMY_ROLLBACK`; 상주 userspace agent는 아직 없음 |
-| principal authorize | `PLANNED` | M6 Kernel Room 단일 authorize 이후 |
-| 재부팅 후 연속성 | `PLANNED` | M8 정책 저널, M9 AI Flow |
+| principal authorize | `PLANNED` | K1~K4 관리 identity/binding/attribution 증거 뒤 K5 |
+| 재부팅 후 연속성 | `PLANNED` | C1 정책·관리 저널, C2 AI Flow |
 
 현재의 반복 가능한 에이전트 인터페이스는 QEMU COM1에 연결된 host-driven shell이다.
-ring3는 정적 ELF 한 개를 동기 실행하는 단계이며, 상주 AI runtime이나 일반 프로세스 모델로
-과장하지 않는다.
+ring3는 두 정적 bootstrap process를 PID 1→PID 2 순서로 각각 동기 실행하는 단계이며,
+상주 AI runtime이나 일반 프로세스 모델로 과장하지 않는다.
 
 ## 4. `state autonomy` schema 1
 
@@ -70,17 +71,28 @@ ring3는 정적 ELF 한 개를 동기 실행하는 단계이며, 상주 AI runti
 - memory/accel/infer target은 계속 `observe-only`다.
 - scheduler action만 구현돼 있으며 delta는 `-32..32`로 제한된다.
 - raw pointer, register, MMIO 주소를 모델 출력으로 받지 않는다.
-- 현재 `SYS_AUTONOMY_MODE_SET`에는 M6 principal/단일 authorize가 아직 없다.
+- 현재 `SYS_AUTONOMY_MODE_SET`에는 K5 principal/ownership 기반 authorize가 아직 없다.
   따라서 이 단계에서 shell action 명령이나 편의용 apply 우회를 추가하지 않는다.
 - Kernel Room gate는 현재 분류 메타데이터이며 per-call authorize로 과장하지 않는다.
 
 ## 6. 다음 확장 순서
 
-1. 버전드 `[EVT]` 파일럿과 host event parser로 부트 증거를 문자열에서 구조적 계약으로 이동.
-2. 기존 ABI를 변경하지 않는 새 read-only autonomy snapshot syscall 설계.
-3. M6 principal과 Kernel Room authorize를 mode-set/commit 앞에 강제.
-4. `CURRENT` aggregate AI resource ledger를 read-only syscall/`state resource`로 노출하고, attribution과 budget은 별도 후속으로 유지.
-5. M8/M9에서 정책 저널과 flow continuation으로 재부팅 경계 연속성 확보.
+프로젝트 전체 우선순위는 Kernel Room 관리 K축을 따른다. 에이전트 표면은 아래 관리
+증거가 생기는 순서대로 연결한다.
+
+1. K1에서 Cell 1 + bound Node 1 + parent-bound NodeBit 1~2의 management-only
+   read-only hierarchy v0를 한 vertical proof로 만든다. Cell-only 표는 완료가 아니다.
+2. K2에서 canonical Node의 source binding과 generation/reconciliation을 확장한다.
+3. K3에서 선택한 legacy NodeBit를 namespace adapter로 read-only projection한다.
+4. K4에서 resource/pressure를 canonical Cell/Node에 귀속하되
+   `observation_only=1`을 유지한다.
+5. K5에서 principal, target ownership, stale-generation 거부를 검증한 뒤에만 Kernel
+   Room authorize를 mode-set/commit 앞에 강제한다.
+6. C1/C2에서 정책·관리 저널과 AI Flow continuation으로 재부팅 경계 연속성을 확보한다.
+
+버전드 `[EVT]` 파일럿, host event parser, read-only autonomy/resource snapshot은 이
+순서를 지원하는 검증·관측 작업이다. 병행할 수 있지만 Kernel Room hierarchy
+성숙도를 대신하지 않는다.
 
 새 행동을 추가할 때는 항상 `observe → propose → authorize → apply → verify → commit/rollback`
 순서를 유지하고, unsupported target은 명시적으로 거부한다.

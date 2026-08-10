@@ -12,6 +12,9 @@ Turn broad direction into the nearest useful, verifiable step.
 1. Inspect branch, status, recent history, and repository layout.
 2. Read `PROJECT.md`, `CLAUDE.md`, `docs/meta/codex_handoff_tips_ko.md`, and the
    current roadmap for the affected domain.
+   For Kernel Room, Cell, Node, NodeBit, Axis Gate, Orbit, or attribution work,
+   also read `docs/kernel-room/kernel_room_management_model_ko.md` and use
+   `$aios-kernel-room-architecture`.
 3. Search implementation, public interfaces, tests, CI, and documentation.
 4. Separate:
    - already present and verified
@@ -34,6 +37,12 @@ Prefer one vertical slice that closes a real gap:
 Avoid selecting a whole milestone when one evidence-bearing seam can be
 completed independently.
 
+For Kernel Room-related planning, classify the candidate as `DIRECT`,
+`SUPPORTING`, `ORTHOGONAL`, or `RESEARCH` using
+`$aios-kernel-room-architecture`. Do not let process, scheduler, driver, or
+security hardening become the product milestone merely because it is the most
+implementation-ready work. Name the management milestone it supports.
+
 ## Plan in evidence order
 
 For each proposed slice provide:
@@ -54,6 +63,7 @@ tracks. Do not let the roadmap imply implementation.
 Choose the smallest relevant companion:
 
 - `$aios-kernel-change-guardian`
+- `$aios-kernel-room-architecture`
 - `$aios-enum-abi-integrity`
 - `$aios-driver-bringup-qemu`
 - `$aios-slm-policy-designer`

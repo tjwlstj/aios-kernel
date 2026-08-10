@@ -5,8 +5,12 @@
 
 ## 문서 신선도 기준
 
-- 최신 구현 기준은 [CLAUDE.md](../CLAUDE.md)와
+- 최신 구현 기준은 [CLAUDE.md](../CLAUDE.md),
+  [Kernel Room 문서 허브](kernel-room/README.md),
   [minimal_io_and_maturity_workflow_ko.md](meta/minimal_io_and_maturity_workflow_ko.md)를 우선한다.
+- 제품 관리 구조의 정본은 **Room→Cell→Node→NodeBit**다. 현재 Kernel Room은
+  aggregate snapshot과 syscall-range 분류만 `CURRENT`여서 전체 topology는 `PARTIAL`이다.
+  persistent hierarchy runtime과 binding/lifecycle/reconciliation은 `PLANNED`다.
 - M1 uaccess/SMAP, M2 static ELF64 loader 이전 상태를 전제로 한 문서는
   [OLD 문서 체크리스트](meta/old_docs_check_2026_07_03_ko.md)에 따로 표시했다.
 - `OLD` 문서는 역사적 맥락용이며, 새 구현 판단에는 최신 기준 문서를 먼저 사용한다.
@@ -27,11 +31,12 @@
 - [enum_and_lowlevel_slm_alignment_ko.md](kernel/enum_and_lowlevel_slm_alignment_ko.md)
 - [boot_marker_notes.md](kernel/boot_marker_notes.md)
 
-### kernel-room (토폴로지)
-- [kernel-room/README.md](kernel-room/README.md)
-- [kernel-room/kernel_room_topology_ko.md](kernel-room/kernel_room_topology_ko.md)
-- [kernel-room/development_guide_ko.md](kernel-room/development_guide_ko.md)
-- [kernel-room/orbit_cell_node_feasibility_ko.md](kernel-room/orbit_cell_node_feasibility_ko.md)
+### kernel-room (관리 계층 정본)
+- [kernel-room/README.md](kernel-room/README.md) — Room→Cell→Node→NodeBit 문서 허브와 성숙도 경계
+- [kernel-room/kernel_room_management_model_ko.md](kernel-room/kernel_room_management_model_ko.md) — 관리 권위·용어·불변식·첫 hierarchy vertical slice의 정본
+- [kernel-room/kernel_room_topology_ko.md](kernel-room/kernel_room_topology_ko.md) — canonical hierarchy, identity/binding 설계
+- [kernel-room/development_guide_ko.md](kernel-room/development_guide_ko.md) — 관리축의 작은 vertical slice와 검증 규약
+- [kernel-room/orbit_cell_node_feasibility_ko.md](kernel-room/orbit_cell_node_feasibility_ko.md) — Orbit `RESEARCH`; 지원 기능으로 해석하지 않음
 
 ## autonomy/ — 자율 제어 · SLM · 정책
 - [agent_operating_contract_ko.md](autonomy/agent_operating_contract_ko.md)

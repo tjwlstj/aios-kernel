@@ -17,6 +17,9 @@ exists to stop: commit a03b3c2 (2026-08-02) shipped `SYS_INFO_RESOURCE` and
 1. Inspect `git status --short --branch` and preserve unrelated changes.
 2. Read `CLAUDE.md`, `PROJECT.md`, `docs/meta/codex_handoff_tips_ko.md`, and the
    nearest subsystem design.
+   For Kernel Room, Cell, Node, NodeBit, Axis Gate, Orbit, or attribution
+   claims, also read `docs/kernel-room/kernel_room_management_model_ko.md` and
+   use `$aios-kernel-room-architecture`.
 3. Locate the implementation, public headers, host verifier, CI lane, and
    generated artifact that support the claim.
 4. Search every document that repeats the changed status, command, marker, ID,
@@ -34,6 +37,7 @@ update every mirror in the same patch:
 | Syscall existence and maturity | `kernel/include/runtime/ai_syscall.h` · the subsystem bullet in `CLAUDE.md` · `PROJECT.md` §5 invariants · `README.md` "Current Status" · the nearest design doc |
 | Boot markers / selftest PASS lines | kernel source emitting the line · `CLAUDE.md` "Smoke Test Checkpoints" · testkit anchors (`boot_log.py`, `shell_lane.py`, `EXACT_REQUIRED_RECORDS`) |
 | Kernel Room gate ranges | `kernel/core/kernel_room.c` · the gate-coverage bullets in `CLAUDE.md` and `PROJECT.md` |
+| Kernel Room hierarchy and direction | `docs/kernel-room/kernel_room_management_model_ko.md` · `docs/kernel-room/development_guide_ko.md` · `CLAUDE.md` · `README.md` · `PROJECT.md` · handoff/current roadmap |
 | Maturity labels (`CURRENT`/`PARTIAL`/`SCAFFOLD`/`PLANNED`) | `README.md` · `PROJECT.md` · `CLAUDE.md` · design docs must agree for the same feature |
 
 Before finishing, `rg` the *previous* wording of the changed claim (for example
@@ -59,6 +63,8 @@ single happy-path observation. Name the missing evidence explicitly.
 - State supported and unsupported targets rather than describing the union as
   complete.
 - Keep bootstrap, probe, init, data path, and production support distinct.
+- Keep execution substrate maturity separate from direct progress on the
+  `Room -> Cell -> Node -> NodeBit` management model.
 - Preserve historical documents when useful; mark them OLD/REVIEW and point to
   the current source of truth.
 - Update navigation indexes when adding a canonical document.

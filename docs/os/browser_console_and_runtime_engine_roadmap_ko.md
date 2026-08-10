@@ -1,8 +1,13 @@
 # AIOS 브라우저 콘솔과 자체 런타임 엔진 로드맵
 
 > 기준일: 2026-07-25
+> 관리축 재정렬: 2026-08-10
 >
 > 상태: 설계 정본. 아래 기능은 별도 표시가 없는 한 `PLANNED` 또는 `RESEARCH`다.
+
+Kernel Room의 관리 의미와 구현 순서는 [관리 모델](../kernel-room/kernel_room_management_model_ko.md)과
+[성숙도 작업흐름](../meta/minimal_io_and_maturity_workflow_ko.md)을 우선한다. 이 문서의
+W축은 별도 제품 표면이며 K축 성숙도를 대신하지 않는다.
 
 ## 1. 목적
 
@@ -26,7 +31,7 @@ AIOS를 브라우저에서 관찰하고 제어하는 가까운 경로와, 장기
 | 커널 네트워크 | `PARTIAL` | e1000 bootstrap/smoke는 있으나 TCP/IP·소켓·HTTP 서버는 없다 |
 | 장기 실행 유저스페이스 | `PLANNED` | 현재 ring3는 PID 1→PID 2 정적 ELF의 bounded 순차 동기 실행이며, 선점 서비스 모델은 아니다 |
 | 브라우저 콘솔·게이트웨이 | `PLANNED` | 아직 구현 파일이나 정규 검증 경로가 없다 |
-| AIOS 자체 런타임 엔진 | `PLANNED` | M3~M9 실행·I/O·권한·영속 기반 이후의 기능이다 |
+| AIOS 자체 런타임 엔진 | `PLANNED` | K1~K5 관리·권한, M3~M5 실행·I/O, C1/C2 영속 기반 이후의 기능이다 |
 
 따라서 첫 브라우저 표면은 커널 네트워크 서버가 아니라 기존 COM1 계약을
 호스트에서 WebSocket으로 중계하는 방식이 맞다.
@@ -155,9 +160,10 @@ flowchart LR
 
 선행 조건:
 
+- K1~K4 canonical Cell/Node/NodeBit hierarchy, source binding, read-only attribution
+- K5 principal/ownership + Kernel Room Axis Gate authorize
 - M3-b-3b2c 이상의 실제 다중 프로세스·선점 실행 기반
 - M4 storage read와 M5 디스크 ELF 적재
-- M6 principal/Kernel Room authorize
 - 안정적인 네트워크 데이터 경로와 최소 TCP/IP·소켓 계층
 
 작업:
@@ -176,7 +182,7 @@ flowchart LR
 
 ### W5. Self-hosted Continuity — `PLANNED`
 
-선행 조건은 M8 정책 저널과 M9 AI Flow다.
+선행 조건은 C1 정책·관리 저널과 C2 AI Flow다.
 
 - 재부팅 뒤 미완료 세션과 flow를 식별한다.
 - `APPLIED`지만 `COMMITTED`되지 않은 행동을 rollback 또는 검증 후 재개한다.
@@ -208,9 +214,10 @@ flowchart LR
 | 축 | 관계 |
 |---|---|
 | 검증 V0~V5 | W1/W2의 verdict, artifact, provenance, structured event 기반 |
+| 관리 K1~K4 | W4의 canonical Cell/Node/NodeBit, source binding, resource attribution 기반 |
+| 정책 K5 | W4 원격 action의 principal/ownership authorize와 정책 단일 원본 |
 | 실행 M3~M5 | W4의 프로세스, storage, disk ELF 선행 조건 |
-| 정책 M6~M7 | W4 원격 action의 principal authorize와 정책 단일 원본 |
-| 지속성 M8~M9 | W5 세션·flow·정책 재개 기반 |
+| 지속성 C1~C2 | W5 세션·flow·정책 재개 기반 |
 
 W1은 현재 커널을 바꾸지 않고 독립적으로 시작할 수 있다. W4를 앞당기기 위해
 커널 안에 임시 HTTP 서버나 자유형 action 우회를 넣지 않는다.

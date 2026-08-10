@@ -1,183 +1,158 @@
-# AIOS Kernel Room Topology 정리
+# AIOS Kernel Room Topology
 
 작성일: 2026-04-18
+재정비: 2026-08-10
+문서 성격: 정본 관리 모델을 설명하는 개념 뷰
+
+> 용어, 성숙도, 구현 순서의 정본은
+> [AIOS Kernel Room 관리 모델](kernel_room_management_model_ko.md)이다.
 
 ## 목적
 
-이 문서는 AIOS에서 논의 중인
-`Kernel Room Topology`라는 상위 개념의 이름과 구조를 정리한다.
-
-목표는 두 가지다.
-
-1. 앞으로 관련 문서를 같은 이름 아래에서 관리할 수 있게 한다
-2. 구현된 것, 부분 구현, 계획 상태를 구분한 채 공통 언어를 만든다
+이 문서는 Kernel Room을 시각적·개념적 토폴로지로 설명한다. 구현 권위는 정본에
+두고, 여기서는 각 단위가 어떤 관계에 놓이는지만 정리한다.
 
 ## 한 줄 정의
 
-`Kernel Room Topology`는
-커널을 중심 핵과 접근 축, 권한 거리, 격리 단위, 실행 주체가 함께 움직이는
-입체적 운영 구조로 보는 이름이다.
+`Kernel Room Topology`는 `Room -> Cell -> Node -> NodeBit` 관리 계층과, 그 상태를
+바꾸려는 요청의 `Axis Gate`, 상태로부터 파생되는 선택적 `Orbit` 관점을 구분하는
+운영 구조다.
 
-## 왜 이 이름을 쓰는가
+## 기본 구조
 
-`Kernel Room`만 쓰면 중심 핵의 느낌은 좋지만,
-실제 운영 단위인 거리, 셀, 노드가 충분히 드러나지 않을 수 있다.
+```text
+                         Axis Gate
+                    transition request
+                             │
+                             ▼
+Kernel Room ── owns identity / relation / generation / validity
+└─ Cell A
+   ├─ cell state
+   ├─ Node A1
+   │  └─ NodeBits
+   └─ Node A2
+      └─ NodeBits
+└─ Cell B
+   └─ Node B1
+      └─ NodeBits
 
-`Orbit`만 쓰면 권한 거리의 이미지는 강하지만,
-중심 핵과 게이트, 셀 경계까지 담기에는 좁다.
-
-그래서 AIOS에서는 아래처럼 나누는 편이 가장 안정적이다.
-
-- 상위 이름:
-  - `Kernel Room Topology`
-- 하위 실행 모델:
-  - `Orbit-Cell Node Model`
+Orbit = 위 상태의 risk / latency / authority / locality를 읽어 만든 파생 뷰
+```
 
 ## 핵심 용어
 
 ### Kernel Room
 
-커널의 중심 핵이다.
-시스템 전체가 공유하는 최소 기반 상태를 묶는다.
+Cell, Node, NodeBit의 namespace와 관계, schema, generation, validity를 관리하는 root다.
+기존 subsystem의 private mutable state를 모두 가져오는 중앙 god object는 아니다.
 
-현재 코드에서 가장 가까운 기반:
-
-- `include/kernel/kernel_room.h`
-- `kernel/kernel_room.c`
-- `kernel/main.c`
-- `kernel/health.c`
-- 일부 `runtime/ai_syscall.c`
-
-판정:
-
-- 부분 구현
-
-### Axis Gate
-
-아무 경로로나 커널을 건드리지 않고,
-기능별 게이트를 통해서만 접근하는 모델이다.
-
-예:
-
-- memory gate
-- device gate
-- scheduler gate
-- policy gate
-- telemetry gate
-
-현재 코드에서 가장 가까운 기반:
-
-- `include/kernel/kernel_room.h`
-- `kernel/kernel_room.c`
-- `runtime/ai_syscall.c`
-- `kernel/health.c`
-
-판정:
-
-- 부분 구현
-
-### Orbit
-
-권한, 지연 민감도, 위험도, 응답성을 함께 나타내는 거리 개념이다.
-
-현재 코드에서 가장 가까운 기반:
-
-- `sched/ai_sched.c`의 큐/우선순위
-- `kernel/health.c`의 stability 단계
-
-판정:
-
-- 개념 일부만 존재
-
-즉, 명시적 Orbit runtime은 아직 없다.
+현재 코드의 `kernel_room_snapshot_read()`는 health, Memory Fabric, driver, SLM,
+ring, user-mode, NodeBit의 aggregate count를 모으는 read-only substrate다. 이 snapshot은
+`CURRENT`지만 관리 계층 전체는 아직 `PARTIAL`이다.
 
 ### Cell
 
-자원 분배와 격리의 최소 관리 단위다.
-메모리 도메인, 로컬 budget, ring/queue 바인딩, risk/health 범위를 함께 다루는 단위로 본다.
+상태와 자원 책임을 묶는 최소 관리 범위다. lifecycle, health, budget/usage source,
+pressure source, risk, generation과 bound Node 집합을 가진다.
 
-현재 코드에서 가장 가까운 기반:
+Memory Fabric domain은 Cell source 후보다. 그러나 domain 하나를 자동으로 Cell이라
+부르지 않으며, process/ring/service도 명시적인 binding을 거쳐야 한다.
 
-- `mm/memory_fabric.c`의 domain/window
-
-판정:
-
-- 직접 구현 없음, 기반만 존재
+현재 상태: `PLANNED`. 기존 subsystem seam은 `SCAFFOLD`다.
 
 ### Node
 
-실제로 동작하는 실행 주체다.
-AI agent, planner, broker, worker, device service 같은 단위를 여기로 본다.
+Cell 안에서 주소를 가지는 실행 또는 자원 단위다. agent, planner, worker, device
+service, pipeline owner가 후보지만, managed Node가 되려면 typed namespace와 하나의
+active Cell binding을 가져야 한다.
 
-현재 코드에서 가장 가까운 기반:
+현재 agent tree, runtime NodeBit node, SLM NodeBit node, pipeline owner, process PID는
+서로 다른 namespace다. 각 subsystem 표면은 `CURRENT`지만 통합 management Node와
+Node-to-Cell binding은 `PLANNED`다.
 
-- `runtime/slm_orchestrator.c`의 plan / action / agent tree
+### NodeBit
 
-판정:
+Node에 속한 가장 작은 typed 관리 상태다. state, capability, eligibility, risk,
+validity class를 구분하며 각 bit의 source와 generation을 알아야 한다.
 
-- 부분 구현
+runtime NodeBit과 SLM NodeBit은 현재 독립된 `CURRENT` subsystem이다. 두 체계를 같은
+ID 공간이나 단일 정책 원본으로 보지 않으며, management NodeBit adapter는 `PLANNED`다.
 
-## 현재 AIOS에 실제로 적용된 수준
+### Axis Gate
 
-정확히 말하면, 지금 AIOS에는
-`Kernel Room Topology`가 "정식 런타임 구조"로 완성돼 있지는 않다.
+Cell/Node 상태를 변경하려는 요청이 통과하는 전이·보안 경계다. 현재 9개 static
+descriptor가 syscall range와 risk를 분류하는 메타데이터로 존재하며 이 좁은 범위는
+`CURRENT`다.
 
-있는 것은 아래와 같은 기반들이다.
+dispatcher의 per-call enforcement와 principal authorize는 `PLANNED`다. Axis Gate는
+관리 모델을 소비하는 후속 단계이지 Cell/Node identity를 정의하는 선행 단계가 아니다.
 
-- 중심 상태를 모으는 부팅/health 흐름
-- `kernel_room_snapshot_read()` 기반의 read-only Kernel Room registry
-- syscall과 health를 통한 bounded gate
-- `Axis Gate descriptor` 정적 테이블
-- memory domain/window 기반의 Cell 재료
-- SLM plan/action 기반의 Node 재료
+### Orbit
 
-즉, 현재 상태는 다음 표현이 가장 맞다.
+Node와 Cell의 authority, risk, latency, locality를 거리처럼 표현하는 파생 관점이다.
+명시적 runtime과 verifier가 없으므로 `RESEARCH`다. 기본 registry의 필수 저장 필드나
+scheduler의 동의어로 사용하지 않는다.
+
+## 기존 커널 기반의 위치
+
+현재까지 성숙해진 boot, paging, trapframe, ring3 bootstrap process, hardening, driver
+probe와 testkit은 Kernel Room의 경쟁 목표가 아니라 substrate다. 이 기반은 향후
+Cell/Node state source와 안전한 userspace consumer를 제공한다.
+
+하지만 아래 등식은 성립하지 않는다.
 
 ```text
-Topology model: adopted as design language
-Runtime model: not fully applied yet
+process switching maturity == Kernel Room management maturity
+Axis Gate descriptor count == Cell/Node hierarchy proof
+aggregate node count         == Node-to-Cell binding proof
 ```
 
-## 디렉토리 운영 기준
+## 현재 구현 대응표
 
-이 구조 관련 문서는 앞으로 `docs/kernel-room/` 아래에서 관리한다.
+| 관리 개념 | 현재 코드의 가까운 기반 | 관리 모델 판정 |
+|---|---|---|
+| Room aggregate view | `kernel/core/kernel_room.c` | `CURRENT` bounded snapshot |
+| Cell state source | `kernel/mm/memory_fabric.c`, pressure/resource snapshots | `SCAFFOLD` adapter |
+| execution Node source | SLM agent tree, process/pipeline ownership | `SCAFFOLD` adapter |
+| NodeBit source | runtime NodeBit, SLM NodeBit catalog | `SCAFFOLD` adapter |
+| Axis classification | Kernel Room gate descriptor table | `CURRENT` metadata |
+| Cell registry | 없음 | `PLANNED` |
+| Node-to-Cell binding | 없음 | `PLANNED` |
+| normalized NodeBit view | 없음 | `PLANNED` |
+| Orbit runtime | 없음 | `RESEARCH` |
 
-문서 분류 기준:
+## 첫 적용 형태
 
-- 상위 개념 정리:
-  - `kernel_room_topology_ko.md`
-- 개발 규칙 정리:
-  - `development_guide_ko.md`
-- 구현 가능성/현실 체크:
-  - `orbit_cell_node_feasibility_ko.md`
-- 이후 세부 설계:
-  - gate
-  - cell metadata
-  - node binding
-  - room snapshot/UAPI
+첫 적용은 `management_only read-only hierarchy registry v0`다.
 
-## 구현 우선순위
+Cell-only table은 완료가 아니다. 최소 Cell 1개, 그 Cell에 exact-one binding된 managed
+Node 1개, 그 Node를 부모로 가리키는 typed NodeBit 1~2개가 동일한 hierarchy
+snapshot에 있어야 한다.
 
-현재 코드 기준 가장 먼저 붙이기 좋은 순서는 아래다.
+1. bounded Cell record와 typed `cell_id`
+2. bounded Node record와 explicit `cell_id` binding
+3. typed NodeBit view와 source/validity/generation
+4. read-only Room snapshot
+5. duplicate, orphan, stale, unknown, overflow negative proof
 
-1. `Kernel Room registry`
-2. `Axis Gate descriptor`
-3. `Cell metadata`
-4. `Node-to-Cell binding`
+이 단계에서는 scheduler, allocator, quota, capability, policy, device를 변경하지 않는다.
+Axis Gate enforcement도 붙이지 않는다.
 
-반대로 아래는 아직 이르다.
+## 명칭 사용 기준
 
-- full Orbit privilege runtime
-- distributed node mesh
-- self-modifying kernel narrative
+- 상위 관리 구조: `Kernel Room Management Model`
+- 구조를 설명하는 뷰: `Kernel Room Topology`
+- 계층: `Room -> Cell -> Node -> NodeBit`
+- 후속 전이 경계: `Axis Gate`
+- 선택적 연구 관점: `Orbit`
+
+기존 `Orbit-Cell Node Model`이라는 표현은 2026-04 탐색 과정의 이름으로 보존할 수
+있지만, 현재 정본의 실행 모델명으로 사용하지 않는다. Orbit가 Cell보다 선행하는
+것처럼 읽히고 NodeBit 관리 단위가 빠지기 때문이다.
 
 ## 결론
 
-AIOS에서 이 구조를 부를 이름은
-`Kernel Room Topology`가 가장 안정적이다.
-
-그리고 실제 분배/격리/실행 모델은
-그 아래의 `Orbit-Cell Node Model`로 구분해서 다루는 편이 좋다.
-
-이렇게 나누면 문서도 확장하기 쉽고,
-현재 구현 상태를 과장하지 않으면서 다음 단계를 연결하기도 쉬워진다.
+Kernel Room의 중심은 gate 수나 snapshot field 수가 아니다. Cell 상태를 기준으로
+Node를 결속하고, Node를 NodeBit으로 세분화해 유효한 관리 뷰를 제공하는 것이 중심이다.
+현재 커널 substrate는 보존하되 다음 Kernel Room 작업은 이 hierarchy의 read-only
+management proof부터 시작한다.

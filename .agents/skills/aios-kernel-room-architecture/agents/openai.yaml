@@ -1,0 +1,4 @@
+interface:
+  display_name: "AIOS Kernel Room Architecture"
+  short_description: "Align Kernel Room Cell Node and NodeBit management work"
+  default_prompt: "Use $aios-kernel-room-architecture to align this AIOS change with the Room to Cell to Node to NodeBit management model."
