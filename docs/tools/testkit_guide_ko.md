@@ -2,7 +2,7 @@
 
 작성일: 2026-04-10
 
-최종 갱신: 2026-08-10 (ring3 entry AC + CPU profile 검증 계약)
+최종 갱신: 2026-08-11 (K1 Kernel Room hierarchy v0 검증 계약)
 
 ## 목적
 
@@ -32,7 +32,7 @@
 - `tools/testkit/lib/boot_perf.py`
   - host-local perf baseline과 threshold 기반 비교
 - `tools/testkit/lib/boot_log.py`
-  - serial log를 checkpoint / health / inventory / selftest / CPU security 요약 JSON으로 파싱
+  - serial log를 checkpoint / health / inventory / selftest / CPU security / K1 hierarchy 요약 JSON으로 파싱
 - `tools/testkit/lib/boot_verdict.py`
   - 전체 serial log의 fatal, health, terminal checkpoint 순서·중복을 fail-closed로 판정
 - `tools/testkit/lib/baseline_guard.py`
@@ -129,8 +129,17 @@ python .\tools\testkit\aios-testkit.py shell --strict --skip-build
 python .\tools\testkit\aios-testkit.py shell --strict --cpu-profile max-smap
 ```
 
-현재 레인은 `state resource`와 `state pressure`를 포함한 16개 교환을 수행한다.
-`state list`도 `resource` 토픽을 지원 목록에 포함해야 한다.
+현재 레인은 `state room`, `state resource`, `state pressure`를 포함한 17개 교환을 수행한다.
+`state list`는 `health,room,mem,...` 순서로 `room` 토픽을 지원 목록에 포함해야 한다.
+`state room`은 schema 1/1024B, ready/generation 1, capacity Cell 2·Node 4·NodeBit 8,
+현재 count 1/1/2, bound count 1/2, Cell/Node/NodeBit ID와 exact parent,
+source/generation validity, zero negative counters, `observation_only=1
+management_only=1`을 하나의 canonical full row로 검사한다.
+
+```text
+[STATE] room schema=1 struct_size=1024 ready=1 generation=1 cells=1 cell_capacity=2 nodes=1 node_capacity=4 bound_nodes=1 nodebits=2 nodebit_capacity=8 bound_nodebits=2 cell_id=1 node_id=101 node_parent=1 nodebit_ids=1001,1002 nodebit_parents=101,101 source_valid=1 generation_valid=1 duplicate=0 orphan=0 unknown=0 stale=0 overflow=0 observation_only=1 management_only=1
+```
+
 resource 응답은 schema 1, `observation_only=1`, aggregate 5행, owner row 0/
 unattributed row 5, source별 used/limit와 validity 수를 같은 `[STATE] resource ...`
 레코드에서 확인한다. pressure 응답은
@@ -266,6 +275,12 @@ evidence_only=1 switch_events=0 resume_ready=0`까지 정본과 같아야 한다
 record에 `apply_enabled=1`이나 `extra=1`을 덧붙이거나 같은 exact record를 두 번 제시한
 로그도 정상 PASS가 아니다. 선행 공백을 제거해 증거로 승격하지도 않는다.
 
+K1 `[ROOM] management hierarchy selftest PASS ...`도 세 profile 공통 exact record다.
+schema 1/1024B, count 1/1/2, bound count 1/2, source/generation validity,
+`duplicate_rejected=1`, `orphan_rejected=1`, `unknown_rejected=1`,
+`stale_rejected=1`, `overflow_rejected=1`, `tail_rejected=1`, observation/management-only를
+고정하며 entry-AC 뒤, 기존 aggregate `[ROOM] snapshot` 앞에 정확히 한 번 있어야 한다.
+
 ## 부팅 요약 export
 
 `kernel` lane과 `all` lane은 `--export-boot-summary`를 지원한다.
@@ -294,6 +309,9 @@ record에 `apply_enabled=1`이나 `extra=1`을 덧붙이거나 같은 exact reco
 - `process_event_journal`의 exact record/fullmatch 수, six-record ordered vector,
   event/capture sequence 분리, owner/CR3/`rsp0`/IF/frame reference, current/stale,
   dropped/overflow/evidence-only/switch/resume 상태
+- `kernel_room_management`의 exact record/fullmatch 수, schema/size/generation,
+  Cell/Node/NodeBit count·binding, source/generation validity, negative rejection,
+  observation/management-only와 checkpoint order
 - `kernel_room` snapshot / gate 요약
 - `resource`의 schema, kind/unit/entry 수, source/validity 수와 unattributed/observation-only 계약
 - `pressure`의 schema, active/max level, balanced/hotspot/overlap/gate-mask
@@ -436,9 +454,11 @@ repo 안의 baseline fixture와 비교하는 lane이다.
   marker, structured `process_event_journal`, shell `state user event_*` mirror
 - ring3 entry AC hardening의 `default`/`max-smap` exact marker와 shell
   `state sec entry_*` same-record mirror
+- K1 hierarchy v0 exact marker, structured `kernel_room_management`, shell
+  `state room` canonical full-row mirror와 `entry-AC < management < aggregate ROOM` 순서
 - boot summary `security`의 feature/entry record count, fullmatch,
   ASCII uint32 anchored full-row·안정성 의미 검사를 통과한 ROOM exact-one,
-  `feature < entry-AC < ROOM` 순서, requested CPU profile,
+  `feature < entry-AC < legacy ROOM` 순서, requested CPU profile,
   `profile_match`, `ready` 결속
 - `state autonomy` schema 1의 read-only mode/support/counter/last-decision 계약
 - AI Pressure Tracker required marker, structured `pressure` summary,

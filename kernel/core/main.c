@@ -13,6 +13,7 @@
 #include <kernel/stack_guard.h>
 #include <kernel/user_exec.h>
 #include <kernel/kernel_room.h>
+#include <kernel/kernel_room_management.h>
 #include <kernel/selftest.h>
 #include <kernel/time.h>
 #include <kernel/user_mode.h>
@@ -151,6 +152,18 @@ void kernel_main(uint64_t multiboot_magic, uint64_t multiboot_info) {
         }
     } else {
         serial_write("[USER] ring3 exec SKIP: process scaffold not ready\n");
+    }
+
+    /*
+     * Seed the bounded management-only Room -> Cell -> Node -> NodeBit v0
+     * after the ring3/entry evidence and immediately before the legacy
+     * aggregate Room snapshot. This does not add an apply or authorize edge.
+     */
+    user_status = kernel_room_management_init();
+    if (user_status != AIOS_OK) {
+        kernel_health_mark(KERNEL_SUBSYSTEM_SELFTEST,
+            KERNEL_HEALTH_FAILED, user_status);
+        kernel_panic("Kernel Room management hierarchy selftest failed");
     }
 
     kernel_room_dump();

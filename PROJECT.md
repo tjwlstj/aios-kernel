@@ -8,13 +8,14 @@ AI 에이전트(Claude Code)용 작업 규칙은 [CLAUDE.md](CLAUDE.md)를 본�
 
 제품 구조의 정본은 **Kernel Room → Cell → Node → NodeBit** 관리축이다. 이 계층은
 저장소 디렉터리 구조와 다른 논리 구조다. aggregate substrate가 있어 전체 Kernel Room
-topology 성숙도는 `PARTIAL`이지만 Room-owned hierarchy runtime은 `PLANNED`다. 현 코드는
-Room aggregate snapshot과 각자 `CURRENT`인 Memory Fabric domain, SLM agent
+topology 성숙도는 `PARTIAL`이다. `CURRENT` K1은 별도 1024B management-only snapshot에 Cell 1,
+exact-bound Node 1, parent-bound typed NodeBit 2를 함께 둔 bounded bootstrap hierarchy를
+구현했다. 현 코드는 Room aggregate snapshot과 각자 `CURRENT`인 Memory Fabric domain, SLM agent
 profile/policy catalog, runtime capability NodeBit, pipeline ownership을 제공하며 Room
 adapter seam은 `SCAFFOLD`다. 새 작업은 이들을
 숫자 ID가 같다는 이유로 결합하지 말고 namespace + explicit binding + generation으로 연결한다.
-첫 vertical slice는 Cell 1 + bound Node 1 + parent-bound NodeBit 1~2를 한
-`management_only` hierarchy proof로 검증해야 하며 Cell-only 완료는 허용하지 않는다.
+K1 bootstrap fixture는 Cell ID 1, Node ID 101, NodeBit ID 1001/1002를 사용하며
+external source binding/lifecycle은 K2+다.
 용어와 성숙도 정본은
 [Kernel Room 관리 모델](docs/kernel-room/kernel_room_management_model_ko.md)이다.
 
@@ -96,7 +97,7 @@ Windows: `pwsh -File .\tools\testkit\kernel\build-windows.ps1 -Target test`
 
 - **AI 시스콜 번호 범위는 ABI-stable** — 재번호/중첩 금지. `kernel/`↔`os/`의 유일한 접점.
 - **텐서 64바이트 정렬** — AVX-512 불변식 (`kernel/mm/tensor_mm.c`).
-- **Kernel Room 정본 계층은 Room→Cell→Node→NodeBit** — Cell/Node/NodeBit parent-child 관계는 명시적 binding과 generation이 있어야 한다. 현재 persistent registry는 없으므로 구현된 것으로 서술하지 않는다.
+- **Kernel Room 정본 계층은 Room→Cell→Node→NodeBit** — K1 bounded bootstrap registry의 Cell/Node/NodeBit parent-child 관계는 명시적 binding과 generation을 가진다. 이 fixture를 external subsystem binding, live lifecycle 또는 전체 topology로 확장 해석하지 않는다.
 - **Kernel Room 게이트 수 = enum 크기** (`kernel/core/kernel_room.c`). 현재 9개 gate descriptor는 syscall-range **분류 메타데이터**이며 dispatcher-level Axis Gate enforcement가 아니다.
 - **헬스 스냅샷 ABI 안정** — SLM 오케스트레이터가 소비.
 - **Node 네임스페이스 분리** — Memory Fabric `domain_id`, SLM `agent_tree.node_id`, SLM `slm_nodebit_id`, runtime NodeBit `node_id`, pipeline `owner_node`, task/PID/ring ID는 독립이다. 명시적 adapter 없이 교차 비교하지 않는다.
@@ -119,7 +120,7 @@ aios-kernel/
 ├── kernel/               # ① 베어메탈 커널
 │   ├── Makefile  README.md
 │   ├── boot/             # Multiboot2 엔트리, GDT/페이징/long mode
-│   ├── core/             # main, health, acpi, time, shell, kernel_room, user_*, linker.ld
+│   ├── core/             # main, health, shell, kernel_room aggregate/management, user_*, linker.ld
 │   ├── interrupt/  mm/  sched/  hal/  runtime/  drivers/  lib/
 │   └── include/          # 커널 공개 헤더
 │

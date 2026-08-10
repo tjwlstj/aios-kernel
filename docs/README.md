@@ -8,9 +8,10 @@
 - 최신 구현 기준은 [CLAUDE.md](../CLAUDE.md),
   [Kernel Room 문서 허브](kernel-room/README.md),
   [minimal_io_and_maturity_workflow_ko.md](meta/minimal_io_and_maturity_workflow_ko.md)를 우선한다.
-- 제품 관리 구조의 정본은 **Room→Cell→Node→NodeBit**다. 현재 Kernel Room은
-  aggregate snapshot과 syscall-range 분류만 `CURRENT`여서 전체 topology는 `PARTIAL`이다.
-  persistent hierarchy runtime과 binding/lifecycle/reconciliation은 `PLANNED`다.
+- 제품 관리 구조의 정본은 **Room→Cell→Node→NodeBit**다. aggregate snapshot과
+  syscall-range 분류에 더해, bounded bootstrap Cell/Node/NodeBit registry와 그 내부
+  parent binding인 K1 v0가 `CURRENT`다. 전체 topology는 계속 `PARTIAL`이며 external
+  source binding, live lifecycle/reconciliation, 정책·권한 적용은 `PLANNED`다.
 - M1 uaccess/SMAP, M2 static ELF64 loader 이전 상태를 전제로 한 문서는
   [OLD 문서 체크리스트](meta/old_docs_check_2026_07_03_ko.md)에 따로 표시했다.
 - `OLD` 문서는 역사적 맥락용이며, 새 구현 판단에는 최신 기준 문서를 먼저 사용한다.

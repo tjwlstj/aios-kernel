@@ -2,6 +2,7 @@
 
 작성일: 2026-04-18
 재정비: 2026-08-10
+최종 갱신: 2026-08-11 (K1 hierarchy registry v0 `CURRENT` 승격)
 
 > 이 가이드는 [AIOS Kernel Room 관리 모델](kernel_room_management_model_ko.md)을
 > 따른다. 정체성, 용어, 성숙도 또는 구현 순서가 충돌하면 정본을 우선한다.
@@ -29,6 +30,13 @@ Kernel Room 작업이 커널 작동 증명이나 enforcement 자체를 목표로
   - `[ROOM] snapshot`, `[ROOM] gates`
 - `kernel/include/kernel/kernel_room.h`
   - 현재 aggregate snapshot과 gate public contract
+- `kernel/core/kernel_room_management.c`
+  - K1 immutable-after-init bounded hierarchy registry와 negative selftest
+  - exact `[ROOM] management hierarchy selftest PASS ...` producer
+- `kernel/include/kernel/kernel_room_management.h`
+  - schema 1의 Cell/Node/NodeBit typed record와 1024B snapshot contract
+- `kernel/core/shell.c`
+  - `state room` exact read-only mirror
 - `kernel/runtime/ai_syscall.c`
   - `SYS_INFO_ROOM` read-only surface
 
@@ -40,12 +48,19 @@ Kernel Room 작업이 커널 작동 증명이나 enforcement 자체를 목표로
 - SLM NodeBit catalog와 generation
 - process/pipeline ownership, pressure/resource snapshot
 
+### K1 `CURRENT` (2026-08-11)
+
+- capacity 2/4/8의 Cell/Node/NodeBit registry
+- bootstrap Cell 1 + bound Node 1 + parent-bound typed NodeBit 2
+- schema/size/source/generation/parent validity와 immutable snapshot
+- duplicate/orphan/unknown/stale/overflow와 non-zero unused tail rejection
+- default full/minimal/storage-only와 max-smap minimal strict kernel, default/max-smap
+  strict shell 17/17 검증 및 structured summary export
+
 ### 아직 `PLANNED`
 
-- Room-to-Cell registry
-- Cell lifecycle/state schema
-- Node-to-Cell binding
-- typed management NodeBit view
+- external source Node-to-Cell binding과 Cell lifecycle/reconciliation
+- runtime/SLM NodeBit projection
 - per-Cell/per-Node pressure와 resource ownership
 - principal/authorize와 Axis Gate enforcement
 
@@ -116,18 +131,29 @@ enforcement를 구현하지 않는다.
 
 ## 파일 책임
 
-### 현재 `kernel/include/kernel/kernel_room.h`
+### `kernel/include/kernel/kernel_room.h`
 
 현재 aggregate snapshot과 gate descriptor ABI를 보존한다. management registry v0를
 같은 ABI에 무심코 끼워 넣지 않는다. 새 public record가 필요하면 별도 versioned contract로
 정의하고 기존 snapshot 호환성을 유지한다.
 
-### 현재 `kernel/core/kernel_room.c`
+### `kernel/core/kernel_room.c`
 
 현재 책임은 aggregate snapshot glue, static gate metadata, boot/dump 관측이다.
 이 파일에 다른 subsystem의 private state machine이나 lock을 옮기지 않는다.
 
-management registry 구현 위치는 첫 slice 설계 때 결정하되, 아래를 분리한다.
+### `kernel/include/kernel/kernel_room_management.h`
+
+K1 public typed record와 1024B snapshot을 소유한다. Cell/Node/NodeBit의 namespace,
+append-only enum, record size static assert, capacity 2/4/8을 바꿀 때는 schema와 모든
+consumer를 함께 검토한다.
+
+### `kernel/core/kernel_room_management.c`
+
+K1 bootstrap identity/relation/generation과 immutable-after-init snapshot을 소유한다.
+여기에 external subsystem의 private state나 Axis Gate authorize를 넣지 않는다.
+
+아래 책임은 계속 분리한다.
 
 - registry가 소유하는 identity/relation/generation
 - subsystem adapter가 제공하는 copied read-only state
@@ -141,19 +167,19 @@ Memory Fabric, SLM, scheduler, resource, pressure, process, pipeline은 자기 m
 
 ## 첫 수직 조각
 
-첫 조각은 `management_only read-only hierarchy registry v0`다.
+첫 조각은 `management_only read-only hierarchy registry v0`로 구현됐다.
 
-Cell table만 있는 상태는 이 조각의 완료가 아니다. 동일한 hierarchy snapshot에서 최소
+Cell table만 있는 상태는 이 조각의 완료가 아니다. 동일한 hierarchy snapshot에서
 `Cell 1개`, 그 Cell에 exact-one binding된 `managed Node 1개`, 그 Node를 부모로
-가리키는 typed `NodeBit 1~2개`를 함께 증명해야 한다. 이후 adapter 단계는 이 최소
+가리키는 typed `NodeBit 2개`를 함께 증명한다. 이후 adapter 단계는 이 최소
 계층을 새로 만드는 단계가 아니라 실제 source coverage를 확대하는 단계다.
 
 ### 목표
 
 - bounded Room/Cell/Node/NodeBit record
 - typed namespace와 explicit source binding
-- boot-seeded 최소 Cell 1개, exact-one binding을 가진 managed Node 1개,
-  parent-bound typed NodeBit 1~2개
+- boot-seeded Cell ID 1, exact-one binding을 가진 managed Node ID 101,
+  parent-bound typed NodeBit ID 1001/1002
 - schema/size/generation/validity
 - read-only hierarchy snapshot
 - `observation_only=1`, `management_only=1`
@@ -174,6 +200,7 @@ Cell table만 있는 상태는 이 조각의 완료가 아니다. 동일한 hier
 - NodeBit 전부 valid managed Node 참조
 - source namespace collision 없음
 - capacity overflow와 stale generation 거부
+- 사용하지 않는 capacity tail의 non-zero record 거부
 - 기존 aggregate Room marker와 ABI 유지
 
 ## 관측과 검증
@@ -181,10 +208,10 @@ Cell table만 있는 상태는 이 조각의 완료가 아니다. 동일한 hier
 새 관리 구조는 boot-observable이어야 하지만 marker를 만드는 것 자체가 목표는 아니다.
 marker는 hierarchy invariant를 증명해야 한다.
 
-예상 record:
+현재 exact record:
 
 ```text
-[ROOM] management hierarchy selftest PASS schema=1 cells=... nodes=... bound=... orphan=0 duplicate=0 stale=0 observation_only=1 management_only=1
+[ROOM] management hierarchy selftest PASS schema=1 struct_size=1024 generation=1 cells=1 nodes=1 bound_nodes=1 nodebits=2 bound_nodebits=2 source_valid=1 generation_valid=1 duplicate_rejected=1 orphan_rejected=1 unknown_rejected=1 stale_rejected=1 overflow_rejected=1 tail_rejected=1 observation_only=1 management_only=1
 ```
 
 검증기는 최소한 아래 반례를 거부한다.
@@ -196,6 +223,7 @@ marker는 hierarchy invariant를 증명해야 한다.
 - namespace를 무시한 implicit binding
 - stale generation
 - capacity overflow 또는 dropped record
+- non-zero unused capacity tail
 - `observation_only=0`이나 `management_only=0`
 
 관측면 권장 순서:
@@ -212,7 +240,7 @@ marker는 hierarchy invariant를 증명해야 한다.
 ## 후속 구현 순서
 
 1. 정본과 typed namespace 대응표
-2. management-only hierarchy registry v0
+2. management-only hierarchy registry v0 — `CURRENT` (2026-08-11)
 3. Cell state adapter와 validity/source flags
 4. Node-to-Cell binding source 확대
 5. runtime/SLM NodeBit의 typed management view와 generation 연결

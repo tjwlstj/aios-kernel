@@ -1,6 +1,6 @@
 # Kernel Room 문서 모음
 
-최종 갱신: 2026-08-10
+최종 갱신: 2026-08-11
 
 ## 정본
 
@@ -28,14 +28,18 @@ Room
 - aggregate read-only `kernel_room_snapshot_read()`
 - `[ROOM] snapshot`과 `[ROOM] gates` 부트 관측
 - syscall range를 분류하는 9개 Axis Gate descriptor
+- K1 bounded `kernel_room_management_snapshot_t` (2026-08-11 strict QEMU/shell 검증): 1024B 안에 bootstrap Cell 1,
+  exact-bound Node 1, parent-bound typed NodeBit 2를 보존하는 read-only 계층
+- `[ROOM] management hierarchy selftest PASS`, structured
+  `kernel_room_management`, `state room` full-row 검증 계약
 - Cell/Node 입력 후보가 되는 Memory Fabric, SLM agent tree, 두 NodeBit subsystem의
   각자 독립된 현재 표면
 
 ### `PARTIAL`
 
 - Kernel Room 전체 토폴로지
-  - aggregate substrate는 존재
-  - Cell registry와 hierarchy는 없음
+  - aggregate substrate와 K1 bootstrap hierarchy v0는 존재
+  - external source adapter, live lifecycle/reconciliation, attribution은 없음
 
 ### `SCAFFOLD`
 
@@ -45,9 +49,8 @@ Room
 
 ### `PLANNED`
 
-- Room-to-Cell registry와 Cell lifecycle/state
-- Node-to-Cell binding
-- typed management NodeBit view와 generation/validity
+- K2 external source binding과 Cell lifecycle/reconciliation 확대
+- K3 runtime/SLM NodeBit namespace projection
 - per-Cell/per-Node pressure와 resource attribution
 - principal과 Axis Gate authorize/enforcement
 
@@ -68,24 +71,22 @@ Room
 - [orbit_cell_node_feasibility_ko.md](orbit_cell_node_feasibility_ko.md)
   - `REVIEW`: 2026-04 탐색 기록. 현재 구현 지침으로 사용하지 않는다.
 
-## 다음 조각
+## K1 구현 범위와 다음 조각
 
-다음 Kernel Room 조각은 enforcement가 아니다.
+K1 `management_only read-only hierarchy registry v0`는 다음 고정 계약을 구현한다.
 
-`management_only read-only hierarchy registry v0`로 시작한다.
+v0는 Cell-only table이 아니다. Cell ID 1, 그 Cell에 exact-one binding된 Node ID 101,
+그 Node를 부모로 가리키는 typed NodeBit ID 1001/1002를 한 snapshot에서 함께 증명한다.
 
-v0는 Cell-only table이 아니다. 최소 Cell 1개, 그 Cell에 exact-one binding된 managed
-Node 1개, 그 Node를 부모로 가리키는 typed NodeBit 1~2개를 한 snapshot에서 함께
-증명해야 한다.
-
-- bounded Room/Cell/Node/NodeBit record
+- 1024B snapshot, capacity Cell 2 / Node 4 / NodeBit 8
 - typed namespace와 explicit binding
-- schema/size/generation/validity
+- schema 1, generation/source validity
 - `observation_only=1`, `management_only=1`
-- duplicate/orphan/stale/overflow fail-closed selftest
+- duplicate/orphan/unknown/stale/overflow와 non-zero unused tail fail-closed selftest
 
-이 조각이 검증되기 전에는 aggregate snapshot의 `domains`, `nodes`, `nodebit_active`
-count를 Cell/Node hierarchy가 존재한다는 증거로 사용하지 않는다.
+다음 K2는 이 bootstrap fixture를 실제 subsystem source에 명시적으로 bind하고
+generation/reconciliation coverage를 확대한다. aggregate snapshot의 `domains`, `nodes`,
+`nodebit_active` count는 여전히 canonical hierarchy나 external binding 증거가 아니다.
 
 ## 금지되는 방향
 

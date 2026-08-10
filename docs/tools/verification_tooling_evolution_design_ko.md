@@ -1,7 +1,7 @@
 # AIOS 검증 도구 진화 설계
 
 작성일: 2026-07-15  
-최종 갱신: 2026-08-03 (process event journal v1과 fail-closed 판정 계약)
+최종 갱신: 2026-08-11 (K1 Kernel Room hierarchy v0 exact/fail-closed 계약)
 기준 시작 체크포인트: `463a8b9`
 
 ## 1. 문서 역할
@@ -92,6 +92,10 @@ CI exit status + build artifacts
   owner/IF/frame-reference/outcome vector. exact `[PROC] process event journal PASS ...`
   계약은 `evidence_only=1 switch_events=0 resume_ready=0`이며 lifecycle
   `0→1→0→2→0`은 순차 bootstrap 증거이지 CPU switch가 아니다.
+- K1 Room→Cell→Node→NodeBit hierarchy v0: schema 1/1024B snapshot, capacity
+  2/4/8, bootstrap count 1/1/2, exact parent/source/generation, zero tail과
+  duplicate/orphan/unknown/stale/overflow rejection. 전체 조각은
+  `observation_only=1 management_only=1`이며 apply/authorize edge가 없다.
 - health registry, Kernel Room snapshot, panic/exception serial output
 - C structure/enum static asserts, linker layout assert, stack protector
 
@@ -114,9 +118,12 @@ CI exit status + build artifacts
   canonical full-row 계약. `default`는 fallback 2/6과 `gate_skips=8`,
   `max-smap`은 CLAC 2/6과 `gate_skips=0`을 요구하고 양쪽 모두
   `common_post_ac0=2 int80_post_ac0=6 gate_mismatch=0`이어야 함
+- K1 exact `[ROOM] management hierarchy selftest PASS ... tail_rejected=1`과
+  structured `kernel_room_management`, `state room` canonical full row. missing,
+  duplicate, truncation, extension, field drift와 family sibling을 fail-closed로 거부
 - structured boot-summary `security`의 feature/entry record count, fullmatch,
   ASCII uint32 anchored full-row·안정성 의미 검사를 통과한 ROOM exact-one,
-  `feature < entry-AC < ROOM` 순서, requested profile,
+  `feature < entry-AC < legacy ROOM` 순서, requested profile,
   `profile_match`, `ready` 결속
 - Linux CI의 기본 CPU all/shell에 더해 `max-smap` minimal kernel smoke와
   `max-smap` shell lane
@@ -173,6 +180,8 @@ CI exit status + build artifacts
   5개 aggregate row다. cross-source snapshot은 single-BSP best-effort다.
   `SYS_INFO_RESOURCE=0x706`과 `state resource`는 CURRENT지만 per-owner attribution,
   공통 denial accounting, quota/apply는 아직 없다.
+- K1 hierarchy는 고정 bootstrap source 하나만 검증한다. external subsystem adapter,
+  live lifecycle/reconciliation, K2 source binding, K3 legacy NodeBit projection은 없다.
 
 ## 6. 정상 부트 판정 계약 v1
 
@@ -224,6 +233,7 @@ CI exit status + build artifacts
 [PROC] process event journal PASS
 [SEC] nx=... smap_supported=... smap=...
 [SEC] ring3 entry AC hardening PASS
+[ROOM] management hierarchy selftest PASS schema=1 struct_size=1024 generation=1 cells=1 nodes=1 bound_nodes=1 nodebits=2 bound_nodebits=2 source_valid=1 generation_valid=1 duplicate_rejected=1 orphan_rejected=1 unknown_rejected=1 stale_rejected=1 overflow_rejected=1 tail_rejected=1 observation_only=1 management_only=1
 [ROOM] snapshot stability=stable
 [HEALTH] stability=stable
 === AIOS Kernel Ready ===
@@ -309,7 +319,7 @@ inventory와 perf가 같은 출처 신뢰 규칙을 공유해야 한다.
 | 구성요소 | 상태 | 역할 |
 |---|---|---|
 | 순수 boot verdict evaluator | `CURRENT` | 전체 로그 fatal, anchored evidence, duplicate key/exact record, health, terminal order/duplicate 판정 |
-| verdict host unit tests | `CURRENT` | panic-after-PASS, token/행 위장, 중복 키, health, resource/pressure/process snapshot/event journal, security order/family, stale artifact, shell, baseline/perf 반례 80개 고정 |
+| verdict host unit tests | `CURRENT` | panic-after-PASS, token/행 위장, 중복 키, health, resource/pressure/process/K1 hierarchy, security order/family, stale artifact, shell, baseline/perf 반례 고정 |
 | shell reboot/clean-exit gate | `CURRENT` | 전체 transcript verdict, reader drain, reboot ack, exit code 0을 PASS 조건으로 강제 |
 | baseline trusted-source guard | `CURRENT` | strict matrix/profile/verdict, profile-aware inventory와 comparable finite perf 검사 |
 | shared marker manifest | `PLANNED` | Python/PowerShell 중복 계약 제거 |
@@ -439,8 +449,8 @@ kernel/build/test-runs/<run-id>/<profile>/
 구현 근거:
 
 - `tools/testkit/lib/boot_verdict.py`, `baseline_guard.py`
-- `tools/testkit/tests/` host unit test 80개
-- PowerShell 직접 verdict host selftest 75개와 CI 선행 gate
+- `tools/testkit/tests/` host unit test 84개
+- PowerShell 직접 verdict host selftest 101개와 CI 선행 gate
 - Resource Ledger exact marker/structured summary와 missing/truncated/
   observation-only/apply-capable 상충 반례
 - pressure marker도 같은 exact-record 규칙으로 강화해 trailing apply 필드를 거부
@@ -453,11 +463,16 @@ kernel/build/test-runs/<run-id>/<profile>/
 - ring3 entry-AC marker의 `default`/`max-smap` profile별 exact 판정,
   saved-AC/post-AC0/CLAC/fallback/skip/mismatch 반례와 shell `state sec entry_*` mirror
 - structured `security.ready/profile_match`, ASCII uint32 anchored full-row·안정성 의미 검사를
-  통과한 ROOM exact-one와 `feature < entry-AC < ROOM` 순서,
+  통과한 legacy ROOM exact-one와 `feature < entry-AC < legacy ROOM` 순서,
   Linux CI `max-smap` minimal/shell gate
+- K1 hierarchy marker의 exact-once/full-row 판정, structured
+  `kernel_room_management`, malformed/extended/duplicate/순서/negative-proof 반례,
+  shell `state room` canonical full-row mirror
+- 2026-08-11 K1 정규 재검증: default full/minimal/storage-only와 max-smap minimal
+  strict kernel summary export, default/max-smap strict shell 17/17 PASS
 - Python boot matrix의 QEMU `full/minimal/storage-only` 통과와 PowerShell 직접
-  verdict host selftest 75개 통과
-- shell 16개 교환(`state resource`, `state pressure`, `state autonomy` 포함)과 `reader_drained=true reboot_ack=true clean_exit=true exit_code=0`,
+  verdict host selftest 101개 통과
+- shell 17개 교환(`state room`, `state resource`, `state pressure`, `state autonomy` 포함)과 `reader_drained=true reboot_ack=true clean_exit=true exit_code=0`,
   `termination.reason=guest-reboot-exit`, 전체 transcript boot verdict PASS
 - strict boot inventory 3프로필 baseline 일치
 

@@ -8,7 +8,7 @@
 
 ## Overview
 
-AIOS(AI-Native Operating System)는 AI 워크로드를 **1급 시민(First-class citizen)**으로 취급하고 관리 모델을 중심에 둔 x86_64 베어메탈 OS 실험입니다. 제품의 정본 관리 모델은 **Kernel Room → Cell → Node → NodeBit**입니다. 현재 베타에는 부팅 가능한 커널 기반, 텐서 지향 메모리 메타데이터, 메모리 패브릭, 헬스/SLM 스냅샷, 각자 `CURRENT`인 서로 독립적인 SLM policy catalog와 runtime capability NodeBit, 관측 전용 AI pressure tracker와 resource ledger, 제한된 AI 시스콜 표면이 있습니다. 이 기존 subsystem을 Room 계층으로 투영하는 adapter는 `SCAFFOLD`이며, Room이 Cell 상태와 그 안의 Node/NodeBit를 실제로 소유·조정하는 hierarchy runtime은 `PLANNED`입니다.
+AIOS(AI-Native Operating System)는 AI 워크로드를 **1급 시민(First-class citizen)**으로 취급하고 관리 모델을 중심에 둔 x86_64 베어메탈 OS 실험입니다. 제품의 정본 관리 모델은 **Kernel Room → Cell → Node → NodeBit**입니다. 현재 베타에는 부팅 가능한 커널 기반, 텐서 지향 메모리 메타데이터, 메모리 패브릭, 헬스/SLM 스냅샷, 각자 `CURRENT`인 서로 독립적인 SLM policy catalog와 runtime capability NodeBit, 관측 전용 AI pressure tracker와 resource ledger, 제한된 AI 시스콜 표면이 있습니다. `CURRENT`인 K1은 1KiB 고정 snapshot에 bootstrap Cell 1개, 그 Cell에 명시적으로 bound된 Node 1개, 그 Node를 부모로 하는 typed NodeBit 2개를 함께 보존하는 management-only hierarchy v0입니다. 기존 subsystem을 이 계층으로 투영하는 external adapter는 계속 `SCAFFOLD`이며, lifecycle/reconciliation과 K2+ source binding은 `PLANNED`입니다.
 
 장기 방향은 embodied AI OS입니다. LLM/SLM 에이전트는 유저스페이스에서 단기 기억과 장기 기억을 분리해 유지하고, 세션을 넘어 연속성을 보존하며, 하드웨어에는 커널이 중재하는 정책 경계를 통해 접근합니다.
 
@@ -25,13 +25,13 @@ Suggested repository description:
 
 > AI-native OS experiment centered on Room → Cell → Node → NodeBit management, built on a bounded ring3 and hardware substrate.
 
-## Current Status (2026-08-10)
+## Current Status (2026-08-11)
 
 - **Current beta:** `v0.2.0-beta.6` (`0.2.0-beta.6 "Genesis"` boot banner).
 - **Boot path:** x86_64 Multiboot2 커널, GDT/IDT/TSS, 페이징, PIT IRQ0 scheduler tick bootstrap, QEMU 스모크 테스트 기반.
 - **Hardening:** stack protector, NX/W^X 2MB identity-map marking, SMEP/UMIP/SMAP 감지/활성화 경로, uaccess STAC/CLAC fence, 검증된 CPL3 `#BP`/`int 0x80` entry AC 제거, #PF CR2 dump, #DF IST1, cppcheck CI.
 - **Memory:** 물리/가상 할당 기반, 텐서 메모리 메타데이터, 수명 프로파일링, 메모리 패브릭 노드, 공유 영역 스캐폴딩.
-- **Kernel Room topology maturity:** aggregate substrate와 ROOM snapshot은 `CURRENT`이므로 전체 topology는 `PARTIAL`이다. 그러나 Room-owned Cell/Node/NodeBit hierarchy runtime, parent-child binding, lifecycle/reconciliation, principal/ownership는 `PLANNED`다. 현재 `kernel_room_snapshot_read()`는 subsystem/health/Memory Fabric/스케줄러/ring/runtime NodeBit aggregate와 `gate_count`만 합성하고, `kernel_room_dump()`가 별도의 9개 syscall-range descriptor를 `[ROOM] gates` 요약으로 관측한다.
+- **Kernel Room topology maturity:** 전체 topology는 계속 `PARTIAL`이다. 기존 `kernel_room_snapshot_read()` aggregate와 9개 syscall-range descriptor에 더해, `CURRENT` K1 `kernel_room_management_snapshot_t`는 schema 1/1024B 고정 snapshot으로 Cell 1/2, Node 1/4, NodeBit 2/8을 보존하며 exact parent, namespace, generation, source validity를 검사한다. 이 registry는 bootstrap fixture이고 `observation_only=1 management_only=1`이다. external subsystem adapter, live lifecycle/reconciliation, resource attribution, principal/ownership는 K2+ `PLANNED`다.
 - **Identity boundary:** Memory Fabric `domain_id`, SLM `agent_tree.node_id`, SLM policy `slm_nodebit_id`, 런타임 capability `node_id`, pipeline `owner_node`, scheduler task/PID/ring ID는 독립 네임스페이스다. 숫자가 같아도 같은 주체가 아니며, 명시적 namespace/binding/generation 없이 결합하지 않는다.
 - **Pressure observation:** schema 1의 `state pressure`가 workload queue, Memory Fabric reader/writer 중첩, 누적 NodeBit 거부율을 0..1024 정수 벡터로 읽는다. 현재는 system→plane 2단계 관측만 `CURRENT`이며 task migration이나 budget apply는 하지 않는다.
 - **Resource observation:** schema 1의 커널 내부 `ai_resource_snapshot_t`가 heap bytes, tensor bytes, active Memory Fabric windows, inference ring registrations, runnable scheduler tasks를 고정 5개 aggregate row로 읽는다. 모든 owner는 아직 `NONE/UNATTRIBUTED`이며 read-only `SYS_INFO_RESOURCE`(0x706) syscall과 `state resource` 셸 토픽은 `CURRENT`, owner attribution과 quota/reserve/apply는 `PLANNED`다.
@@ -45,8 +45,8 @@ Suggested repository description:
 
 AIOS의 우선 방향은 커널 기능을 더 많이 나열하는 것이 아니라, Kernel Room이 살아 있는 AI 구조를 **관리 가능한 계층**으로 다루게 만드는 것입니다.
 
-- **Room:** 전체 Cell inventory, 상태 요약, lifecycle/reconciliation의 정본 소유자. 현재는 aggregate 관측실이며 관리자는 아직 아니다.
-- **Cell:** 격리·수명·자원·건강 상태를 함께 관리하는 bounded 단위. 첫 vertical slice는 `main` Cell 1 + 그 안에 bound된 `main-ai` Node 1 + parent-bound NodeBit 1~2를 하나의 management-only hierarchy proof로 검증한다. Cell-only 성공은 완료가 아니다.
+- **Room:** 전체 Cell inventory, 상태 요약, lifecycle/reconciliation의 정본 소유자. K1은 bounded bootstrap hierarchy만 소유하며 live lifecycle/reconciliation은 아직 없다.
+- **Cell:** 격리·수명·자원·건강 상태를 함께 관리하는 bounded 단위. K1은 Cell ID 1 + 그 안에 bound된 Node ID 101 + parent-bound NodeBit ID 1001/1002를 하나의 management-only hierarchy proof로 고정했다. 이는 Cell-only 성공이 아니라 전체 최소 계층 증거다.
 - **Node:** Cell 안에서 역할을 가진 agent/service/runtime 단위. 기존 여러 `node_id`는 canonical Node가 아니라 입력 스캐폴드이므로 명시적으로 bind한다.
 - **NodeBit:** Node 안의 가장 작은 capability/policy/resource projection. 기존 SLM policy node와 runtime capability node를 곧바로 동일시하지 않고 namespace가 있는 adapter로 연결한다.
 - **Execution substrate:** ring3 process, scheduler, memory, storage, network, HAL은 위 관리 모델이 실제 일을 수행하도록 받치는 기반이다. M3~M5의 완성도는 계속 높이되 방향 선택을 독점하지 않는다.
@@ -56,12 +56,13 @@ AIOS의 우선 방향은 커널 기능을 더 많이 나열하는 것이 아니�
 ## Architecture
 
 ```
-Target management plane (PLANNED)
+Management plane (overall PARTIAL)
 Kernel Room
 └── Cell
     └── Node
         └── NodeBit
-             │ explicit namespace + binding + generation
+             │ K1 bootstrap hierarchy v0 implemented
+             │ external adapters / lifecycle remain K2+ PLANNED
              ▼
 Current substrate / evidence inputs
 memory fabric · health · SLM · runtime NodeBit · pipeline
@@ -97,6 +98,14 @@ resource/pressure observation · scheduler · ring3 · drivers
 - owner 필드는 future attribution을 위해 존재하지만 현재 모든 row는 `NONE/UNATTRIBUTED`
 - exact required boot selftest와 structured `resource` boot summary로 검증
 - syscall, shell topic, reserve/release/throttle, allocator/scheduler policy 변경은 아직 없음
+
+### Kernel Room Management Hierarchy v0
+- `kernel_room_management_snapshot_t`는 schema 1의 bounded 1024B read-only snapshot
+- capacity는 Cell 2 / Node 4 / NodeBit 8, bootstrap seed는 Cell 1 / bound Node 1 / parent-bound typed NodeBit 2
+- canonical ID는 Cell 1, Node 101, NodeBit 1001/1002이며 source kind와 generation을 별도로 기록
+- duplicate/orphan/unknown/stale/overflow와 non-zero unused tail을 내부 selftest에서 fail-closed로 거부
+- exact `[ROOM] management hierarchy selftest PASS ...`와 structured `kernel_room_management`, `state room` full-row 계약으로 검증
+- legacy SLM/runtime NodeBit projection, resource attribution, authorize/apply edge는 없음
 
 ### SLM Snapshot and Two Distinct NodeBit Surfaces
 - `slm_hw_snapshot_t`로 커널 health, 메모리 패브릭, agent tree, device readiness를 한 번에 노출

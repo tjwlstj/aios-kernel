@@ -173,6 +173,7 @@ function Get-SmokeRequiredPatterns {
         '^\[PROC\] trap evidence snapshot PASS schema=1 captures=2 pid_a=1 slot_a=0 seq_a=1 valid_a=1 owner_a=1 frame_a=1 cr3_a=1 rsp0_a=1 pid_b=2 slot_b=1 seq_b=2 valid_b=1 owner_b=1 frame_b=1 cr3_b=1 rsp0_b=1 distinct_storage=1 current_pid=0 stale_owner=0 resume_ready=0$',
         '^\[PROC\] process event journal PASS schema=1 events=6 lifecycle=4 captures=2 seqs=1,2,3,4,5,6 kinds=1,2,3,1,2,3 reasons=1,2,3,1,2,3 from_pids=0,1,1,0,2,2 to_pids=1,1,0,2,2,0 slots=0,0,0,1,1,1 generations=1,1,1,1,1,1 capture_seqs=0,1,1,0,2,2 owner_ok=1,1,1,1,1,1 cr3_ok=1,1,1,1,1,1 rsp0_ok=1,1,1,1,1,1 if0=1,1,1,1,1,1 snapshot_refs=0,1,1,0,1,1 outcomes=1,1,1,1,1,1 capture_seq_separate=1 current_pid=0 stale_owner=0 dropped=0 overflow=0 evidence_only=1 switch_events=0 resume_ready=0$',
         $entryAcPattern,
+        '^\[ROOM\] management hierarchy selftest PASS schema=1 struct_size=1024 generation=1 cells=1 nodes=1 bound_nodes=1 nodebits=2 bound_nodebits=2 source_valid=1 generation_valid=1 duplicate_rejected=1 orphan_rejected=1 unknown_rejected=1 stale_rejected=1 overflow_rejected=1 tail_rejected=1 observation_only=1 management_only=1$',
         '\[SHELL\] Interactive shell started'
     )
 
@@ -283,6 +284,8 @@ function Test-NormalSmokeVerdict {
             $exactRecordName = 'cpu_security'
         } elseif ($pattern.StartsWith('^\[SEC\] ring3 entry AC hardening PASS ')) {
             $exactRecordName = 'ring3_entry_ac_hardening'
+        } elseif ($pattern.StartsWith('^\[ROOM\] management hierarchy selftest PASS ')) {
+            $exactRecordName = 'kernel_room_management'
         }
         if ($null -ne $exactRecordName -and $matches.Count -gt 1) {
             $duplicateEvidenceRecords += [pscustomobject]@{
@@ -317,11 +320,20 @@ function Test-NormalSmokeVerdict {
         'nodebit_active=(?<nodebit_active>0|[1-9][0-9]*) ' +
         'nodebit_risky=(?<nodebit_risky>0|[1-9][0-9]*)$'
     )
+    $kernelRoomManagementRegex = [regex]::new(
+        '^\[ROOM\] management hierarchy selftest PASS schema=1 ' +
+        'struct_size=1024 generation=1 cells=1 nodes=1 bound_nodes=1 ' +
+        'nodebits=2 bound_nodebits=2 source_valid=1 generation_valid=1 ' +
+        'duplicate_rejected=1 orphan_rejected=1 unknown_rejected=1 ' +
+        'stale_rejected=1 overflow_rejected=1 tail_rejected=1 ' +
+        'observation_only=1 management_only=1$'
+    )
     $invalidRoomRecords = @()
     $familyContracts = @(
         [pscustomobject]@{ Name = 'process_event_journal'; Prefix = '[PROC] process event journal ' }
         [pscustomobject]@{ Name = 'cpu_security'; Prefix = '[SEC] nx=' }
         [pscustomobject]@{ Name = 'ring3_entry_ac_hardening'; Prefix = '[SEC] ring3 entry AC hardening ' }
+        [pscustomobject]@{ Name = 'kernel_room_management'; Prefix = '[ROOM] management hierarchy' }
         [pscustomobject]@{ Name = 'kernel_room'; Prefix = '[ROOM] snapshot ' }
     )
     $securityFamilyOccurrences = @{}
@@ -342,6 +354,7 @@ function Test-NormalSmokeVerdict {
         if ($family.Name -in @(
                 'cpu_security',
                 'ring3_entry_ac_hardening',
+                'kernel_room_management',
                 'kernel_room'
             )) {
             $securityFamilyOccurrences[$family.Name] = $familyLines
@@ -408,6 +421,19 @@ function Test-NormalSmokeVerdict {
             }
         }
     }
+    $managementFamilyLines = @(
+        $securityFamilyOccurrences['kernel_room_management']
+    )
+    if ($managementFamilyLines.Count -eq 1) {
+        $managementLine = [string]$managementFamilyLines[0].Text
+        if (-not $kernelRoomManagementRegex.IsMatch($managementLine)) {
+            $invalidRoomRecords += [pscustomobject]@{
+                Line   = $managementFamilyLines[0].LineNumber
+                Text   = $managementLine
+                Record = 'kernel_room_management'
+            }
+        }
+    }
 
     $fatalPattern = '\*\*\* KERNEL PANIC \*\*\*|!!! EXCEPTION|\bFAIL\b|\bFATAL\b'
     $fatalEvents = @()
@@ -435,6 +461,7 @@ function Test-NormalSmokeVerdict {
         [pscustomobject]@{ Name = 'process-trap-snapshot'; Pattern = '\[PROC\] trap evidence snapshot PASS'; ValuePrefix = $false },
         [pscustomobject]@{ Name = 'process-event-journal'; Pattern = '\[PROC\] process event journal PASS'; ValuePrefix = $false },
         [pscustomobject]@{ Name = 'ring3-entry-ac-hardening'; Pattern = '\[SEC\] ring3 entry AC hardening PASS'; ValuePrefix = $false },
+        [pscustomobject]@{ Name = 'kernel-room-management'; Pattern = '\[ROOM\] management hierarchy selftest PASS'; ValuePrefix = $false },
         [pscustomobject]@{ Name = 'kernel-room'; Pattern = '\[ROOM\] snapshot stability=stable'; ValuePrefix = $false },
         [pscustomobject]@{ Name = 'health'; Pattern = '\[HEALTH\] stability='; ValuePrefix = $true },
         [pscustomobject]@{ Name = 'kernel-ready'; Pattern = '=== AIOS Kernel Ready ==='; ValuePrefix = $false },

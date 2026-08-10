@@ -5,6 +5,7 @@ import unittest
 from lib.boot_log import parse_boot_log_text
 from lib.kernel_lane import (
     CPU_SECURITY_PATTERNS,
+    KERNEL_ROOM_MANAGEMENT_PATTERN,
     RING3_ENTRY_AC_HARDENING_PATTERNS,
 )
 
@@ -282,6 +283,131 @@ class BootLogProcessEventJournalTests(unittest.TestCase):
                 self.assertFalse(journal["ready"])
                 self.assertEqual(2, journal["record_count"])
                 self.assertTrue(journal["duplicate"])
+
+
+class BootLogKernelRoomManagementTests(unittest.TestCase):
+    def _summary(self, management: str) -> dict[str, object]:
+        return parse_boot_log_text(
+            "\n".join(
+                (
+                    RING3_ENTRY_AC_HARDENING_PATTERNS["default"],
+                    management,
+                    ROOM_SNAPSHOT_LINE,
+                )
+            ),
+            "minimal",
+            "synthetic.log",
+        )
+
+    def test_management_hierarchy_record_is_structured_and_ordered(
+        self,
+    ) -> None:
+        management = self._summary(KERNEL_ROOM_MANAGEMENT_PATTERN)[
+            "kernel_room_management"
+        ]
+
+        self.assertTrue(management["ready"])
+        self.assertTrue(management["semantic_ready"])
+        self.assertEqual("PASS", management["status"])
+        self.assertEqual(1, management["schema"])
+        self.assertEqual(1024, management["struct_size"])
+        self.assertEqual(1, management["generation"])
+        self.assertEqual(1, management["cells"])
+        self.assertEqual(1, management["nodes"])
+        self.assertEqual(1, management["bound_nodes"])
+        self.assertEqual(2, management["nodebits"])
+        self.assertEqual(2, management["bound_nodebits"])
+        self.assertEqual(1, management["source_valid"])
+        self.assertEqual(1, management["generation_valid"])
+        self.assertEqual(1, management["duplicate_rejected"])
+        self.assertEqual(1, management["orphan_rejected"])
+        self.assertEqual(1, management["unknown_rejected"])
+        self.assertEqual(1, management["stale_rejected"])
+        self.assertEqual(1, management["overflow_rejected"])
+        self.assertEqual(1, management["tail_rejected"])
+        self.assertEqual(1, management["observation_only"])
+        self.assertEqual(1, management["management_only"])
+        self.assertEqual(1, management["record_count"])
+        self.assertEqual(1, management["fullmatch_count"])
+        self.assertTrue(management["order"]["passed"])
+
+    def test_management_hierarchy_rejects_malformed_duplicate_and_order(
+        self,
+    ) -> None:
+        canonical = KERNEL_ROOM_MANAGEMENT_PATTERN
+        mutations = (
+            "[ROOM] management hierarchy selftest PASS schema=1",
+            canonical.replace("struct_size=1024", "struct_size=1023"),
+            canonical.replace("generation=1", "generation=2", 1),
+            canonical.replace("bound_nodes=1", "bound_nodes=0"),
+            canonical.replace("bound_nodebits=2", "bound_nodebits=1"),
+            canonical.replace("source_valid=1", "source_valid=0"),
+            canonical.replace("generation_valid=1", "generation_valid=0"),
+            canonical.replace("duplicate_rejected=1", "duplicate_rejected=0"),
+            canonical.replace("orphan_rejected=1", "orphan_rejected=0"),
+            canonical.replace("unknown_rejected=1", "unknown_rejected=0"),
+            canonical.replace("stale_rejected=1", "stale_rejected=0"),
+            canonical.replace("overflow_rejected=1", "overflow_rejected=0"),
+            canonical.replace("tail_rejected=1", "tail_rejected=0"),
+            canonical.replace("observation_only=1", "observation_only=0"),
+            canonical.replace("management_only=1", "management_only=0"),
+            canonical + " extra=1",
+            f"  {canonical}",
+            f'"{canonical}"',
+        )
+        for line in mutations:
+            with self.subTest(line=line):
+                management = self._summary(line)[
+                    "kernel_room_management"
+                ]
+                self.assertFalse(management["ready"])
+
+        for extra in (
+            canonical,
+            "[ROOM] management hierarchy selftest PARTIAL schema=1",
+            "[ROOM] management hierarchy",
+        ):
+            with self.subTest(extra=extra):
+                summary = parse_boot_log_text(
+                    "\n".join(
+                        (
+                            RING3_ENTRY_AC_HARDENING_PATTERNS["default"],
+                            canonical,
+                            ROOM_SNAPSHOT_LINE,
+                            extra,
+                        )
+                    ),
+                    "minimal",
+                    "synthetic.log",
+                )
+                management = summary["kernel_room_management"]
+                self.assertFalse(management["ready"])
+                self.assertEqual(2, management["record_count"])
+                self.assertTrue(management["duplicate"])
+
+        for reordered in (
+            "\n".join(
+                (
+                    canonical,
+                    RING3_ENTRY_AC_HARDENING_PATTERNS["default"],
+                    ROOM_SNAPSHOT_LINE,
+                )
+            ),
+            "\n".join(
+                (
+                    RING3_ENTRY_AC_HARDENING_PATTERNS["default"],
+                    ROOM_SNAPSHOT_LINE,
+                    canonical,
+                )
+            ),
+        ):
+            with self.subTest(reordered=reordered):
+                management = parse_boot_log_text(
+                    reordered, "minimal", "synthetic.log"
+                )["kernel_room_management"]
+                self.assertFalse(management["ready"])
+                self.assertFalse(management["order"]["passed"])
+
 
 class BootLogSecurityTests(unittest.TestCase):
     def test_security_summary_is_profile_bound_and_exact(self) -> None:

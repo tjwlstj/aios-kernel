@@ -2,6 +2,7 @@
 
 작성일: 2026-04-18
 재정비: 2026-08-10
+최종 갱신: 2026-08-11 (K1 bootstrap hierarchy `CURRENT` 반영)
 문서 성격: 정본 관리 모델을 설명하는 개념 뷰
 
 > 용어, 성숙도, 구현 순서의 정본은
@@ -47,8 +48,9 @@ Cell, Node, NodeBit의 namespace와 관계, schema, generation, validity를 관�
 기존 subsystem의 private mutable state를 모두 가져오는 중앙 god object는 아니다.
 
 현재 코드의 `kernel_room_snapshot_read()`는 health, Memory Fabric, driver, SLM,
-ring, user-mode, NodeBit의 aggregate count를 모으는 read-only substrate다. 이 snapshot은
-`CURRENT`지만 관리 계층 전체는 아직 `PARTIAL`이다.
+ring, user-mode, NodeBit의 aggregate count를 모으는 read-only substrate다. 별도 K1
+`kernel_room_management_snapshot_t`는 1024B 안에 bootstrap Cell/Node/NodeBit 1/1/2를
+명시적 parent와 generation으로 보존한다. 전체 관리 topology는 여전히 `PARTIAL`이다.
 
 ### Cell
 
@@ -58,7 +60,8 @@ pressure source, risk, generation과 bound Node 집합을 가진다.
 Memory Fabric domain은 Cell source 후보다. 그러나 domain 하나를 자동으로 Cell이라
 부르지 않으며, process/ring/service도 명시적인 binding을 거쳐야 한다.
 
-현재 상태: `PLANNED`. 기존 subsystem seam은 `SCAFFOLD`다.
+현재 상태: K1 bootstrap Cell record는 구현됐다. external subsystem binding과 live
+lifecycle/reconciliation은 `PLANNED`; 기존 subsystem seam은 `SCAFFOLD`다.
 
 ### Node
 
@@ -67,8 +70,8 @@ service, pipeline owner가 후보지만, managed Node가 되려면 typed namespa
 active Cell binding을 가져야 한다.
 
 현재 agent tree, runtime NodeBit node, SLM NodeBit node, pipeline owner, process PID는
-서로 다른 namespace다. 각 subsystem 표면은 `CURRENT`지만 통합 management Node와
-Node-to-Cell binding은 `PLANNED`다.
+서로 다른 namespace다. K1 bootstrap management Node의 exact Cell binding은 구현됐지만,
+각 subsystem source를 그 Node 또는 후속 Node에 연결하는 external binding은 `PLANNED`다.
 
 ### NodeBit
 
@@ -116,18 +119,18 @@ aggregate node count         == Node-to-Cell binding proof
 | execution Node source | SLM agent tree, process/pipeline ownership | `SCAFFOLD` adapter |
 | NodeBit source | runtime NodeBit, SLM NodeBit catalog | `SCAFFOLD` adapter |
 | Axis classification | Kernel Room gate descriptor table | `CURRENT` metadata |
-| Cell registry | 없음 | `PLANNED` |
-| Node-to-Cell binding | 없음 | `PLANNED` |
-| normalized NodeBit view | 없음 | `PLANNED` |
+| K1 bootstrap hierarchy | `kernel_room_management.c`의 Cell 1/Node 1/NodeBit 2 | `CURRENT` (2026-08-11 strict QEMU/shell 검증) |
+| external Node-to-Cell binding | 없음 | `PLANNED` |
+| legacy NodeBit projection | 없음 | `PLANNED` |
 | Orbit runtime | 없음 | `RESEARCH` |
 
-## 첫 적용 형태
+## K1 적용 형태
 
-첫 적용은 `management_only read-only hierarchy registry v0`다.
+첫 적용은 `management_only read-only hierarchy registry v0`로 구현됐다.
 
-Cell-only table은 완료가 아니다. 최소 Cell 1개, 그 Cell에 exact-one binding된 managed
-Node 1개, 그 Node를 부모로 가리키는 typed NodeBit 1~2개가 동일한 hierarchy
-snapshot에 있어야 한다.
+Cell-only table은 완료가 아니다. Cell ID 1, 그 Cell에 exact-one binding된 Node ID 101,
+그 Node를 부모로 가리키는 typed NodeBit ID 1001/1002가 동일한 1024B hierarchy
+snapshot에 함께 있다.
 
 1. bounded Cell record와 typed `cell_id`
 2. bounded Node record와 explicit `cell_id` binding
@@ -154,5 +157,5 @@ Axis Gate enforcement도 붙이지 않는다.
 
 Kernel Room의 중심은 gate 수나 snapshot field 수가 아니다. Cell 상태를 기준으로
 Node를 결속하고, Node를 NodeBit으로 세분화해 유효한 관리 뷰를 제공하는 것이 중심이다.
-현재 커널 substrate는 보존하되 다음 Kernel Room 작업은 이 hierarchy의 read-only
-management proof부터 시작한다.
+현재 커널 substrate와 K1 bootstrap hierarchy는 보존하되 다음 Kernel Room 작업은
+K2 external source binding과 generation/reconciliation 확대다.

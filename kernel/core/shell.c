@@ -24,6 +24,7 @@
  *   ping             — liveness probe → `[STATE] pong ticks=<n>`
  *   state list       — enumerate available topics
  *   state health     — kernel health summary
+ *   state room       — read-only Room/Cell/Node/NodeBit hierarchy v0
  *   state mem        — heap statistics
  *   state sched      — kernel-thread context switches + workload task stats
  *   state nodes      — per-node gate/work observation (summary line +
@@ -44,6 +45,7 @@
 #include <kernel/health.h>
 #include <kernel/cpu_sec.h>
 #include <kernel/stack_guard.h>
+#include <kernel/kernel_room_management.h>
 #include <runtime/node_pipeline.h>
 #include <runtime/nodebit.h>
 #include <runtime/autonomy.h>
@@ -115,7 +117,53 @@ static void cmd_ping(void) {
 }
 
 static void state_list(void) {
-    STATE_EMIT("[STATE] topics list=health,mem,sched,nodes,pipeline,resource,pressure,slm,autonomy,user,sec,time,version\n");
+    STATE_EMIT("[STATE] topics list=health,room,mem,sched,nodes,pipeline,resource,pressure,slm,autonomy,user,sec,time,version\n");
+}
+
+static void state_room(void) {
+    kernel_room_management_snapshot_t room;
+    const kernel_room_cell_record_t *cell;
+    const kernel_room_node_record_t *node;
+    const kernel_room_nodebit_record_t *nodebit_a;
+    const kernel_room_nodebit_record_t *nodebit_b;
+    aios_status_t status = kernel_room_management_snapshot_read(&room);
+
+    if (status != AIOS_OK ||
+        !kernel_room_management_snapshot_valid(&room) ||
+        room.cell_count != 1U || room.node_count != 1U ||
+        room.nodebit_count != 2U) {
+        STATE_EMIT("[STATE] room error=unavailable\n");
+        return;
+    }
+
+    cell = &room.cells[0];
+    node = &room.nodes[0];
+    nodebit_a = &room.nodebits[0];
+    nodebit_b = &room.nodebits[1];
+    STATE_EMIT("[STATE] room schema=%u struct_size=%u ready=%u generation=%u cells=%u cell_capacity=%u nodes=%u node_capacity=%u bound_nodes=%u nodebits=%u nodebit_capacity=%u bound_nodebits=%u cell_id=%u node_id=%u node_parent=%u nodebit_ids=%u,%u nodebit_parents=%u,%u source_valid=%u generation_valid=%u duplicate=0 orphan=0 unknown=0 stale=0 overflow=0 observation_only=%u management_only=%u\n",
+        (uint64_t)room.schema_version,
+        (uint64_t)room.struct_size,
+        (uint64_t)room.ready,
+        room.registry_generation,
+        (uint64_t)room.cell_count,
+        (uint64_t)room.cell_capacity,
+        (uint64_t)room.node_count,
+        (uint64_t)room.node_capacity,
+        (uint64_t)room.bound_node_count,
+        (uint64_t)room.nodebit_count,
+        (uint64_t)room.nodebit_capacity,
+        (uint64_t)room.bound_nodebit_count,
+        (uint64_t)cell->cell_id,
+        (uint64_t)node->node_id,
+        (uint64_t)node->parent_cell_id,
+        (uint64_t)nodebit_a->nodebit_id,
+        (uint64_t)nodebit_b->nodebit_id,
+        (uint64_t)nodebit_a->parent_node_id,
+        (uint64_t)nodebit_b->parent_node_id,
+        (uint64_t)room.source_valid,
+        (uint64_t)room.generation_valid,
+        (uint64_t)room.observation_only,
+        (uint64_t)room.management_only);
 }
 
 static void state_sched(void) {
@@ -542,6 +590,7 @@ static bool topic_is(const char *arg, uint32_t arg_len, const char *name) {
 static void cmd_state(const char *arg, uint32_t arg_len) {
     if (arg_len == 0 || topic_is(arg, arg_len, "list")) { state_list();    return; }
     if (topic_is(arg, arg_len, "health"))               { state_health();  return; }
+    if (topic_is(arg, arg_len, "room"))                 { state_room();    return; }
     if (topic_is(arg, arg_len, "mem"))                  { state_mem();     return; }
     if (topic_is(arg, arg_len, "sched"))                { state_sched();   return; }
     if (topic_is(arg, arg_len, "nodes"))                { state_nodes();   return; }

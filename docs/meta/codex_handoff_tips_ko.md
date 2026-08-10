@@ -1,6 +1,6 @@
 # Codex 작업 핸드오프 팁 (2026-07-15)
 
-최종 갱신: 2026-08-03 (process event journal v1)
+최종 갱신: 2026-08-11 (K1 Kernel Room hierarchy v0)
 
 이 커널에서 Claude가 M1~M3 작업 중 실제로 밟은 지뢰와 관례를 모았다. 다음 작업자(Codex)가 같은 함정에 빠지지 않도록 하는 실전 노트다. **CLAUDE.md의 규칙이 정본이고, 이 문서는 "왜 그런지"와 "어떻게 디버깅했는지"를 보완한다.**
 
@@ -89,7 +89,7 @@ PID 1 실행 뒤 PID 2를 호출하는 것만으로는 scheduler 전환을 증�
 ## 3. 알아두면 좋은 구조
 
 - **두 스케줄러 개념이 분리돼 있다:** `sched/ai_sched.c`는 vruntime 장부질만 하는 **워크로드 회계 모델**(실제 CPU 전환 없음). 진짜 문맥전환은 `sched/kthread.c`(+`kthread_switch.asm`)다. 헷갈리지 말 것.
-- **Kernel Room의 정본은 Room→Cell→Node→NodeBit 관리축이다:** 하지만 현재 `kernel_room_snapshot_read()`는 subsystem/health/Memory Fabric/scheduler/ring/runtime-NodeBit aggregate를 매번 조립할 뿐, persistent Cell/Node/NodeBit registry나 parent-child lifecycle을 소유하지 않는다. 현재를 “Cell 관리자”라고 쓰지 말 것.
+- **Kernel Room의 정본은 Room→Cell→Node→NodeBit 관리축이다:** `kernel_room_snapshot_read()`는 계속 aggregate view일 뿐이지만, 별도 `kernel_room_management_snapshot_t`는 K1 bootstrap Cell 1/Node 1/NodeBit 2와 exact parent/generation을 소유한다. 이 bounded fixture를 external subsystem binding, live lifecycle/reconciliation 또는 전체 Cell 관리자로 과장하지 말 것.
 - **Node/owner ID 공간이 여러 개다:** Memory Fabric `domain_id`, SLM `agent_tree.node_id`, SLM `slm_nodebit_id`, runtime NodeBit `node_id`, pipeline `owner_node`, scheduler `task_id`, process PID, ring ID는 서로 독립이다. 숫자 일치는 identity/binding 증거가 아니다. 교차 연결은 `(namespace, id, generation)`과 명시적 parent binding을 요구한다.
 - **두 NodeBit 체계가 병존한다:** `runtime/nodebit.c`의 capability registry와 `slm_orchestrator.c`의 effective policy-node catalog는 별개다. canonical NodeBit로 곧바로 합치지 말고 관리축 K3에서 namespace adapter/projection으로 연결한다.
 - **`SYS_SLM_NODEBIT_LOOKUP`는 runtime `nodebit.c`가 아니다:** `ai_syscall.c`는 이 번호를 `sys_slm_nodebit_lookup()`으로 보내 SLM policy catalog를 읽는다. runtime NodeBit의 syscall 표면은 `SYS_NODEBIT_REGISTER/UPDATE/STATS`(0x726~0x728)다.
@@ -124,11 +124,11 @@ PID 1 실행 뒤 PID 2를 호출하는 것만으로는 scheduler 전환을 증�
 
 ## 5. 다음 방향 선택
 
-### 5.1 우선 관리축: 첫 검증 가능한 vertical slice
+### 5.1 우선 관리축: K1 bounded vertical slice와 K2
 
-현재 우선 후보는 enforcement가 아니라 **하나의 Room-owned `main` Cell 안에 하나의
-declared `main-ai` Node와 1~2개의 parent-bound typed management NodeBit record를 등록·조회하는
-management-only 조각**이다. 최소 순서는 다음과 같다.
+`CURRENT` K1은 enforcement가 아니라 **하나의 Room-owned bootstrap Cell 안에 하나의 declared
+Node와 두 parent-bound typed management NodeBit record를 등록·조회하는
+management-only 조각**으로 구현됐다.
 
 아래 1~4는 별도 완료 마일스톤이 아니라 **K1 hierarchy registry v0 하나의 완료
 계약**이다. Cell만 등록되거나 NodeBit parent 증거가 빠지면 K1은 미완료다.
@@ -137,13 +137,14 @@ management-only 조각**이다. 최소 순서는 다음과 같다.
    잘못된 상태 전이, capacity 초과는 fail-closed다.
 2. canonical Node를 Cell에 명시적으로 bind하고 typed canonical namespace, ID,
    generation을 고정한다. legacy source 숫자를 canonical ID로 재사용하지 않는다.
-3. canonical Node 아래 typed NodeBit 1~2개를 exact parent와 bounded seed source로
+3. canonical Node 아래 typed NodeBit 2개를 exact parent와 bounded bootstrap source로
    등록한다. orphan/duplicate/stale generation은 거부한다.
-4. `[ROOM] management hierarchy selftest PASS ... management_only=1` boot evidence와 `state room` mirror에서
+4. schema 1/1024B, capacity 2/4/8과 `[ROOM] management hierarchy selftest PASS ... management_only=1` boot evidence, structured `kernel_room_management`, `state room` mirror에서
    exact Room/Cell/Node/NodeBit count, parent, generation을 교차검증한다.
 
-이 조각에는 dispatcher hook, authorize, quota, resource apply, scheduler migration을
-넣지 않는다. K1~K4의 hierarchy/binding/observation attribution이 먼저이며,
+이 K1 조각에는 dispatcher hook, authorize, quota, resource apply, scheduler migration이
+없다. 다음 직접 관리 단계는 K2 external source binding과 generation/reconciliation
+확대다. K1~K4의 hierarchy/binding/observation attribution이 먼저이며,
 principal/ownership와 Axis Gate enforcement는 그 뒤의 K5 `PLANNED`다. Orbit은
 Cell/Node placement를 탐구하는 `RESEARCH`이므로 이 vertical slice의 완료 조건이 아니다.
 K2는 이 최소 계층의 external source binding과 generation/reconciliation을 강화·확대하고,

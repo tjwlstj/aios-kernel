@@ -76,6 +76,7 @@ $normalLines = @(
     '[PROC] trap evidence snapshot PASS schema=1 captures=2 pid_a=1 slot_a=0 seq_a=1 valid_a=1 owner_a=1 frame_a=1 cr3_a=1 rsp0_a=1 pid_b=2 slot_b=1 seq_b=2 valid_b=1 owner_b=1 frame_b=1 cr3_b=1 rsp0_b=1 distinct_storage=1 current_pid=0 stale_owner=0 resume_ready=0'
     '[PROC] process event journal PASS schema=1 events=6 lifecycle=4 captures=2 seqs=1,2,3,4,5,6 kinds=1,2,3,1,2,3 reasons=1,2,3,1,2,3 from_pids=0,1,1,0,2,2 to_pids=1,1,0,2,2,0 slots=0,0,0,1,1,1 generations=1,1,1,1,1,1 capture_seqs=0,1,1,0,2,2 owner_ok=1,1,1,1,1,1 cr3_ok=1,1,1,1,1,1 rsp0_ok=1,1,1,1,1,1 if0=1,1,1,1,1,1 snapshot_refs=0,1,1,0,1,1 outcomes=1,1,1,1,1,1 capture_seq_separate=1 current_pid=0 stale_owner=0 dropped=0 overflow=0 evidence_only=1 switch_events=0 resume_ready=0'
     '[SEC] ring3 entry AC hardening PASS schema=1 smap_supported=0 smap=0 gate_active=0 common_entries=2 common_saved_ac=2 common_clac=0 common_fallback=2 common_post_ac0=2 int80_entries=6 int80_saved_ac=4 int80_clac=0 int80_fallback=6 int80_post_ac0=6 gate_skips=8 gate_mismatch=0'
+    '[ROOM] management hierarchy selftest PASS schema=1 struct_size=1024 generation=1 cells=1 nodes=1 bound_nodes=1 nodebits=2 bound_nodebits=2 source_valid=1 generation_valid=1 duplicate_rejected=1 orphan_rejected=1 unknown_rejected=1 stale_rejected=1 overflow_rejected=1 tail_rejected=1 observation_only=1 management_only=1'
     '[ROOM] snapshot stability=stable ok=18 degraded=0 failed=0 unknown=2 topology=segmented domains=4 windows=0 drivers=1/1 plans=5 nodes=10 rings=0 active=0 user=1 nodebit_active=1 nodebit_risky=0'
     '[HEALTH] stability=stable ok=18 degraded=0 failed=0 unknown=2'
     '=== AIOS Kernel Ready ==='
@@ -98,6 +99,7 @@ $cases = @(
 $tempPath = [IO.Path]::GetTempFileName()
 $journalExtraCases = 0
 $securityExtraCases = 0
+$managementExtraCases = 0
 try {
     foreach ($case in $cases) {
         $candidateLines = @(
@@ -124,6 +126,9 @@ try {
     } | Select-Object -First 1)
     $roomLine = [string]($normalLines | Where-Object {
         $_ -match '^\[ROOM\] snapshot '
+    } | Select-Object -First 1)
+    $managementLine = [string]($normalLines | Where-Object {
+        $_ -match '^\[ROOM\] management hierarchy '
     } | Select-Object -First 1)
     $maxEntry = '[SEC] ring3 entry AC hardening PASS schema=1 smap_supported=1 smap=1 gate_active=1 common_entries=2 common_saved_ac=2 common_clac=2 common_fallback=0 common_post_ac0=2 int80_entries=6 int80_saved_ac=4 int80_clac=6 int80_fallback=0 int80_post_ac0=6 gate_skips=0 gate_mismatch=0'
 
@@ -219,6 +224,114 @@ try {
         }
         $securityExtraCases++
         Write-Output "PASS $($mutation.Name) expected=False"
+    }
+
+    $managementMutations = @(
+        [pscustomobject]@{ Name = 'management-missing'; Line = $null }
+        [pscustomobject]@{ Name = 'management-truncated'; Line = '[ROOM] management hierarchy selftest PASS schema=1' }
+        [pscustomobject]@{ Name = 'management-struct-size'; Line = $managementLine.Replace('struct_size=1024', 'struct_size=1023') }
+        [pscustomobject]@{ Name = 'management-generation'; Line = $managementLine.Replace('generation=1 cells=1', 'generation=2 cells=1') }
+        [pscustomobject]@{ Name = 'management-bound-nodes'; Line = $managementLine.Replace('bound_nodes=1', 'bound_nodes=0') }
+        [pscustomobject]@{ Name = 'management-bound-nodebits'; Line = $managementLine.Replace('bound_nodebits=2', 'bound_nodebits=1') }
+        [pscustomobject]@{ Name = 'management-source-valid'; Line = $managementLine.Replace('source_valid=1', 'source_valid=0') }
+        [pscustomobject]@{ Name = 'management-generation-valid'; Line = $managementLine.Replace('generation_valid=1', 'generation_valid=0') }
+        [pscustomobject]@{ Name = 'management-duplicate-rejected'; Line = $managementLine.Replace('duplicate_rejected=1', 'duplicate_rejected=0') }
+        [pscustomobject]@{ Name = 'management-orphan-rejected'; Line = $managementLine.Replace('orphan_rejected=1', 'orphan_rejected=0') }
+        [pscustomobject]@{ Name = 'management-unknown-rejected'; Line = $managementLine.Replace('unknown_rejected=1', 'unknown_rejected=0') }
+        [pscustomobject]@{ Name = 'management-stale-rejected'; Line = $managementLine.Replace('stale_rejected=1', 'stale_rejected=0') }
+        [pscustomobject]@{ Name = 'management-overflow-rejected'; Line = $managementLine.Replace('overflow_rejected=1', 'overflow_rejected=0') }
+        [pscustomobject]@{ Name = 'management-tail-rejected'; Line = $managementLine.Replace('tail_rejected=1', 'tail_rejected=0') }
+        [pscustomobject]@{ Name = 'management-observation-only'; Line = $managementLine.Replace('observation_only=1', 'observation_only=0') }
+        [pscustomobject]@{ Name = 'management-management-only'; Line = $managementLine.Replace('management_only=1', 'management_only=0') }
+        [pscustomobject]@{ Name = 'management-duplicate-field'; Line = $managementLine.Replace('generation=1 cells=1', 'generation=1 generation=1 cells=1') }
+        [pscustomobject]@{ Name = 'management-passfail'; Line = $managementLine.Replace('selftest PASS', 'selftest PASSFAIL') }
+        [pscustomobject]@{ Name = 'management-extra-field'; Line = "$managementLine apply_enabled=1" }
+        [pscustomobject]@{ Name = 'management-indented'; Line = "  $managementLine" }
+        [pscustomobject]@{ Name = 'management-quoted'; Line = '"' + $managementLine + '"' }
+    )
+    foreach ($mutation in $managementMutations) {
+        $mutatedLines = @(
+            $normalLines | ForEach-Object {
+                if ($_ -ceq $managementLine) {
+                    if ($null -ne $mutation.Line) { [string]$mutation.Line }
+                } else { $_ }
+            }
+        )
+        [IO.File]::WriteAllLines(
+            $tempPath,
+            $mutatedLines,
+            [Text.UTF8Encoding]::new($false)
+        )
+        $verdict = Test-NormalSmokeVerdict -SerialLog $tempPath
+        if ([bool]$verdict.Passed) {
+            throw "$($mutation.Name) unexpectedly passed"
+        }
+        $managementExtraCases++
+        Write-Output "PASS $($mutation.Name) expected=False"
+    }
+
+    foreach ($extra in @(
+            $managementLine,
+            '[ROOM] management hierarchy selftest PARTIAL schema=1',
+            '[ROOM] management hierarchy'
+        )) {
+        $extraLines = @($normalLines) + @([string]$extra)
+        [IO.File]::WriteAllLines(
+            $tempPath,
+            $extraLines,
+            [Text.UTF8Encoding]::new($false)
+        )
+        $verdict = Test-NormalSmokeVerdict -SerialLog $tempPath
+        if ([bool]$verdict.Passed -or
+                @($verdict.Reasons | Where-Object {
+                    $_ -like 'evidence-family-count:kernel_room_management:*'
+                }).Count -eq 0) {
+            throw 'Duplicate management hierarchy family unexpectedly passed'
+        }
+        $managementExtraCases++
+        Write-Output 'PASS duplicate-management-hierarchy-family expected=False'
+    }
+
+    $managementBeforeEntryLines = @()
+    foreach ($line in $normalLines) {
+        if ($line -ceq $managementLine) { continue }
+        if ($line -ceq $defaultEntry) {
+            $managementBeforeEntryLines += $managementLine
+        }
+        $managementBeforeEntryLines += $line
+    }
+    $managementAfterRoomLines = @()
+    foreach ($line in $normalLines) {
+        if ($line -ceq $managementLine) { continue }
+        $managementAfterRoomLines += $line
+        if ($line -ceq $roomLine) {
+            $managementAfterRoomLines += $managementLine
+        }
+    }
+    foreach ($orderCase in @(
+            [pscustomobject]@{
+                Name = 'management-before-entry-ac'
+                Lines = $managementBeforeEntryLines
+            }
+            [pscustomobject]@{
+                Name = 'management-after-aggregate-room'
+                Lines = $managementAfterRoomLines
+            }
+        )) {
+        [IO.File]::WriteAllLines(
+            $tempPath,
+            [string[]]$orderCase.Lines,
+            [Text.UTF8Encoding]::new($false)
+        )
+        $verdict = Test-NormalSmokeVerdict -SerialLog $tempPath
+        if ([bool]$verdict.Passed -or
+                @($verdict.Reasons | Where-Object {
+                    $_ -like 'terminal-order:*'
+                }).Count -eq 0) {
+            throw "$($orderCase.Name) did not fail the terminal order chain"
+        }
+        $managementExtraCases++
+        Write-Output "PASS $($orderCase.Name) expected=False"
     }
 
     $securityFamilyCases = @(
@@ -732,4 +845,4 @@ try {
     Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
 }
 
-Write-Output "PowerShell verdict selftest passed cases=$($cases.Count + 13 + $duplicateObservationCases.Count + $journalExtraCases + $securityExtraCases + 1)"
+Write-Output "PowerShell verdict selftest passed cases=$($cases.Count + 13 + $duplicateObservationCases.Count + $journalExtraCases + $securityExtraCases + $managementExtraCases + 1)"

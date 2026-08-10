@@ -43,6 +43,7 @@ CHECKPOINT_PATTERNS = {
     "process_trap_snapshot": "[PROC] trap evidence snapshot PASS",
     "process_event_journal": "[PROC] process event journal PASS",
     "ring3_entry_ac_hardening": "[SEC] ring3 entry AC hardening PASS",
+    "kernel_room_management": "[ROOM] management hierarchy selftest PASS",
     "kernel_room": "[ROOM] snapshot stability=",
     "health": "[HEALTH] stability=",
     "ready": "AIOS Kernel Ready",
@@ -254,6 +255,51 @@ ROOM_TOPOLOGIES = {
     "numa-hinted",
     "fabric-expandable",
 }
+
+KERNEL_ROOM_MANAGEMENT_PREFIX = "[ROOM] management hierarchy"
+KERNEL_ROOM_MANAGEMENT_RE = re.compile(
+    r"^\[ROOM\] management hierarchy selftest (?P<status>PASS) "
+    r"schema=(?P<schema>0|[1-9][0-9]{0,9}) "
+    r"struct_size=(?P<struct_size>0|[1-9][0-9]{0,9}) "
+    r"generation=(?P<generation>0|[1-9][0-9]{0,9}) "
+    r"cells=(?P<cells>0|[1-9][0-9]{0,9}) "
+    r"nodes=(?P<nodes>0|[1-9][0-9]{0,9}) "
+    r"bound_nodes=(?P<bound_nodes>0|[1-9][0-9]{0,9}) "
+    r"nodebits=(?P<nodebits>0|[1-9][0-9]{0,9}) "
+    r"bound_nodebits=(?P<bound_nodebits>0|[1-9][0-9]{0,9}) "
+    r"source_valid=(?P<source_valid>0|[1-9][0-9]{0,9}) "
+    r"generation_valid=(?P<generation_valid>0|[1-9][0-9]{0,9}) "
+    r"duplicate_rejected=(?P<duplicate_rejected>0|[1-9][0-9]{0,9}) "
+    r"orphan_rejected=(?P<orphan_rejected>0|[1-9][0-9]{0,9}) "
+    r"unknown_rejected=(?P<unknown_rejected>0|[1-9][0-9]{0,9}) "
+    r"stale_rejected=(?P<stale_rejected>0|[1-9][0-9]{0,9}) "
+    r"overflow_rejected=(?P<overflow_rejected>0|[1-9][0-9]{0,9}) "
+    r"tail_rejected=(?P<tail_rejected>0|[1-9][0-9]{0,9}) "
+    r"observation_only=(?P<observation_only>0|[1-9][0-9]{0,9}) "
+    r"management_only=(?P<management_only>0|[1-9][0-9]{0,9})$"
+)
+KERNEL_ROOM_MANAGEMENT_STRUCT_SIZE = 1024
+KERNEL_ROOM_MANAGEMENT_EXPECTED = {
+    "schema": 1,
+    "struct_size": KERNEL_ROOM_MANAGEMENT_STRUCT_SIZE,
+    "generation": 1,
+    "cells": 1,
+    "nodes": 1,
+    "bound_nodes": 1,
+    "nodebits": 2,
+    "bound_nodebits": 2,
+    "source_valid": 1,
+    "generation_valid": 1,
+    "duplicate_rejected": 1,
+    "orphan_rejected": 1,
+    "unknown_rejected": 1,
+    "stale_rejected": 1,
+    "overflow_rejected": 1,
+    "tail_rejected": 1,
+    "observation_only": 1,
+    "management_only": 1,
+}
+KERNEL_ROOM_MANAGEMENT_FIELDS = tuple(KERNEL_ROOM_MANAGEMENT_EXPECTED)
 
 
 def room_snapshot_semantics(
@@ -519,6 +565,14 @@ def parse_boot_log_text(
         if line.startswith(SECURITY_ROOM_PREFIX)
     ]
     room_matches = _find_all_matches(lines, ROOM_SNAPSHOT_RE)
+    management_prefix_records = [
+        (index, line)
+        for index, line in enumerate(lines, start=1)
+        if line.startswith(KERNEL_ROOM_MANAGEMENT_PREFIX)
+    ]
+    management_matches = _find_all_matches(
+        lines, KERNEL_ROOM_MANAGEMENT_RE
+    )
     security: dict[str, object] = {
         "ready": False,
         "requested_cpu_profile": cpu_profile,
@@ -1004,6 +1058,68 @@ def parse_boot_log_text(
             }
         )
 
+    kernel_room_management: dict[str, object] = {
+        "ready": False,
+        "checkpoint_seen": checkpoints["kernel_room_management"]["seen"],
+        "record_count": len(management_prefix_records),
+        "fullmatch_count": len(management_matches),
+        "duplicate": len(management_prefix_records) > 1,
+        "order": {
+            "expected": [
+                "ring3_entry_ac_hardening",
+                "kernel_room_management",
+                "kernel_room",
+            ],
+            "ring3_entry_ac_hardening_line": (
+                entry_matches[0][0] if len(entry_matches) == 1 else None
+            ),
+            "kernel_room_management_line": (
+                management_matches[0][0]
+                if len(management_matches) == 1
+                else None
+            ),
+            "kernel_room_line": (
+                room_matches[0][0] if len(room_matches) == 1 else None
+            ),
+            "passed": False,
+        },
+    }
+    if len(management_matches) == 1:
+        index, line, match = management_matches[0]
+        fields = _int_groupdict(
+            match, *KERNEL_ROOM_MANAGEMENT_FIELDS
+        )
+        entry_line = kernel_room_management["order"][  # type: ignore[index]
+            "ring3_entry_ac_hardening_line"
+        ]
+        room_line = kernel_room_management["order"][  # type: ignore[index]
+            "kernel_room_line"
+        ]
+        order_passed = (
+            isinstance(entry_line, int)
+            and isinstance(room_line, int)
+            and entry_line < index < room_line
+        )
+        semantic_ready = (
+            match.group("status") == "PASS"
+            and fields == KERNEL_ROOM_MANAGEMENT_EXPECTED
+        )
+        kernel_room_management["order"]["passed"] = order_passed  # type: ignore[index]
+        kernel_room_management.update(
+            {
+                "ready": (
+                    len(management_prefix_records) == 1
+                    and semantic_ready
+                    and order_passed
+                ),
+                "line": index,
+                "text": line,
+                "status": match.group("status"),
+                "semantic_ready": semantic_ready,
+                **fields,
+            }
+        )
+
     kernel_room: dict[str, object] = {
         "ready": False,
         "record_count": len(room_prefix_records),
@@ -1180,6 +1296,7 @@ def parse_boot_log_text(
         "process_trap_snapshot": process_trap_snapshot,
         "process_event_journal": process_event_journal,
         "security": security,
+        "kernel_room_management": kernel_room_management,
         "kernel_room": kernel_room,
         "shell": shell_info,
         "nodebit": nodebit_info,

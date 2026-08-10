@@ -49,6 +49,7 @@ C_SOURCES   = $(KERNEL_DIR)/main.c \
               $(KERNEL_DIR)/acpi.c \
               $(KERNEL_DIR)/health.c \
               $(KERNEL_DIR)/kernel_room.c \
+              $(KERNEL_DIR)/kernel_room_management.c \
               $(KERNEL_DIR)/time.c \
               $(KERNEL_DIR)/selftest.c \
               $(KERNEL_DIR)/user_mode.c \
@@ -216,6 +217,7 @@ test: iso
 	   grep -q "\\[DEV\\] Peripheral probe ready" $(TEST_LOG) && \
 	   tr -d '\r' < $(TEST_LOG) | grep -Fxq "[RESOURCE] ledger selftest PASS schema=1 kinds=5 units=2 entries=5 capacity=8 source_flags=31 limit_kinds=5 used_kinds=5 high_water_kinds=1 denied_kinds=0 owners_unattributed=1 observation_only=1" && \
 	   tr -d '\r' < $(TEST_LOG) | grep -Fxq "[PRESSURE] tracker selftest PASS schema=1 planes=3 max_levels=4 active_levels=2 balanced=1 hotspot=1 overlap=1 gate_mask=1 observation_only=1" && \
+	   tr -d '\r' < $(TEST_LOG) | grep -Fxq "[ROOM] management hierarchy selftest PASS schema=1 struct_size=1024 generation=1 cells=1 nodes=1 bound_nodes=1 nodebits=2 bound_nodebits=2 source_valid=1 generation_valid=1 duplicate_rejected=1 orphan_rejected=1 unknown_rejected=1 stale_rejected=1 overflow_rejected=1 tail_rejected=1 observation_only=1 management_only=1" && \
 	   grep -q "\\[HEALTH\\] stability=" $(TEST_LOG) && \
 	   grep -q "\\[SHELL\\] Interactive shell started" $(TEST_LOG); then \
 		echo "[OK] Smoke test PASSED - kernel booted and shell started"; \

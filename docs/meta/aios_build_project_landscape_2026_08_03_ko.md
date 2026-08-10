@@ -2,15 +2,23 @@
 
 > 조사 확인일: 2026-08-03
 > 구현 경계 재검증: 2026-08-10
-> 상태: `RESEARCH` — 외부 프로젝트에서 가져올 설계 힌트와 AIOS 적용 순서를
+> 상태: `REVIEW / RESEARCH` — 외부 프로젝트에서 가져올 설계 힌트와 당시 AIOS 적용 순서를
 > 정리한 문서다. 외부 프로젝트의 기능을 AIOS의 `CURRENT` 구현으로 간주하지 않는다.
 >
 > 구현 상태의 정본은 [CLAUDE.md](../../CLAUDE.md),
 > [Kernel Room 관리 모델](../kernel-room/kernel_room_management_model_ko.md),
 > [최소 I/O·성숙도 워크플로](minimal_io_and_maturity_workflow_ko.md),
 > [검증 툴링 진화 설계](../tools/verification_tooling_evolution_design_ko.md)다.
-> 아래 §6은 실행 substrate 조사 당시의 세부 진행 순서이며, 프로젝트 전체의 다음
-> 마일스톤 K1 hierarchy registry v0를 대체하지 않는다.
+> 아래 §6은 실행 substrate 조사 당시의 세부 진행 순서이며, 현재 정본 K축 순서를
+> 대체하지 않는다.
+
+> [!WARNING]
+> **역사적 조사 스냅샷**
+>
+> 아래 §2와 §6의 현재 상태·다음 순서는 2026-08-10 경계를 보존한다. 2026-08-11 현재
+> K1 bounded hierarchy registry v0는 `CURRENT`이고 다음 직접 관리 조각은 K2 external
+> source binding과 generation/reconciliation 확대다. 현재 작업 순서는 위 정본 링크를
+> 따르고, 이 문서의 K1 `PLANNED` 또는 "다음" 표현을 지침으로 사용하지 않는다.
 
 ## 1. 조사 목적과 판정 원칙
 

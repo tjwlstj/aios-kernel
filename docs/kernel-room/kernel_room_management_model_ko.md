@@ -1,8 +1,9 @@
 # AIOS Kernel Room 관리 모델
 
 문서 상태: 정본
-전체 토폴로지 성숙도: `PARTIAL` (aggregate substrate `CURRENT`, 관리 hierarchy runtime `PLANNED`)
+전체 토폴로지 성숙도: `PARTIAL` (aggregate substrate와 K1 bounded hierarchy v0 `CURRENT`, K2+ `PLANNED`)
 작성일: 2026-08-10
+최종 갱신: 2026-08-11 (K1 hierarchy registry v0 `CURRENT` 승격)
 적용 범위: `docs/kernel-room/`의 용어, 성숙도, 구현 순서
 
 ## 문서 권위
@@ -136,14 +137,14 @@ ABI, verifier가 없으므로 현재 상태는 `RESEARCH`다. Cell/Node 모델�
 |---|---|---|
 | `kernel_room_snapshot_read()`와 `[ROOM] snapshot`/`[ROOM] gates` | `CURRENT` | aggregate read-only 관측과 정적 gate 요약 |
 | 9개 Axis Gate descriptor | `CURRENT` | syscall range 분류 메타데이터만 해당 |
-| Kernel Room 전체 토폴로지 | `PARTIAL` | aggregate substrate는 있으나 Cell/Node 계층은 없음 |
+| Kernel Room 전체 토폴로지 | `PARTIAL` | aggregate substrate와 K1 bootstrap hierarchy는 있으나 external binding/lifecycle/attribution은 없음 |
 | Memory Fabric domain/window | `CURRENT` subsystem, `SCAFFOLD` adapter | Cell source 후보일 뿐 Cell identity가 아님 |
 | SLM agent tree | `CURRENT` subsystem, `SCAFFOLD` adapter | 계산된 agent snapshot이며 Cell binding 없음 |
 | runtime NodeBit | `CURRENT` subsystem, `SCAFFOLD` adapter | capability table과 per-node 통계, pipeline gate 범위 |
 | SLM NodeBit catalog | `CURRENT` subsystem, `SCAFFOLD` adapter | API/tool/device action policy view, 별도 namespace |
-| Room-to-Cell registry와 Cell lifecycle | `PLANNED` | 구현과 regular verification 없음 |
-| Node-to-Cell binding | `PLANNED` | 서로 다른 Node namespace의 정규화도 아직 없음 |
-| management NodeBit typed view | `PLANNED` | source binding, validity, generation 계약 없음 |
+| K1 management hierarchy registry v0 | `CURRENT` | schema 1/1024B producer, exact host 계약, strict QEMU/shell 검증 완료 |
+| external Node-to-Cell source binding / lifecycle | `PLANNED` | K1 bootstrap fixture 밖 source 정규화와 reconciliation 없음 |
+| legacy management NodeBit projection | `PLANNED` | runtime/SLM source adapter와 generation binding 없음 |
 | per-Cell/per-Node pressure와 resource ownership | `PLANNED` | pressure는 system-to-plane, resource owner는 unattributed |
 | Axis Gate enforcement / authorize / apply | `PLANNED` | management identity와 principal 계약 뒤에만 착수 |
 | Orbit runtime, 분산 Cell/Node mesh | `RESEARCH` | 선택적 미래 연구이며 현재 구현 약속이 아님 |
@@ -170,13 +171,13 @@ ABI, verifier가 없으므로 현재 상태는 `RESEARCH`다. Cell/Node 모델�
 9. cross-subsystem snapshot이 원자적이지 않다면 best-effort라고 명시한다. SMP나
    concurrent writer 전에 generation/seqlock 등 실제 일관성 계약을 별도로 증명한다.
 
-## 첫 구현 조각
+## K1 구현 조각
 
-첫 수직 조각은 `management_only read-only hierarchy registry v0`다.
+첫 수직 조각은 `management_only read-only hierarchy registry v0`로 구현됐다.
 
-이 조각은 Cell 표만 만든 뒤 나머지 계층을 미래로 미루는 단계가 아니다. v0 완료
-증거에는 최소 `Cell 1개`, 그 Cell에 결속된 `managed Node 1개`, 그 Node를 부모로
-가리키는 typed `NodeBit 1~2개`가 한 snapshot 안에 함께 있어야 한다. 이후 단계는 이
+이 조각은 Cell 표만 만든 뒤 나머지 계층을 미래로 미루는 단계가 아니다. v0는
+`Cell 1개`, 그 Cell에 결속된 `managed Node 1개`, 그 Node를 부모로 가리키는 typed
+`NodeBit 2개`를 한 1024B snapshot 안에 함께 둔다. capacity는 각각 2/4/8이다. 이후 단계는 이
 최소 hierarchy를 새로 완성하는 단계가 아니라 실제 subsystem source와 상태를 더 넓게
 연결하는 단계다.
 
@@ -184,11 +185,11 @@ ABI, verifier가 없으므로 현재 상태는 `RESEARCH`다. Cell/Node 모델�
 
 - bounded Room / Cell / Node / NodeBit record capacity
 - typed ID와 source kind/source ID
-- boot-seeded 최소 Cell 1개, exact-one binding을 가진 managed Node 1개,
-  parent-bound typed NodeBit 1~2개
+- boot-seeded Cell ID 1, exact-one binding을 가진 managed Node ID 101,
+  parent-bound typed NodeBit ID 1001/1002
 - schema/size/generation/validity
 - read-only snapshot
-- duplicate/orphan/unknown/stale/overflow negative selftest
+- duplicate/orphan/unknown/stale/overflow와 non-zero unused tail negative selftest
 - boot marker, structured summary, `state room` mirror
 
 포함하지 않을 것:
@@ -200,24 +201,24 @@ ABI, verifier가 없으므로 현재 상태는 `RESEARCH`다. Cell/Node 모델�
 - process principal 또는 distributed Node mesh
 - Orbit scheduling
 
-예상 증거 형태는 아래처럼 관리 경계가 드러나야 한다. exact count는 실제 v0 schema와
-seed가 확정될 때 verifier와 함께 고정한다.
+exact 부트 증거는 아래처럼 producer와 Python/PowerShell verifier에 함께 고정한다.
 
 ```text
-[ROOM] management hierarchy selftest PASS schema=1 cells=... nodes=... bound=... nodebits=... orphan=0 duplicate=0 stale=0 observation_only=1 management_only=1
+[ROOM] management hierarchy selftest PASS schema=1 struct_size=1024 generation=1 cells=1 nodes=1 bound_nodes=1 nodebits=2 bound_nodebits=2 source_valid=1 generation_valid=1 duplicate_rejected=1 orphan_rejected=1 unknown_rejected=1 stale_rejected=1 overflow_rejected=1 tail_rejected=1 observation_only=1 management_only=1
 ```
 
 정상 marker만 확인하지 않는다. host verifier는 missing, duplicate, truncation,
-unexpected extension, orphan, stale generation, capacity overflow를 fail-closed로 거부해야
-한다. 기존 `[ROOM] snapshot`과 `[ROOM] gates`는 호환성을 위해 그대로 유지한다.
+unexpected extension, orphan, stale generation, capacity overflow, non-zero unused tail을
+fail-closed로 거부해야 한다. 기존 `[ROOM] snapshot`과 `[ROOM] gates`는 호환성을 위해
+그대로 유지한다.
 
 ## 후속 순서
 
-1. 관리 정본과 namespace 대응표 고정
-2. management-only read-only hierarchy registry v0
-3. Cell state source adapter와 validity
+1. 관리 정본과 namespace 대응표 고정 — 완료
+2. management-only read-only hierarchy registry v0 — `CURRENT` (2026-08-11)
+3. Cell state/external source adapter와 validity
 4. Node-to-Cell binding 확대
-5. NodeBit typed view와 generation 결속
+5. legacy NodeBit typed projection과 source generation 결속
 6. per-Cell/per-Node pressure·resource attribution 관측
 7. principal과 상태 전이 계약
 8. Axis Gate authorize/enforcement와 rollback proof

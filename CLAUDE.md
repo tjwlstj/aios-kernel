@@ -87,10 +87,11 @@ add an exchange to `DEFAULT_EXCHANGES` in `tools/testkit/lib/shell_lane.py`.
 
 The canonical product-management hierarchy is **Kernel Room → Cell → Node →
 NodeBit**. Overall Kernel Room topology maturity is `PARTIAL` because its
-aggregate substrate and snapshot are `CURRENT`; the Room-owned hierarchy
-runtime itself is `PLANNED`. Kernel Room currently emits an aggregate snapshot
-and nine syscall-range classification descriptors, but owns no persistent
-Cell/Node/NodeBit registry, parent binding, lifecycle, or reconciliation state.
+aggregate substrate remains alongside a bounded `CURRENT` K1 hierarchy registry. The K1
+registry owns one bootstrap Cell, one explicitly bound declared Node, and two
+typed child NodeBits in a 1024-byte management-only snapshot. It does not own
+external subsystem adapters, live lifecycle/reconciliation, attribution, or
+authorization; those remain K2+ `PLANNED`.
 The existing Memory Fabric, SLM, runtime NodeBit,
 pipeline, scheduler, PID, and ring IDs are independent namespaces. Never infer
 identity from equal integers; introduce an explicit namespace, binding, and
@@ -161,8 +162,10 @@ kernel/boot/boot.asm  (Multiboot2 entry, GDT, paging, SSE/AVX setup, long mode)
 - `ai_resource.c` — schema 1 observation-only aggregate ledger. It exposes five append-only rows (heap bytes, tensor bytes, active Memory Fabric windows, registered inference rings, runnable scheduler tasks) through an internal fixed snapshot. Owners remain `NONE/UNATTRIBUTED`; only tensor has a source-native high-water value. Read it via the read-only `SYS_INFO_RESOURCE` (0x706) syscall or the shell's `state resource`; owner attribution and any quota, denial accounting, reserve, or apply edge still do not exist.
 - `ai_pressure.c` — schema 1 observation-only pressure tracker. It reads exact workload queue occupancy, exact Memory Fabric reader/writer overlap, and cumulative NodeBit denial counters into a fixed-point system→plane snapshot. `max_levels=4` is expansion capacity; only `active_levels=2` is current. Gate bitmap eligibility remains a separate intersection, and no scheduler apply/migration edge consumes this snapshot yet. Read it with `state pressure`.
 
-**Kernel Room (`kernel/core/kernel_room.c`)**
-- `kernel_room_snapshot_read()` assembles aggregate subsystem/health/fabric/scheduler/ring/runtime-NodeBit counts. It is a stateless read model, not a Cell manager; there are no persistent Cell, canonical Node, or child NodeBit records yet.
+**Kernel Room (`kernel/core/kernel_room.c`, `kernel/core/kernel_room_management.c`)**
+- `kernel_room_snapshot_read()` keeps the legacy aggregate subsystem/health/fabric/scheduler/ring/runtime-NodeBit view.
+- `kernel_room_management_snapshot_read()` exposes the separate schema-1, 1024-byte K1 registry: capacity Cell 2 / Node 4 / NodeBit 8, with one bootstrap Cell (ID 1), one exact-bound declared Node (ID 101), and two parent-bound typed NodeBits (IDs 1001/1002). It is immutable after init and remains `observation_only=1 management_only=1`.
+- `kernel_room_management_snapshot_valid()` checks schema/size, typed namespace, explicit parents, source/generation validity, zero tail capacity, and rejects duplicate/orphan/unknown/stale/overflow fixtures. There is no legacy source projection or apply/authorize edge.
 - 9 gate descriptors mapping syscall ranges to risk classifications (OBSERVE / BOUNDED_CONTROL / BOUNDED_DATA / IO_PATH).
 - Gate count must match the enum exactly, and gate ranges must cover every defined syscall number — extend the covering gate's `syscall_end` when adding syscalls.
 - The gate table is **classification metadata** summarized by `kernel_room_dump()` alongside the aggregate ROOM snapshot; `kernel_room_snapshot_read()` carries only `gate_count`, and the dispatcher does not check descriptors per call. Pipeline runtime NodeBit checks, autonomy safe-mode, and health flags are separate narrow controls, not a universal Kernel Room enforcement path. Axis Gate authorize/enforcement is `PLANNED` only after canonical hierarchy binding, principal, ownership, and generation exist.
@@ -189,13 +192,13 @@ A successful boot must emit all of:
 [MM] bootstrap user tensor exclusion PASS
 [PROC] bootstrap ownership selftest PASS slots=2 owned=2 stack_bytes=16384 unique_cr3=1 unique_backing=1 unique_stack=1
 [DEV] Peripheral probe ready
-[HEALTH] stability=...
 [PIPE] Node pipeline ready
 [PIPE] selftest PASS
 [RESOURCE] ledger selftest PASS schema=1 kinds=5 units=2 entries=5 capacity=8 source_flags=31 limit_kinds=5 used_kinds=5 high_water_kinds=1 denied_kinds=0 owners_unattributed=1 observation_only=1
 [PRESSURE] tracker selftest PASS schema=1 planes=3 max_levels=4 active_levels=2 balanced=1 hotspot=1 overlap=1 gate_mask=1 observation_only=1
 [SLM] plan apply selftest PASS
 [SYSCALL] observe dispatch selftest PASS
+[USER] Ring3 scaffold ready=1
 [USER] ring3 exec PASS
 [USER] private address space exec PASS slot=0 cr3_restored=1 if_restored=1 leaf_sealed=1 nx_enforced=1 tensor_excluded=1
 [USER] bootstrap process stack PASS pid=1 slot=0 process_bound=1 kstack_bytes=16384 rsp0_changed=1 rsp0_published=1 int80_entries=3 all_int80_entries_in_stack=1 rsp0_restored=1 kstack_floor_canary=1
@@ -205,9 +208,12 @@ A successful boot must emit all of:
 [PROC] trap evidence snapshot PASS schema=1 captures=2 pid_a=1 slot_a=0 seq_a=1 valid_a=1 owner_a=1 frame_a=1 cr3_a=1 rsp0_a=1 pid_b=2 slot_b=1 seq_b=2 valid_b=1 owner_b=1 frame_b=1 cr3_b=1 rsp0_b=1 distinct_storage=1 current_pid=0 stale_owner=0 resume_ready=0
 [PROC] process event journal PASS schema=1 events=6 lifecycle=4 captures=2 seqs=1,2,3,4,5,6 kinds=1,2,3,1,2,3 reasons=1,2,3,1,2,3 from_pids=0,1,1,0,2,2 to_pids=1,1,0,2,2,0 slots=0,0,0,1,1,1 generations=1,1,1,1,1,1 capture_seqs=0,1,1,0,2,2 owner_ok=1,1,1,1,1,1 cr3_ok=1,1,1,1,1,1 rsp0_ok=1,1,1,1,1,1 if0=1,1,1,1,1,1 snapshot_refs=0,1,1,0,1,1 outcomes=1,1,1,1,1,1 capture_seq_separate=1 current_pid=0 stale_owner=0 dropped=0 overflow=0 evidence_only=1 switch_events=0 resume_ready=0
 [SEC] ring3 entry AC hardening PASS schema=1 smap_supported=... smap=... gate_active=... common_entries=2 common_saved_ac=2 common_clac=... common_fallback=... common_post_ac0=2 int80_entries=6 int80_saved_ac=4 int80_clac=... int80_fallback=... int80_post_ac0=6 gate_skips=... gate_mismatch=0
-[SHELL] Interactive shell started
-[USER] Ring3 scaffold ready=1
+[ROOM] management hierarchy selftest PASS schema=1 struct_size=1024 generation=1 cells=1 nodes=1 bound_nodes=1 nodebits=2 bound_nodebits=2 source_valid=1 generation_valid=1 duplicate_rejected=1 orphan_rejected=1 unknown_rejected=1 stale_rejected=1 overflow_rejected=1 tail_rejected=1 observation_only=1 management_only=1
 [ROOM] snapshot stability=...
+[HEALTH] stability=stable
+=== AIOS Kernel Ready ===
+[KERNEL] Boot complete. Launching interactive shell...
+[SHELL] Interactive shell started
 ```
 
 Required-marker presence alone is not a PASS. Normal verdict v1 scans the whole
@@ -253,7 +259,7 @@ design doc (V0-V5) and the workflow guide (K/M/C/W lanes).
 The project has two coordinated lanes in
 `docs/meta/minimal_io_and_maturity_workflow_ko.md`. The preferred management
 lane builds K1 full hierarchy registry v0 (Cell 1 + bound Node 1 + parent-bound
-NodeBit 1-2 in one proof) → K2 source-binding hardening/expansion → K3 legacy
+NodeBit 2 in one proof; implemented as the bounded bootstrap registry) → K2 source-binding hardening/expansion → K3 legacy
 NodeBit namespace projection → K4 observation-only attribution → K5
 principal/ownership and Axis Gate authorization. The M1-M5 sequence
 (uaccess/ELF/process/storage/disk loading)
@@ -279,7 +285,7 @@ replacement for QEMU or the normal verification path.
 | Path | Purpose |
 |---|---|
 | `kernel/boot/` | Multiboot2 entry, GDT/IDT/paging bootstrap, long mode |
-| `kernel/core/` | main, health, ACPI, time, shell, user_mode, bounded bootstrap process ownership, kernel_room, linker.ld |
+| `kernel/core/` | main, health, ACPI, time, shell, user_mode, bounded bootstrap process ownership, kernel_room aggregate + management hierarchy, linker.ld |
 | `kernel/interrupt/` | IDT + ISR stubs |
 | `kernel/mm/` | tensor_mm, memory_fabric, heap |
 | `kernel/sched/` | AI workload scheduler |
@@ -299,7 +305,7 @@ replacement for QEMU or the normal verification path.
 ## Key Invariants
 
 - Tensor allocations must remain 64-byte aligned (AVX-512 requirement).
-- Kernel Room's canonical hierarchy is Room→Cell→Node→NodeBit. Until a persistent registry exists, never describe aggregate counts or equal IDs from independent namespaces as parent-child bindings.
+- Kernel Room's canonical hierarchy is Room→Cell→Node→NodeBit. K1 proves only its bounded bootstrap fixture; never reinterpret aggregate counts or equal IDs from independent external namespaces as K1 parent-child bindings.
 - Kernel Room gate count must equal the gate enum size, and gate syscall ranges must cover the full syscall surface (`kernel/core/kernel_room.c`). These descriptors classify; they do not enforce per syscall.
 - AI syscall number ranges are ABI-stable — do not renumber or overlap them. This is the only
   contract between `kernel/` and `os/`.

@@ -26,7 +26,7 @@ make -C kernel all
 | 경로 | 내용 |
 |---|---|
 | `boot/` | Multiboot2 엔트리, GDT, 페이징, SSE/AVX, long mode (`boot.asm`) |
-| `core/` | `main.c`, health, acpi, time, shell, kernel_room, user_mode/user_access, selftest, `linker.ld` |
+| `core/` | `main.c`, health, acpi, time, shell, `kernel_room.c`, `kernel_room_management.c`, user_mode/user_access, selftest, `linker.ld` |
 | `interrupt/` | IDT + ISR 스텁 (32 예외 + legacy PIC IRQ0 PIT timer) |
 | `mm/` | `tensor_mm.c`(64B 정렬 텐서 할당), `memory_fabric.c`, `heap.c` |
 | `sched/` | `ai_sched.c` — MLFQ + CFS, 256 태스크 슬롯 |
@@ -39,6 +39,7 @@ make -C kernel all
 ## 불변식 (절대 깨지면 안 됨)
 
 - 텐서 할당은 **64바이트 정렬** (AVX-512). `mm/tensor_mm.c`.
+- `CURRENT` K1 Kernel Room hierarchy snapshot은 schema 1/1024B, capacity Cell 2·Node 4·NodeBit 8이며 `observation_only=1 management_only=1`을 유지한다. `core/kernel_room_management.c`.
 - Kernel Room 게이트 수 = 게이트 enum 크기. `core/kernel_room.c`.
 - AI 시스콜 번호 범위는 ABI-stable — 재번호/중첩 금지.
 - 헬스 스냅샷 ABI 안정 (SLM 오케스트레이터가 소비).

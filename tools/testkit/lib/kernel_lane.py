@@ -87,6 +87,14 @@ PROCESS_EVENT_JOURNAL_PATTERN = (
     "capture_seq_separate=1 current_pid=0 stale_owner=0 dropped=0 "
     "overflow=0 evidence_only=1 switch_events=0 resume_ready=0"
 )
+KERNEL_ROOM_MANAGEMENT_PATTERN = (
+    "[ROOM] management hierarchy selftest PASS schema=1 struct_size=1024 "
+    "generation=1 cells=1 nodes=1 bound_nodes=1 nodebits=2 "
+    "bound_nodebits=2 source_valid=1 generation_valid=1 "
+    "duplicate_rejected=1 orphan_rejected=1 unknown_rejected=1 "
+    "stale_rejected=1 overflow_rejected=1 tail_rejected=1 observation_only=1 "
+    "management_only=1"
+)
 
 
 def ensure_smoke_profile(smoke_profile: str) -> str:
@@ -179,6 +187,7 @@ def required_smoke_patterns(
         PROCESS_TRAP_SNAPSHOT_PATTERN,
         PROCESS_EVENT_JOURNAL_PATTERN,
         RING3_ENTRY_AC_HARDENING_PATTERNS[cpu_profile],
+        KERNEL_ROOM_MANAGEMENT_PATTERN,
         "[SHELL] Interactive shell started",
     ]
     if smoke_profile == "storage-only":

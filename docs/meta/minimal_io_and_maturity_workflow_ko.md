@@ -1,5 +1,7 @@
 # AIOS 성숙도 우선 작업흐름 가이드 (2026-08-10 재정렬)
 
+최종 갱신: 2026-08-11 (K1 hierarchy registry v0 `CURRENT` 승격)
+
 **결정 배경:** 2026-07에는 ring3 첫 실행 슬라이스 뒤 "하드웨어 드라이버 확장 vs 기술 성숙도·정밀화" 중 **성숙도 우선**으로 결정했다. 2026-08-10에는 그 실행 M축이 프로젝트 방향을 독점하면서 본래의 Kernel Room 관리 구조가 뒤로 밀린 점을 바로잡았다. 이 문서는 **Room→Cell→Node→NodeBit 관리축을 우선 정본**으로 두고, 기존 M1~M5를 폐기하지 않은 채 실행 substrate 레인으로 유지한다.
 
 ---
@@ -56,8 +58,8 @@ QEMU 기본 `-hda`와 즉시 호환되고 수십 줄로 섹터를 읽을 수 있
 ## 3-A. Kernel Room 관리축 (K0~K5) — 우선 정본
 
 목표 계층은 **Room → Cell → Node → NodeBit**다. 현재 코드에는 Room의 aggregate
-snapshot과 각자 `CURRENT`인 subsystem, 이를 Room에 연결할 `SCAFFOLD` adapter
-seam이 있다. Memory Fabric `domain_id`, SLM
+snapshot, K1 bounded bootstrap hierarchy v0, 각자 `CURRENT`인 subsystem, 이를
+Room에 연결할 `SCAFFOLD` adapter seam이 있다. Memory Fabric `domain_id`, SLM
 `agent_tree.node_id`, SLM `slm_nodebit_id`, runtime NodeBit `node_id`, pipeline
 `owner_node`, scheduler task/PID/ring ID는 서로 다른 네임스페이스이며 숫자 일치로
 관계를 추론하지 않는다.
@@ -65,24 +67,25 @@ seam이 있다. Memory Fabric `domain_id`, SLM
 | 단계 | 상태 | 관리 의미 |
 |---|---|---|
 | K0 문서/namespace 재정렬 | 문서 기준선 완료 | 정본 계층과 현재 구현의 간극을 명시한다. 코드 성숙도 `CURRENT` 판정이 아니다. |
-| K1 hierarchy registry v0 | `PLANNED` (첫 vertical slice) | Cell 1 + bound Node 1 + parent-bound NodeBit 1~2를 한 번에 소유·조회한다. |
+| K1 hierarchy registry v0 | `CURRENT` (2026-08-11) | 1024B snapshot에 Cell 1 + bound Node 1 + parent-bound NodeBit 2를 한 번에 소유·조회한다. |
 | K2 source binding hardening/expansion | `PLANNED` | canonical Node의 외부 source binding과 generation/reconciliation을 확장한다. |
 | K3 legacy NodeBit namespace projection | `PLANNED` | 선택한 legacy NodeBit를 namespace adapter로 canonical NodeBit에 read-only projection한다. |
 | K4 resource/pressure attribution | `PLANNED` | canonical Cell/Node owner에 관측치를 귀속하되 `observation_only=1`을 유지한다. |
 | K5 principal/ownership + Axis Gate | `PLANNED` | 검증된 identity/binding/generation 위에서만 authorize/enforcement를 추가한다. |
 
-### K0. 문서 정본과 ID 경계 — 문서 기준선 완료, 런타임 미구현
+### K0. 문서 정본과 ID 경계 — 문서 기준선 완료
 
-- Kernel Room의 현재 실체는 aggregate snapshot + 9개 syscall-range 분류 descriptor다.
-- persistent Cell/Node/NodeBit registry, parent-child binding, lifecycle/reconciliation,
+- Kernel Room에는 aggregate snapshot + 9개 syscall-range 분류 descriptor와 별도 K1
+  bootstrap hierarchy registry가 있다.
+- K1 밖 external Cell/Node/NodeBit source binding, lifecycle/reconciliation,
   principal/ownership는 없다.
 - `SYS_SLM_NODEBIT_LOOKUP`는 `slm_orchestrator.c`의 SLM policy catalog를 읽는다.
   `runtime/nodebit.c`의 별도 syscall은 `SYS_NODEBIT_REGISTER/UPDATE/STATS`다.
 
-### K1. Room-owned hierarchy registry v0 — 첫 검증 가능한 vertical slice
+### K1. Room-owned hierarchy registry v0 — ✅ 완료 (2026-08-11)
 
-- **작업:** 하나의 `main` Cell, 그 Cell에 bound된 `main-ai` Node 하나, 그 Node에
-  parent-bound된 read-only canonical NodeBit 1~2개를 **같은 고정 용량 registry와
+- **구현:** Cell ID 1, 그 Cell에 bound된 Node ID 101, 그 Node에 parent-bound된
+  read-only canonical NodeBit ID 1001/1002를 **같은 고정 용량 registry와
   같은 vertical proof**에 넣는다. 각 record는 append-only ID/state/reason,
   generation, exact parent를 가진다. Cell-only 성공을 K1 완료로 판정하지 않는다.
 - **경계:** 첫 조각은 management-only이며 scheduler/resource/policy apply 호출자가
@@ -91,10 +94,13 @@ seam이 있다. Memory Fabric `domain_id`, SLM
   축약하지 않는다.
 - **실패 경계:** duplicate ID, capacity 초과, 잘못된 상태 전이, missing/orphan parent,
   stale generation, 초기화 전 조회를 fail-closed로 거부한다.
-- **완료 기준:** `[ROOM] management hierarchy selftest PASS ... cells=1 nodes=1
-  bound=1 nodebits=N ... observation_only=1 management_only=1` 형태의
-  boot record, read-only `state room` mirror, host parser 반례 검증. NodeBit seed 수는
-  v0 schema 확정 때 하나로 고정하고 verifier가 exact 값으로 검사한다.
+- **검증 계약:** schema 1/1024B, capacity Cell 2/Node 4/NodeBit 8과 exact
+  `[ROOM] management hierarchy selftest PASS ... cells=1 nodes=1 bound_nodes=1
+  nodebits=2 bound_nodebits=2 ... tail_rejected=1 observation_only=1 management_only=1`
+  boot record, structured `kernel_room_management`, read-only `state room` full row를
+  Python/PowerShell과 shell lane이 exact-one/fail-closed로 검사한다.
+- **정규 증거:** default full/minimal/storage-only와 max-smap minimal strict kernel,
+  default/max-smap strict shell 17/17, 각 boot summary export가 통과했다.
 
 ### K2. source binding hardening/expansion
 

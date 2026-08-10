@@ -139,6 +139,79 @@ class ShellExpectationTests(unittest.TestCase):
                         expectations_match(invalid + "\n", expectations)
                     )
 
+    def test_state_room_requires_exact_canonical_hierarchy_record(
+        self,
+    ) -> None:
+        exchange = next(
+            item
+            for item in DEFAULT_EXCHANGES
+            if item["command"] == "state room"
+        )
+        expectations = list(exchange["expect"])
+        canonical = " ".join(expectations)
+        self.assertTrue(
+            expectations_match(canonical + "\n", expectations)
+        )
+
+        reordered = list(expectations)
+        reordered[5], reordered[6] = reordered[6], reordered[5]
+        invalid_records = (
+            " ".join(expectations[:-1]),
+            canonical.replace("struct_size=1024", "struct_size=1023"),
+            canonical.replace("ready=1", "ready=0"),
+            canonical.replace("generation=1", "generation=2", 1),
+            canonical.replace("cells=1", "cells=0"),
+            canonical.replace("cell_capacity=2", "cell_capacity=1"),
+            canonical.replace("nodes=1", "nodes=0"),
+            canonical.replace("node_capacity=4", "node_capacity=3"),
+            canonical.replace("bound_nodes=1", "bound_nodes=0"),
+            canonical.replace("nodebits=2", "nodebits=1", 1),
+            canonical.replace("nodebit_capacity=8", "nodebit_capacity=7"),
+            canonical.replace("bound_nodebits=2", "bound_nodebits=1"),
+            canonical.replace("cell_id=1", "cell_id=2"),
+            canonical.replace("node_id=101", "node_id=102"),
+            canonical.replace("node_parent=1", "node_parent=2"),
+            canonical.replace("nodebit_ids=1001,1002", "nodebit_ids=1001"),
+            canonical.replace(
+                "nodebit_parents=101,101", "nodebit_parents=101,102"
+            ),
+            canonical.replace("source_valid=1", "source_valid=0"),
+            canonical.replace("generation_valid=1", "generation_valid=0"),
+            canonical.replace("duplicate=0", "duplicate=1"),
+            canonical.replace("orphan=0", "orphan=1"),
+            canonical.replace("unknown=0", "unknown=1"),
+            canonical.replace("stale=0", "stale=1"),
+            canonical.replace("overflow=0", "overflow=1"),
+            canonical.replace("observation_only=1", "observation_only=0"),
+            canonical.replace("management_only=1", "management_only=0"),
+            canonical.replace(
+                "generation=1", "generation=1 generation=1", 1
+            ),
+            canonical + " apply_enabled=1",
+            canonical + " PARTIAL",
+            " ".join(reordered),
+            "  " + canonical,
+            '"' + canonical + '"',
+        )
+        for invalid in invalid_records:
+            with self.subTest(invalid=invalid):
+                self.assertFalse(
+                    expectations_match(invalid + "\n", expectations)
+                )
+
+        for sibling in (
+            canonical,
+            "[STATE] room error=unavailable",
+            "[STATE] room",
+        ):
+            with self.subTest(sibling=sibling):
+                self.assertFalse(
+                    expectations_match(
+                        canonical + "\n" + sibling + "\n",
+                        expectations,
+                    )
+                )
+
     def test_state_health_and_autonomy_contracts_are_fail_closed(self) -> None:
         exchange = next(item for item in DEFAULT_EXCHANGES if item["command"] == "state health")
         expectations = list(exchange["expect"])

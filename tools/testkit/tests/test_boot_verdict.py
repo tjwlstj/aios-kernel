@@ -5,6 +5,7 @@ import unittest
 from lib.boot_verdict import evaluate_normal_boot
 from lib.kernel_lane import (
     CPU_SECURITY_PATTERNS,
+    KERNEL_ROOM_MANAGEMENT_PATTERN,
     PRESSURE_SELFTEST_PATTERN,
     PROCESS_TRAP_SNAPSHOT_PATTERN,
     PROCESS_EVENT_JOURNAL_PATTERN,
@@ -17,7 +18,10 @@ from lib.kernel_lane import (
 )
 
 
-REQUIRED_PATTERNS = ["[BOOT] profile-required"]
+REQUIRED_PATTERNS = [
+    "[BOOT] profile-required",
+    KERNEL_ROOM_MANAGEMENT_PATTERN,
+]
 ROOM_SNAPSHOT_LINE = (
     "[ROOM] snapshot stability=stable ok=18 degraded=0 failed=0 "
     "unknown=2 topology=segmented domains=4 windows=0 drivers=1/1 "
@@ -39,6 +43,7 @@ def normal_lines() -> list[str]:
         "[PROC] trap evidence snapshot PASS schema=1 captures=2",
         "[PROC] process event journal PASS schema=1 events=6",
         RING3_ENTRY_AC_HARDENING_PATTERNS["default"],
+        KERNEL_ROOM_MANAGEMENT_PATTERN,
         ROOM_SNAPSHOT_LINE,
         "[HEALTH] stability=stable ok=18 degraded=0 failed=0 unknown=2",
         "=== AIOS Kernel Ready ===",
@@ -213,6 +218,84 @@ class NormalBootVerdictTests(unittest.TestCase):
                 self.assertFalse(verdict["passed"])
                 self.assertIn(
                     "EVIDENCE_RECORD_INVALID", reason_codes(verdict)
+                )
+
+    def test_kernel_room_management_contract_is_exact_and_fails_closed(
+        self,
+    ) -> None:
+        canonical = KERNEL_ROOM_MANAGEMENT_PATTERN
+        mutations = (
+            "[ROOM] management hierarchy selftest PASS schema=1",
+            canonical.replace("struct_size=1024", "struct_size=1023"),
+            canonical.replace("generation=1", "generation=2", 1),
+            canonical.replace("cells=1", "cells=0"),
+            canonical.replace("nodes=1", "nodes=0"),
+            canonical.replace("bound_nodes=1", "bound_nodes=0"),
+            canonical.replace("nodebits=2", "nodebits=1", 1),
+            canonical.replace("bound_nodebits=2", "bound_nodebits=1"),
+            canonical.replace("source_valid=1", "source_valid=0"),
+            canonical.replace("generation_valid=1", "generation_valid=0"),
+            canonical.replace("duplicate_rejected=1", "duplicate_rejected=0"),
+            canonical.replace("orphan_rejected=1", "orphan_rejected=0"),
+            canonical.replace("unknown_rejected=1", "unknown_rejected=0"),
+            canonical.replace("stale_rejected=1", "stale_rejected=0"),
+            canonical.replace("overflow_rejected=1", "overflow_rejected=0"),
+            canonical.replace("tail_rejected=1", "tail_rejected=0"),
+            canonical.replace("observation_only=1", "observation_only=0"),
+            canonical.replace("management_only=1", "management_only=0"),
+            canonical.replace(
+                "generation=1", "generation=1 generation=1", 1
+            ),
+            canonical.replace("selftest PASS", "selftest PASSFAIL"),
+            canonical + " apply_enabled=1",
+            "  " + canonical,
+            '"' + canonical + '"',
+        )
+        for invalid in mutations:
+            with self.subTest(invalid=invalid):
+                lines = [
+                    invalid if line == canonical else line
+                    for line in normal_lines()
+                ]
+                verdict = evaluate(lines)
+                self.assertFalse(verdict["passed"])
+
+        missing = [line for line in normal_lines() if line != canonical]
+        self.assertFalse(evaluate(missing)["passed"])
+
+        for extra in (
+            canonical,
+            "[ROOM] management hierarchy selftest PARTIAL schema=1",
+            "[ROOM] management hierarchy",
+        ):
+            with self.subTest(extra=extra):
+                verdict = evaluate([*normal_lines(), extra])
+                self.assertFalse(verdict["passed"])
+                self.assertIn(
+                    "EVIDENCE_RECORD_INVALID", reason_codes(verdict)
+                )
+
+        entry = RING3_ENTRY_AC_HARDENING_PATTERNS["default"]
+        room = ROOM_SNAPSHOT_LINE
+        before_entry = [
+            line
+            for line in normal_lines()
+            if line != canonical
+        ]
+        before_entry.insert(before_entry.index(entry), canonical)
+        after_room = [
+            line
+            for line in normal_lines()
+            if line != canonical
+        ]
+        after_room.insert(after_room.index(room) + 1, canonical)
+        for reordered in (before_entry, after_room):
+            with self.subTest(reordered=reordered):
+                verdict = evaluate(reordered)
+                self.assertFalse(verdict["passed"])
+                self.assertIn(
+                    "TERMINAL_CHECKPOINT_ORDER_INVALID",
+                    reason_codes(verdict),
                 )
 
     def test_entry_ac_hardening_contract_fails_closed(self) -> None:

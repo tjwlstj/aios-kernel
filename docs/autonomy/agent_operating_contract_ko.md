@@ -1,5 +1,7 @@
 # AI 에이전트 운용 계약 (2026-07-15, 2026-08-10 관리축 정렬)
 
+최종 갱신: 2026-08-11 (K1 hierarchy와 `state room/resource` 반영)
+
 ## 1. 목적
 
 AIOS에서 "AI가 편하게 움직인다"는 것은 커널 내부를 자유 형식으로 조작한다는 뜻이 아니다.
@@ -27,8 +29,9 @@ AIOS에서 "AI가 편하게 움직인다"는 것은 커널 내부를 자유 형�
 | 단계 | 상태 | 현재 표면 |
 |---|---|---|
 | 발견 | `CURRENT` | `state list` |
-| 커널 관측 | `CURRENT` | `state health/mem/sched/nodes/pipeline/pressure/slm/autonomy/user/sec/time/version` |
-| 커널 내부 리소스 ledger | `CURRENT` | schema 1 aggregate snapshot + exact boot summary; resource syscall/state topic은 아직 없음 |
+| 커널 관측 | `CURRENT` | `state health/room/mem/sched/nodes/pipeline/resource/pressure/slm/autonomy/user/sec/time/version` |
+| Kernel Room K1 계층 | `CURRENT` | schema 1/1024B management-only snapshot + exact boot/summary + `state room` |
+| 커널 내부 리소스 ledger | `CURRENT` | schema 1 aggregate snapshot + exact boot summary + `SYS_INFO_RESOURCE=0x706` + `state resource` |
 | 자율 제어 관측 | `CURRENT` | `state autonomy` schema 1 |
 | 제한된 행동 제안 | `PARTIAL` | `SYS_AUTONOMY_ACTION_PROPOSE`; scheduler만 apply 지원, delta ±32 |
 | commit/rollback | `PARTIAL` | `SYS_AUTONOMY_ACTION_COMMIT`, `SYS_AUTONOMY_ROLLBACK`; 상주 userspace agent는 아직 없음 |
@@ -80,8 +83,8 @@ ring3는 두 정적 bootstrap process를 PID 1→PID 2 순서로 각각 동기 �
 프로젝트 전체 우선순위는 Kernel Room 관리 K축을 따른다. 에이전트 표면은 아래 관리
 증거가 생기는 순서대로 연결한다.
 
-1. K1에서 Cell 1 + bound Node 1 + parent-bound NodeBit 1~2의 management-only
-   read-only hierarchy v0를 한 vertical proof로 만든다. Cell-only 표는 완료가 아니다.
+1. K1은 Cell 1 + bound Node 1 + parent-bound NodeBit 2의 management-only
+   read-only hierarchy v0를 한 vertical proof로 완성했다. 이 bounded 조각만 `CURRENT`다.
 2. K2에서 canonical Node의 source binding과 generation/reconciliation을 확장한다.
 3. K3에서 선택한 legacy NodeBit를 namespace adapter로 read-only projection한다.
 4. K4에서 resource/pressure를 canonical Cell/Node에 귀속하되

@@ -1,10 +1,14 @@
 # 기술 성숙도 레버 백로그 (2026-07-15, 2026-08-10 관리축 정렬)
 
+최종 갱신: 2026-08-11 (K1 완료 뒤 직접 관리 마일스톤 정렬)
+
 이 문서는 특정 기능(M-레벨)이 아니라 **바닥을 올리는 성숙도 레버**를 한곳에 모아 우선순위·착수점·담당·조율지점을 고정한다. Claude가 회귀 정비 중 관찰한 것을 근거로 정리했고, Codex와 의견을 조율한 뒤 착수한다.
 
 이 백로그는 관리 K축을 대체하지 않는 `SUPPORTING`/`ORTHOGONAL` 품질 작업 모음이다.
-프로젝트의 다음 직접 관리 마일스톤은 [Kernel Room 관리 모델](../kernel-room/kernel_room_management_model_ko.md)의
-K1 hierarchy registry v0이며, 아래 레버의 착수 가능 표시는 그 우선순위를 뒤집지 않는다.
+K1 hierarchy registry v0는 `CURRENT`다. 프로젝트의 다음 직접 관리 마일스톤은
+[Kernel Room 관리 모델](../kernel-room/kernel_room_management_model_ko.md)의 K2 external
+source binding과 generation/reconciliation 확대이며, 아래 레버의 착수 가능 표시는 그
+우선순위를 뒤집지 않는다.
 
 ## 문서 관계 (중복 금지)
 
