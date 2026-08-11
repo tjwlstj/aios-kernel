@@ -194,7 +194,7 @@
       "update_policy": "Keep blocked unless a separately approved repository license, SPDX, provenance, derivative-work, maintenance, and rollback review replaces this policy row.",
       "provenance_required": true,
       "artifact_pin_required": true,
-      "block_reason": "Linux in-kernel APIs are intentionally unstable, GPL-2.0-only code import is not authorized, and this repository currently has no declared root license/import policy."
+      "block_reason": "Linux in-kernel APIs are intentionally unstable, GPL-2.0-only code import is not authorized, and this repository has no canonical tracked root license file or import-compatibility policy."
     },
     {
       "id": "sel4-design-reference",

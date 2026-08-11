@@ -1,5 +1,12 @@
 ## Commercial Stability Baseline
 
+> **REVIEW (2026-08-11 분류):** 초기 health/driver 안정화 기준을 보존한 역사 문서다.
+> 본문의 구현 상태와 “다음 우선순위”는 현재 정본이 아니다. 최신 성숙도와 직접
+> 작업 순서는 [성숙도 우선 작업흐름](minimal_io_and_maturity_workflow_ko.md), 검증
+> 계약은 [검증 툴링 진화 설계](../tools/verification_tooling_evolution_design_ko.md)를
+> 따른다. 본문의 QEMU `stable` 표현은 2026-04 checkpoint이며 현재 CI나
+> commercial-ready 판정이 아니다.
+
 ### 목표
 
 AIOS를 상용 수준으로 끌어올리려면 기능 수보다 먼저 다음 조건이 필요하다.
@@ -24,11 +31,11 @@ AIOS를 상용 수준으로 끌어올리려면 기능 수보다 먼저 다음 �
 
 핵심 파일:
 
-- [include/kernel/health.h](/Z:/aios/aios-kernel/include/kernel/health.h)
-- [kernel/health.c](/Z:/aios/aios-kernel/kernel/health.c)
-- [kernel/main.c](/Z:/aios/aios-kernel/kernel/main.c)
-- [runtime/slm_orchestrator.c](/Z:/aios/aios-kernel/runtime/slm_orchestrator.c)
-- [runtime/autonomy.c](/Z:/aios/aios-kernel/runtime/autonomy.c)
+- [kernel/include/kernel/health.h](../../kernel/include/kernel/health.h)
+- [kernel/core/health.c](../../kernel/core/health.c)
+- [kernel/core/main.c](../../kernel/core/main.c)
+- [kernel/runtime/slm_orchestrator.c](../../kernel/runtime/slm_orchestrator.c)
+- [kernel/runtime/autonomy.c](../../kernel/runtime/autonomy.c)
 
 ### 현재 기준 해석
 

@@ -1,6 +1,6 @@
 # AIOS 성숙도 우선 작업흐름 가이드 (2026-08-10 재정렬)
 
-최종 갱신: 2026-08-11 (K1 hierarchy registry v0 `CURRENT` 승격)
+최종 갱신: 2026-08-11 (K2-first Linux-hosted H축 통합)
 
 **결정 배경:** 2026-07에는 ring3 첫 실행 슬라이스 뒤 "하드웨어 드라이버 확장 vs 기술 성숙도·정밀화" 중 **성숙도 우선**으로 결정했다. 2026-08-10에는 그 실행 M축이 프로젝트 방향을 독점하면서 본래의 Kernel Room 관리 구조가 뒤로 밀린 점을 바로잡았다. 이 문서는 **Room→Cell→Node→NodeBit 관리축을 우선 정본**으로 두고, 기존 M1~M5를 폐기하지 않은 채 실행 substrate 레인으로 유지한다.
 
@@ -30,7 +30,10 @@
 QEMU 우선 개발 커널의 2026년 컨센서스는 레거시 IDE PIO가 아니라 **virtio-blk**다.
 
 - virtio는 하이퍼바이저-게스트 간 표준 반가상화 인터페이스로, 실제 하드웨어의 quirk 에뮬레이션 없이 단순한 virtqueue(descriptor ring)로 블록 I/O를 처리한다. 취미/연구 OS에서 가장 구현이 단순한 블록 경로로 통용된다.
-- 스펙 상태: OASIS VIRTIO **1.2가 최종 Committee Specification**, **1.3은 2023-10 공개 draft** 라인. 구현 기준은 1.2로 잡으면 안전하다.
+- 선택 구현 기준은 OASIS VIRTIO **1.2 CS01**이다. 더 최신 승인 규격인
+  **1.4 CS01**은 현재 `RESEARCH` 비교선이며 1.2 기준을 조용히 대체하지 않는다.
+  exact upstream 역할은
+  [Linux-hosted substrate와 resource 정책](../os/linux_hosted_substrate_and_resource_policy_ko.md)을 따른다.
 - QEMU 연결: `-drive file=disk.img,if=none,id=d0,format=raw -device virtio-blk-pci,drive=d0`
 - **주의 (현재 코드와의 접점):** virtio-blk PCI는 vendor `0x1af4`이며 class code가 SCSI(0x01/0x00)로 보고되므로, 현재 `classify_controller()`는 이를 "SCSI"로 오분류한다. virtio 채택 시 vendor 0x1af4 기반 분기(`STORAGE_HOST_CONTROLLER_VIRTIO`)를 추가해야 한다.
 - **자산 재사용:** virtqueue는 descriptor ring 모델이라 e1000 RX 링 구현 경험이 그대로 이식된다.
@@ -51,8 +54,9 @@ QEMU 기본 `-hda`와 즉시 호환되고 수십 줄로 섹터를 읽을 수 있
 
 ## 3. 이후 작업흐름 가이드 (성숙도 우선 로드맵)
 
-각 단계는 §4 작업 규약을 따른다. 관리 K축 내부와 실행 M축 내부의 의존 순서는
-유지하지만, 두 축은 서로 다른 레인이다. “M3의 다음 번호”가 곧 “프로젝트의 다음
+각 단계는 §4 작업 규약을 따른다. 관리 K축이 직접 제품 방향을 소유하고 실행 M축,
+지속성 C축, 브라우저 W축, Linux-hosted H축은 명시된 선행조건 아래 이를 지지한다.
+각 축 내부의 의존 순서는 유지하지만 “M3나 H의 다음 번호”가 곧 “프로젝트의 다음
 방향”이라는 뜻은 아니다.
 
 ## 3-A. Kernel Room 관리축 (K0~K5) — 우선 정본
@@ -237,6 +241,39 @@ source 즉시 단일-table 통합 순서는 이 문서에서 폐기한다.
 모델 실행·웹 서비스·세션 지속성은 유저스페이스에 두고, 커널은 bounded syscall,
 SQ/CQ, 자원, authorize, rollback 경계를 제공한다.
 
+## 3-E. Linux-hosted substrate 축 (H0~H5) — K2를 대체하지 않는 보조축
+
+세부 기준선과 source/import 경계의 정본은
+[Linux-hosted substrate와 upstream resource 정책](../os/linux_hosted_substrate_and_resource_policy_ko.md)이다.
+Linux PID, cgroup, pidfd, PSI, namespace는 canonical Cell/Node/NodeBit가 아니라
+`source_only` 입력이다. native K1/K2 의미를 Linux object에 맞춰 바꾸지 않는다.
+
+| 단계 | 상태 | 관계 |
+|---|---|---|
+| H0 upstream resource manifest/guard | `CURRENT` | 13개 source row와 `code_import=0`을 검증한다. runtime backend 증거가 아니다. |
+| H1 OS-neutral trace/replay | `PLANNED` | K2-a가 고정한 lifecycle·generation·reject reason을 재생한다. K2보다 먼저 의미를 만들지 않는다. |
+| H2 Linux observe-only adapter | `PLANNED` | K2-a native negative proof 뒤 primary baseline에서 source-only 관측만 한다. |
+| H3 binding reconciliation/parity | `PLANNED` | exit/PID reuse/cgroup recreate/host restart를 구분하고 native와 같은 semantic verdict를 요구한다. |
+| H4 proposal/validation parity | `PLANNED` | K5 action/principal 계약 뒤에만 validate-only로 열며 초기 capability는 전부 `UNSUPPORTED`다. |
+| H5 bounded apply/rollback | `PLANNED` | K5 authorize와 별도 승인 뒤 한 action만 before/after/rollback 증거로 연다. |
+
+### 4~8주 통합 우선순위
+
+1. **DIRECT 65% 이상 — K2-a:** semantic kind가 맞는 native source 하나에
+   producer-owned instance/generation과 copied read API를 만든 뒤, 별도 bounded
+   binding/reconciliation snapshot으로 K1 Node 101에 결속한다. 우선 후보는 SLM
+   agent-tree MAIN source지만 기존 `policy_generation`을 source generation으로
+   재해석하지 않는다.
+2. **SUPPORTING 25% 이하 — H0/H1:** resource guard와 CI를 유지하고, K2-a가 만든
+   evidence에서 OS-neutral trace/replay를 추출한다.
+3. **RESEARCH 10% 이하 — H2/H3:** native K2 negative proof가 통과한 뒤에만 Linux
+   observe-only lifecycle/parity를 실험한다. K2 주간 증거가 실패하면 즉시 중단한다.
+
+이번 주기의 hard stop은 H4/H5, resource apply, quota/throttle, scheduler migration,
+Axis Gate enforcement다. Memory Fabric domain은 Cell/resource source 후보이고 bootstrap
+process는 execution-instance source 후보이므로, 구현이 쉽다는 이유로 `AI_SERVICE`
+Node 101과 결속하지 않는다. K1 1024B ABI는 그대로 보존한다.
+
 ## 4. 작업 규약 (모든 단계 공통 — 이번 세션에서 확립)
 
 1. **셀프테스트 우선:** 새 경로는 부팅 셀프테스트로 왕복 검증하고 `[XXX] ... PASS` 마커를 남긴다.
@@ -253,7 +290,7 @@ SQ/CQ, 자원, authorize, rollback 경계를 제공한다.
 ## Sources
 - [Implementing a virtio-blk driver in my own operating system — Stephen Brennan](https://brennan.io/2020/03/22/sos-block-device/)
 - [How to emulate block devices with QEMU — Oracle Linux Blog](https://blogs.oracle.com/linux/how-to-emulate-block-devices-with-qemu)
-- [Virtual I/O Device (VIRTIO) Version 1.3 — OASIS](https://docs.oasis-open.org/virtio/virtio/v1.3/virtio-v1.3.html)
-- [Virtual I/O Device (VIRTIO) Version 1.2 — OASIS](https://docs.oasis-open.org/virtio/virtio/v1.2/csd01/virtio-v1.2-csd01.html)
+- [Virtual I/O Device (VIRTIO) Version 1.4 CS01 — OASIS](https://docs.oasis-open.org/virtio/virtio/v1.4/cs01/virtio-v1.4-cs01.html)
+- [Virtual I/O Device (VIRTIO) Version 1.2 CS01 — OASIS](https://docs.oasis-open.org/virtio/virtio/v1.2/cs01/virtio-v1.2-cs01.html)
 - [What is io_uring? — Lord of the io_uring](https://unixism.net/loti/what_is_io_uring.html)
 - [Why you should use io_uring for network I/O — Red Hat Developer](https://developers.redhat.com/articles/2023/04/12/why-you-should-use-iouring-network-io)

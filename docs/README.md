@@ -21,7 +21,7 @@
 - [architecture.mmd](architecture.mmd) / [architecture.png](architecture.png) — 아키텍처 다이어그램
 
 ## kernel/ — 커널 내부
-- [hardware_core_foundation_ko.md](kernel/hardware_core_foundation_ko.md)
+- [hardware_core_foundation_ko.md](kernel/hardware_core_foundation_ko.md) — `REVIEW`; 초기 hardware bootstrap 기록, 현재 우선순위 아님
 - [driver_model_foundation_ko.md](kernel/driver_model_foundation_ko.md)
 - [memory_parallel_optimization_ko.md](kernel/memory_parallel_optimization_ko.md)
 - [multi_agent_memory_fabric_foundation_ko.md](kernel/multi_agent_memory_fabric_foundation_ko.md)
@@ -41,7 +41,7 @@
 
 ## autonomy/ — 자율 제어 · SLM · 정책
 - [agent_operating_contract_ko.md](autonomy/agent_operating_contract_ko.md)
-- [autonomous_os_execution_roadmap_ko.md](autonomy/autonomous_os_execution_roadmap_ko.md)
+- [autonomous_os_execution_roadmap_ko.md](autonomy/autonomous_os_execution_roadmap_ko.md) — `OLD`; ring3/K1 이전의 2026-04 실행 로드맵
 - [slm_autonomous_kernel_plan.md](autonomy/slm_autonomous_kernel_plan.md)
 - [slm_hardware_onboarding_ko.md](autonomy/slm_hardware_onboarding_ko.md)
 - [slm_learning_optimization_ko.md](autonomy/slm_learning_optimization_ko.md)
@@ -79,6 +79,6 @@
 - [inspection_report_2026_03_30.md](meta/inspection_report_2026_03_30.md)
 - [inspection_and_gaps_ko.md](meta/inspection_and_gaps_ko.md)
 - [current_kernel_gap_report_ko.md](meta/current_kernel_gap_report_ko.md)
-- [commercial_stability_baseline_ko.md](meta/commercial_stability_baseline_ko.md)
+- [commercial_stability_baseline_ko.md](meta/commercial_stability_baseline_ko.md) — `REVIEW`; 2026-04 QEMU health/driver checkpoint
 - [ai_native_os_github_landscape_ko.md](meta/ai_native_os_github_landscape_ko.md) — 2026-04-21 역사적 조사(`OLD`)
 - [release_notes_v0.2.0_beta.6.md](meta/release_notes_v0.2.0_beta.6.md)

@@ -272,7 +272,7 @@ EXPECTED_RESOURCE_DIGESTS = {
     "virtio-1-4-reference": "67aaf73e091d736af35c6267dd955551b1f3914f612acdc971999c75a3dd07c3",
     "linux-pidfd-source": "12acbb3060261231244a087ba0e2769dba613e6a2292a2942d22f5b95d78d9b3",
     "linux-psi-source": "3f12f6b1431876622fa2a9f0bda63a335dd20c9b87a1feb2624953c1b434a9c7",
-    "linux-kernel-internal-source": "511043d6fe4938772d311faddf8d8c6147ece4abbd85549b1c24f9340ec3297c",
+    "linux-kernel-internal-source": "e3964ce55e75734bc242c104db62392a1c609e8909620a4740a0403e0eefb149",
     "sel4-design-reference": "38eb2cb7551ea1da0d551985d66c6db86184f2b361db173883c37cebd9ee55e4",
     "zircon-design-reference": "d3af1b7bf73119de6fa95de4b65a5ecde816b22c333be44a6a8a58233aa59950",
     "unikraft-design-reference": "c2a21e577f07d1f7b7999da3261b672f9d2f2f95591ac69d2c786ad08360564e",

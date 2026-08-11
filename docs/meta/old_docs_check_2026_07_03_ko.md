@@ -1,4 +1,4 @@
-# OLD 문서 체크리스트 (2026-07-03, 2026-08-10 재검토)
+# OLD 문서 체크리스트 (2026-07-03, 2026-08-11 재검토)
 
 이 문서는 현재 구현 기준보다 뒤처진 문서를 `OLD` 또는 `REVIEW`로 분류해 둔 체크리스트다.
 파일 이동은 하지 않는다. 기존 링크를 유지하되, 새 작업자는 먼저 최신 기준 문서를 읽고 아래 문서는
@@ -8,7 +8,7 @@
 
 - [CLAUDE.md](../../CLAUDE.md): 현재 빌드/테스트 명령, 구현 성숙도, ID namespace와 불변식.
 - [Kernel Room 문서 허브](../kernel-room/README.md)와 [관리 모델 정본](../kernel-room/kernel_room_management_model_ko.md): Room→Cell→Node→NodeBit 관리 구조와 `CURRENT`/`PARTIAL`/`PLANNED` 경계.
-- [minimal_io_and_maturity_workflow_ko.md](minimal_io_and_maturity_workflow_ko.md): K1~K5 관리축, M1~M5 실행 substrate, C/W 후속축의 현재 우선순위.
+- [minimal_io_and_maturity_workflow_ko.md](minimal_io_and_maturity_workflow_ko.md): K1~K5 관리축, M1~M5 실행 substrate, C/W/H 후속축의 현재 우선순위.
 - [tools/testkit/README.md](../../tools/testkit/README.md): testkit lane과 산출물.
 - [testkit_guide_ko.md](../tools/testkit_guide_ko.md): testkit 세부 사용법.
 
@@ -23,6 +23,7 @@
 | [x] OLD | [ai_native_os_github_landscape_ko.md](ai_native_os_github_landscape_ko.md) | GitHub landscape 비교 중 현재 AIOS 상태 설명이 M1/M2 이전임 | `CLAUDE.md`, `minimal_io_and_maturity_workflow_ko.md` |
 | [x] OLD | [gemini_driver_userspace_checkpoint_ko.md](../tools/gemini_driver_userspace_checkpoint_ko.md) | Gemini 점검 당시의 ring3 scaffold 이전 체크포인트 문서 | `minimal_io_and_maturity_workflow_ko.md` |
 | [x] OLD | [gemini_cli_first_review_ko.md](../tools/gemini_cli_first_review_ko.md) | 첫 리뷰 기록으로, ring3/TSS/syscall/ELF 부재를 전제로 함 | `CLAUDE.md`, 최신 testkit 결과 |
+| [x] OLD | [autonomous_os_execution_roadmap_ko.md](../autonomy/autonomous_os_execution_roadmap_ko.md) | 2026-04 bootstrap 기준으로 ring3/shell/ELF 부재와 driver-first 우선순위를 전제함 | `minimal_io_and_maturity_workflow_ko.md`, Kernel Room 관리 모델 |
 
 ## REVIEW로 체크한 문서
 
@@ -31,6 +32,8 @@
 | [x] REVIEW | [ai_resource_management_development_plan_ko.md](../autonomy/ai_resource_management_development_plan_ko.md) | resource/service 계획 자체는 유효하지만 ring3 이후 전제 문장이 일부 낡았다. |
 | [x] REVIEW | [code_boundary_and_structure_tree_ko.md](../kernel/code_boundary_and_structure_tree_ko.md) | 디렉토리 경계 설명은 유효하나 ring3 이전 표현이 일부 남아 있다. |
 | [x] REVIEW | [orbit_cell_node_feasibility_ko.md](../kernel-room/orbit_cell_node_feasibility_ko.md) | Orbit 아이디어는 장기 탐색 자료로만 유효하다. 현재 상태는 `RESEARCH`이며 canonical Cell registry나 Node binding, 지원 topology가 아니다. |
+| [x] REVIEW | [hardware_core_foundation_ko.md](../kernel/hardware_core_foundation_ko.md) | 초기 hardware 기반 설명은 유효하지만 전역 “다음 우선순위”는 K2-first 정본보다 앞선 기록이다. |
+| [x] REVIEW | [commercial_stability_baseline_ko.md](commercial_stability_baseline_ko.md) | 초기 health/driver 기준은 참고 가능하지만 QEMU stable과 driver-first 우선순위는 2026-04 checkpoint다. |
 
 ## Claude/testkit 명령 확인
 

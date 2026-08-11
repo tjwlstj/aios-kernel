@@ -1,5 +1,12 @@
 # AI 에이전트 자율 OS 실행 로드맵
 
+> **OLD (2026-08-11 분류):** 이 문서는 2026-04-11 bootstrap 단계의 역사적
+> 실행 로드맵이다. ring3, shell, ELF loader 등 현재 구현 상태와 다음 우선순위를
+> 판단하는 데 사용하지 않는다. 현재 정본은
+> [성숙도 우선 작업흐름](../meta/minimal_io_and_maturity_workflow_ko.md)과
+> [Kernel Room 관리 모델](../kernel-room/kernel_room_management_model_ko.md)이다.
+> 특히 §2/§4/§6/§9를 현재 상태나 작업 큐로 사용하지 않는다.
+
 갱신일: 2026-04-11
 
 ## 1. 현재 고정 목표

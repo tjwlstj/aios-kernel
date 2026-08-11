@@ -2,12 +2,19 @@
 
 작성일: 2026-04-27
 
-최종 갱신: 2026-08-02 (AI Resource Ledger v0 read-only UAPI와 shell 관측 경로)
+최종 갱신: 2026-08-11 (K2-first 전역 우선순위와 Linux-hosted 정책 분리)
 
 ## 목적
 
 이 문서는 AIOS가 부팅 가능한 커널 기준선을 유지하면서,
 AI workload와 agent runtime에 맞는 리소스 관리를 어떤 순서로 확장할지 정리한다.
+
+이 문서의 Slice 순서는 **native resource subsystem 내부 계획**이다. 프로젝트의 다음
+직접 마일스톤은 Kernel Room K2 source binding이며, upstream Linux/QEMU/VirtIO
+resource 선정과 Linux-hosted H축은
+[별도 정본](../os/linux_hosted_substrate_and_resource_policy_ko.md)을 따른다. H0
+manifest/guard가 `CURRENT`여도 native resource policy나 hosted backend가 구현된 것은
+아니다.
 
 핵심 판단은 다음과 같다.
 
@@ -289,7 +296,7 @@ kernel-internal boot selftest다. embedded ring3 demo program은 아직 0x706 re
 
 ### Slice 3. Bounded policy schema 고정
 
-상태: planned.
+상태: `PLANNED` / `SUPPORTING`. 프로젝트 전체의 다음 직접 우선순위가 아니다.
 
 목표:
 
@@ -306,9 +313,12 @@ kernel-internal boot selftest다. embedded ring3 demo program은 아직 0x706 re
 필수 규칙:
 
 - unsupported target은 명시적으로 거부한다.
-- risky action은 NodeBit와 health gate가 모두 허용해야 한다.
+- NodeBit와 health는 risky action 검증의 입력일 뿐 authorize 결과가 아니다. K5
+  principal/ownership/target generation과 stale-token 거부 전에는 risky action을
+  지원하지 않는다.
 - 자연어 plan은 hot path에 들어오지 않는다.
 - 모든 numeric delta는 clamp 가능해야 한다.
+- 모든 capability는 기본 `UNSUPPORTED`이며 이 slice에서 apply handler를 연결하지 않는다.
 
 ### Slice 4. Reserve / release / throttle 적용
 
@@ -415,9 +425,12 @@ Slice 1/2 필수 negative test:
 - over-limit reserve
 - risky action under degraded health
 
-## 당장 다음 패치 후보
+## 리소스 subsystem 내부 후속 후보 — 전역 우선순위 아님
 
-Slice 2까지 완료한 뒤의 가장 작은 후보는 Slice 3 bounded policy schema 고정이다.
+Slice 2까지 완료한 리소스 레인 안의 가장 작은 후속 후보는 Slice 3 bounded policy
+schema 고정이다. 다만 전역 다음 직접 마일스톤은 K2-a native source binding이다.
+Slice 3은 K2 identity/generation 계약을 소비하는 design-only `SUPPORTING` 작업으로만
+병행할 수 있으며 K5 전에는 apply 가능성을 열지 않는다.
 
 1. target/action/risk ID를 append-only enum으로 먼저 정의
 2. request/result에 schema와 struct size를 포함

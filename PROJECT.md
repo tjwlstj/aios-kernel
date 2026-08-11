@@ -29,7 +29,7 @@ external source binding/lifecycle은 K2+다.
 | **`os/`** | ring3 유저스페이스 런타임 + 전용 프로그램(`os/apps/`) | 파이썬 도구, (예정) ELF 앱 | `python os/tools/*.py` |
 | **`models/`** | AI/SLM 모델 매니페스트(가중치는 비추적) | `models/manifests/*.json` | — (데이터) |
 | **`store/`** | 부팅 후 온라인 드라이버/프로그램/모델 다운로드 카탈로그 | `store/catalog/*.json` | (예정) 런타임 클라이언트 |
-| **`tools/`** | 테스트툴 + 빌드 오케스트레이션 (testkit) | `tools/testkit/` | `python tools/testkit/aios-testkit.py` |
+| **`tools/`** | 테스트·빌드 오케스트레이션과 외부 substrate source 정책 검증 | `tools/testkit/`, `tools/platform/` | testkit + platform guard |
 | **`docs/`** | 설계 문서 (도메인별 하위 폴더) | `docs/<domain>/*.md` | — (문서) |
 
 ---
@@ -51,7 +51,8 @@ external source binding/lifecycle은 K2+다.
 - **`kernel/`** 은 다른 어떤 도메인도 import 하지 않는다. 외부와의 접점은 **AI 시스콜 ABI**뿐이다.
 - **`os/`** 는 `kernel/`의 시스콜 ABI를 소비하고, `models/`·`store/`의 매니페스트를 읽는다.
 - **`models/` / `store/`** 는 데이터/카탈로그 도메인이다. 코드 의존성을 만들지 않는다.
-- **`tools/`** 는 전부를 빌드/검증만 한다. 어떤 도메인도 `tools/`에 의존하면 안 된다.
+- **`tools/`** 는 전부를 빌드/검증하고 외부 source manifest를 검사할 뿐 runtime
+  backend를 제공하지 않는다. 어떤 도메인도 `tools/`에 의존하면 안 된다.
 - **`docs/`** 는 무엇에도 의존하지 않는다.
 
 ---
@@ -67,6 +68,8 @@ external source binding/lifecycle은 K2+다.
 | 모델(가중치) 추가 | 매니페스트는 `models/manifests/`, 실파일은 `models/weights/`(비추적) |
 | 부팅 후 받아올 항목 | `store/catalog/<id>.catalog.json` |
 | 테스트/빌드 자동화 | `tools/testkit/` |
+| Linux/QEMU/VirtIO upstream source manifest·guard | `tools/platform/` |
+| Linux-hosted 실행 서비스 | 아직 승인된 코드 위치 없음. H2 착수 전에 새 도메인 또는 명시적 경계를 먼저 결정하며 `tools/platform/`에 넣지 않음 |
 | 설계 노트 | `docs/<domain>/` + `docs/README.md` 인덱스 갱신 |
 | Room/Cell/Node/NodeBit 관리 설계 | `docs/kernel-room/` + 상위 성숙도 문서 동기화 |
 
@@ -105,6 +108,12 @@ Windows: `pwsh -File .\tools\testkit\kernel\build-windows.ps1 -Target test`
 - **Axis Gate enforcement는 `PLANNED`** — canonical parent binding, principal, ownership, generation이 먼저다. `store/` 다운로드와 위험 autonomy action의 공통 Kernel Room authorize 경로도 아직 구현되지 않았다.
 - **AI resource ledger는 aggregate 관측 전용** — kind/unit/owner-validity ID는 append-only이고 validity flag가 없는 수치는 지원된 값으로 해석하지 않는다. `SYS_INFO_RESOURCE=0x706`과 `state resource`는 read-only CURRENT이며 owner attribution과 quota/reserve/apply는 아직 없다.
 - **AI pressure는 관측 전용** — plane ID는 append-only이며, pressure ranking과 gate eligibility bitmap을 섞지 않는다. 별도 apply 검증 전에는 scheduler migration/budget 변경에 연결하지 않는다.
+- **Linux substrate identity는 source-only** — PID/cgroup/pidfd/PSI/path를 canonical
+  Cell/Node/NodeBit ID로 재사용하지 않는다. H0 manifest/guard `CURRENT`는 hosted runtime,
+  license compatibility 또는 code import 승인이 아니며 schema v1은 `code_import=0`이다.
+- **K2가 다음 직접 관리 단계** — H1 replay는 K2 evidence에서 파생하고 H2 live
+  collector는 native negative proof 뒤에만 시작한다. H4 validation과 H5 apply는 K5와
+  별도 승인 전까지 `PLANNED`다.
 - **process snapshot/journal은 증거 전용** — descriptor-owned 176B snapshot은 ISR 시점 owner/CR3/TSS `rsp0`/IF=0 검증과 `resume_ready=0`을 유지한다. per-boot process event journal v1의 schema/kind/reason/outcome 숫자 ID는 append-only이며, capacity 8 안에서 여섯 lifecycle/capture record를 덮어쓰지 않는다. journal은 `evidence_only=1 switch_events=0 resume_ready=0`이고 `0→1→0→2→0` 순차 bootstrap owner lifecycle만 증명한다. resumable saved context와 runnable-state 결속, live continuation/switch, 실제 A→B→A가 별도로 검증되기 전에는 snapshot이나 journal을 schedulable state 또는 CPU-switch trace로 해석하지 않는다.
 - **ring3 entry AC 계약은 saved/live를 분리한다** — 현재 QEMU bootstrap pair의 CPL3 `#BP` 2회와 `int 0x80` 6회에서 saved user RFLAGS는 불변이고 entry live AC는 항상 0이어야 한다. SMAP active는 `clac`, 비활성·미지원은 `pushfq/btr/popfq` fallback을 사용하며 `default`/`max-smap` CPU profile과 exact marker/`state sec` mirror가 분기를 고정한다. 이 계약을 future ring3 IRQ/NMI/IST, 실기기, resumable context 또는 process switch 증거로 확장 해석하지 않는다.
 
@@ -132,7 +141,8 @@ aios-kernel/
 │   └── manifests/
 ├── store/                # ④ 온라인 배포 카탈로그
 │   └── catalog/
-├── tools/                # ⑤ 테스트툴 + 빌드 오케스트레이션
-│   └── testkit/
+├── tools/                # ⑤ 테스트·빌드 + 외부 source 정책 검증
+│   ├── testkit/
+│   └── platform/         # manifest/guard only; hosted runtime 아님
 └── docs/                 # ⑥ 설계 문서 (kernel/ autonomy/ os/ models/ tools/ meta/ kernel-room/)
 ```

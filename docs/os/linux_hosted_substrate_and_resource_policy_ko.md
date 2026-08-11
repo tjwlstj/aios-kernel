@@ -402,25 +402,47 @@ Linux PSI나 cgroup counter를 읽게 되더라도 이 세 축을 합치지 않�
 
 | 기간 | 실험 | 종료 증거 |
 |---|---|---|
-| 1주차 | schema v1 resource baseline과 OS-neutral trace 검토 | guard PASS, 기준선 역할 일치, negative trace 목록 |
-| 2~3주차 | Linux userspace observe-only prototype | primary exact reference 기반 process source와 exit/reuse/recreate artifact |
-| 3~5주차 | native K2 source binding 한 조각 | existing source 하나의 generation/reconciliation proof |
-| 5~6주차 | cross-backend replay parity | 같은 canonical trace와 verdict, backend ID leakage 없음 |
-| 7~8주차 | 선택적 단일 apply 또는 host session provenance | 조건부 H5 proof 또는 실험 중단 근거 |
+| 시작점 | H0 schema v1 resource baseline 고정 | guard PASS와 13개 source row; runtime 증거가 아님 |
+| 1주차 | K2-a source identity/lifecycle/reconcile 계약과 후보 gate | semantic kind, namespace, producer-owned generation, validity, reject reason 정본 |
+| 2~4주차 | native K2-a 단일 source binding proof | real source 하나의 exact parent/source generation과 duplicate/orphan/stale 거부 |
+| 3~5주차 병행 | H1 OS-neutral trace/replay verifier | K2-a 증거에서 파생한 같은 semantic verdict와 reason |
+| 5~7주차 조건부 | H2 Linux observe-only adapter | §9의 Native K2 gate 통과 뒤 primary exact reference의 source-only lifecycle artifact |
+| 7~8주차 조건부 | H3 reconciliation과 cross-backend parity | exit/reuse/recreate/restart 구분, backend ID leakage 없음, 계속/중단 결정 |
+
+작업 용량은 `DIRECT K2 >= 65%`, `SUPPORTING H0/H1 <= 25%`, `RESEARCH H2/H3 <= 10%`를
+기본으로 한다. K2 주간 종료 증거가 실패하면 H1~H3를 멈추고 그 용량을 K2로
+되돌린다. H4/H5, quota, throttle, scheduler migration, Axis Gate apply는 이 결정
+실험의 범위가 아니다. K5 principal/ownership/authorize 증거와 별도 승인이 생긴 뒤에만
+다시 후보가 된다.
+
+### 9.1 K2-a 첫 source 선택 규칙
+
+K1 Node 101은 `AI_SERVICE`이므로 구현하기 쉬운 source보다 semantic kind가 맞는
+source를 먼저 고른다. 우선 후보는 SLM agent-tree의 MAIN agent다. 다만 현재
+`policy_generation`이나 timestamp를 agent-tree source generation으로 재해석하지 않는다.
+producer가 소유하는 별도 source instance/generation과 copied read API가 생긴 뒤에만
+`(namespace, source_id, source_generation)`으로 bind한다.
+
+Memory Fabric main domain은 Cell/resource source 후보이고 bootstrap process는 실행
+instance source 후보다. 둘 중 하나를 Node 101과 숫자 또는 구현 편의만으로 결속하지
+않는다. K2-a binding/reconciliation record는 기존 K1 1024B immutable snapshot을
+변경하지 않는 별도 bounded/versioned 계약으로 시작한다.
 
 다음 게이트를 모두 통과하면 hybrid를 기본 경로로 채택한다.
 
 1. **Resource gate:** manifest/guard가 primary, secondary, canonical, experimental
    역할을 혼동 없이 고정한다.
-2. **Semantic gate:** backend와 무관하게 canonical schema와 reject 이유가 같다.
-3. **Isolation gate:** cgroup/PID/path가 Cell/Node ID로 새지 않는다.
-4. **Reversibility gate:** hosted adapter를 제거해도 native K1 ABI가 바뀌지 않고,
+2. **Native K2 gate:** 한 real native source가 semantic kind와 producer-owned
+   generation을 갖고 canonical parent에 bind되며 negative trace를 fail-closed로 거부한다.
+3. **Semantic gate:** backend와 무관하게 canonical schema와 reject 이유가 같다.
+4. **Isolation gate:** cgroup/PID/path가 Cell/Node ID로 새지 않는다.
+5. **Reversibility gate:** hosted adapter를 제거해도 native K1 ABI가 바뀌지 않고,
    native adapter를 제거해도 hosted protocol이 재정의되지 않는다.
-5. **Product gate:** hosted lane이 장기 process와 실제 storage/network/model workload를
+6. **Product gate:** hosted lane이 장기 process와 실제 storage/network/model workload를
    관측해 native가 아직 제공하지 못하는 사용자 가치를 만든다.
-6. **Safety gate:** H5 전에는 apply edge가 없고 H5는 before/after/rollback artifact를
-   모두 남긴다.
-7. **Maintenance gate:** upstream API, provenance, license, EOL, update 책임이 기록된다.
+7. **Safety gate:** 이번 주기에는 apply edge가 없으며 모든 action capability는
+   `UNSUPPORTED`다.
+8. **Maintenance gate:** upstream API, provenance, license, EOL, update 책임이 기록된다.
 
 Linux 의미가 canonical record를 바꾸거나 backend별 verifier가 서로 다른 성공 의미를
 갖게 되면 hybrid 채택을 보류하고 H1 계약부터 다시 고친다.

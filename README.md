@@ -33,6 +33,10 @@ Suggested repository description:
 - **Memory:** 물리/가상 할당 기반, 텐서 메모리 메타데이터, 수명 프로파일링, 메모리 패브릭 노드, 공유 영역 스캐폴딩.
 - **Kernel Room topology maturity:** 전체 topology는 계속 `PARTIAL`이다. 기존 `kernel_room_snapshot_read()` aggregate와 9개 syscall-range descriptor에 더해, `CURRENT` K1 `kernel_room_management_snapshot_t`는 schema 1/1024B 고정 snapshot으로 Cell 1/2, Node 1/4, NodeBit 2/8을 보존하며 exact parent, namespace, generation, source validity를 검사한다. 이 registry는 bootstrap fixture이고 `observation_only=1 management_only=1`이다. external subsystem adapter, live lifecycle/reconciliation, resource attribution, principal/ownership는 K2+ `PLANNED`다.
 - **Identity boundary:** Memory Fabric `domain_id`, SLM `agent_tree.node_id`, SLM policy `slm_nodebit_id`, 런타임 capability `node_id`, pipeline `owner_node`, scheduler task/PID/ring ID는 독립 네임스페이스다. 숫자가 같아도 같은 주체가 아니며, 명시적 namespace/binding/generation 없이 결합하지 않는다.
+- **Linux substrate policy:** schema v1의 13개 upstream source row와 fail-closed
+  guard는 `CURRENT`다. Linux `6.12.y` primary, `6.18.y` forward, QEMU `11.0.x`,
+  VirtIO 1.2 CS01 selected baseline을 고정하지만 Linux-hosted backend는 `PLANNED`다.
+  PID/cgroup/pidfd/PSI는 source-only이고 `code_import=0`이다.
 - **Pressure observation:** schema 1의 `state pressure`가 workload queue, Memory Fabric reader/writer 중첩, 누적 NodeBit 거부율을 0..1024 정수 벡터로 읽는다. 현재는 system→plane 2단계 관측만 `CURRENT`이며 task migration이나 budget apply는 하지 않는다.
 - **Resource observation:** schema 1의 커널 내부 `ai_resource_snapshot_t`가 heap bytes, tensor bytes, active Memory Fabric windows, inference ring registrations, runnable scheduler tasks를 고정 5개 aggregate row로 읽는다. 모든 owner는 아직 `NONE/UNATTRIBUTED`이며 read-only `SYS_INFO_RESOURCE`(0x706) syscall과 `state resource` 셸 토픽은 `CURRENT`, owner attribution과 quota/reserve/apply는 `PLANNED`다.
 - **Autonomy and policy:** 헬스 스냅샷, 제한된 자율 제안/롤백 경로, SLM 하드웨어 스냅샷, 두 종류의 NodeBit 조회/통계, Kernel Room syscall-range 분류 메타데이터. Kernel Room Axis Gate의 dispatcher-level 강제는 아직 없다.
@@ -50,6 +54,10 @@ AIOS의 우선 방향은 커널 기능을 더 많이 나열하는 것이 아니�
 - **Node:** Cell 안에서 역할을 가진 agent/service/runtime 단위. 기존 여러 `node_id`는 canonical Node가 아니라 입력 스캐폴드이므로 명시적으로 bind한다.
 - **NodeBit:** Node 안의 가장 작은 capability/policy/resource projection. 기존 SLM policy node와 runtime capability node를 곧바로 동일시하지 않고 namespace가 있는 adapter로 연결한다.
 - **Execution substrate:** ring3 process, scheduler, memory, storage, network, HAL은 위 관리 모델이 실제 일을 수행하도록 받치는 기반이다. M3~M5의 완성도는 계속 높이되 방향 선택을 독점하지 않는다.
+- **Hosted substrate:** Linux는 선택적 host/device/delivery substrate다. H0 source
+  policy만 `CURRENT`이며 다음 직접 단계는 K2-a native source binding이다. H1 replay는
+  K2 계약을 소비하고 H2 live observation은 native negative proof 뒤에만 시작한다.
+  H4 validation과 H5 apply는 K5와 별도 승인 전까지 열지 않는다.
 - **Policy boundary:** Axis Gate의 실제 authorize/enforcement는 canonical identity, parent binding, generation, principal과 ownership이 생긴 뒤의 `PLANNED` 단계다. 현재 9개 descriptor는 분류 메타데이터다.
 - **Orbit:** Cell/Node placement와 분산 배치를 탐구하는 `RESEARCH` 축이다. Cell 관리 기반과 검증 증거 없이 지원 기능으로 선언하지 않는다.
 
@@ -193,8 +201,9 @@ aios-kernel/
 │   └── manifests/
 ├── store/              # ④ 부팅 후 온라인 드라이버/프로그램 다운로드 카탈로그
 │   └── catalog/
-├── tools/              # ⑤ 테스트툴 + 빌드 오케스트레이션
-│   └── testkit/
+├── tools/              # ⑤ 테스트·빌드 + 외부 source 정책 검증
+│   ├── testkit/
+│   └── platform/       # manifest/guard only; hosted runtime 아님
 ├── docs/               # ⑥ 설계 문서 (kernel/ autonomy/ os/ models/ tools/ meta/ kernel-room/)
 └── .github/workflows/  # CI (linux-boot-check)
 ```
@@ -293,13 +302,14 @@ make debug          # GDB 디버깅 모드로 실행
 전체 설계 문서 색인은 **[docs/README.md](docs/README.md)**, 저장소 도메인 구조는
 **[PROJECT.md](PROJECT.md)** 를 참고하세요. 주요 문서:
 
-- [자율 OS 실행 로드맵](docs/autonomy/autonomous_os_execution_roadmap_ko.md)
+- [자율 OS 실행 로드맵](docs/autonomy/autonomous_os_execution_roadmap_ko.md) — `OLD`; 현재 우선순위는 성숙도 작업흐름 가이드 사용
 - [AI 친화 리소스 관리 개발 계획 (2026-04-27)](docs/autonomy/ai_resource_management_development_plan_ko.md)
 - [Kernel Room 관리 모델 정본](docs/kernel-room/kernel_room_management_model_ko.md)
 - [AIOS 성숙도 우선 작업흐름](docs/meta/minimal_io_and_maturity_workflow_ko.md)
 - [OLD 문서 체크리스트](docs/meta/old_docs_check_2026_07_03_ko.md)
 - [유저공간 OS 구현 방향](docs/os/user_space_os_direction_ko.md)
 - [브라우저 콘솔과 자체 런타임 엔진 로드맵](docs/os/browser_console_and_runtime_engine_roadmap_ko.md)
+- [Linux-hosted substrate와 upstream resource 정책 정본](docs/os/linux_hosted_substrate_and_resource_policy_ko.md)
 - [AI 에이전트 OS용 모델 스택 추천](docs/models/agent_model_stack_recommendations_ko.md)
 - [종합 점검 보고서 (2026-04-15)](docs/meta/inspection_report_2026_04_15.md)
 - [Kernel Room Topology 문서 모음](docs/kernel-room/README.md)
@@ -308,6 +318,10 @@ make debug          # GDB 디버깅 모드로 실행
 ## License
 
 MIT License
+
+이 표기는 프로젝트의 라이선스 의도다. 현재 저장소에는 canonical tracked root
+`LICENSE`/`COPYING`/`NOTICE` 파일과 외부 코드 import-compatibility 정책이 없으므로,
+upstream 코드 반입 승인을 뜻하지 않는다.
 
 ## Acknowledgments
 

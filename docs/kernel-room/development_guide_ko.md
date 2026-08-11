@@ -2,7 +2,7 @@
 
 작성일: 2026-04-18
 재정비: 2026-08-10
-최종 갱신: 2026-08-11 (K1 hierarchy registry v0 `CURRENT` 승격)
+최종 갱신: 2026-08-11 (K2 source adapter 착수 gate)
 
 > 이 가이드는 [AIOS Kernel Room 관리 모델](kernel_room_management_model_ko.md)을
 > 따른다. 정체성, 용어, 성숙도 또는 구현 순서가 충돌하면 정본을 우선한다.
@@ -236,6 +236,26 @@ marker는 hierarchy invariant를 증명해야 한다.
 
 기존 `[ROOM] snapshot`, `[ROOM] gates`, `SYS_INFO_ROOM`은 새 hierarchy proof와 별개의
 호환 표면으로 유지한다.
+
+## K2 source adapter 착수 gate
+
+K2 source를 canonical hierarchy에 연결하기 전에 아래를 모두 증명한다.
+
+- canonical Node/Cell kind와 source의 semantic kind가 일치한다.
+- source namespace와 ID는 typed이며 canonical ID와 분리된다.
+- source producer가 instance/generation을 직접 소유하고 copied read API로 제공한다.
+- init ordering, refresh/reconcile, source exit/recreate 의미가 정의된다.
+- missing, duplicate, role mismatch, orphan, zero/regressed/stale generation을
+  fail-closed fixture로 거부한다.
+- binding record는 별도 bounded/versioned snapshot이며 K1 1024B ABI와 기존 aggregate
+  Room ABI를 변경하지 않는다.
+
+Node 101 `AI_SERVICE`의 우선 후보는 SLM agent-tree MAIN source다. 현재 SLM
+`policy_generation`은 agent-tree source generation 계약이 아니므로 재사용하지 않는다.
+Memory Fabric main domain은 Cell/resource source 후보이고 bootstrap process는
+execution-instance source 후보다. 구현이 쉽거나 숫자가 같다는 이유로 Node 101에
+결속하지 않는다. Linux PID/cgroup/pidfd/PSI도 `source_only`이며 같은 gate를 우회하지
+않는다.
 
 ## 후속 구현 순서
 

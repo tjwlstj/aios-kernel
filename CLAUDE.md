@@ -52,6 +52,16 @@ python tools/testkit/aios-testkit.py shell --strict --skip-build # reuse existin
 python tools/testkit/aios-testkit.py os   # OS tool smoke test
 ```
 
+### Linux substrate resource policy
+```bash
+python tools/platform/linux_resource_guard.py
+python -m unittest discover -s tools/platform/tests -p "test_*.py" -v
+```
+
+These commands validate the `CURRENT` upstream source catalog only. The
+Linux-hosted runtime remains `PLANNED`, all Linux runtime identities are
+source-only, and schema v1 keeps `code_import=0`.
+
 ### Interactive Shell Lane (runtime observation channel)
 The kernel shell reads from both the PS/2 keyboard and COM1 serial, so QEMU
 `-serial stdio` gives a scriptable REPL into the running kernel. Machine-oriented
@@ -253,10 +263,10 @@ subsystem-count guard, fault-injection gate, UBSan lane, 4K W^X) with priority,
 owner, and Claude/Codex alignment points are in
 `docs/meta/maturity_levers_backlog_ko.md`. Check it before proposing new
 verification or hardening work so it stays deduplicated against the verdict
-design doc (V0-V5) and the workflow guide (K/M/C/W lanes).
+design doc (V0-V5) and the workflow guide (K/M/C/W/H axes).
 
 ### Current Workflow Plan
-The project has two coordinated lanes in
+The project has one preferred management lane plus supporting M/C/W/H axes in
 `docs/meta/minimal_io_and_maturity_workflow_ko.md`. The preferred management
 lane builds K1 full hierarchy registry v0 (Cell 1 + bound Node 1 + parent-bound
 NodeBit 2 in one proof; implemented as the bounded bootstrap registry) → K2 source-binding hardening/expansion → K3 legacy
@@ -269,6 +279,14 @@ evidence snapshot and process event journal v1 are complete; live
 continuation/switch remains `PLANNED`. Before that high-risk execution slice,
 apply the entry gate in
 `docs/tools/verification_tooling_evolution_design_ko.md`.
+
+The Linux-hosted H axis is separate: H0 upstream manifest/guard is `CURRENT`,
+while H1 trace/replay through H5 apply remain `PLANNED`. K2-a native source
+binding stays the direct next milestone. H1 may consume the K2 evidence contract;
+H2 live observation starts only after its native negative proof. H4/H5 require
+K5 principal/ownership/authorize and separate approval. The canonical upstream
+pins and import boundary live in
+`docs/os/linux_hosted_substrate_and_resource_policy_ko.md`.
 
 ### Browser / Runtime Engine Roadmap
 The browser-facing W1-W5 axis is defined in
@@ -299,6 +317,7 @@ replacement for QEMU or the normal verification path.
 | `models/` | AI/SLM model manifests (weights are gitignored) |
 | `store/` | Post-boot online driver/program/model download catalog |
 | `tools/testkit/` | Python test orchestration + Windows PS1 build helper |
+| `tools/platform/` | upstream substrate resource manifest/guard only; not a hosted executable home |
 | `docs/` | Design docs, grouped by domain (`docs/<domain>/`) |
 | `.github/workflows/` | GitHub Actions CI (linux-boot-check.yml) |
 
@@ -312,6 +331,7 @@ replacement for QEMU or the normal verification path.
 - Health snapshot ABI must remain stable across builds (consumed by SLM orchestrator).
 - AI resource kind/unit IDs are append-only. Keep aggregate owner IDs at `NONE/UNATTRIBUTED` until attribution exists, honor validity flags, and preserve `observation_only=1` until a separately authorized resource-control UAPI is verified.
 - AI pressure schema/plane IDs are append-only; keep pressure ranking separate from gate eligibility and preserve `observation_only=1` until a separately verified apply path exists.
+- Linux PID/cgroup/pidfd/PSI/path values are external source identities, never canonical Cell/Node/NodeBit IDs. H0 source catalog approval is not runtime support, license compatibility, or code-import approval; schema v1 requires `code_import=0`.
 - `SYS_SLM_NODEBIT_LOOKUP` belongs to the SLM policy catalog; runtime NodeBit register/update/stats and pipeline gating are a separate namespace. Do not alias them.
 - Common Kernel Room authorization for `store/` downloads and risky autonomy actions is `PLANNED`; implement it only after canonical binding, principal, ownership, and generation are verifiable.
 - GPU/NPU driver code is scaffolding only; no real hardware interaction yet.

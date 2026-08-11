@@ -226,6 +226,7 @@ flowchart LR
 | 정책 K5 | W4 원격 action의 principal/ownership authorize와 정책 단일 원본 |
 | 실행 M3~M5 | W4의 프로세스, storage, disk ELF 선행 조건 |
 | 지속성 C1~C2 | W5 세션·flow·정책 재개 기반 |
+| Linux-hosted H0~H5 | W1/W2 QEMU session 경로와 별도 성숙도. H2 source adapter의 raw/normalized/binding verdict를 Web Console 성공과 합치지 않음 |
 
 W1은 현재 커널을 바꾸지 않고 독립적으로 시작할 수 있다. W4를 앞당기기 위해
 커널 안에 임시 HTTP 서버나 자유형 action 우회를 넣지 않는다.

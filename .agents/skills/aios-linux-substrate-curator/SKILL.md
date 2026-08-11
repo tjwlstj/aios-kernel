@@ -43,6 +43,14 @@ Label the work before changing anything:
 Do not let a source entry automatically authorize a hosted design or code
 import. Do not let a hosted design imply a native-kernel milestone.
 
+For roadmap work, keep K2 native source binding as the next direct management
+milestone. Derive H1 replay semantics from the K2 contract, and start H2 live
+observation only after the native duplicate/orphan/stale-generation proof.
+Keep H4/H5 blocked behind K5 principal, ownership, authorize, and separate
+approval. Implementation convenience is not a binding rule: PID, cgroup,
+Memory Fabric domain, and process generation cannot stand in for an
+`AI_SERVICE` Node without a semantic-kind and producer-owned-generation gate.
+
 ## Preserve the source-only boundary
 
 - Treat every Linux identity in the resource manifest as source metadata only.

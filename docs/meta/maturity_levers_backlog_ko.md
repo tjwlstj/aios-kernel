@@ -1,6 +1,6 @@
 # 기술 성숙도 레버 백로그 (2026-07-15, 2026-08-10 관리축 정렬)
 
-최종 갱신: 2026-08-11 (K1 완료 뒤 직접 관리 마일스톤 정렬)
+최종 갱신: 2026-08-11 (K2-first와 Linux-hosted H축 관계 정렬)
 
 이 문서는 특정 기능(M-레벨)이 아니라 **바닥을 올리는 성숙도 레버**를 한곳에 모아 우선순위·착수점·담당·조율지점을 고정한다. Claude가 회귀 정비 중 관찰한 것을 근거로 정리했고, Codex와 의견을 조율한 뒤 착수한다.
 
@@ -13,7 +13,7 @@ source binding과 generation/reconciliation 확대이며, 아래 레버의 착�
 ## 문서 관계 (중복 금지)
 
 - **검증 축(V0~V5)**은 `docs/tools/verification_tooling_evolution_design_ko.md`가 정본이다. 아래 레버 ①③은 그 로드맵의 V1/V2/V4와 겹치므로 **여기서 재설계하지 않고 참조만** 한다.
-- **관리 K0~K5, 실행 M1~M5, 지속성 C1~C2 축**은 `docs/meta/minimal_io_and_maturity_workflow_ko.md`가 정본이다. 레버 ⑤는 실행 substrate의 M3 후속 하드닝이며 여기서 구체화한다.
+- **관리 K0~K5, 실행 M1~M5, 지속성 C1~C2, 브라우저 W, Linux-hosted H축**은 `docs/meta/minimal_io_and_maturity_workflow_ko.md`가 정본이다. 레버 ⑤는 실행 substrate의 M3 후속 하드닝이며 여기서 구체화한다.
 - **커널 지뢰/관례**는 `docs/meta/codex_handoff_tips_ko.md`가 정본이다.
 - 이 문서는 위 축을 가로지르는 "품질 바닥" 항목만 다룬다.
 

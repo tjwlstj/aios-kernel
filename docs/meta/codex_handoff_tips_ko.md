@@ -1,6 +1,6 @@
 # Codex 작업 핸드오프 팁 (2026-07-15)
 
-최종 갱신: 2026-08-11 (K1 Kernel Room hierarchy v0)
+최종 갱신: 2026-08-11 (K2-first Linux-hosted H축 통합)
 
 이 커널에서 Claude가 M1~M3 작업 중 실제로 밟은 지뢰와 관례를 모았다. 다음 작업자(Codex)가 같은 함정에 빠지지 않도록 하는 실전 노트다. **CLAUDE.md의 규칙이 정본이고, 이 문서는 "왜 그런지"와 "어떻게 디버깅했는지"를 보완한다.**
 
@@ -37,6 +37,12 @@ M3-b-3a부터 M3-b-3b2b까지(주소공간 전환 → private leaf → process-o
    판정한다. shell PASS에는 같은 response record, 전체 transcript verdict, reader drain,
    reboot acknowledgement와 QEMU exit code 0도 필요하다. 최신 계약은
    `docs/tools/verification_tooling_evolution_design_ko.md`를 따른다.
+   Linux substrate resource 문서나 manifest를 바꾸면 아래 두 host 계약도 같은
+   커밋 전에 실행한다.
+   ```
+   py -3 tools/platform/linux_resource_guard.py
+   py -3 -m unittest discover -s tools/platform/tests -p "test_*.py" -v
+   ```
 6. **작업 브랜치는 `beta`.** main으로의 병합/PR은 사람이 결정한다.
 
 ---
@@ -150,6 +156,15 @@ Cell/Node placement를 탐구하는 `RESEARCH`이므로 이 vertical slice의 �
 K2는 이 최소 계층의 external source binding과 generation/reconciliation을 강화·확대하고,
 K3에서만 runtime/SLM NodeBit를 namespace adapter로 read-only projection한다.
 
+K2-a의 source 선택은 구현 편의보다 semantic kind를 먼저 본다. Node 101은
+`AI_SERVICE`이므로 우선 후보는 SLM agent-tree MAIN source다. 단, 현재
+`policy_generation`이나 timestamp를 agent-tree source generation으로 재해석하지
+않는다. producer-owned source instance/generation과 copied read API가 생긴 뒤 별도
+bounded binding/reconciliation snapshot으로 연결한다. Memory Fabric main domain은
+Cell/resource source 후보이고 bootstrap process는 execution-instance source 후보다.
+둘을 Node 101과 숫자나 기존 generation 존재만으로 결속하지 않는다. 기존 K1 1024B
+immutable snapshot은 K2에서 무심코 확장하지 않는다.
+
 ### 5.2 병행 가능한 실행 substrate backlog
 
 리소스 관리축의 Slice 2 read-only UAPI/`state resource`는 2026-08-02에 완료됐다.
@@ -177,3 +192,19 @@ continuation/switch이고, bounded 실제 A→B→A를 증명한 뒤 timer preem
 8. **live continuation + ring3 process 2개 선점 교대** — process에 full trapframe continuation/runnable state를 결속하고, IF=0 원자 집합에 current process·CR3·BSP TSS `rsp0`·saved frame·`g_active_user_run_state`를 함께 넣는다. bounded A→B→A 후 kthread 선점(M3-b-2)과 timer IRQ를 연결하고, 두 ring3 process의 syscall 왕복과 순서 이벤트를 `[SCHED]`/`[MM]`/`state user`로 검증한다.
 
 주의: 두 static process 모두 실제 ring3 실행은 하지만 현재 resume 모델은 여전히 순차 동기 C 호출 프레임이다. descriptor의 trap snapshot과 process event journal은 증거 소유권과 순서만 고정하며 `resume_ready=0`이다. journal 완료를 live transition 완료로 해석하지 말고, 다음 단계에서만 current process·CR3·BSP `rsp0`·saved frame·`g_active_user_run_state`를 IF=0에서 함께 교대하는 live continuation으로 나아가야 한다.
+
+### 5.3 Linux-hosted H축은 K2 증거를 소비한다
+
+- H0 resource manifest/guard만 `CURRENT`다. Linux daemon, adapter, KVM lane,
+  resource apply는 아직 `PLANNED`다.
+- 다음 직접 마일스톤은 K2-a native source binding이다. H1 replay는 K2-a가 고정한
+  lifecycle/generation/reject reason에서 파생하고, H2 live collector는 native negative
+  proof가 끝난 뒤에만 시작한다.
+- 기본 용량은 `DIRECT K2 >= 65%`, `SUPPORTING H0/H1 <= 25%`,
+  `RESEARCH H2/H3 <= 10%`다. K2 주간 증거가 실패하면 H1~H3를 중단한다.
+- H4/H5, quota, throttle, scheduler migration, Axis Gate apply는 이번 4~8주 범위에서
+  제외한다. K5 principal/ownership/authorize와 별도 승인 뒤에만 다시 검토한다.
+- Linux PID/cgroup/pidfd/PSI/path는 `source_only`다. canonical ID로 재사용하거나
+  H0 통과를 runtime support, license 승인, code import로 표현하지 않는다.
+- 상세 H0~H5와 upstream pin은
+  `docs/os/linux_hosted_substrate_and_resource_policy_ko.md`를 따른다.
