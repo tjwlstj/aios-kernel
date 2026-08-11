@@ -10,6 +10,12 @@ Kernel Room의 관리 의미와 구현 순서는 [관리 모델](../kernel-room/
 [성숙도 작업흐름](../meta/minimal_io_and_maturity_workflow_ko.md)을 우선한다. 이 문서의
 W축은 별도 제품 표면이며 K축 성숙도를 대신하지 않는다.
 
+이 문서의 `Hosted Web Console`과 `Host Session Runtime`은 QEMU 세션을 중계·격리하는
+W축이다. Linux 위에서 Kernel Room source adapter와 resource policy backend를 실행하는
+별도 H축의 정본은
+[Linux-hosted substrate와 리소스 정책](linux_hosted_substrate_and_resource_policy_ko.md)이다.
+두 경로는 같은 host에서 결합될 수 있어도 성숙도와 완료 증거를 합치지 않는다.
+
 ## 1. 목적
 
 AIOS를 브라우저에서 관찰하고 제어하는 가까운 경로와, 장기적으로 외부 QEMU

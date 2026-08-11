@@ -45,6 +45,12 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Validate Linux substrate resource policy
+        run: python tools/platform/linux_resource_guard.py
+
+      - name: Run platform resource guard tests
+        run: python -m unittest discover -s tools/platform/tests -p "test_*.py" -v
+
       - name: Run OS tool smoke
         run: python tools/testkit/aios-testkit.py os
 

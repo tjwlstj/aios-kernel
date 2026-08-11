@@ -11,6 +11,7 @@
 | `testkit/aios-testkit.py` | 공통 엔트리포인트 |
 | `testkit/kernel/build-windows.ps1` | Windows 커널 빌드/부팅 전용 스크립트 |
 | `testkit/fixtures/` | 부팅 baseline fixture |
+| `platform/` | Linux-hosted substrate resource manifest와 fail-closed guard |
 
 ## 사용 (저장소 루트에서)
 
@@ -31,3 +32,10 @@ python tools/testkit/aios-testkit.py boot-matrix --profiles full minimal storage
 
 `.github/workflows/linux-boot-check.yml`가 동일 엔트리포인트
 (`python tools/testkit/aios-testkit.py all --strict`)를 Ubuntu/Windows에서 실행한다.
+
+## Platform resource policy
+
+`platform/`은 Linux-hosted substrate와 upstream 참고 자원을 기계 판독 가능한
+manifest로 분류하고, 고정되지 않은 버전·비공식 출처·canonical identity 오염·코드
+반입을 fail-closed로 거부한다. 사용법과 성숙도 경계는
+[`platform/README.md`](platform/README.md)를 따른다.

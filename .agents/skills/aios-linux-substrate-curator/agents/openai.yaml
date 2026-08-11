@@ -1,0 +1,4 @@
+interface:
+  display_name: "AIOS Linux Substrate Curator"
+  short_description: "Curate Linux substrate sources without importing code"
+  default_prompt: "Use $aios-linux-substrate-curator to review this Linux substrate resource or hosted-backend proposal safely."

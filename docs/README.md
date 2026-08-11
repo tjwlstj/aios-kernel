@@ -49,6 +49,7 @@
 - [ai_resource_management_development_plan_ko.md](autonomy/ai_resource_management_development_plan_ko.md)
 
 ## os/ — 유저스페이스 OS 계층
+- [linux_hosted_substrate_and_resource_policy_ko.md](os/linux_hosted_substrate_and_resource_policy_ko.md) — schema v1 upstream resource policy와 Kernel Room 의미를 보존하는 Linux-hosted substrate 경계의 정본; resource catalog `CURRENT`와 hosted backend `PLANNED`를 분리
 - [browser_console_and_runtime_engine_roadmap_ko.md](os/browser_console_and_runtime_engine_roadmap_ko.md)
 - [user_space_os_direction_ko.md](os/user_space_os_direction_ko.md)
 - [user_space_os_build_slices_ko.md](os/user_space_os_build_slices_ko.md)

@@ -9,6 +9,10 @@
 - Kernel Room, Cell, Node, NodeBit, Axis Gate, Orbit 또는 리소스 귀속을
   다룰 때는 `docs/kernel-room/kernel_room_management_model_ko.md`를 정본으로
   먼저 읽는다.
+- Linux substrate, upstream 리소스, hosted backend, 코드 재사용 또는
+  provenance를 다룰 때는
+  `docs/os/linux_hosted_substrate_and_resource_policy_ko.md`와
+  `tools/platform/resources/linux_substrate_resources.json`을 먼저 확인한다.
 - 사용자가 조사나 대기만 요청했다면 파일, Git, 원격 상태를 변경하지 않는다.
 
 ## 프로젝트 스킬
@@ -17,6 +21,8 @@
 스킬만 선택하고, 선택한 `SKILL.md`를 끝까지 읽은 뒤 작업한다.
 
 - 넓거나 탐색적인 요청: `aios-repo-triage-planner`
+- Linux substrate·upstream resource·hosted backend·코드 import 경계:
+  `aios-linux-substrate-curator`
 - Kernel Room·Cell·Node·NodeBit 구조/방향: `aios-kernel-room-architecture`
 - 커널·런타임·드라이버 변경: `aios-kernel-change-guardian`
 - 숫자 ID·enum·ABI 변경: `aios-enum-abi-integrity`
