@@ -31,8 +31,8 @@ Label the work before changing anything:
 
 - `SOURCE_CURATION`: add or review URLs, revisions, hashes, license metadata,
   SPDX identifiers, provenance, and intended reference use.
-- `HOSTED_DESIGN`: describe an optional Linux-hosted execution boundary without
-  claiming that a backend exists.
+- `HOSTED_DESIGN`: describe the intended default Linux-hosted userspace-service
+  boundary without claiming that the backend exists.
 - `IMPORT_PROPOSAL`: evaluate copying, vendoring, translating, generating from,
   or patching upstream code. Treat this as blocked until every import gate is
   explicitly satisfied.
@@ -43,17 +43,22 @@ Label the work before changing anything:
 Do not let a source entry automatically authorize a hosted design or code
 import. Do not let a hosted design imply a native-kernel milestone.
 
-For roadmap work, keep K2 native source binding as the next direct management
-milestone. Derive H1 replay semantics from the K2 contract, and start H2 live
-observation only after the native duplicate/orphan/stale-generation proof.
-Keep H4/H5 blocked behind K5 principal, ownership, authorize, and separate
-approval. Implementation convenience is not a binding rule: PID, cgroup,
-Memory Fabric domain, and process generation cannot stand in for an
-`AI_SERVICE` Node without a semantic-kind and producer-owned-generation gate.
+For roadmap work, keep K2 as the backend-neutral management contract and build
+H1 replay semantics in the same cycle. Start H2 only after the shared
+lifecycle/generation/reject contract, fail-closed fixtures, and one bounded
+native semantic oracle exist. Broad native process/storage expansion or full
+conformance completion is not a prerequisite for the first observe-only hosted
+slice. Keep H4/H5 blocked behind K5 principal, ownership,
+authorize, and separate approval. Implementation convenience is not a binding
+rule: PID, cgroup, Memory Fabric domain, and process generation cannot stand in
+for an `AI_SERVICE` Node without a semantic-kind and producer-owned-generation
+gate.
 
 ## Preserve the source-only boundary
 
 - Treat every Linux identity in the resource manifest as source metadata only.
+- Put product runtime under `hosted/`; keep `tools/platform/` limited to the
+  manifest and guard.
 - Use exact upstream identity and immutable revision evidence where the
   canonical schema requires it.
 - Keep downloaded archives, source trees, patches, generated derivatives, and

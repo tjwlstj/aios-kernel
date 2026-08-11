@@ -1,14 +1,25 @@
 # AIOS - AI-Native Operating System
 
 <p align="center">
-  <strong>Room → Cell → Node → NodeBit 관리 모델을 위한 x86_64 베어메탈 OS 실험</strong>
+  <strong>Room → Cell → Node → NodeBit 관리 모델을 위한 AI-native 관리·런타임 프로젝트</strong>
 </p>
 
 ---
 
 ## Overview
 
-AIOS(AI-Native Operating System)는 AI 워크로드를 **1급 시민(First-class citizen)**으로 취급하고 관리 모델을 중심에 둔 x86_64 베어메탈 OS 실험입니다. 제품의 정본 관리 모델은 **Kernel Room → Cell → Node → NodeBit**입니다. 현재 베타에는 부팅 가능한 커널 기반, 텐서 지향 메모리 메타데이터, 메모리 패브릭, 헬스/SLM 스냅샷, 각자 `CURRENT`인 서로 독립적인 SLM policy catalog와 runtime capability NodeBit, 관측 전용 AI pressure tracker와 resource ledger, 제한된 AI 시스콜 표면이 있습니다. `CURRENT`인 K1은 1KiB 고정 snapshot에 bootstrap Cell 1개, 그 Cell에 명시적으로 bound된 Node 1개, 그 Node를 부모로 하는 typed NodeBit 2개를 함께 보존하는 management-only hierarchy v0입니다. 기존 subsystem을 이 계층으로 투영하는 external adapter는 계속 `SCAFFOLD`이며, lifecycle/reconciliation과 K2+ source binding은 `PLANNED`입니다.
+AIOS(AI-Native Operating System)는 AI 워크로드를 **1급 시민(First-class citizen)**으로
+취급하고 **Kernel Room → Cell → Node → NodeBit** 관리 모델을 중심에 둔 AI-native
+관리·런타임 프로젝트입니다. 의도된 기본 delivery substrate는 Linux-hosted userspace
+service입니다. 현재 저장소의 runtime 실행 증거는 x86_64 native reference/proof
+kernel에 있고, Linux 쪽은 H0 upstream source policy만 `CURRENT`입니다. 현재 베타에는 부팅 가능한 native kernel,
+텐서 지향 메모리 메타데이터, 메모리 패브릭, 헬스/SLM 스냅샷, 서로 독립적인 SLM
+policy catalog와 runtime capability NodeBit, 관측 전용 AI pressure tracker와 resource
+ledger, 제한된 AI 시스콜 표면이 있습니다. `CURRENT`인 K1은 1KiB 고정 snapshot에
+bootstrap Cell 1개, 그 Cell에 명시적으로 bound된 Node 1개, 그 Node를 부모로 하는
+typed NodeBit 2개를 함께 보존하는 management-only hierarchy v0입니다. 기존 subsystem을
+이 계층으로 투영하는 external adapter는 계속 `SCAFFOLD`이며, lifecycle/reconciliation,
+K2+ source binding과 Linux-hosted backend는 `PLANNED`입니다.
 
 장기 방향은 embodied AI OS입니다. LLM/SLM 에이전트는 유저스페이스에서 단기 기억과 장기 기억을 분리해 유지하고, 세션을 넘어 연속성을 보존하며, 하드웨어에는 커널이 중재하는 정책 경계를 통해 접근합니다.
 
@@ -23,9 +34,9 @@ fast-forward합니다.
 
 Suggested repository description:
 
-> AI-native OS experiment centered on Room → Cell → Node → NodeBit management, built on a bounded ring3 and hardware substrate.
+> AI-native management/runtime project centered on Room → Cell → Node → NodeBit, with Linux-hosted userspace as the intended delivery path and a native proof kernel.
 
-## Current Status (2026-08-11)
+## Current Status (2026-08-12)
 
 - **Current beta:** `v0.2.0-beta.6` (`0.2.0-beta.6 "Genesis"` boot banner).
 - **Boot path:** x86_64 Multiboot2 커널, GDT/IDT/TSS, 페이징, PIT IRQ0 scheduler tick bootstrap, QEMU 스모크 테스트 기반.
@@ -33,10 +44,11 @@ Suggested repository description:
 - **Memory:** 물리/가상 할당 기반, 텐서 메모리 메타데이터, 수명 프로파일링, 메모리 패브릭 노드, 공유 영역 스캐폴딩.
 - **Kernel Room topology maturity:** 전체 topology는 계속 `PARTIAL`이다. 기존 `kernel_room_snapshot_read()` aggregate와 9개 syscall-range descriptor에 더해, `CURRENT` K1 `kernel_room_management_snapshot_t`는 schema 1/1024B 고정 snapshot으로 Cell 1/2, Node 1/4, NodeBit 2/8을 보존하며 exact parent, namespace, generation, source validity를 검사한다. 이 registry는 bootstrap fixture이고 `observation_only=1 management_only=1`이다. external subsystem adapter, live lifecycle/reconciliation, resource attribution, principal/ownership는 K2+ `PLANNED`다.
 - **Identity boundary:** Memory Fabric `domain_id`, SLM `agent_tree.node_id`, SLM policy `slm_nodebit_id`, 런타임 capability `node_id`, pipeline `owner_node`, scheduler task/PID/ring ID는 독립 네임스페이스다. 숫자가 같아도 같은 주체가 아니며, 명시적 namespace/binding/generation 없이 결합하지 않는다.
-- **Linux substrate policy:** schema v1의 13개 upstream source row와 fail-closed
-  guard는 `CURRENT`다. Linux `6.12.y` primary, `6.18.y` forward, QEMU `11.0.x`,
-  VirtIO 1.2 CS01 selected baseline을 고정하지만 Linux-hosted backend는 `PLANNED`다.
-  PID/cgroup/pidfd/PSI는 source-only이고 `code_import=0`이다.
+- **Linux delivery direction:** Linux-hosted userspace service는 의도된 기본 delivery
+  경로로 결정됐다. schema v1의 13개 upstream source row와 fail-closed guard만
+  `CURRENT`이고 Linux-hosted backend는 계속 `PLANNED`다. Linux `6.12.y` primary,
+  `6.18.y` forward, QEMU `11.0.x`, VirtIO 1.2 CS01 selected baseline은 source
+  기준선이며 PID/cgroup/pidfd/PSI는 source-only, `code_import=0`이다.
 - **Pressure observation:** schema 1의 `state pressure`가 workload queue, Memory Fabric reader/writer 중첩, 누적 NodeBit 거부율을 0..1024 정수 벡터로 읽는다. 현재는 system→plane 2단계 관측만 `CURRENT`이며 task migration이나 budget apply는 하지 않는다.
 - **Resource observation:** schema 1의 커널 내부 `ai_resource_snapshot_t`가 heap bytes, tensor bytes, active Memory Fabric windows, inference ring registrations, runnable scheduler tasks를 고정 5개 aggregate row로 읽는다. 모든 owner는 아직 `NONE/UNATTRIBUTED`이며 read-only `SYS_INFO_RESOURCE`(0x706) syscall과 `state resource` 셸 토픽은 `CURRENT`, owner attribution과 quota/reserve/apply는 `PLANNED`다.
 - **Autonomy and policy:** 헬스 스냅샷, 제한된 자율 제안/롤백 경로, SLM 하드웨어 스냅샷, 두 종류의 NodeBit 조회/통계, Kernel Room syscall-range 분류 메타데이터. Kernel Room Axis Gate의 dispatcher-level 강제는 아직 없다.
@@ -54,10 +66,13 @@ AIOS의 우선 방향은 커널 기능을 더 많이 나열하는 것이 아니�
 - **Node:** Cell 안에서 역할을 가진 agent/service/runtime 단위. 기존 여러 `node_id`는 canonical Node가 아니라 입력 스캐폴드이므로 명시적으로 bind한다.
 - **NodeBit:** Node 안의 가장 작은 capability/policy/resource projection. 기존 SLM policy node와 runtime capability node를 곧바로 동일시하지 않고 namespace가 있는 adapter로 연결한다.
 - **Execution substrate:** ring3 process, scheduler, memory, storage, network, HAL은 위 관리 모델이 실제 일을 수행하도록 받치는 기반이다. M3~M5의 완성도는 계속 높이되 방향 선택을 독점하지 않는다.
-- **Hosted substrate:** Linux는 선택적 host/device/delivery substrate다. H0 source
-  policy만 `CURRENT`이며 다음 직접 단계는 K2-a native source binding이다. H1 replay는
-  K2 계약을 소비하고 H2 live observation은 native negative proof 뒤에만 시작한다.
-  H4 validation과 H5 apply는 K5와 별도 승인 전까지 열지 않는다.
+- **Hosted substrate:** Linux-hosted userspace service는 의도된 기본 delivery
+  구현축이다. H0 source policy만 `CURRENT`이며 H1~H5와 실행 backend는
+  `PLANNED`다. K2 substrate-neutral semantic contract와 H1 replay를 같은 주기에서
+  고정하고, 공통 negative fixture와 bounded native semantic oracle이 준비되면 H2
+  observe-only service를 시작한다. 광범위한 native process/storage 확장은 선행조건이
+  아니다. H4 validation과 H5 apply는
+  K5와 별도 승인 전까지 열지 않는다.
 - **Policy boundary:** Axis Gate의 실제 authorize/enforcement는 canonical identity, parent binding, generation, principal과 ownership이 생긴 뒤의 `PLANNED` 단계다. 현재 9개 descriptor는 분류 메타데이터다.
 - **Orbit:** Cell/Node placement와 분산 배치를 탐구하는 `RESEARCH` 축이다. Cell 관리 기반과 검증 증거 없이 지원 기능으로 선언하지 않는다.
 
@@ -72,9 +87,15 @@ Kernel Room
              │ K1 bootstrap hierarchy v0 implemented
              │ external adapters / lifecycle remain K2+ PLANNED
              ▼
-Current substrate / evidence inputs
+                 ┌─ Linux-hosted userspace service
+                 │  intended default delivery · PLANNED
+Canonical model ─┤
+                 └─ native x86_64 reference/proof kernel
+                    bounded executable evidence · CURRENT/PARTIAL
+
+Current evidence inputs
 memory fabric · health · SLM · runtime NodeBit · pipeline
-resource/pressure observation · scheduler · ring3 · drivers
+resource/pressure observation · scheduler · ring3 · drivers · H0 source policy
 ```
 
 ## Key Features
@@ -178,7 +199,7 @@ resource/pressure observation · scheduler · ring3 · drivers
 
 ## Project Structure
 
-저장소는 6개 도메인으로 구성된 모노레포다. 도메인 경계·의존 규칙·"어디에 두나" 결정 가이드는
+저장소는 7개 도메인으로 구성된 모노레포다. 도메인 경계·의존 규칙·"어디에 두나" 결정 가이드는
 **[PROJECT.md](PROJECT.md)** 에 정리되어 있다.
 
 ```
@@ -193,18 +214,20 @@ aios-kernel/
 │   ├── interrupt/  mm/  sched/  hal/  runtime/  drivers/  lib/
 │   └── include/        #    커널 공개 헤더
 │
-├── os/                 # ② 유저스페이스 런타임 + 전용 프로그램
+├── os/                 # ② AIOS native ring3 런타임 + 전용 프로그램
 │   ├── runtime/  main_ai/  compat/  examples/  tools/
 │   └── apps/           #    전용 프로그램 (스캐폴드)
 │
-├── models/             # ③ AI/SLM 모델 매니페스트 (가중치는 비추적)
+├── hosted/             # ③ Linux-hosted 기본 delivery 도메인 (runtime PLANNED)
+│   └── README.md       #    책임·의존·첫 구현 경계
+├── models/             # ④ AI/SLM 모델 매니페스트 (가중치는 비추적)
 │   └── manifests/
-├── store/              # ④ 부팅 후 온라인 드라이버/프로그램 다운로드 카탈로그
+├── store/              # ⑤ 부팅 후 온라인 드라이버/프로그램 다운로드 카탈로그
 │   └── catalog/
-├── tools/              # ⑤ 테스트·빌드 + 외부 source 정책 검증
+├── tools/              # ⑥ 테스트·빌드 + 외부 source 정책 검증
 │   ├── testkit/
 │   └── platform/       # manifest/guard only; hosted runtime 아님
-├── docs/               # ⑥ 설계 문서 (kernel/ autonomy/ os/ models/ tools/ meta/ kernel-room/)
+├── docs/               # ⑦ 설계 문서 (kernel/ autonomy/ os/ models/ tools/ meta/ kernel-room/)
 └── .github/workflows/  # CI (linux-boot-check)
 ```
 
@@ -294,6 +317,7 @@ make debug          # GDB 디버깅 모드로 실행
 | 가속기 슬롯 | 16개 디바이스 규모의 HAL/SLM snapshot ABI |
 | 모델 슬롯 | 64개 규모의 model registry scaffold |
 | 유저스페이스 | 첫 ring3 static ELF64 demo + `int 0x80` 왕복 완료, full service/runtime 예정 |
+| 기본 delivery 방향 | Linux-hosted userspace service (제품 결정 완료, backend 구현 `PLANNED`) |
 | AI 가속기 | PCI/capability abstraction scaffold, 실제 벤더 드라이버 예정 |
 | CI | GitHub Actions (cppcheck + OS tool smoke + QEMU smoke + shell lane) |
 
@@ -310,6 +334,7 @@ make debug          # GDB 디버깅 모드로 실행
 - [유저공간 OS 구현 방향](docs/os/user_space_os_direction_ko.md)
 - [브라우저 콘솔과 자체 런타임 엔진 로드맵](docs/os/browser_console_and_runtime_engine_roadmap_ko.md)
 - [Linux-hosted substrate와 upstream resource 정책 정본](docs/os/linux_hosted_substrate_and_resource_policy_ko.md)
+- [Linux-hosted runtime 도메인 경계](hosted/README.md)
 - [AI 에이전트 OS용 모델 스택 추천](docs/models/agent_model_stack_recommendations_ko.md)
 - [종합 점검 보고서 (2026-04-15)](docs/meta/inspection_report_2026_04_15.md)
 - [Kernel Room Topology 문서 모음](docs/kernel-room/README.md)

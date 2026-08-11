@@ -17,8 +17,10 @@
 - `OLD` 문서는 역사적 맥락용이며, 새 구현 판단에는 최신 기준 문서를 먼저 사용한다.
 
 ## 전체 아키텍처
-- [design.md](design.md) — 전체 설계 개요
-- [architecture.mmd](architecture.mmd) / [architecture.png](architecture.png) — 아키텍처 다이어그램
+- [design.md](design.md) — 현재 제품 방향과 native reference/proof 설계 개요
+- [architecture.mmd](architecture.mmd) / [architecture.png](architecture.png) —
+  `REVIEW`; native reference/proof substrate의 역사적 상세도. Linux-hosted 기본
+  delivery 구조는 아래 정책 정본의 Mermaid를 우선
 
 ## kernel/ — 커널 내부
 - [hardware_core_foundation_ko.md](kernel/hardware_core_foundation_ko.md) — `REVIEW`; 초기 hardware bootstrap 기록, 현재 우선순위 아님
@@ -49,7 +51,8 @@
 - [ai_resource_management_development_plan_ko.md](autonomy/ai_resource_management_development_plan_ko.md)
 
 ## os/ — 유저스페이스 OS 계층
-- [linux_hosted_substrate_and_resource_policy_ko.md](os/linux_hosted_substrate_and_resource_policy_ko.md) — schema v1 upstream resource policy와 Kernel Room 의미를 보존하는 Linux-hosted substrate 경계의 정본; resource catalog `CURRENT`와 hosted backend `PLANNED`를 분리
+- [linux_hosted_substrate_and_resource_policy_ko.md](os/linux_hosted_substrate_and_resource_policy_ko.md) — Linux-hosted userspace service를 기본 delivery 방향으로 고정하고 Kernel Room 의미를 보존하는 정본; resource catalog `CURRENT`와 hosted backend `PLANNED`를 분리
+- [../hosted/README.md](../hosted/README.md) — Linux-hosted 제품 도메인의 책임·의존 경계; 실행 구현은 `PLANNED`
 - [browser_console_and_runtime_engine_roadmap_ko.md](os/browser_console_and_runtime_engine_roadmap_ko.md)
 - [user_space_os_direction_ko.md](os/user_space_os_direction_ko.md)
 - [user_space_os_build_slices_ko.md](os/user_space_os_build_slices_ko.md)

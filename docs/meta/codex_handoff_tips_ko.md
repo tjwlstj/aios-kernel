@@ -1,6 +1,6 @@
 # Codex 작업 핸드오프 팁 (2026-07-15)
 
-최종 갱신: 2026-08-11 (K2-first Linux-hosted H축 통합)
+최종 갱신: 2026-08-12 (Linux-hosted 기본 delivery 방향 잠금)
 
 이 커널에서 Claude가 M1~M3 작업 중 실제로 밟은 지뢰와 관례를 모았다. 다음 작업자(Codex)가 같은 함정에 빠지지 않도록 하는 실전 노트다. **CLAUDE.md의 규칙이 정본이고, 이 문서는 "왜 그런지"와 "어떻게 디버깅했는지"를 보완한다.**
 
@@ -157,13 +157,15 @@ K2는 이 최소 계층의 external source binding과 generation/reconciliation�
 K3에서만 runtime/SLM NodeBit를 namespace adapter로 read-only projection한다.
 
 K2-a의 source 선택은 구현 편의보다 semantic kind를 먼저 본다. Node 101은
-`AI_SERVICE`이므로 우선 후보는 SLM agent-tree MAIN source다. 단, 현재
-`policy_generation`이나 timestamp를 agent-tree source generation으로 재해석하지
-않는다. producer-owned source instance/generation과 copied read API가 생긴 뒤 별도
-bounded binding/reconciliation snapshot으로 연결한다. Memory Fabric main domain은
+`AI_SERVICE`이므로 native reference 후보는 SLM agent-tree MAIN source이고,
+Linux-hosted 기본 delivery 후보는 producer-owned service instance/generation을 가진
+실제 userspace service다. 현재 `policy_generation`이나 timestamp를 agent-tree source
+generation으로, Linux PID/pidfd/cgroup/PSI를 canonical identity로 재해석하지 않는다.
+producer-owned source instance/generation과 copied read API가 생긴 뒤 별도 bounded
+binding/reconciliation snapshot으로 연결한다. Memory Fabric main domain은
 Cell/resource source 후보이고 bootstrap process는 execution-instance source 후보다.
-둘을 Node 101과 숫자나 기존 generation 존재만으로 결속하지 않는다. 기존 K1 1024B
-immutable snapshot은 K2에서 무심코 확장하지 않는다.
+어느 source도 Node 101과 숫자나 기존 generation 존재만으로 결속하지 않는다. 기존
+K1 1024B immutable snapshot은 K2에서 무심코 확장하지 않는다.
 
 ### 5.2 병행 가능한 실행 substrate backlog
 
@@ -193,15 +195,18 @@ continuation/switch이고, bounded 실제 A→B→A를 증명한 뒤 timer preem
 
 주의: 두 static process 모두 실제 ring3 실행은 하지만 현재 resume 모델은 여전히 순차 동기 C 호출 프레임이다. descriptor의 trap snapshot과 process event journal은 증거 소유권과 순서만 고정하며 `resume_ready=0`이다. journal 완료를 live transition 완료로 해석하지 말고, 다음 단계에서만 current process·CR3·BSP `rsp0`·saved frame·`g_active_user_run_state`를 IF=0에서 함께 교대하는 live continuation으로 나아가야 한다.
 
-### 5.3 Linux-hosted H축은 K2 증거를 소비한다
+### 5.3 Linux-hosted H축은 기본 delivery 구현축이며 K2 계약과 병행한다
 
 - H0 resource manifest/guard만 `CURRENT`다. Linux daemon, adapter, KVM lane,
   resource apply는 아직 `PLANNED`다.
-- 다음 직접 마일스톤은 K2-a native source binding이다. H1 replay는 K2-a가 고정한
-  lifecycle/generation/reject reason에서 파생하고, H2 live collector는 native negative
-  proof가 끝난 뒤에만 시작한다.
-- 기본 용량은 `DIRECT K2 >= 65%`, `SUPPORTING H0/H1 <= 25%`,
-  `RESEARCH H2/H3 <= 10%`다. K2 주간 증거가 실패하면 H1~H3를 중단한다.
+- K2는 substrate-neutral identity/lifecycle/generation/reject 계약을 소유하고 H1
+  replay는 같은 주기에서 그 계약과 fail-closed negative fixture를 고정한다.
+- 공통 계약, fixture와 하나의 bounded native semantic oracle가 고정되면 H2 Linux
+  userspace collector를 시작한다. 광범위한 native 실행 substrate 완성과 최종
+  conformance closure는 H2의 선행조건이 아니다.
+- 기본 용량은 `SEMANTIC SAFETY K2/H1 40%`, `HOSTED DELIVERY H2/H3 50%`,
+  `H0 PROVENANCE + NATIVE CONFORMANCE 10%`다. 단계별 증거가 실패하면 다음 단계나
+  maturity 승격을 중단한다.
 - H4/H5, quota, throttle, scheduler migration, Axis Gate apply는 이번 4~8주 범위에서
   제외한다. K5 principal/ownership/authorize와 별도 승인 뒤에만 다시 검토한다.
 - Linux PID/cgroup/pidfd/PSI/path는 `source_only`다. canonical ID로 재사용하거나

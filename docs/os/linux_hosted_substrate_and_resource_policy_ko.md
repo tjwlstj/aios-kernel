@@ -1,16 +1,21 @@
 # AIOS Linux-hosted substrate와 upstream resource 정책 정본
 
-> 기준일: 2026-08-11
+> 기준일: 2026-08-12
 >
 > 문서 상태: 설계·resource 선정 정본
 >
 > Upstream resource policy: `CURRENT` (`schema_version=1`,
 > `policy_id=aios-linux-substrate-resources-v0`, `resources=13`)
 >
-> Linux-hosted backend: `PLANNED`
+> 제품 delivery 방향: Linux-hosted userspace service
+> (의도된 기본 경로로 결정; 구현 성숙도 표기가 아님)
+>
+> Linux-hosted backend 구현 성숙도: `PLANNED`
 
-이 문서는 AIOS가 독자적인 Kernel Room 의미를 유지하면서 Linux를 선택적 실행
-substrate로 검토할 때 사용할 **공식 upstream 기준선과 source-only 경계**를 정한다.
+이 문서는 AIOS가 독자적인 Kernel Room 의미를 유지하면서 Linux-hosted userspace
+service를 의도된 기본 delivery substrate로 구현할 때 사용할 **공식 upstream
+기준선과 source-only 경계**를 정한다. 이 제품 방향 결정은 hosted backend의 구현
+성숙도를 승격하지 않는다.
 
 - 사람용 정책 정본: 이 문서
 - 기계 판독 resource set 정본:
@@ -33,22 +38,25 @@ AIOS native resource ledger와 runtime policy의 구현 상태는
 
 ## 1. 결정
 
-AIOS는 Linux를 Kernel Room의 정체성이나 canonical identity provider로 채택하지
-않는다. 아래 두 실행 경로를 분리해 함께 유지할 수 있다.
+AIOS는 **Linux-hosted userspace service를 의도된 기본 delivery substrate로
+채택한다.** Linux 자체를 Kernel Room의 정체성이나 canonical identity provider로
+채택하지 않으며 아래 두 실행 경로의 역할을 분리한다.
 
-1. **AIOS native kernel**은 작은 reference/proof substrate다. x86_64 실경로와
-   Kernel Room 불변식을 직접 증명한다.
-2. **Linux-hosted backend**는 commodity driver, filesystem, network, process,
-   model-runtime 생태계를 활용하는 선택적 delivery substrate다.
+1. **Linux-hosted backend**는 commodity driver, filesystem, network, process,
+   model-runtime 생태계를 활용하는 기본 delivery 구현 경로다. 실행체와 정규
+   verdict가 아직 없으므로 구현 성숙도는 `PLANNED`다.
+2. **AIOS native kernel**은 작은 reference/proof substrate다. x86_64 실경로와
+   Kernel Room 불변식을 직접 증명하고 hosted 경로의 conformance 기준을 제공한다.
 3. 두 경로의 제품 정본은 동일한 `Room -> Cell -> Node -> NodeBit` 관리 계약이다.
 4. Linux PID, cgroup, namespace, device ID는 canonical Cell/Node/NodeBit가 아니라
    namespace와 generation을 가진 **외부 source**다.
 5. upstream resource의 등록은 source 조사만 허용한다. code import와 runtime support는
    각각 별도 승인·구현·검증을 요구한다.
 
-따라서 이 방향은 Linux 커널 소스를 AIOS 커널에 복사하거나 AIOS를 곧바로 Linux
-배포판으로 바꾸는 계획이 아니다. 제품 의미는 독립시키고 실행 substrate만 교체
-가능하게 만드는 하이브리드 구조다.
+따라서 이 방향은 Linux 커널 소스를 AIOS 커널에 복사하거나 AIOS를 Linux fork 또는
+kernel module로 바꾸는 계획이 아니다. 첫 제품 경로는 Linux userspace service이고,
+제품 의미는 substrate와 독립된 채 native proof와 hosted delivery가 같은 계약을
+검증하는 구조다.
 
 ## 2. 현재 성숙도 경계
 
@@ -272,12 +280,12 @@ flowchart TB
     G["linux_resource_guard.py<br/>(CURRENT contract guard)"]
     C["Kernel Room canonical contract<br/>Room -> Cell -> Node -> NodeBit"]
 
-    subgraph N["AIOS native substrate"]
+    subgraph N["AIOS native reference/proof substrate"]
         NK["native kernel mechanisms"]
         NA["native source adapters"]
     end
 
-    subgraph L["Linux-hosted substrate (PLANNED)"]
+    subgraph L["Linux-hosted default delivery substrate (PLANNED)"]
         LC["host collectors"]
         LR["binding reconciler"]
         LB["hosted policy broker"]
@@ -314,12 +322,14 @@ Canonical plane이 소유하지 않는 것:
 - 자연어 plan, raw shell command, pointer, register 또는 MMIO 주소
 - backend마다 다른 실패를 하나의 공통 성공으로 축약하는 로직
 
-### 6.2 Native substrate
+### 6.2 Native reference/proof substrate
 
 Native 경로는 현재 AIOS kernel과 QEMU/실기기 경계를 유지한다. Linux resource
 기준선을 추가하기 위해 native ABI, K1 snapshot, 기존 boot marker를 변경하지 않는다.
+제품 delivery 우선순위가 Linux-hosted로 이동해도 native 경로는 canonical 의미를
+substrate와 독립적으로 검증하는 bounded semantic oracle과 conformance proof로 남는다.
 
-### 6.3 Linux-hosted substrate
+### 6.3 Linux-hosted default delivery substrate
 
 첫 hosted 구현은 Linux kernel module이 아니라 userspace service로 시작한다.
 
@@ -345,10 +355,14 @@ Native 경로는 현재 AIOS kernel과 QEMU/실기기 경계를 유지한다. Li
   versioned trace로 고정한다.
 - duplicate, orphan, PID reuse, source-generation rollback, host-instance mismatch,
   missing validity를 fail-closed로 거부한다.
-- native와 hosted가 같은 semantic verdict를 소비할 수 있게 한다.
+- K2 substrate-neutral semantic contract와 같은 주기에서 schema와 negative fixture를
+  고정하고 native와 hosted가 같은 semantic verdict를 소비하게 한다.
 
 ### H2. Linux observe-only adapter — `PLANNED`
 
+- H1의 공통 lifecycle/generation/reject 계약, negative fixture와 하나의 bounded
+  native semantic oracle가 고정된 뒤 시작한다. 광범위한 native process/storage
+  확장과 최종 conformance closure는 첫 observe-only slice의 선행조건이 아니다.
 - primary Linux baseline 위에서 한 host instance와 bounded process source를 관측한다.
 - 실제 file/network/compute workload의 resource와 pressure source를 읽는다.
 - canonical ID는 adapter가 받은 binding으로만 사용한다.
@@ -398,54 +412,73 @@ Pressure, eligibility, action policy는 계속 분리한다.
 낮은 pressure를 authorize로, 높은 pressure를 자동 throttle로 해석하지 않는다.
 Linux PSI나 cgroup counter를 읽게 되더라도 이 세 축을 합치지 않는다.
 
-## 9. 4~8주 결정 실험
+## 9. 4~8주 기본 delivery 구현 계획
 
-| 기간 | 실험 | 종료 증거 |
+Linux-hosted를 기본 delivery로 삼는 제품 방향은 이미 결정됐다. 아래 일정과 게이트는
+채택 여부를 다시 고르는 실험이 아니라, 아직 `PLANNED`인 backend를 정직하게 구현하고
+지원 가능 상태로 승격하기 위한 evidence plan이다.
+
+| 기간 | 구현 조각 | 종료 증거 |
 |---|---|---|
-| 시작점 | H0 schema v1 resource baseline 고정 | guard PASS와 13개 source row; runtime 증거가 아님 |
-| 1주차 | K2-a source identity/lifecycle/reconcile 계약과 후보 gate | semantic kind, namespace, producer-owned generation, validity, reject reason 정본 |
-| 2~4주차 | native K2-a 단일 source binding proof | real source 하나의 exact parent/source generation과 duplicate/orphan/stale 거부 |
-| 3~5주차 병행 | H1 OS-neutral trace/replay verifier | K2-a 증거에서 파생한 같은 semantic verdict와 reason |
-| 5~7주차 조건부 | H2 Linux observe-only adapter | §9의 Native K2 gate 통과 뒤 primary exact reference의 source-only lifecycle artifact |
-| 7~8주차 조건부 | H3 reconciliation과 cross-backend parity | exit/reuse/recreate/restart 구분, backend ID leakage 없음, 계속/중단 결정 |
+| 시작점 | 방향·도메인·H0 기준선 잠금 | `hosted/` 책임 경계, userspace process 원칙, guard PASS와 13개 source row; runtime 증거는 아님 |
+| 1주차 | K2-a substrate-neutral 계약과 bounded native semantic oracle | semantic kind, typed namespace, producer-owned instance/generation, copied read API, 별도 binding snapshot과 missing/duplicate/orphan/role-mismatch/stale/rollback 거부 |
+| 1~2주차 병행 | H1 OS-neutral trace/replay verifier | `discover -> bind -> observe -> update -> exit -> stale reject -> rebind`와 stable reason; native oracle trace의 동일 verdict |
+| 2~4주차 | H2 Linux observe-only userspace service | primary exact reference에서 한 host와 한 `AI_SERVICE` source를 관측하고 raw/normalized/binding artifact를 분리; 모든 action `UNSUPPORTED` |
+| 4~6주차 | H3 reconciliation과 parity | exit/PID reuse/cgroup recreate/collector restart/host reboot 구분, 명시적 rebind, backend ID leakage 없음 |
+| 6~8주차 | delivery acceptance와 native conformance | service startup/restart/remove, 실제 storage/network/model workload, exact kernel/config/package/hash provenance, 정규 host matrix와 cross-backend verdict |
 
-작업 용량은 `DIRECT K2 >= 65%`, `SUPPORTING H0/H1 <= 25%`, `RESEARCH H2/H3 <= 10%`를
-기본으로 한다. K2 주간 종료 증거가 실패하면 H1~H3를 멈추고 그 용량을 K2로
-되돌린다. H4/H5, quota, throttle, scheduler migration, Axis Gate apply는 이 결정
-실험의 범위가 아니다. K5 principal/ownership/authorize 증거와 별도 승인이 생긴 뒤에만
-다시 후보가 된다.
+기본 작업 용량은 `SEMANTIC SAFETY K2/H1 40%`, `HOSTED DELIVERY H2/H3 50%`,
+`H0 PROVENANCE + NATIVE CONFORMANCE 10%`로 둔다. Secondary Linux나 새 API 비교는
+마지막 10% 안의 non-blocking research로만 다루며 primary baseline을 바꾸지 않는다.
+어느 단계든 종료 증거가 실패하면 다음 단계나 maturity 승격을 중단하고 해당 계약으로
+되돌아간다.
 
-### 9.1 K2-a 첫 source 선택 규칙
+H4/H5, quota, throttle, scheduler migration, Axis Gate apply는 이번 4~8주 범위가
+아니다. K5 principal/ownership/authorize 증거와 별도 승인이 생긴 뒤에만 다시 후보가
+된다.
 
-K1 Node 101은 `AI_SERVICE`이므로 구현하기 쉬운 source보다 semantic kind가 맞는
-source를 먼저 고른다. 우선 후보는 SLM agent-tree의 MAIN agent다. 다만 현재
-`policy_generation`이나 timestamp를 agent-tree source generation으로 재해석하지 않는다.
-producer가 소유하는 별도 source instance/generation과 copied read API가 생긴 뒤에만
-`(namespace, source_id, source_generation)`으로 bind한다.
+### 9.1 K2-a substrate-neutral source 규칙
 
-Memory Fabric main domain은 Cell/resource source 후보이고 bootstrap process는 실행
-instance source 후보다. 둘 중 하나를 Node 101과 숫자 또는 구현 편의만으로 결속하지
-않는다. K2-a binding/reconciliation record는 기존 K1 1024B immutable snapshot을
-변경하지 않는 별도 bounded/versioned 계약으로 시작한다.
+K2 계약은 특정 substrate가 아니라 canonical `AI_SERVICE` 의미를 먼저 고정한다.
+K1 Node 101과 결속할 source는 semantic kind, typed namespace, producer-owned
+instance/generation과 copied read API를 가져야 한다.
 
-다음 게이트를 모두 통과하면 hybrid를 기본 경로로 채택한다.
+- Native reference source의 우선 후보는 SLM agent-tree MAIN agent다. 현재
+  `policy_generation`이나 timestamp를 source generation으로 재해석하지 않는다.
+- Hosted source는 실제 Linux userspace service가 소유하는 명시적인 service
+  instance/generation record다. PID, pidfd, cgroup, PSI는 그 service의 lifecycle과
+  resource evidence일 뿐 canonical Node identity가 아니다.
+- Memory Fabric main domain은 Cell/resource source 후보이고 bootstrap process는
+  execution-instance source 후보다. 숫자나 구현 편의만으로 Node 101에 결속하지 않는다.
+
+두 adapter는 동일한 bounded/versioned binding record와
+missing/duplicate/orphan/role-mismatch/zero/regressed/stale-generation 반례를
+통과해야 한다. 기존 K1 1024B immutable snapshot은 변경하지 않는다. 작은 native
+adapter는 Linux 의미가 canonical schema를 지배하지 못하게 하는 semantic oracle과
+conformance proof다. 광범위한 native process/storage 확장은 H2 착수 조건이 아니지만,
+K2 계약과 H1 negative fixture는 H2보다 먼저 고정한다.
+
+다음 readiness gate를 모두 통과해야 hosted backend를 지원됨 또는 배포 가능 상태로
+승격할 수 있다.
 
 1. **Resource gate:** manifest/guard가 primary, secondary, canonical, experimental
    역할을 혼동 없이 고정한다.
-2. **Native K2 gate:** 한 real native source가 semantic kind와 producer-owned
-   generation을 갖고 canonical parent에 bind되며 negative trace를 fail-closed로 거부한다.
-3. **Semantic gate:** backend와 무관하게 canonical schema와 reject 이유가 같다.
+2. **Semantic gate:** backend와 무관한 canonical schema, generation, validity와
+   stable reject reason이 먼저 정의된다.
+3. **Replay gate:** H1이 정상 lifecycle과 negative fixture를 같은 verdict로
+   fail-closed 판정한다.
 4. **Isolation gate:** cgroup/PID/path가 Cell/Node ID로 새지 않는다.
-5. **Reversibility gate:** hosted adapter를 제거해도 native K1 ABI가 바뀌지 않고,
-   native adapter를 제거해도 hosted protocol이 재정의되지 않는다.
-6. **Product gate:** hosted lane이 장기 process와 실제 storage/network/model workload를
-   관측해 native가 아직 제공하지 못하는 사용자 가치를 만든다.
+5. **Product gate:** hosted lane이 장기 service와 실제 storage/network/model workload를
+   관측해 사용자 가치를 만든다.
+6. **Conformance/reversibility gate:** native와 hosted raw evidence는 달라도 semantic
+   verdict가 같고, 어느 adapter를 제거해도 K1 ABI나 공통 protocol이 재정의되지 않는다.
 7. **Safety gate:** 이번 주기에는 apply edge가 없으며 모든 action capability는
    `UNSUPPORTED`다.
 8. **Maintenance gate:** upstream API, provenance, license, EOL, update 책임이 기록된다.
 
 Linux 의미가 canonical record를 바꾸거나 backend별 verifier가 서로 다른 성공 의미를
-갖게 되면 hybrid 채택을 보류하고 H1 계약부터 다시 고친다.
+갖게 되면 배포와 maturity 승격을 중단하고 H1 계약부터 다시 고친다. 이 실패가 이미
+결정된 제품 방향을 구현 완료로 둔갑시키는 근거가 되어서는 안 된다.
 
 ## 10. Code import와 공급망 경계
 
@@ -500,6 +533,7 @@ trace, request/result, before/after/rollback evidence, backend provenance, final
   ledger/action policy와 upstream resource policy의 구분
 - `docs/meta/minimal_io_and_maturity_workflow_ko.md` — K2~K5 및 별도 hosted H축 관계
 - `docs/kernel-room/kernel_room_management_model_ko.md` — source binding과 K4/K5 성숙도
+- `hosted/README.md` — 기본 delivery runtime의 제품 책임과 의존 경계
 - `tools/platform/resources/linux_substrate_resources.json` — exact machine-readable
   resource set
 
@@ -516,6 +550,8 @@ manifest/guard만으로 그 문서들의 runtime 성숙도를 선행 승격하�
 - QEMU RC를 canonical lane에 사용하거나 VirtIO 1.4 CS01 `RESEARCH` row를 1.2
   selected implementation baseline으로 조용히 승격하기
 - H1/H2 관측 성공을 hosted apply 또는 production isolation으로 표현하기
-- native kernel을 폐기하거나 Linux fork를 기본 제품으로 미리 확정하기
+- Linux-hosted 기본 delivery 결정을 Linux kernel source import, AIOS native
+  reference/proof kernel 폐기, Linux fork/kernel module 또는 검증된 production
+  지원으로 확대 해석하기
 - 여러 backend의 지원 action 합집합을 공통 지원 범위로 표현하기
 - Orbit나 분산 Cell mesh를 hosted 구현의 선행 목표로 끌어오기

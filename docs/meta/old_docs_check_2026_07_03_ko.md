@@ -32,7 +32,7 @@
 | [x] REVIEW | [ai_resource_management_development_plan_ko.md](../autonomy/ai_resource_management_development_plan_ko.md) | resource/service 계획 자체는 유효하지만 ring3 이후 전제 문장이 일부 낡았다. |
 | [x] REVIEW | [code_boundary_and_structure_tree_ko.md](../kernel/code_boundary_and_structure_tree_ko.md) | 디렉토리 경계 설명은 유효하나 ring3 이전 표현이 일부 남아 있다. |
 | [x] REVIEW | [orbit_cell_node_feasibility_ko.md](../kernel-room/orbit_cell_node_feasibility_ko.md) | Orbit 아이디어는 장기 탐색 자료로만 유효하다. 현재 상태는 `RESEARCH`이며 canonical Cell registry나 Node binding, 지원 topology가 아니다. |
-| [x] REVIEW | [hardware_core_foundation_ko.md](../kernel/hardware_core_foundation_ko.md) | 초기 hardware 기반 설명은 유효하지만 전역 “다음 우선순위”는 K2-first 정본보다 앞선 기록이다. |
+| [x] REVIEW | [hardware_core_foundation_ko.md](../kernel/hardware_core_foundation_ko.md) | 초기 hardware 기반 설명은 유효하지만 전역 “다음 우선순위”는 K2 semantic safety와 Linux-hosted 기본 delivery를 병행하는 현재 정본보다 앞선 기록이다. |
 | [x] REVIEW | [commercial_stability_baseline_ko.md](commercial_stability_baseline_ko.md) | 초기 health/driver 기준은 참고 가능하지만 QEMU stable과 driver-first 우선순위는 2026-04 checkpoint다. |
 
 ## Claude/testkit 명령 확인

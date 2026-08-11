@@ -1,8 +1,8 @@
 # AIOS 성숙도 우선 작업흐름 가이드 (2026-08-10 재정렬)
 
-최종 갱신: 2026-08-11 (K2-first Linux-hosted H축 통합)
+최종 갱신: 2026-08-12 (Linux-hosted 기본 delivery와 K2 semantic gate 정렬)
 
-**결정 배경:** 2026-07에는 ring3 첫 실행 슬라이스 뒤 "하드웨어 드라이버 확장 vs 기술 성숙도·정밀화" 중 **성숙도 우선**으로 결정했다. 2026-08-10에는 그 실행 M축이 프로젝트 방향을 독점하면서 본래의 Kernel Room 관리 구조가 뒤로 밀린 점을 바로잡았다. 이 문서는 **Room→Cell→Node→NodeBit 관리축을 우선 정본**으로 두고, 기존 M1~M5를 폐기하지 않은 채 실행 substrate 레인으로 유지한다.
+**결정 배경:** 2026-07에는 ring3 첫 실행 슬라이스 뒤 "하드웨어 드라이버 확장 vs 기술 성숙도·정밀화" 중 **성숙도 우선**으로 결정했다. 2026-08-10에는 그 실행 M축이 프로젝트 방향을 독점하면서 본래의 Kernel Room 관리 구조가 뒤로 밀린 점을 바로잡았다. 2026-08-12에는 Linux-hosted userspace service를 의도된 기본 delivery substrate로 결정했다. 이 문서는 **Room→Cell→Node→NodeBit 관리축을 backend-neutral 의미 정본**으로 두고, Linux-hosted H축을 기본 delivery 구현축으로, 기존 M1~M5를 native reference/proof substrate 레인으로 유지한다.
 
 ---
 
@@ -54,10 +54,11 @@ QEMU 기본 `-hda`와 즉시 호환되고 수십 줄로 섹터를 읽을 수 있
 
 ## 3. 이후 작업흐름 가이드 (성숙도 우선 로드맵)
 
-각 단계는 §4 작업 규약을 따른다. 관리 K축이 직접 제품 방향을 소유하고 실행 M축,
-지속성 C축, 브라우저 W축, Linux-hosted H축은 명시된 선행조건 아래 이를 지지한다.
-각 축 내부의 의존 순서는 유지하지만 “M3나 H의 다음 번호”가 곧 “프로젝트의 다음
-방향”이라는 뜻은 아니다.
+각 단계는 §4 작업 규약을 따른다. 관리 K축은 substrate와 무관한 canonical 의미를
+소유하고 Linux-hosted H축은 의도된 기본 delivery 구현을 소유한다. 실행 M축은
+native reference/proof, 지속성 C축과 브라우저 W축은 각각 명시된 제품 표면을
+지지한다. Hosted 구현 결과가 K축 maturity를 자동 승격시키지는 않으며, 반대로
+native substrate backlog가 기본 delivery 우선순위를 다시 독점하지 않는다.
 
 ## 3-A. Kernel Room 관리축 (K0~K5) — 우선 정본
 
@@ -241,38 +242,44 @@ source 즉시 단일-table 통합 순서는 이 문서에서 폐기한다.
 모델 실행·웹 서비스·세션 지속성은 유저스페이스에 두고, 커널은 bounded syscall,
 SQ/CQ, 자원, authorize, rollback 경계를 제공한다.
 
-## 3-E. Linux-hosted substrate 축 (H0~H5) — K2를 대체하지 않는 보조축
+## 3-E. Linux-hosted substrate 축 (H0~H5) — 기본 delivery 구현축
 
 세부 기준선과 source/import 경계의 정본은
 [Linux-hosted substrate와 upstream resource 정책](../os/linux_hosted_substrate_and_resource_policy_ko.md)이다.
-Linux PID, cgroup, pidfd, PSI, namespace는 canonical Cell/Node/NodeBit가 아니라
-`source_only` 입력이다. native K1/K2 의미를 Linux object에 맞춰 바꾸지 않는다.
+Linux-hosted userspace service는 의도된 기본 delivery 방향이지만 실행 backend의
+구현 성숙도는 아직 `PLANNED`다. Linux PID, cgroup, pidfd, PSI, namespace는
+canonical Cell/Node/NodeBit가 아니라 `source_only` 입력이다. K1/K2 의미를 Linux
+object에 맞춰 바꾸지 않는다.
 
 | 단계 | 상태 | 관계 |
 |---|---|---|
 | H0 upstream resource manifest/guard | `CURRENT` | 13개 source row와 `code_import=0`을 검증한다. runtime backend 증거가 아니다. |
-| H1 OS-neutral trace/replay | `PLANNED` | K2-a가 고정한 lifecycle·generation·reject reason을 재생한다. K2보다 먼저 의미를 만들지 않는다. |
-| H2 Linux observe-only adapter | `PLANNED` | K2-a native negative proof 뒤 primary baseline에서 source-only 관측만 한다. |
+| H1 OS-neutral trace/replay | `PLANNED` | K2 substrate-neutral contract와 같은 lifecycle·generation·reject reason을 고정하고 native/hosted producer가 함께 소비한다. |
+| H2 Linux observe-only adapter | `PLANNED` | K2/H1 공통 계약, negative fixture와 bounded native semantic oracle가 고정된 뒤 userspace service로 source-only 관측을 시작한다. 광범위한 native process/storage 확장은 선행조건이 아니다. |
 | H3 binding reconciliation/parity | `PLANNED` | exit/PID reuse/cgroup recreate/host restart를 구분하고 native와 같은 semantic verdict를 요구한다. |
 | H4 proposal/validation parity | `PLANNED` | K5 action/principal 계약 뒤에만 validate-only로 열며 초기 capability는 전부 `UNSUPPORTED`다. |
 | H5 bounded apply/rollback | `PLANNED` | K5 authorize와 별도 승인 뒤 한 action만 before/after/rollback 증거로 연다. |
 
 ### 4~8주 통합 우선순위
 
-1. **DIRECT 65% 이상 — K2-a:** semantic kind가 맞는 native source 하나에
-   producer-owned instance/generation과 copied read API를 만든 뒤, 별도 bounded
-   binding/reconciliation snapshot으로 K1 Node 101에 결속한다. 우선 후보는 SLM
-   agent-tree MAIN source지만 기존 `policy_generation`을 source generation으로
-   재해석하지 않는다.
-2. **SUPPORTING 25% 이하 — H0/H1:** resource guard와 CI를 유지하고, K2-a가 만든
-   evidence에서 OS-neutral trace/replay를 추출한다.
-3. **RESEARCH 10% 이하 — H2/H3:** native K2 negative proof가 통과한 뒤에만 Linux
-   observe-only lifecycle/parity를 실험한다. K2 주간 증거가 실패하면 즉시 중단한다.
+1. **SEMANTIC SAFETY 40% — K2/H1:** semantic kind가 맞는 source의 typed
+   namespace, producer-owned instance/generation, copied read API와 stable reject
+   reason을 먼저 고정한다. 작은 native K2 adapter는 Linux object가 canonical 의미를
+   정의하지 못하게 하는 semantic oracle/conformance proof다.
+2. **HOSTED DELIVERY 50% — H2/H3:** 공통 contract와 negative fixture가 고정되면
+   한 Linux userspace service의 observe-only 수직 조각과
+   exit/reuse/recreate/restart/reboot reconciliation을 구현한다.
+3. **H0 PROVENANCE + NATIVE CONFORMANCE 10%:** resource guard와 primary artifact
+   provenance를 유지하고 native/hosted 동일 verdict를 검증한다. Secondary Linux
+   비교는 이 범위 안의 non-blocking `RESEARCH`다.
 
-이번 주기의 hard stop은 H4/H5, resource apply, quota/throttle, scheduler migration,
-Axis Gate enforcement다. Memory Fabric domain은 Cell/resource source 후보이고 bootstrap
-process는 execution-instance source 후보이므로, 구현이 쉽다는 이유로 `AI_SERVICE`
-Node 101과 결속하지 않는다. K1 1024B ABI는 그대로 보존한다.
+어느 단계든 종료 증거가 실패하면 다음 단계나 maturity 승격을 중단하고 해당
+contract로 되돌아간다. 이번 주기의 hard stop은 H4/H5, resource apply,
+quota/throttle, scheduler migration, Axis Gate enforcement다. Memory Fabric domain은
+Cell/resource source 후보이고 bootstrap process는 execution-instance source 후보다.
+Hosted에서는 실제 userspace service가 producer-owned service instance/generation을
+제공해야 하며 PID/cgroup을 `AI_SERVICE` Node 101로 재사용하지 않는다. K1 1024B ABI는
+그대로 보존한다.
 
 ## 4. 작업 규약 (모든 단계 공통 — 이번 세션에서 확립)
 

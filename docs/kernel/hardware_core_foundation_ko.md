@@ -1,9 +1,10 @@
 # 하드웨어 코어 기반 + SLM 최적화 메모
 
-> **REVIEW (2026-08-11 분류):** 초기 하드웨어 bootstrap 판단을 보존한 역사 문서다.
-> 아래 “다음 우선순위”는 프로젝트 전역 순서가 아니다. 현재 직접 마일스톤은
-> [성숙도 우선 작업흐름](../meta/minimal_io_and_maturity_workflow_ko.md)의 K2이며,
-> 이 문서는 실행 substrate 내부 참고로만 사용한다.
+> **REVIEW (2026-08-12 분류):** 초기 하드웨어 bootstrap 판단을 보존한 역사 문서다.
+> 아래 “다음 우선순위”는 프로젝트 전역 순서가 아니다. 현재 정본은
+> [성숙도 우선 작업흐름](../meta/minimal_io_and_maturity_workflow_ko.md)의 K2
+> semantic safety와 Linux-hosted 기본 delivery H축을 병행하며, 이 문서는 native
+> reference/proof substrate 내부 참고로만 사용한다.
 
 ## 이번에 들어간 핵심
 

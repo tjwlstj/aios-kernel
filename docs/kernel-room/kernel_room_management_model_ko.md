@@ -3,7 +3,7 @@
 문서 상태: 정본
 전체 토폴로지 성숙도: `PARTIAL` (aggregate substrate와 K1 bounded hierarchy v0 `CURRENT`, K2+ `PLANNED`)
 작성일: 2026-08-10
-최종 갱신: 2026-08-11 (K2 source-selection gate와 H축 경계)
+최종 갱신: 2026-08-12 (K2 substrate-neutral 계약과 Linux 기본 delivery 경계)
 적용 범위: `docs/kernel-room/`의 용어, 성숙도, 구현 순서
 
 ## 문서 권위
@@ -57,9 +57,11 @@ Kernel Room이 곧바로 소유하지 않는 것은 다음과 같다.
 명시적인 adapter를 통해 그 상태를 관리 record로 투영한다. 내부 배열을 몰래
 공유하거나 숫자 ID가 같다는 이유로 서로 다른 namespace를 같은 Node로 보지 않는다.
 
-Linux PID/cgroup/pidfd/PSI/namespace도 같은 external source 규칙을 따른다. H0 upstream
-resource manifest와 guard의 `CURRENT`는 K2 binding이나 hosted runtime 성숙도를
-승격시키지 않는다. Linux 기준선과 `source_only`·`code_import=0` 경계는
+Linux-hosted userspace service는 의도된 기본 delivery 방향이지만 Kernel Room
+계층에서는 external source adapter다. Linux PID/cgroup/pidfd/PSI/namespace도 같은
+external source 규칙을 따른다. H0 upstream resource manifest와 guard의 `CURRENT`는
+K2 binding이나 hosted runtime 성숙도를 승격시키지 않는다. Linux 기준선과
+`source_only`·`code_import=0` 경계는
 [Linux-hosted substrate 정책](../os/linux_hosted_substrate_and_resource_policy_ko.md)을
 따른다.
 
@@ -234,13 +236,16 @@ fail-closed로 거부해야 한다. 기존 `[ROOM] snapshot`과 `[ROOM] gates`�
 3~5단계는 Cell-only, Node-only, NodeBit-only 구현 순서가 아니라 v0에 이미 존재하는
 관계와 typed view를 실제 source에 연결하고 coverage를 확대하는 순서다.
 
-K2-a의 첫 source는 canonical record의 semantic kind와 맞아야 한다. Node 101은
-`AI_SERVICE`이므로 우선 후보는 SLM agent-tree MAIN source지만, 전용 producer-owned
-source instance/generation과 copied read API가 생기기 전에는 bind하지 않는다. 기존
-`policy_generation`, timestamp, Memory Fabric domain ID, process PID/run generation을
-편의상 대신 쓰지 않는다. K2 binding/reconciliation은 K1 1024B immutable snapshot과
-분리된 bounded/versioned contract로 시작하며 missing, duplicate, role mismatch,
-orphan, zero/regressed/stale generation, init-order failure를 거부한다.
+K2 계약은 substrate-neutral하다. Node 101은 `AI_SERVICE`이므로 native reference
+source의 우선 후보는 SLM agent-tree MAIN이고, 기본 delivery 경로의 hosted source는
+producer-owned service instance/generation을 가진 실제 Linux userspace service다.
+어느 쪽도 전용 producer-owned instance/generation과 copied read API가 생기기 전에는
+bind하지 않는다. 기존 `policy_generation`, timestamp, Memory Fabric domain ID,
+process PID/run generation, Linux PID/pidfd/cgroup/PSI를 편의상 generation이나
+canonical identity로 대신 쓰지 않는다. 두 adapter의 binding/reconciliation은 K1
+1024B immutable snapshot과 분리된 같은 bounded/versioned contract로 시작하며
+missing, duplicate, role mismatch, orphan, zero/regressed/stale generation,
+init-order failure를 거부한다.
 
 커널 실행 기반, storage, userspace 작업은 이 모델을 지탱하는 substrate 축으로 계속
 발전할 수 있다. 다만 그 축의 완료 수가 Kernel Room 관리 모델의 성숙도를 대신하지

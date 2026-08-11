@@ -1,15 +1,24 @@
 # AI-Native Operating System (AIOS) 커널 설계 문서
 
+> `REVIEW` (2026-08-12): 아래 `architecture.png`는 native
+> reference/proof kernel의 역사적 상세도다. AIOS 전체 제품의 현재 정본은
+> [Kernel Room 관리 모델](kernel-room/kernel_room_management_model_ko.md)과
+> [Linux-hosted 기본 delivery 정책](os/linux_hosted_substrate_and_resource_policy_ko.md)이다.
+
 ## 1. 개요
-AIOS(AI-Native Operating System)는 인공지능(AI) 워크로드를 1급 시민(First-class citizen)으로 취급하여, 커널 레벨에서부터 AI 모델의 학습 및 추론을 최적화하도록 설계된 실험적인 x86_64 베어메탈 운영체제입니다. 기존의 범용 OS가 파일 시스템과 프로세스 스케줄링에 초점을 맞추었다면, AIOS는 텐서 메모리 관리, AI 가속기 추상화, 그리고 모델 추론/학습을 위한 전용 스케줄러에 집중합니다.
+AIOS(AI-Native Operating System)는 인공지능(AI) 워크로드를 1급 시민으로
+취급하는 관리·런타임 프로젝트다. 제품 의미의 정본은
+`Kernel Room -> Cell -> Node -> NodeBit`이며, 의도된 기본 delivery substrate는
+Linux-hosted userspace service다. 현재 실행 증거는 x86_64 native
+reference/proof kernel에 있고 hosted backend는 `PLANNED`다.
 
 ## 2. 핵심 설계 원칙
 - **AI-Native 아키텍처**: 시스템 콜, 메모리 관리, 스케줄링이 모두 AI 작업(텐서 연산, 모델 추론 등)을 중심으로 설계되었습니다.
 - **텐서 중심 메모리 관리**: 페이지 기반이 아닌 텐서/버퍼 중심의 메모리 할당을 통해 SIMD/AVX 연산에 최적화된 메모리 정렬을 제공합니다.
 - **가속기 추상화(HAL)**: 다양한 AI 가속기(GPU, TPU, NPU 등)를 단일 인터페이스로 관리하여 하드웨어 종속성을 제거합니다.
 
-## 3. 커널 아키텍처
-AIOS 커널은 다음과 같은 핵심 서브시스템으로 구성됩니다.
+## 3. Native reference/proof 커널 아키텍처
+현재 AIOS native proof kernel은 다음과 같은 핵심 서브시스템으로 구성됩니다.
 
 ![AIOS Architecture](architecture.png)
 
@@ -51,7 +60,8 @@ make run
 ```
 
 ## 5. 향후 발전 방향
-현재 구현된 프로토타입을 기반으로 다음과 같은 기능 확장이 가능합니다.
-- 실제 NVIDIA/AMD GPU를 위한 네이티브 커널 모듈 드라이버 구현
-- 분산 학습을 위한 노드 간 RDMA 지원 통합
-- 사용자 공간 AIOS SDK 및 Python 바인딩 제공
+현재 기본 delivery 계획은 Linux kernel fork나 kernel module이 아니라
+observe-only userspace service, backend-neutral binding trace, lifecycle
+reconciliation 순서다. Native kernel은 같은 canonical 계약의 conformance proof로
+유지한다. GPU/NPU 제어, 분산 실행, SDK와 apply 경로는 identity·ownership·rollback
+증거가 생긴 뒤 별도 수직 조각으로 확장한다.

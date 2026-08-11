@@ -1,6 +1,6 @@
 # AIOS 프로젝트 가이드 (도메인 맵)
 
-이 문서는 저장소를 **하나의 큰 트리가 아니라 6개의 독립 도메인**으로 보고 관리하기 위한
+이 문서는 저장소를 **하나의 큰 트리가 아니라 7개의 독립 도메인**으로 보고 관리하기 위한
 마스터 가이드다. "이 코드는 어디에 두나?", "무엇이 무엇에 의존해도 되나?"를 여기서 정한다.
 
 제품 개요/기능 설명은 [README.md](README.md), 세부 설계는 [docs/README.md](docs/README.md),
@@ -27,6 +27,7 @@ external source binding/lifecycle은 K2+다.
 |---|---|---|---|
 | **`kernel/`** | 베어메탈 x86_64 커널. Kernel Room 관리축, 클럭·메모리 보호·인터럽트·드라이버·AI 시스콜 표면 | `kernel/build/aios-kernel.bin` | `make` (→ `kernel/Makefile`) |
 | **`os/`** | ring3 유저스페이스 런타임 + 전용 프로그램(`os/apps/`) | 파이썬 도구, (예정) ELF 앱 | `python os/tools/*.py` |
+| **`hosted/`** | 의도된 기본 delivery 경로인 Linux-hosted userspace service와 backend-neutral contract | 책임 경계 문서, (예정) H1 trace/H2 service | 현재 실행 구현 없음 (`PLANNED`) |
 | **`models/`** | AI/SLM 모델 매니페스트(가중치는 비추적) | `models/manifests/*.json` | — (데이터) |
 | **`store/`** | 부팅 후 온라인 드라이버/프로그램/모델 다운로드 카탈로그 | `store/catalog/*.json` | (예정) 런타임 클라이언트 |
 | **`tools/`** | 테스트·빌드 오케스트레이션과 외부 substrate source 정책 검증 | `tools/testkit/`, `tools/platform/` | testkit + platform guard |
@@ -38,18 +39,21 @@ external source binding/lifecycle은 K2+다.
 
 화살표는 "참조해도 된다"는 방향이다. **역방향 의존은 금지.**
 
-```
-                 ┌─────────────────────────────────────────┐
-   tools/  ─────▶│ (모든 도메인을 테스트/빌드만 한다)         │
-                 └─────────────────────────────────────────┘
+```text
+tools/ ──build/test only──> kernel/ · os/ · hosted/ · models/ · store/
 
-   models/ ──┐
-             ├──▶  os/  ──▶  kernel/        (kernel 은 위를 모른다)
-   store/  ──┘     (apps)     (ABI만 노출)
+os/ ──consume public ABI──> kernel/
+os/ ──read manifests──────> models/ · store/
+
+hosted/linux/ ──consume──> hosted/contracts/
+kernel/ · os/ ──X───────> hosted/
 ```
 
 - **`kernel/`** 은 다른 어떤 도메인도 import 하지 않는다. 외부와의 접점은 **AI 시스콜 ABI**뿐이다.
 - **`os/`** 는 `kernel/`의 시스콜 ABI를 소비하고, `models/`·`store/`의 매니페스트를 읽는다.
+- **`hosted/`** 는 Linux-hosted product runtime과 backend-neutral contract를
+  소유한다. `kernel/` private header 또는 `os/` ring3 구현을 import하지 않으며,
+  `kernel/`과 `os/`도 `hosted/`에 의존하지 않는다.
 - **`models/` / `store/`** 는 데이터/카탈로그 도메인이다. 코드 의존성을 만들지 않는다.
 - **`tools/`** 는 전부를 빌드/검증하고 외부 source manifest를 검사할 뿐 runtime
   backend를 제공하지 않는다. 어떤 도메인도 `tools/`에 의존하면 안 된다.
@@ -69,7 +73,7 @@ external source binding/lifecycle은 K2+다.
 | 부팅 후 받아올 항목 | `store/catalog/<id>.catalog.json` |
 | 테스트/빌드 자동화 | `tools/testkit/` |
 | Linux/QEMU/VirtIO upstream source manifest·guard | `tools/platform/` |
-| Linux-hosted 실행 서비스 | 아직 승인된 코드 위치 없음. H2 착수 전에 새 도메인 또는 명시적 경계를 먼저 결정하며 `tools/platform/`에 넣지 않음 |
+| Linux-hosted 실행 서비스와 backend-neutral binding contract | `hosted/` (`hosted/linux/`, `hosted/contracts/`는 해당 구현·verifier와 함께 생성). `tools/platform/`에 runtime 코드를 넣지 않음 |
 | 설계 노트 | `docs/<domain>/` + `docs/README.md` 인덱스 갱신 |
 | Room/Cell/Node/NodeBit 관리 설계 | `docs/kernel-room/` + 상위 성숙도 문서 동기화 |
 
@@ -111,9 +115,12 @@ Windows: `pwsh -File .\tools\testkit\kernel\build-windows.ps1 -Target test`
 - **Linux substrate identity는 source-only** — PID/cgroup/pidfd/PSI/path를 canonical
   Cell/Node/NodeBit ID로 재사용하지 않는다. H0 manifest/guard `CURRENT`는 hosted runtime,
   license compatibility 또는 code import 승인이 아니며 schema v1은 `code_import=0`이다.
-- **K2가 다음 직접 관리 단계** — H1 replay는 K2 evidence에서 파생하고 H2 live
-  collector는 native negative proof 뒤에만 시작한다. H4 validation과 H5 apply는 K5와
-  별도 승인 전까지 `PLANNED`다.
+- **K2는 다음 직접 관리 계약** — substrate-neutral identity/lifecycle/generation과
+  reject reason을 고정하고 H1 replay를 같은 주기에서 만든다. 작은 native K2 adapter는
+  semantic oracle/conformance proof이며, H2 observe-only service는 공통 계약,
+  negative fixture와 bounded oracle이 고정된 뒤 시작한다. 광범위한 native
+  process/storage 확장은 선행조건이 아니다. H4 validation과 H5 apply는 K5와 별도 승인 전까지
+  `PLANNED`다.
 - **process snapshot/journal은 증거 전용** — descriptor-owned 176B snapshot은 ISR 시점 owner/CR3/TSS `rsp0`/IF=0 검증과 `resume_ready=0`을 유지한다. per-boot process event journal v1의 schema/kind/reason/outcome 숫자 ID는 append-only이며, capacity 8 안에서 여섯 lifecycle/capture record를 덮어쓰지 않는다. journal은 `evidence_only=1 switch_events=0 resume_ready=0`이고 `0→1→0→2→0` 순차 bootstrap owner lifecycle만 증명한다. resumable saved context와 runnable-state 결속, live continuation/switch, 실제 A→B→A가 별도로 검증되기 전에는 snapshot이나 journal을 schedulable state 또는 CPU-switch trace로 해석하지 않는다.
 - **ring3 entry AC 계약은 saved/live를 분리한다** — 현재 QEMU bootstrap pair의 CPL3 `#BP` 2회와 `int 0x80` 6회에서 saved user RFLAGS는 불변이고 entry live AC는 항상 0이어야 한다. SMAP active는 `clac`, 비활성·미지원은 `pushfq/btr/popfq` fallback을 사용하며 `default`/`max-smap` CPU profile과 exact marker/`state sec` mirror가 분기를 고정한다. 이 계약을 future ring3 IRQ/NMI/IST, 실기기, resumable context 또는 process switch 증거로 확장 해석하지 않는다.
 
@@ -133,16 +140,18 @@ aios-kernel/
 │   ├── interrupt/  mm/  sched/  hal/  runtime/  drivers/  lib/
 │   └── include/          # 커널 공개 헤더
 │
-├── os/                   # ② 유저스페이스
+├── os/                   # ② AIOS native ring3 유저스페이스
 │   ├── runtime/  main_ai/  compat/  examples/  tools/
 │   └── apps/             # 전용 프로그램 (스캐폴드)
 │
-├── models/               # ③ 모델 매니페스트 (가중치 비추적)
+├── hosted/               # ③ Linux-hosted 기본 delivery 도메인
+│   └── README.md         # 책임 경계만 결정; H1/H2 실행 구현은 PLANNED
+├── models/               # ④ 모델 매니페스트 (가중치 비추적)
 │   └── manifests/
-├── store/                # ④ 온라인 배포 카탈로그
+├── store/                # ⑤ 온라인 배포 카탈로그
 │   └── catalog/
-├── tools/                # ⑤ 테스트·빌드 + 외부 source 정책 검증
+├── tools/                # ⑥ 테스트·빌드 + 외부 source 정책 검증
 │   ├── testkit/
 │   └── platform/         # manifest/guard only; hosted runtime 아님
-└── docs/                 # ⑥ 설계 문서 (kernel/ autonomy/ os/ models/ tools/ meta/ kernel-room/)
+└── docs/                 # ⑦ 설계 문서 (kernel/ autonomy/ os/ models/ tools/ meta/ kernel-room/)
 ```

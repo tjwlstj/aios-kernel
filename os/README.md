@@ -1,6 +1,8 @@
 # AIOS OS Layer
 
-이 디렉토리는 커널 소스와 분리된 상위 OS 계층이다.
+이 디렉토리는 AIOS native kernel 이후 ring3에서 실행할 상위 OS 계층이다.
+Linux-hosted 기본 delivery userspace service는 별도 `../hosted/` 도메인이 소유하며,
+이 디렉터리에 섞지 않는다.
 
 목적:
 

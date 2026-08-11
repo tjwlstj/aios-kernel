@@ -2,8 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-> Repository layout: this is a **monorepo with 6 domains** (`kernel/`, `os/`, `models/`, `store/`,
-> `tools/`, `docs/`). Read [PROJECT.md](PROJECT.md) for the domain map, dependency-direction rules,
+> Repository layout: this is a **monorepo with 7 domains** (`kernel/`, `os/`, `hosted/`,
+> `models/`, `store/`, `tools/`, `docs/`). Read [PROJECT.md](PROJECT.md) for the domain map, dependency-direction rules,
 > and the "where do I put X?" guide before adding code.
 >
 > Repository-local AI workflows live in [AGENTS.md](AGENTS.md) and
@@ -93,7 +93,11 @@ add an exchange to `DEFAULT_EXCHANGES` in `tools/testkit/lib/shell_lane.py`.
 
 ## Architecture Overview
 
-**AIOS** is a bare-metal x86_64 kernel designed for AI/LLM workloads as first-class citizens. Current version: v0.2.0-beta.6 "Genesis".
+**AIOS** is an AI-native management/runtime project centered on Kernel Room.
+Its intended default delivery substrate is a Linux-hosted userspace service.
+The executable kernel evidence currently checked into this repository is the
+bare-metal x86_64 reference/proof kernel; the Linux-hosted backend remains
+`PLANNED`. Current version: v0.2.0-beta.6 "Genesis".
 
 The canonical product-management hierarchy is **Kernel Room → Cell → Node →
 NodeBit**. Overall Kernel Room topology maturity is `PARTIAL` because its
@@ -266,7 +270,8 @@ verification or hardening work so it stays deduplicated against the verdict
 design doc (V0-V5) and the workflow guide (K/M/C/W/H axes).
 
 ### Current Workflow Plan
-The project has one preferred management lane plus supporting M/C/W/H axes in
+The project has one canonical management lane and one primary hosted-delivery
+lane, plus supporting M/C/W axes, in
 `docs/meta/minimal_io_and_maturity_workflow_ko.md`. The preferred management
 lane builds K1 full hierarchy registry v0 (Cell 1 + bound Node 1 + parent-bound
 NodeBit 2 in one proof; implemented as the bounded bootstrap registry) → K2 source-binding hardening/expansion → K3 legacy
@@ -280,12 +285,16 @@ continuation/switch remains `PLANNED`. Before that high-risk execution slice,
 apply the entry gate in
 `docs/tools/verification_tooling_evolution_design_ko.md`.
 
-The Linux-hosted H axis is separate: H0 upstream manifest/guard is `CURRENT`,
-while H1 trace/replay through H5 apply remain `PLANNED`. K2-a native source
-binding stays the direct next milestone. H1 may consume the K2 evidence contract;
-H2 live observation starts only after its native negative proof. H4/H5 require
-K5 principal/ownership/authorize and separate approval. The canonical upstream
-pins and import boundary live in
+The Linux-hosted H axis is the intended default delivery implementation lane.
+H0 upstream manifest/guard is `CURRENT` source policy only, while H1 trace/replay
+through H5 apply and the executable backend remain `PLANNED`. K2 defines the
+substrate-neutral identity, lifecycle, generation, and reject contract while H1
+builds its replay verifier in the same cycle. H2 may start after that shared
+contract, its fail-closed negative fixtures, and one bounded native semantic
+oracle are fixed; broad native process/storage expansion and final conformance
+closure are not prerequisites for the first observe-only hosted slice. H4/H5 require K5
+principal/ownership/authorize and separate approval. The canonical upstream pins
+and import boundary live in
 `docs/os/linux_hosted_substrate_and_resource_policy_ko.md`.
 
 ### Browser / Runtime Engine Roadmap
@@ -313,7 +322,8 @@ replacement for QEMU or the normal verification path.
 | `kernel/lib/` | Freestanding string utilities |
 | `kernel/include/` | Public headers, organized by subsystem |
 | `kernel/Makefile` | Kernel build system (root Makefile delegates here) |
-| `os/` | Userspace layer (main_ai, compat, runtime, tools) + `os/apps/` programs |
+| `os/` | AIOS native ring3 userspace layer (main_ai, compat, runtime, tools) + `os/apps/` programs |
+| `hosted/` | Intended Linux-hosted delivery domain; responsibility boundary exists, H1/H2 runtime remains `PLANNED` |
 | `models/` | AI/SLM model manifests (weights are gitignored) |
 | `store/` | Post-boot online driver/program/model download catalog |
 | `tools/testkit/` | Python test orchestration + Windows PS1 build helper |
@@ -331,7 +341,11 @@ replacement for QEMU or the normal verification path.
 - Health snapshot ABI must remain stable across builds (consumed by SLM orchestrator).
 - AI resource kind/unit IDs are append-only. Keep aggregate owner IDs at `NONE/UNATTRIBUTED` until attribution exists, honor validity flags, and preserve `observation_only=1` until a separately authorized resource-control UAPI is verified.
 - AI pressure schema/plane IDs are append-only; keep pressure ranking separate from gate eligibility and preserve `observation_only=1` until a separately verified apply path exists.
-- Linux PID/cgroup/pidfd/PSI/path values are external source identities, never canonical Cell/Node/NodeBit IDs. H0 source catalog approval is not runtime support, license compatibility, or code-import approval; schema v1 requires `code_import=0`.
+- Linux-hosted userspace is the intended default delivery direction, not a
+  maturity promotion. Linux PID/cgroup/pidfd/PSI/path values are external source
+  identities, never canonical Cell/Node/NodeBit IDs. H0 source catalog approval
+  is not runtime support, license compatibility, or code-import approval;
+  schema v1 requires `code_import=0`.
 - `SYS_SLM_NODEBIT_LOOKUP` belongs to the SLM policy catalog; runtime NodeBit register/update/stats and pipeline gating are a separate namespace. Do not alias them.
 - Common Kernel Room authorization for `store/` downloads and risky autonomy actions is `PLANNED`; implement it only after canonical binding, principal, ownership, and generation are verifiable.
 - GPU/NPU driver code is scaffolding only; no real hardware interaction yet.

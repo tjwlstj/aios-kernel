@@ -2,7 +2,7 @@
 
 > 기준일: 2026-07-25
 > 관리축 재정렬: 2026-08-10
-> 최종 갱신: 2026-08-11 (K1 hierarchy와 state surface 반영)
+> 최종 갱신: 2026-08-12 (Linux-hosted 기본 delivery와 W축 분리)
 >
 > 상태: 설계 정본. 아래 기능은 별도 표시가 없는 한 `PLANNED` 또는 `RESEARCH`다.
 
@@ -12,9 +12,10 @@ W축은 별도 제품 표면이며 K축 성숙도를 대신하지 않는다.
 
 이 문서의 `Hosted Web Console`과 `Host Session Runtime`은 QEMU 세션을 중계·격리하는
 W축이다. Linux 위에서 Kernel Room source adapter와 resource policy backend를 실행하는
-별도 H축의 정본은
+H축은 의도된 기본 delivery runtime이며 정본은
 [Linux-hosted substrate와 리소스 정책](linux_hosted_substrate_and_resource_policy_ko.md)이다.
-두 경로는 같은 host에서 결합될 수 있어도 성숙도와 완료 증거를 합치지 않는다.
+W축은 그 runtime의 UI/session 표면이 될 수 있지만, 두 경로가 같은 host에서
+결합되어도 성숙도와 완료 증거를 합치지 않는다.
 
 ## 1. 목적
 
@@ -226,7 +227,7 @@ flowchart LR
 | 정책 K5 | W4 원격 action의 principal/ownership authorize와 정책 단일 원본 |
 | 실행 M3~M5 | W4의 프로세스, storage, disk ELF 선행 조건 |
 | 지속성 C1~C2 | W5 세션·flow·정책 재개 기반 |
-| Linux-hosted H0~H5 | W1/W2 QEMU session 경로와 별도 성숙도. H2 source adapter의 raw/normalized/binding verdict를 Web Console 성공과 합치지 않음 |
+| Linux-hosted H0~H5 | 의도된 기본 delivery runtime이지만 W1/W2 QEMU session과 별도 성숙도. H2 source adapter의 raw/normalized/binding verdict를 Web Console 성공과 합치지 않음 |
 
 W1은 현재 커널을 바꾸지 않고 독립적으로 시작할 수 있다. W4를 앞당기기 위해
 커널 안에 임시 HTTP 서버나 자유형 action 우회를 넣지 않는다.

@@ -1,6 +1,8 @@
 # AIOS User-Space Runtime
 
-이 디렉토리는 커널 부팅 이후 ring3에서 동작할 AIOS 유저 공간 런타임의 기준 위치다.
+이 디렉토리는 AIOS native kernel 부팅 이후 ring3에서 동작할 유저 공간 런타임의
+기준 위치다. Linux-hosted 기본 delivery runtime은 `../../hosted/`의 별도 제품
+도메인이며 이 경로의 service와 동일한 실행 환경으로 간주하지 않는다.
 
 ## 역할
 

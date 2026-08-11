@@ -2,16 +2,16 @@
 
 작성일: 2026-04-27
 
-최종 갱신: 2026-08-11 (K2-first 전역 우선순위와 Linux-hosted 정책 분리)
+최종 갱신: 2026-08-12 (K2 관리 계약과 Linux-hosted 기본 delivery 정렬)
 
 ## 목적
 
 이 문서는 AIOS가 부팅 가능한 커널 기준선을 유지하면서,
 AI workload와 agent runtime에 맞는 리소스 관리를 어떤 순서로 확장할지 정리한다.
 
-이 문서의 Slice 순서는 **native resource subsystem 내부 계획**이다. 프로젝트의 다음
-직접 마일스톤은 Kernel Room K2 source binding이며, upstream Linux/QEMU/VirtIO
-resource 선정과 Linux-hosted H축은
+이 문서의 Slice 순서는 **native resource subsystem 내부 계획**이다. 전역 작업은
+Kernel Room K2 substrate-neutral 관리 계약과 Linux-hosted 기본 delivery H1~H3를
+증거 순서로 병행하며, upstream Linux/QEMU/VirtIO resource 선정과 정확한 H축 일정은
 [별도 정본](../os/linux_hosted_substrate_and_resource_policy_ko.md)을 따른다. H0
 manifest/guard가 `CURRENT`여도 native resource policy나 hosted backend가 구현된 것은
 아니다.
@@ -428,9 +428,10 @@ Slice 1/2 필수 negative test:
 ## 리소스 subsystem 내부 후속 후보 — 전역 우선순위 아님
 
 Slice 2까지 완료한 리소스 레인 안의 가장 작은 후속 후보는 Slice 3 bounded policy
-schema 고정이다. 다만 전역 다음 직접 마일스톤은 K2-a native source binding이다.
-Slice 3은 K2 identity/generation 계약을 소비하는 design-only `SUPPORTING` 작업으로만
-병행할 수 있으며 K5 전에는 apply 가능성을 열지 않는다.
+schema 고정이다. 다만 전역 우선순위는 K2 substrate-neutral identity/generation
+계약과 H1 replay, H2/H3 Linux-hosted observe-only delivery 수직 조각이다. Slice 3은
+K2 계약을 소비하는 design-only `SUPPORTING` 작업으로만 병행할 수 있으며 K5 전에는
+apply 가능성을 열지 않는다.
 
 1. target/action/risk ID를 append-only enum으로 먼저 정의
 2. request/result에 schema와 struct size를 포함

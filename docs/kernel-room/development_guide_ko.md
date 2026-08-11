@@ -2,7 +2,7 @@
 
 작성일: 2026-04-18
 재정비: 2026-08-10
-최종 갱신: 2026-08-11 (K2 source adapter 착수 gate)
+최종 갱신: 2026-08-12 (K2 substrate-neutral source gate)
 
 > 이 가이드는 [AIOS Kernel Room 관리 모델](kernel_room_management_model_ko.md)을
 > 따른다. 정체성, 용어, 성숙도 또는 구현 순서가 충돌하면 정본을 우선한다.
@@ -250,12 +250,20 @@ K2 source를 canonical hierarchy에 연결하기 전에 아래를 모두 증명�
 - binding record는 별도 bounded/versioned snapshot이며 K1 1024B ABI와 기존 aggregate
   Room ABI를 변경하지 않는다.
 
-Node 101 `AI_SERVICE`의 우선 후보는 SLM agent-tree MAIN source다. 현재 SLM
-`policy_generation`은 agent-tree source generation 계약이 아니므로 재사용하지 않는다.
-Memory Fabric main domain은 Cell/resource source 후보이고 bootstrap process는
-execution-instance source 후보다. 구현이 쉽거나 숫자가 같다는 이유로 Node 101에
-결속하지 않는다. Linux PID/cgroup/pidfd/PSI도 `source_only`이며 같은 gate를 우회하지
-않는다.
+K2 계약은 substrate-neutral하다. Node 101 `AI_SERVICE`의 native reference 후보는
+SLM agent-tree MAIN source이고, Linux-hosted 기본 delivery 후보는 producer-owned
+service instance/generation을 가진 실제 userspace service record다. 현재 SLM
+`policy_generation`은 agent-tree source generation 계약이 아니므로 재사용하지
+않는다. Linux PID/pidfd/cgroup/PSI는 service lifecycle/resource evidence일 뿐
+canonical Node identity가 아니다. Memory Fabric main domain은 Cell/resource source
+후보이고 bootstrap process는 execution-instance source 후보다. 구현이 쉽거나 숫자가
+같다는 이유로 어느 source도 Node 101에 결속하지 않는다.
+
+작은 native K2 adapter는 canonical 의미가 Linux object 모양에 끌려가지 않게 하는
+semantic oracle/conformance proof다. K2 contract와 H1 fail-closed fixture를 먼저
+고정하되, 광범위한 native process/storage 확장을 H2 observe-only userspace service의
+선행조건으로 만들지 않는다. 두 adapter는 같은 bounded/versioned binding record와
+동일한 semantic verdict를 사용한다.
 
 ## 후속 구현 순서
 
