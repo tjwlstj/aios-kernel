@@ -1,6 +1,6 @@
 # Codex 작업 핸드오프 팁 (2026-07-15)
 
-최종 갱신: 2026-08-12 (Linux-hosted 기본 delivery 방향 잠금)
+최종 갱신: 2026-08-15 (bounded native K2-a oracle handoff)
 
 이 커널에서 Claude가 M1~M3 작업 중 실제로 밟은 지뢰와 관례를 모았다. 다음 작업자(Codex)가 같은 함정에 빠지지 않도록 하는 실전 노트다. **CLAUDE.md의 규칙이 정본이고, 이 문서는 "왜 그런지"와 "어떻게 디버깅했는지"를 보완한다.**
 
@@ -95,7 +95,7 @@ PID 1 실행 뒤 PID 2를 호출하는 것만으로는 scheduler 전환을 증�
 ## 3. 알아두면 좋은 구조
 
 - **두 스케줄러 개념이 분리돼 있다:** `sched/ai_sched.c`는 vruntime 장부질만 하는 **워크로드 회계 모델**(실제 CPU 전환 없음). 진짜 문맥전환은 `sched/kthread.c`(+`kthread_switch.asm`)다. 헷갈리지 말 것.
-- **Kernel Room의 정본은 Room→Cell→Node→NodeBit 관리축이다:** `kernel_room_snapshot_read()`는 계속 aggregate view일 뿐이지만, 별도 `kernel_room_management_snapshot_t`는 K1 bootstrap Cell 1/Node 1/NodeBit 2와 exact parent/generation을 소유한다. 이 bounded fixture를 external subsystem binding, live lifecycle/reconciliation 또는 전체 Cell 관리자로 과장하지 말 것.
+- **Kernel Room의 정본은 Room→Cell→Node→NodeBit 관리축이다:** `kernel_room_snapshot_read()`는 계속 aggregate view이고, 별도 `kernel_room_management_snapshot_t`가 K1 bootstrap Cell 1/Node 1/NodeBit 2를 소유한다. K2-a는 또 다른 256B snapshot에서 Node 101을 producer-owned SLM MAIN source에만 결속한다. 이 한 boot-local immutable binding을 live lifecycle/reconciliation 또는 전체 Cell 관리자로 과장하지 말 것.
 - **Node/owner ID 공간이 여러 개다:** Memory Fabric `domain_id`, SLM `agent_tree.node_id`, SLM `slm_nodebit_id`, runtime NodeBit `node_id`, pipeline `owner_node`, scheduler `task_id`, process PID, ring ID는 서로 독립이다. 숫자 일치는 identity/binding 증거가 아니다. 교차 연결은 `(namespace, id, generation)`과 명시적 parent binding을 요구한다.
 - **두 NodeBit 체계가 병존한다:** `runtime/nodebit.c`의 capability registry와 `slm_orchestrator.c`의 effective policy-node catalog는 별개다. canonical NodeBit로 곧바로 합치지 말고 관리축 K3에서 namespace adapter/projection으로 연결한다.
 - **`SYS_SLM_NODEBIT_LOOKUP`는 runtime `nodebit.c`가 아니다:** `ai_syscall.c`는 이 번호를 `sys_slm_nodebit_lookup()`으로 보내 SLM policy catalog를 읽는다. runtime NodeBit의 syscall 표면은 `SYS_NODEBIT_REGISTER/UPDATE/STATS`(0x726~0x728)다.
@@ -130,7 +130,7 @@ PID 1 실행 뒤 PID 2를 호출하는 것만으로는 scheduler 전환을 증�
 
 ## 5. 다음 방향 선택
 
-### 5.1 우선 관리축: K1 bounded vertical slice와 K2
+### 5.1 우선 관리축: K1과 bounded native K2-a
 
 `CURRENT` K1은 enforcement가 아니라 **하나의 Room-owned bootstrap Cell 안에 하나의 declared
 Node와 두 parent-bound typed management NodeBit record를 등록·조회하는
@@ -149,20 +149,28 @@ management-only 조각**으로 구현됐다.
    exact Room/Cell/Node/NodeBit count, parent, generation을 교차검증한다.
 
 이 K1 조각에는 dispatcher hook, authorize, quota, resource apply, scheduler migration이
-없다. 다음 직접 관리 단계는 K2 external source binding과 generation/reconciliation
-확대다. K1~K4의 hierarchy/binding/observation attribution이 먼저이며,
+없다. 2026-08-15에는 K1 ABI를 바꾸지 않고 별도 K2-a source-binding 조각을 추가했다.
+SLM producer가 exact-one active/persistent MAIN을 typed `AI_SERVICE` source로 내보내며,
+전용 boot-local instance/generation과 64B copied read API를 소유한다. Kernel Room은
+schema 1/256B, capacity 2 snapshot에서 canonical/source/binding generation을 분리하고
+missing/duplicate/orphan/namespace/kind/role/instance/zero/rollback/stale/init-order/
+schema/overflow/tail을 거부한다. exact marker, structured `kernel_room_binding`,
+`state binding`과 `entry-AC < K1 < K2 < aggregate ROOM` 순서가 정규 증거다.
+
+K2 전체는 `PARTIAL`이다. 다음 직접 관리 단계는 H1 OS-neutral lifecycle trace/replay와
+refresh/exit/recreate/rebind 의미 고정이다. K1~K4의 hierarchy/binding/observation attribution이 먼저이며,
 principal/ownership와 Axis Gate enforcement는 그 뒤의 K5 `PLANNED`다. Orbit은
 Cell/Node placement를 탐구하는 `RESEARCH`이므로 이 vertical slice의 완료 조건이 아니다.
-K2는 이 최소 계층의 external source binding과 generation/reconciliation을 강화·확대하고,
+K2의 후속은 이 최소 계층의 source lifecycle/reconciliation을 강화·확대하고,
 K3에서만 runtime/SLM NodeBit를 namespace adapter로 read-only projection한다.
 
-K2-a의 source 선택은 구현 편의보다 semantic kind를 먼저 본다. Node 101은
-`AI_SERVICE`이므로 native reference 후보는 SLM agent-tree MAIN source이고,
+K2-a의 source 선택은 구현 편의보다 semantic kind를 먼저 본다. Node 101
+`AI_SERVICE`의 native reference는 SLM agent-tree MAIN source로 구현됐고,
 Linux-hosted 기본 delivery 후보는 producer-owned service instance/generation을 가진
 실제 userspace service다. 현재 `policy_generation`이나 timestamp를 agent-tree source
 generation으로, Linux PID/pidfd/cgroup/PSI를 canonical identity로 재해석하지 않는다.
-producer-owned source instance/generation과 copied read API가 생긴 뒤 별도 bounded
-binding/reconciliation snapshot으로 연결한다. Memory Fabric main domain은
+native source는 producer-owned instance/generation과 copied read API를 통해 별도
+bounded binding snapshot에 연결된다. Memory Fabric main domain은
 Cell/resource source 후보이고 bootstrap process는 execution-instance source 후보다.
 어느 source도 Node 101과 숫자나 기존 generation 존재만으로 결속하지 않는다. 기존
 K1 1024B immutable snapshot은 K2에서 무심코 확장하지 않는다.
@@ -195,13 +203,13 @@ continuation/switch이고, bounded 실제 A→B→A를 증명한 뒤 timer preem
 
 주의: 두 static process 모두 실제 ring3 실행은 하지만 현재 resume 모델은 여전히 순차 동기 C 호출 프레임이다. descriptor의 trap snapshot과 process event journal은 증거 소유권과 순서만 고정하며 `resume_ready=0`이다. journal 완료를 live transition 완료로 해석하지 말고, 다음 단계에서만 current process·CR3·BSP `rsp0`·saved frame·`g_active_user_run_state`를 IF=0에서 함께 교대하는 live continuation으로 나아가야 한다.
 
-### 5.3 Linux-hosted H축은 기본 delivery 구현축이며 K2 계약과 병행한다
+### 5.3 Linux-hosted H축은 native K2-a 다음 H1→H2 순서로 진행한다
 
 - H0 resource manifest/guard만 `CURRENT`다. Linux daemon, adapter, KVM lane,
   resource apply는 아직 `PLANNED`다.
-- K2는 substrate-neutral identity/lifecycle/generation/reject 계약을 소유하고 H1
-  replay는 같은 주기에서 그 계약과 fail-closed negative fixture를 고정한다.
-- 공통 계약, fixture와 하나의 bounded native semantic oracle가 고정되면 H2 Linux
+- K2-a native semantic oracle와 kernel-side reject 계약은 `CURRENT`다. H1 replay는
+  다음 독립 조각에서 OS-neutral lifecycle과 fail-closed negative fixture를 고정한다.
+- 공통 H1 fixture까지 고정되면 H2 Linux
   userspace collector를 시작한다. 광범위한 native 실행 substrate 완성과 최종
   conformance closure는 H2의 선행조건이 아니다.
 - 기본 용량은 `SEMANTIC SAFETY K2/H1 40%`, `HOSTED DELIVERY H2/H3 50%`,

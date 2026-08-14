@@ -1,6 +1,6 @@
 # Kernel Room 문서 모음
 
-최종 갱신: 2026-08-11
+최종 갱신: 2026-08-15
 
 ## 정본
 
@@ -32,24 +32,29 @@ Room
   exact-bound Node 1, parent-bound typed NodeBit 2를 보존하는 read-only 계층
 - `[ROOM] management hierarchy selftest PASS`, structured
   `kernel_room_management`, `state room` full-row 검증 계약
+- native K2-a `kernel_room_source_binding_snapshot_t`: K1 1024B ABI를 바꾸지 않는
+  별도 schema 1/256B snapshot으로 Node 101과 producer-owned SLM MAIN source를 결속
+- `[ROOM] source binding selftest PASS`, structured `kernel_room_binding`,
+  `state binding` exact full-row 검증 계약
 - Cell/Node 입력 후보가 되는 Memory Fabric, SLM agent tree, 두 NodeBit subsystem의
   각자 독립된 현재 표면
 
 ### `PARTIAL`
 
 - Kernel Room 전체 토폴로지
-  - aggregate substrate와 K1 bootstrap hierarchy v0는 존재
-  - external source adapter, live lifecycle/reconciliation, attribution은 없음
+  - aggregate substrate, K1 bootstrap hierarchy v0, bounded native K2-a oracle은 존재
+  - K2 live lifecycle/reconciliation, hosted source, attribution은 없음
 
 ### `SCAFFOLD`
 
-- Memory Fabric domain/window, SLM agent tree, runtime NodeBit, SLM NodeBit을
+- Memory Fabric domain/window, SLM policy tree, runtime NodeBit, SLM NodeBit을
   Cell/Node/NodeBit 관리 record로 투영할 adapter seam
-- 이 subsystem들은 각자 구현돼 있지만, Kernel Room 관리 계층과의 결속은 scaffold다.
+- 이 subsystem들은 각자 구현돼 있지만, SLM MAIN의 bounded native K2-a 결속을 제외한
+  관리 계층 projection은 scaffold다.
 
 ### `PLANNED`
 
-- K2 external source binding과 Cell lifecycle/reconciliation 확대
+- K2 source lifecycle/reconciliation과 hosted source 확대
 - K3 runtime/SLM NodeBit namespace projection
 - per-Cell/per-Node pressure와 resource attribution
 - principal과 Axis Gate authorize/enforcement
@@ -71,7 +76,7 @@ Room
 - [orbit_cell_node_feasibility_ko.md](orbit_cell_node_feasibility_ko.md)
   - `REVIEW`: 2026-04 탐색 기록. 현재 구현 지침으로 사용하지 않는다.
 
-## K1 구현 범위와 다음 조각
+## K1과 native K2-a 구현 범위, 다음 조각
 
 K1 `management_only read-only hierarchy registry v0`는 다음 고정 계약을 구현한다.
 
@@ -84,9 +89,14 @@ v0는 Cell-only table이 아니다. Cell ID 1, 그 Cell에 exact-one binding된 
 - `observation_only=1`, `management_only=1`
 - duplicate/orphan/unknown/stale/overflow와 non-zero unused tail fail-closed selftest
 
-다음 K2는 이 bootstrap fixture를 실제 subsystem source에 명시적으로 bind하고
-generation/reconciliation coverage를 확대한다. aggregate snapshot의 `domains`, `nodes`,
-`nodebit_active` count는 여전히 canonical hierarchy나 external binding 증거가 아니다.
+native K2-a는 이 bootstrap fixture의 Node 101을 exact-one active/persistent SLM MAIN
+source에 명시적으로 bind한다. canonical, binding, source generation을 분리하고
+producer-owned copied snapshot, boot-order, malformed/duplicate/orphan/mismatch/zero/
+rollback/stale/tail 거부를 검증한다. 이 oracle은 boot-local immutable proof일 뿐 live
+refresh/reconcile이나 hosted source는 아니다. 다음 직접 조각은 같은 semantic field와
+reject 의미를 OS-neutral H1 trace/replay로 옮기는 것이다. aggregate snapshot의
+`domains`, `nodes`, `nodebit_active` count는 여전히 canonical hierarchy나 binding
+증거가 아니다.
 
 ## 금지되는 방향
 

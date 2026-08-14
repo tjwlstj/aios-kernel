@@ -25,6 +25,43 @@ static slm_learning_profile_t g_learning = {0};
 static slm_runtime_state_t g_slm_runtime_state = SLM_RUNTIME_ABSENT;
 static aios_status_t g_slm_runtime_status = AIOS_ERR_NODEV;
 static uint32_t g_policy_generation = 1;
+static slm_agent_source_snapshot_t g_agent_source_snapshot;
+static bool g_agent_source_ready = false;
+static uint64_t g_agent_source_sample_sequence = 0;
+
+bool slm_agent_source_snapshot_valid(
+    const slm_agent_source_snapshot_t *snapshot
+) {
+    return snapshot &&
+        snapshot->schema_version == SLM_AGENT_SOURCE_SCHEMA_VERSION &&
+        snapshot->struct_size == sizeof(*snapshot) &&
+        snapshot->ready == 1U &&
+        snapshot->source_namespace ==
+            SLM_AGENT_SOURCE_NAMESPACE_AGENT_TREE &&
+        snapshot->source_id == 1U &&
+        snapshot->source_kind == SLM_AGENT_SOURCE_KIND_AI_SERVICE &&
+        snapshot->source_role == SLM_AGENT_SOURCE_ROLE_MAIN &&
+        snapshot->lifecycle_state == SLM_AGENT_SOURCE_LIFECYCLE_ACTIVE &&
+        snapshot->valid_flags == SLM_AGENT_SOURCE_ALL_VALID_FLAGS &&
+        snapshot->reserved0 == 0U &&
+        snapshot->source_instance != 0U &&
+        snapshot->source_generation != 0U &&
+        snapshot->sample_sequence != 0U;
+}
+
+aios_status_t slm_agent_source_snapshot_read(
+    slm_agent_source_snapshot_t *out
+) {
+    if (!out || !g_agent_source_ready) {
+        return AIOS_ERR_INVAL;
+    }
+
+    *out = g_agent_source_snapshot;
+    out->sample_sequence = __atomic_add_fetch(
+        &g_agent_source_sample_sequence, 1ULL, __ATOMIC_RELAXED
+    );
+    return AIOS_OK;
+}
 
 /* High-precision observation of the plan apply path (see header). */
 static slm_plan_observation_t g_plan_obs = {0};
@@ -950,6 +987,63 @@ static void compute_agent_tree(agent_tree_node_t *nodes, uint32_t *count,
     *count = next;
 }
 
+static aios_status_t publish_main_agent_source(
+    const slm_hw_snapshot_t *snapshot
+) {
+    slm_agent_source_snapshot_t source;
+    const agent_tree_node_t *main_node = NULL;
+    uint32_t main_count = 0U;
+    uint32_t source_kind = SLM_AGENT_SOURCE_KIND_INVALID;
+    uint32_t source_role = SLM_AGENT_SOURCE_ROLE_INVALID;
+
+    if (!snapshot || snapshot->agent_tree_nodes > AGENT_TREE_MAX_NODES) {
+        return AIOS_ERR_INVAL;
+    }
+
+    for (uint32_t i = 0; i < snapshot->agent_tree_nodes; i++) {
+        if (snapshot->agent_tree[i].role == AGENT_NODE_ROLE_MAIN) {
+            main_node = &snapshot->agent_tree[i];
+            main_count++;
+        }
+    }
+    if (main_count != 1U || !main_node || main_node->node_id != 1U ||
+        main_node->model_class != AGENT_MODEL_CLASS_MAIN ||
+        !main_node->active || !main_node->persistent) {
+        return AIOS_ERR_IO;
+    }
+
+    switch (main_node->role) {
+        case AGENT_NODE_ROLE_MAIN:
+            source_kind = SLM_AGENT_SOURCE_KIND_AI_SERVICE;
+            source_role = SLM_AGENT_SOURCE_ROLE_MAIN;
+            break;
+        default:
+            return AIOS_ERR_INVAL;
+    }
+
+    memset(&source, 0, sizeof(source));
+    source.schema_version = SLM_AGENT_SOURCE_SCHEMA_VERSION;
+    source.struct_size = (uint32_t)sizeof(source);
+    source.ready = 1U;
+    source.source_namespace = SLM_AGENT_SOURCE_NAMESPACE_AGENT_TREE;
+    source.source_id = (uint32_t)main_node->node_id;
+    source.source_kind = source_kind;
+    source.source_role = source_role;
+    source.lifecycle_state = SLM_AGENT_SOURCE_LIFECYCLE_ACTIVE;
+    source.valid_flags = SLM_AGENT_SOURCE_ALL_VALID_FLAGS;
+    source.source_instance = SLM_AGENT_SOURCE_BOOT_INSTANCE;
+    source.source_generation = SLM_AGENT_SOURCE_BOOT_GENERATION;
+    source.sample_sequence = 1U;
+    if (!slm_agent_source_snapshot_valid(&source)) {
+        return AIOS_ERR_IO;
+    }
+
+    g_agent_source_snapshot = source;
+    g_agent_source_sample_sequence = source.sample_sequence;
+    g_agent_source_ready = true;
+    return AIOS_OK;
+}
+
 static void compute_user_hw_access_profile(slm_user_hw_access_profile_t *out,
     const kernel_health_summary_t *health,
     const slm_io_profile_t *io_profile,
@@ -1719,6 +1813,9 @@ aios_status_t slm_orchestrator_init(void) {
     g_slm_runtime_state = SLM_RUNTIME_BOOTSTRAP;
     g_slm_runtime_status = AIOS_OK;
     g_policy_generation = 1;
+    memset(&g_agent_source_snapshot, 0, sizeof(g_agent_source_snapshot));
+    g_agent_source_ready = false;
+    g_agent_source_sample_sequence = 0U;
 
     for (uint32_t i = 0; i < SLM_PLAN_CAP; i++) {
         plan_table[i].plan_id = 0;
@@ -1736,6 +1833,14 @@ aios_status_t slm_orchestrator_init(void) {
     learning_refresh_boot_observation();
     g_slm_runtime_state = SLM_RUNTIME_READY;
 
+    if (slm_snapshot_read(&snapshot) != AIOS_OK ||
+        publish_main_agent_source(&snapshot) != AIOS_OK) {
+        g_slm_runtime_state = SLM_RUNTIME_FAILED;
+        g_slm_runtime_status = AIOS_ERR_IO;
+        serial_write("[SLM] Agent source publication failed\n");
+        return AIOS_ERR_IO;
+    }
+
     kprintf("\n");
     kprintf("    SLM Hardware Orchestrator initialized:\n");
     kprintf("    Plan slots: %u\n", (uint64_t)SLM_PLAN_CAP);
@@ -1746,35 +1851,33 @@ aios_status_t slm_orchestrator_init(void) {
         (uint64_t)g_learning.tuned_poll_budget,
         (uint64_t)g_learning.tuned_dma_window_kib);
     serial_write("[SLM] Hardware orchestrator ready\n");
-    if (slm_snapshot_read(&snapshot) == AIOS_OK) {
-        serial_printf("[SLM] Runtime state=%s status=%d snapshot_abi=%u nodebits=%u generation=%u\n",
-            slm_runtime_state_name(snapshot.runtime_state),
-            (int64_t)snapshot.runtime_status,
-            (uint64_t)snapshot.abi_version,
-            (uint64_t)snapshot.nodebit_count,
-            (uint64_t)snapshot.nodebit_generation);
-        serial_printf("[SLM] MainAI mode=%s sco=%d workers=%u pipeline_qd=%u depth=%u ring=%u/%u\n",
-            agent_mode_name(snapshot.main_ai_profile.mode),
-            (int64_t)snapshot.main_ai_profile.sco_x100,
-            (uint64_t)snapshot.main_ai_profile.recommended_max_active_workers,
-            (uint64_t)snapshot.pipeline_profile.recommended_worker_queue_depth,
-            (uint64_t)snapshot.pipeline_profile.recommended_token_pipeline_depth,
-            (uint64_t)snapshot.pipeline_profile.recommended_submit_ring_entries,
-            (uint64_t)snapshot.pipeline_profile.recommended_completion_ring_entries);
-        serial_printf("[SLM] UserAI access score=%u flags=%x direct_mmio=%u mediated=%u clock=%u/%u/%u/%u/%u/%u slice=%uus poll=%uus\n",
-            (uint64_t)snapshot.user_hw_access.access_score,
-            (uint64_t)snapshot.user_hw_access.capability_flags,
-            (uint64_t)snapshot.user_hw_access.direct_mmio_allowed,
-            (uint64_t)snapshot.user_hw_access.mediated_io_required,
-            (uint64_t)snapshot.clock_profile.main_ai_pct,
-            (uint64_t)snapshot.clock_profile.worker_pct,
-            (uint64_t)snapshot.clock_profile.io_poll_pct,
-            (uint64_t)snapshot.clock_profile.memory_pct,
-            (uint64_t)snapshot.clock_profile.guardian_pct,
-            (uint64_t)snapshot.clock_profile.reserve_pct,
-            (uint64_t)snapshot.clock_profile.suggested_timeslice_us,
-            (uint64_t)snapshot.clock_profile.suggested_io_poll_interval_us);
-    }
+    serial_printf("[SLM] Runtime state=%s status=%d snapshot_abi=%u nodebits=%u generation=%u\n",
+        slm_runtime_state_name(snapshot.runtime_state),
+        (int64_t)snapshot.runtime_status,
+        (uint64_t)snapshot.abi_version,
+        (uint64_t)snapshot.nodebit_count,
+        (uint64_t)snapshot.nodebit_generation);
+    serial_printf("[SLM] MainAI mode=%s sco=%d workers=%u pipeline_qd=%u depth=%u ring=%u/%u\n",
+        agent_mode_name(snapshot.main_ai_profile.mode),
+        (int64_t)snapshot.main_ai_profile.sco_x100,
+        (uint64_t)snapshot.main_ai_profile.recommended_max_active_workers,
+        (uint64_t)snapshot.pipeline_profile.recommended_worker_queue_depth,
+        (uint64_t)snapshot.pipeline_profile.recommended_token_pipeline_depth,
+        (uint64_t)snapshot.pipeline_profile.recommended_submit_ring_entries,
+        (uint64_t)snapshot.pipeline_profile.recommended_completion_ring_entries);
+    serial_printf("[SLM] UserAI access score=%u flags=%x direct_mmio=%u mediated=%u clock=%u/%u/%u/%u/%u/%u slice=%uus poll=%uus\n",
+        (uint64_t)snapshot.user_hw_access.access_score,
+        (uint64_t)snapshot.user_hw_access.capability_flags,
+        (uint64_t)snapshot.user_hw_access.direct_mmio_allowed,
+        (uint64_t)snapshot.user_hw_access.mediated_io_required,
+        (uint64_t)snapshot.clock_profile.main_ai_pct,
+        (uint64_t)snapshot.clock_profile.worker_pct,
+        (uint64_t)snapshot.clock_profile.io_poll_pct,
+        (uint64_t)snapshot.clock_profile.memory_pct,
+        (uint64_t)snapshot.clock_profile.guardian_pct,
+        (uint64_t)snapshot.clock_profile.reserve_pct,
+        (uint64_t)snapshot.clock_profile.suggested_timeslice_us,
+        (uint64_t)snapshot.clock_profile.suggested_io_poll_interval_us);
     seed_boot_plans();
     return AIOS_OK;
 }

@@ -212,6 +212,65 @@ class ShellExpectationTests(unittest.TestCase):
                     )
                 )
 
+    def test_state_binding_requires_exact_native_oracle_record(self) -> None:
+        exchange = next(
+            item
+            for item in DEFAULT_EXCHANGES
+            if item["command"] == "state binding"
+        )
+        expectations = list(exchange["expect"])
+        canonical = " ".join(expectations)
+        self.assertTrue(
+            expectations_match(canonical + "\n", expectations)
+        )
+
+        reordered = list(expectations)
+        reordered[7], reordered[8] = reordered[8], reordered[7]
+        invalid_records = (
+            " ".join(expectations[:-1]),
+            canonical.replace("struct_size=256", "struct_size=255"),
+            canonical.replace("ready=1", "ready=0"),
+            canonical.replace("binding_generation=1", "binding_generation=2"),
+            canonical.replace("canonical_id=101", "canonical_id=102"),
+            canonical.replace("source_instance=1", "source_instance=0"),
+            canonical.replace("source_generation=1", "source_generation=2"),
+            canonical.replace("kind_match=1", "kind_match=0"),
+            canonical.replace("role_match=1", "role_match=0"),
+            canonical.replace("producer_owned=1", "producer_owned=0"),
+            canonical.replace("source_valid=1", "source_valid=0"),
+            canonical.replace("generation_valid=1", "generation_valid=0"),
+            canonical.replace("binding_valid=1", "binding_valid=0"),
+            canonical.replace("last_reject=0", "last_reject=1"),
+            canonical.replace("observation_only=1", "observation_only=0"),
+            canonical.replace("management_only=1", "management_only=0"),
+            canonical.replace(
+                "source_id=1", "source_id=1 source_id=1", 1
+            ),
+            canonical + " apply_enabled=1",
+            canonical + " PARTIAL",
+            " ".join(reordered),
+            "  " + canonical,
+            '"' + canonical + '"',
+        )
+        for invalid in invalid_records:
+            with self.subTest(invalid=invalid):
+                self.assertFalse(
+                    expectations_match(invalid + "\n", expectations)
+                )
+
+        for sibling in (
+            canonical,
+            "[STATE] binding error=unavailable",
+            "[STATE] binding",
+        ):
+            with self.subTest(sibling=sibling):
+                self.assertFalse(
+                    expectations_match(
+                        canonical + "\n" + sibling + "\n",
+                        expectations,
+                    )
+                )
+
     def test_state_health_and_autonomy_contracts_are_fail_closed(self) -> None:
         exchange = next(item for item in DEFAULT_EXCHANGES if item["command"] == "state health")
         expectations = list(exchange["expect"])

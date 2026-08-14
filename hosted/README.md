@@ -3,6 +3,8 @@
 > 제품 방향과 책임 경계: 2026-08-12 결정
 >
 > Linux-hosted runtime 구현 성숙도: `PLANNED`
+>
+> 선행 native K2-a semantic oracle: `CURRENT` (2026-08-15)
 
 `hosted/`는 AIOS의 의도된 기본 delivery substrate인 Linux-hosted userspace
 service를 소유하는 제품 도메인이다. 이 디렉터리가 생겼다는 사실은 daemon,
@@ -38,9 +40,10 @@ hosted/
 
 ## 첫 구현 순서
 
-1. K2의 substrate-neutral identity/lifecycle/generation/reject 계약과 하나의 bounded
-   native semantic oracle를 고정한다.
-2. H1 replay verifier와 fail-closed negative fixture를 만든다.
+1. bounded native K2-a semantic oracle를 고정했다. 이 조각은 boot-local immutable
+   source binding만 증명하며 전체 lifecycle 계약 완료가 아니다.
+2. 다음 H1에서 substrate-neutral identity/lifecycle/generation/reject trace와 replay
+   verifier, fail-closed negative fixture를 만든다.
 3. H2는 Linux kernel module이 아닌 observe-only userspace service 한 개로 시작한다.
 4. H3에서 exit, PID reuse, cgroup recreation, collector restart, host reboot를 구분한다.
 

@@ -77,6 +77,7 @@ $normalLines = @(
     '[PROC] process event journal PASS schema=1 events=6 lifecycle=4 captures=2 seqs=1,2,3,4,5,6 kinds=1,2,3,1,2,3 reasons=1,2,3,1,2,3 from_pids=0,1,1,0,2,2 to_pids=1,1,0,2,2,0 slots=0,0,0,1,1,1 generations=1,1,1,1,1,1 capture_seqs=0,1,1,0,2,2 owner_ok=1,1,1,1,1,1 cr3_ok=1,1,1,1,1,1 rsp0_ok=1,1,1,1,1,1 if0=1,1,1,1,1,1 snapshot_refs=0,1,1,0,1,1 outcomes=1,1,1,1,1,1 capture_seq_separate=1 current_pid=0 stale_owner=0 dropped=0 overflow=0 evidence_only=1 switch_events=0 resume_ready=0'
     '[SEC] ring3 entry AC hardening PASS schema=1 smap_supported=0 smap=0 gate_active=0 common_entries=2 common_saved_ac=2 common_clac=0 common_fallback=2 common_post_ac0=2 int80_entries=6 int80_saved_ac=4 int80_clac=0 int80_fallback=6 int80_post_ac0=6 gate_skips=8 gate_mismatch=0'
     '[ROOM] management hierarchy selftest PASS schema=1 struct_size=1024 generation=1 cells=1 nodes=1 bound_nodes=1 nodebits=2 bound_nodebits=2 source_valid=1 generation_valid=1 duplicate_rejected=1 orphan_rejected=1 unknown_rejected=1 stale_rejected=1 overflow_rejected=1 tail_rejected=1 observation_only=1 management_only=1'
+    '[ROOM] source binding selftest PASS schema=1 struct_size=256 binding_generation=1 bindings=1 capacity=2 canonical_namespace=2 canonical_id=101 canonical_kind=1 canonical_generation=1 parent_cell_id=1 parent_generation=1 source_namespace=1 source_id=1 source_instance=1 source_generation=1 source_kind=1 source_role=1 kind_match=1 role_match=1 producer_owned=1 copied_read=1 missing_rejected=1 duplicate_rejected=1 orphan_rejected=1 namespace_rejected=1 kind_rejected=1 role_rejected=1 instance_rejected=1 zero_generation_rejected=1 generation_rollback_rejected=1 stale_rejected=1 init_order_rejected=1 schema_rejected=1 overflow_rejected=1 tail_rejected=1 source_valid=1 generation_valid=1 binding_valid=1 observation_only=1 management_only=1'
     '[ROOM] snapshot stability=stable ok=18 degraded=0 failed=0 unknown=2 topology=segmented domains=4 windows=0 drivers=1/1 plans=5 nodes=10 rings=0 active=0 user=1 nodebit_active=1 nodebit_risky=0'
     '[HEALTH] stability=stable ok=18 degraded=0 failed=0 unknown=2'
     '=== AIOS Kernel Ready ==='
@@ -100,6 +101,7 @@ $tempPath = [IO.Path]::GetTempFileName()
 $journalExtraCases = 0
 $securityExtraCases = 0
 $managementExtraCases = 0
+$bindingExtraCases = 0
 try {
     foreach ($case in $cases) {
         $candidateLines = @(
@@ -129,6 +131,9 @@ try {
     } | Select-Object -First 1)
     $managementLine = [string]($normalLines | Where-Object {
         $_ -match '^\[ROOM\] management hierarchy '
+    } | Select-Object -First 1)
+    $bindingLine = [string]($normalLines | Where-Object {
+        $_ -match '^\[ROOM\] source binding '
     } | Select-Object -First 1)
     $maxEntry = '[SEC] ring3 entry AC hardening PASS schema=1 smap_supported=1 smap=1 gate_active=1 common_entries=2 common_saved_ac=2 common_clac=2 common_fallback=0 common_post_ac0=2 int80_entries=6 int80_saved_ac=4 int80_clac=6 int80_fallback=0 int80_post_ac0=6 gate_skips=0 gate_mismatch=0'
 
@@ -331,6 +336,118 @@ try {
             throw "$($orderCase.Name) did not fail the terminal order chain"
         }
         $managementExtraCases++
+        Write-Output "PASS $($orderCase.Name) expected=False"
+    }
+
+    $bindingMutations = @(
+        [pscustomobject]@{ Name = 'binding-missing'; Line = $null }
+        [pscustomobject]@{ Name = 'binding-truncated'; Line = '[ROOM] source binding selftest PASS schema=1' }
+        [pscustomobject]@{ Name = 'binding-schema-alias'; Line = $bindingLine.Replace('schema=1 struct_size=256', 'schema=01 struct_size=256') }
+        [pscustomobject]@{ Name = 'binding-struct-size'; Line = $bindingLine.Replace('struct_size=256', 'struct_size=255') }
+        [pscustomobject]@{ Name = 'binding-generation'; Line = $bindingLine.Replace('binding_generation=1', 'binding_generation=0') }
+        [pscustomobject]@{ Name = 'binding-count'; Line = $bindingLine.Replace('bindings=1', 'bindings=0') }
+        [pscustomobject]@{ Name = 'binding-canonical-id'; Line = $bindingLine.Replace('canonical_id=101', 'canonical_id=102') }
+        [pscustomobject]@{ Name = 'binding-source-instance'; Line = $bindingLine.Replace('source_instance=1', 'source_instance=0') }
+        [pscustomobject]@{ Name = 'binding-source-generation'; Line = $bindingLine.Replace('source_generation=1', 'source_generation=2') }
+        [pscustomobject]@{ Name = 'binding-kind-match'; Line = $bindingLine.Replace('kind_match=1', 'kind_match=0') }
+        [pscustomobject]@{ Name = 'binding-role-match'; Line = $bindingLine.Replace('role_match=1', 'role_match=0') }
+        [pscustomobject]@{ Name = 'binding-producer-owned'; Line = $bindingLine.Replace('producer_owned=1', 'producer_owned=0') }
+        [pscustomobject]@{ Name = 'binding-copied-read'; Line = $bindingLine.Replace('copied_read=1', 'copied_read=0') }
+        [pscustomobject]@{ Name = 'binding-rollback-rejected'; Line = $bindingLine.Replace('generation_rollback_rejected=1', 'generation_rollback_rejected=0') }
+        [pscustomobject]@{ Name = 'binding-stale-rejected'; Line = $bindingLine.Replace('stale_rejected=1', 'stale_rejected=0') }
+        [pscustomobject]@{ Name = 'binding-source-valid'; Line = $bindingLine.Replace('source_valid=1', 'source_valid=0') }
+        [pscustomobject]@{ Name = 'binding-generation-valid'; Line = $bindingLine.Replace('generation_valid=1', 'generation_valid=0') }
+        [pscustomobject]@{ Name = 'binding-binding-valid'; Line = $bindingLine.Replace('binding_valid=1', 'binding_valid=0') }
+        [pscustomobject]@{ Name = 'binding-observation-only'; Line = $bindingLine.Replace('observation_only=1', 'observation_only=0') }
+        [pscustomobject]@{ Name = 'binding-management-only'; Line = $bindingLine.Replace('management_only=1', 'management_only=0') }
+        [pscustomobject]@{ Name = 'binding-duplicate-field'; Line = $bindingLine.Replace('source_id=1 source_instance=1', 'source_id=1 source_id=1 source_instance=1') }
+        [pscustomobject]@{ Name = 'binding-passfail'; Line = $bindingLine.Replace('selftest PASS', 'selftest PASSFAIL') }
+        [pscustomobject]@{ Name = 'binding-extra-field'; Line = "$bindingLine apply_enabled=1" }
+        [pscustomobject]@{ Name = 'binding-indented'; Line = "  $bindingLine" }
+        [pscustomobject]@{ Name = 'binding-quoted'; Line = '"' + $bindingLine + '"' }
+    )
+    foreach ($mutation in $bindingMutations) {
+        $mutatedLines = @(
+            $normalLines | ForEach-Object {
+                if ($_ -ceq $bindingLine) {
+                    if ($null -ne $mutation.Line) { [string]$mutation.Line }
+                } else { $_ }
+            }
+        )
+        [IO.File]::WriteAllLines(
+            $tempPath,
+            $mutatedLines,
+            [Text.UTF8Encoding]::new($false)
+        )
+        $verdict = Test-NormalSmokeVerdict -SerialLog $tempPath
+        if ([bool]$verdict.Passed) {
+            throw "$($mutation.Name) unexpectedly passed"
+        }
+        $bindingExtraCases++
+        Write-Output "PASS $($mutation.Name) expected=False"
+    }
+
+    foreach ($extra in @(
+            $bindingLine,
+            '[ROOM] source binding selftest PARTIAL schema=1',
+            '[ROOM] source binding'
+        )) {
+        $extraLines = @($normalLines) + @([string]$extra)
+        [IO.File]::WriteAllLines(
+            $tempPath,
+            $extraLines,
+            [Text.UTF8Encoding]::new($false)
+        )
+        $verdict = Test-NormalSmokeVerdict -SerialLog $tempPath
+        if ([bool]$verdict.Passed -or
+                @($verdict.Reasons | Where-Object {
+                    $_ -like 'evidence-family-count:kernel_room_binding:*'
+                }).Count -eq 0) {
+            throw 'Duplicate source binding family unexpectedly passed'
+        }
+        $bindingExtraCases++
+        Write-Output 'PASS duplicate-source-binding-family expected=False'
+    }
+
+    $bindingBeforeManagementLines = @()
+    foreach ($line in $normalLines) {
+        if ($line -ceq $bindingLine) { continue }
+        if ($line -ceq $managementLine) {
+            $bindingBeforeManagementLines += $bindingLine
+        }
+        $bindingBeforeManagementLines += $line
+    }
+    $bindingAfterRoomLines = @()
+    foreach ($line in $normalLines) {
+        if ($line -ceq $bindingLine) { continue }
+        $bindingAfterRoomLines += $line
+        if ($line -ceq $roomLine) {
+            $bindingAfterRoomLines += $bindingLine
+        }
+    }
+    foreach ($orderCase in @(
+            [pscustomobject]@{
+                Name = 'binding-before-management'
+                Lines = $bindingBeforeManagementLines
+            }
+            [pscustomobject]@{
+                Name = 'binding-after-aggregate-room'
+                Lines = $bindingAfterRoomLines
+            }
+        )) {
+        [IO.File]::WriteAllLines(
+            $tempPath,
+            [string[]]$orderCase.Lines,
+            [Text.UTF8Encoding]::new($false)
+        )
+        $verdict = Test-NormalSmokeVerdict -SerialLog $tempPath
+        if ([bool]$verdict.Passed -or
+                @($verdict.Reasons | Where-Object {
+                    $_ -like 'terminal-order:*'
+                }).Count -eq 0) {
+            throw "$($orderCase.Name) did not fail the terminal order chain"
+        }
+        $bindingExtraCases++
         Write-Output "PASS $($orderCase.Name) expected=False"
     }
 
@@ -845,4 +962,4 @@ try {
     Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
 }
 
-Write-Output "PowerShell verdict selftest passed cases=$($cases.Count + 13 + $duplicateObservationCases.Count + $journalExtraCases + $securityExtraCases + $managementExtraCases + 1)"
+Write-Output "PowerShell verdict selftest passed cases=$($cases.Count + 13 + $duplicateObservationCases.Count + $journalExtraCases + $securityExtraCases + $managementExtraCases + $bindingExtraCases + 1)"

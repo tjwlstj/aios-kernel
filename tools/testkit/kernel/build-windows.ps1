@@ -174,6 +174,7 @@ function Get-SmokeRequiredPatterns {
         '^\[PROC\] process event journal PASS schema=1 events=6 lifecycle=4 captures=2 seqs=1,2,3,4,5,6 kinds=1,2,3,1,2,3 reasons=1,2,3,1,2,3 from_pids=0,1,1,0,2,2 to_pids=1,1,0,2,2,0 slots=0,0,0,1,1,1 generations=1,1,1,1,1,1 capture_seqs=0,1,1,0,2,2 owner_ok=1,1,1,1,1,1 cr3_ok=1,1,1,1,1,1 rsp0_ok=1,1,1,1,1,1 if0=1,1,1,1,1,1 snapshot_refs=0,1,1,0,1,1 outcomes=1,1,1,1,1,1 capture_seq_separate=1 current_pid=0 stale_owner=0 dropped=0 overflow=0 evidence_only=1 switch_events=0 resume_ready=0$',
         $entryAcPattern,
         '^\[ROOM\] management hierarchy selftest PASS schema=1 struct_size=1024 generation=1 cells=1 nodes=1 bound_nodes=1 nodebits=2 bound_nodebits=2 source_valid=1 generation_valid=1 duplicate_rejected=1 orphan_rejected=1 unknown_rejected=1 stale_rejected=1 overflow_rejected=1 tail_rejected=1 observation_only=1 management_only=1$',
+        '^\[ROOM\] source binding selftest PASS schema=1 struct_size=256 binding_generation=1 bindings=1 capacity=2 canonical_namespace=2 canonical_id=101 canonical_kind=1 canonical_generation=1 parent_cell_id=1 parent_generation=1 source_namespace=1 source_id=1 source_instance=1 source_generation=1 source_kind=1 source_role=1 kind_match=1 role_match=1 producer_owned=1 copied_read=1 missing_rejected=1 duplicate_rejected=1 orphan_rejected=1 namespace_rejected=1 kind_rejected=1 role_rejected=1 instance_rejected=1 zero_generation_rejected=1 generation_rollback_rejected=1 stale_rejected=1 init_order_rejected=1 schema_rejected=1 overflow_rejected=1 tail_rejected=1 source_valid=1 generation_valid=1 binding_valid=1 observation_only=1 management_only=1$',
         '\[SHELL\] Interactive shell started'
     )
 
@@ -286,6 +287,8 @@ function Test-NormalSmokeVerdict {
             $exactRecordName = 'ring3_entry_ac_hardening'
         } elseif ($pattern.StartsWith('^\[ROOM\] management hierarchy selftest PASS ')) {
             $exactRecordName = 'kernel_room_management'
+        } elseif ($pattern.StartsWith('^\[ROOM\] source binding selftest PASS ')) {
+            $exactRecordName = 'kernel_room_binding'
         }
         if ($null -ne $exactRecordName -and $matches.Count -gt 1) {
             $duplicateEvidenceRecords += [pscustomobject]@{
@@ -328,12 +331,28 @@ function Test-NormalSmokeVerdict {
         'stale_rejected=1 overflow_rejected=1 tail_rejected=1 ' +
         'observation_only=1 management_only=1$'
     )
+    $kernelRoomBindingRegex = [regex]::new(
+        '^\[ROOM\] source binding selftest PASS schema=1 struct_size=256 ' +
+        'binding_generation=1 bindings=1 capacity=2 canonical_namespace=2 ' +
+        'canonical_id=101 canonical_kind=1 canonical_generation=1 ' +
+        'parent_cell_id=1 parent_generation=1 source_namespace=1 source_id=1 ' +
+        'source_instance=1 source_generation=1 source_kind=1 source_role=1 ' +
+        'kind_match=1 role_match=1 producer_owned=1 copied_read=1 ' +
+        'missing_rejected=1 duplicate_rejected=1 orphan_rejected=1 ' +
+        'namespace_rejected=1 kind_rejected=1 role_rejected=1 ' +
+        'instance_rejected=1 zero_generation_rejected=1 ' +
+        'generation_rollback_rejected=1 stale_rejected=1 ' +
+        'init_order_rejected=1 schema_rejected=1 overflow_rejected=1 ' +
+        'tail_rejected=1 source_valid=1 generation_valid=1 binding_valid=1 ' +
+        'observation_only=1 management_only=1$'
+    )
     $invalidRoomRecords = @()
     $familyContracts = @(
         [pscustomobject]@{ Name = 'process_event_journal'; Prefix = '[PROC] process event journal ' }
         [pscustomobject]@{ Name = 'cpu_security'; Prefix = '[SEC] nx=' }
         [pscustomobject]@{ Name = 'ring3_entry_ac_hardening'; Prefix = '[SEC] ring3 entry AC hardening ' }
         [pscustomobject]@{ Name = 'kernel_room_management'; Prefix = '[ROOM] management hierarchy' }
+        [pscustomobject]@{ Name = 'kernel_room_binding'; Prefix = '[ROOM] source binding' }
         [pscustomobject]@{ Name = 'kernel_room'; Prefix = '[ROOM] snapshot ' }
     )
     $securityFamilyOccurrences = @{}
@@ -355,6 +374,7 @@ function Test-NormalSmokeVerdict {
                 'cpu_security',
                 'ring3_entry_ac_hardening',
                 'kernel_room_management',
+                'kernel_room_binding',
                 'kernel_room'
             )) {
             $securityFamilyOccurrences[$family.Name] = $familyLines
@@ -434,6 +454,19 @@ function Test-NormalSmokeVerdict {
             }
         }
     }
+    $bindingFamilyLines = @(
+        $securityFamilyOccurrences['kernel_room_binding']
+    )
+    if ($bindingFamilyLines.Count -eq 1) {
+        $bindingLine = [string]$bindingFamilyLines[0].Text
+        if (-not $kernelRoomBindingRegex.IsMatch($bindingLine)) {
+            $invalidRoomRecords += [pscustomobject]@{
+                Line   = $bindingFamilyLines[0].LineNumber
+                Text   = $bindingLine
+                Record = 'kernel_room_binding'
+            }
+        }
+    }
 
     $fatalPattern = '\*\*\* KERNEL PANIC \*\*\*|!!! EXCEPTION|\bFAIL\b|\bFATAL\b'
     $fatalEvents = @()
@@ -462,6 +495,7 @@ function Test-NormalSmokeVerdict {
         [pscustomobject]@{ Name = 'process-event-journal'; Pattern = '\[PROC\] process event journal PASS'; ValuePrefix = $false },
         [pscustomobject]@{ Name = 'ring3-entry-ac-hardening'; Pattern = '\[SEC\] ring3 entry AC hardening PASS'; ValuePrefix = $false },
         [pscustomobject]@{ Name = 'kernel-room-management'; Pattern = '\[ROOM\] management hierarchy selftest PASS'; ValuePrefix = $false },
+        [pscustomobject]@{ Name = 'kernel-room-binding'; Pattern = '\[ROOM\] source binding selftest PASS'; ValuePrefix = $false },
         [pscustomobject]@{ Name = 'kernel-room'; Pattern = '\[ROOM\] snapshot stability=stable'; ValuePrefix = $false },
         [pscustomobject]@{ Name = 'health'; Pattern = '\[HEALTH\] stability='; ValuePrefix = $true },
         [pscustomobject]@{ Name = 'kernel-ready'; Pattern = '=== AIOS Kernel Ready ==='; ValuePrefix = $false },

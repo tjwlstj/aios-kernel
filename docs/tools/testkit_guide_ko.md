@@ -2,7 +2,7 @@
 
 작성일: 2026-04-10
 
-최종 갱신: 2026-08-11 (K1 Kernel Room hierarchy v0 검증 계약)
+최종 갱신: 2026-08-15 (native K2-a source binding 검증 계약)
 
 ## 목적
 
@@ -32,7 +32,7 @@
 - `tools/testkit/lib/boot_perf.py`
   - host-local perf baseline과 threshold 기반 비교
 - `tools/testkit/lib/boot_log.py`
-  - serial log를 checkpoint / health / inventory / selftest / CPU security / K1 hierarchy 요약 JSON으로 파싱
+  - serial log를 checkpoint / health / inventory / selftest / CPU security / K1 hierarchy / native K2-a binding 요약 JSON으로 파싱
 - `tools/testkit/lib/boot_verdict.py`
   - 전체 serial log의 fatal, health, terminal checkpoint 순서·중복을 fail-closed로 판정
 - `tools/testkit/lib/baseline_guard.py`
@@ -129,8 +129,9 @@ python .\tools\testkit\aios-testkit.py shell --strict --skip-build
 python .\tools\testkit\aios-testkit.py shell --strict --cpu-profile max-smap
 ```
 
-현재 레인은 `state room`, `state resource`, `state pressure`를 포함한 17개 교환을 수행한다.
-`state list`는 `health,room,mem,...` 순서로 `room` 토픽을 지원 목록에 포함해야 한다.
+현재 레인은 `state room`, `state binding`, `state resource`, `state pressure`를 포함한
+18개 교환을 수행한다. `state list`는 `health,room,binding,mem,...` 순서로 두 Kernel
+Room 토픽을 지원 목록에 포함해야 한다.
 `state room`은 schema 1/1024B, ready/generation 1, capacity Cell 2·Node 4·NodeBit 8,
 현재 count 1/1/2, bound count 1/2, Cell/Node/NodeBit ID와 exact parent,
 source/generation validity, zero negative counters, `observation_only=1
@@ -138,6 +139,13 @@ management_only=1`을 하나의 canonical full row로 검사한다.
 
 ```text
 [STATE] room schema=1 struct_size=1024 ready=1 generation=1 cells=1 cell_capacity=2 nodes=1 node_capacity=4 bound_nodes=1 nodebits=2 nodebit_capacity=8 bound_nodebits=2 cell_id=1 node_id=101 node_parent=1 nodebit_ids=1001,1002 nodebit_parents=101,101 source_valid=1 generation_valid=1 duplicate=0 orphan=0 unknown=0 stale=0 overflow=0 observation_only=1 management_only=1
+```
+
+`state binding`은 별도 schema 1/256B record로 canonical Node/Cell과 SLM MAIN source의
+namespace, kind, role, instance, 세 generation 및 validity를 exact하게 검사한다.
+
+```text
+[STATE] binding schema=1 struct_size=256 ready=1 binding_generation=1 bindings=1 capacity=2 canonical_namespace=2 canonical_id=101 canonical_kind=1 canonical_generation=1 parent_cell_id=1 parent_generation=1 source_namespace=1 source_id=1 source_instance=1 source_generation=1 source_kind=1 source_role=1 lifecycle=1 kind_match=1 role_match=1 producer_owned=1 source_valid=1 generation_valid=1 binding_valid=1 last_reject=0 observation_only=1 management_only=1
 ```
 
 resource 응답은 schema 1, `observation_only=1`, aggregate 5행, owner row 0/
@@ -279,7 +287,11 @@ K1 `[ROOM] management hierarchy selftest PASS ...`도 세 profile 공통 exact r
 schema 1/1024B, count 1/1/2, bound count 1/2, source/generation validity,
 `duplicate_rejected=1`, `orphan_rejected=1`, `unknown_rejected=1`,
 `stale_rejected=1`, `overflow_rejected=1`, `tail_rejected=1`, observation/management-only를
-고정하며 entry-AC 뒤, 기존 aggregate `[ROOM] snapshot` 앞에 정확히 한 번 있어야 한다.
+고정한다. native K2-a `[ROOM] source binding selftest PASS ...`도 schema 1/256B,
+typed canonical/source identity, producer-owned copied read, generation/validity, 모든
+named rejection을 고정한 exact record다. 순서는
+`entry-AC < K1 management < K2 binding < aggregate ROOM`이며 각 family는 정확히 한 번만
+허용한다. compact inventory와 checked-in baseline schema는 바꾸지 않는다.
 
 ## 부팅 요약 export
 
@@ -455,11 +467,15 @@ repo 안의 baseline fixture와 비교하는 lane이다.
 - ring3 entry AC hardening의 `default`/`max-smap` exact marker와 shell
   `state sec entry_*` same-record mirror
 - K1 hierarchy v0 exact marker, structured `kernel_room_management`, shell
-  `state room` canonical full-row mirror와 `entry-AC < management < aggregate ROOM` 순서
+  `state room` canonical full-row mirror
+- native K2-a exact marker, structured `kernel_room_binding`, shell `state binding`
+  canonical full-row mirror와 `entry-AC < management < binding < aggregate ROOM` 순서
 - boot summary `security`의 feature/entry record count, fullmatch,
   ASCII uint32 anchored full-row·안정성 의미 검사를 통과한 ROOM exact-one,
   `feature < entry-AC < legacy ROOM` 순서, requested CPU profile,
   `profile_match`, `ready` 결속
+- 별도 `kernel_room_binding.ready`의 K1/K2 exact-one semantic과
+  `entry-AC < K1 management < K2 binding < legacy ROOM` 순서 결속
 - `state autonomy` schema 1의 read-only mode/support/counter/last-decision 계약
 - AI Pressure Tracker required marker, structured `pressure` summary,
   `state pressure` observation-only/gate-separation 계약

@@ -1,6 +1,6 @@
 # AI 에이전트 운용 계약 (2026-07-15, 2026-08-10 관리축 정렬)
 
-최종 갱신: 2026-08-11 (K1 hierarchy와 `state room/resource` 반영)
+최종 갱신: 2026-08-15 (native K2-a binding과 `state binding` 반영)
 
 ## 1. 목적
 
@@ -29,8 +29,9 @@ AIOS에서 "AI가 편하게 움직인다"는 것은 커널 내부를 자유 형�
 | 단계 | 상태 | 현재 표면 |
 |---|---|---|
 | 발견 | `CURRENT` | `state list` |
-| 커널 관측 | `CURRENT` | `state health/room/mem/sched/nodes/pipeline/resource/pressure/slm/autonomy/user/sec/time/version` |
+| 커널 관측 | `CURRENT` | `state health/room/binding/mem/sched/nodes/pipeline/resource/pressure/slm/autonomy/user/sec/time/version` |
 | Kernel Room K1 계층 | `CURRENT` | schema 1/1024B management-only snapshot + exact boot/summary + `state room` |
+| Kernel Room native K2-a 결속 | `CURRENT` | schema 1/256B management-only snapshot + producer-owned SLM source + exact boot/summary + `state binding` |
 | 커널 내부 리소스 ledger | `CURRENT` | schema 1 aggregate snapshot + exact boot summary + `SYS_INFO_RESOURCE=0x706` + `state resource` |
 | 자율 제어 관측 | `CURRENT` | `state autonomy` schema 1 |
 | 제한된 행동 제안 | `PARTIAL` | `SYS_AUTONOMY_ACTION_PROPOSE`; scheduler만 apply 지원, delta ±32 |
@@ -77,6 +78,8 @@ ring3는 두 정적 bootstrap process를 PID 1→PID 2 순서로 각각 동기 �
 - 현재 `SYS_AUTONOMY_MODE_SET`에는 K5 principal/ownership 기반 authorize가 아직 없다.
   따라서 이 단계에서 shell action 명령이나 편의용 apply 우회를 추가하지 않는다.
 - Kernel Room gate는 현재 분류 메타데이터이며 per-call authorize로 과장하지 않는다.
+- native K2-a binding은 read-only boot-local oracle이며 source refresh/reconcile이나
+  행동 authorize/apply 입력으로 사용하지 않는다.
 
 ## 6. 다음 확장 순서
 
@@ -84,14 +87,17 @@ ring3는 두 정적 bootstrap process를 PID 1→PID 2 순서로 각각 동기 �
 증거가 생기는 순서대로 연결한다.
 
 1. K1은 Cell 1 + bound Node 1 + parent-bound NodeBit 2의 management-only
-   read-only hierarchy v0를 한 vertical proof로 완성했다. 이 bounded 조각만 `CURRENT`다.
-2. K2에서 canonical Node의 source binding과 generation/reconciliation을 확장한다.
-3. K3에서 선택한 legacy NodeBit를 namespace adapter로 read-only projection한다.
-4. K4에서 resource/pressure를 canonical Cell/Node에 귀속하되
+   read-only hierarchy v0를 한 vertical proof로 완성했다.
+2. native K2-a는 Node 101과 exact-one active/persistent SLM MAIN source를 별도
+   snapshot으로 결속했다. K1과 이 bounded boot-local oracle만 `CURRENT`다.
+3. 다음 H1에서 같은 semantic field/reject 의미를 OS-neutral trace/replay로 고정한 뒤
+   K2 live lifecycle/reconciliation과 hosted source를 확장한다.
+4. K3에서 선택한 legacy NodeBit를 namespace adapter로 read-only projection한다.
+5. K4에서 resource/pressure를 canonical Cell/Node에 귀속하되
    `observation_only=1`을 유지한다.
-5. K5에서 principal, target ownership, stale-generation 거부를 검증한 뒤에만 Kernel
+6. K5에서 principal, target ownership, stale-generation 거부를 검증한 뒤에만 Kernel
    Room authorize를 mode-set/commit 앞에 강제한다.
-6. C1/C2에서 정책·관리 저널과 AI Flow continuation으로 재부팅 경계 연속성을 확보한다.
+7. C1/C2에서 정책·관리 저널과 AI Flow continuation으로 재부팅 경계 연속성을 확보한다.
 
 버전드 `[EVT]` 파일럿, host event parser, read-only autonomy/resource snapshot은 이
 순서를 지원하는 검증·관측 작업이다. 병행할 수 있지만 Kernel Room hierarchy

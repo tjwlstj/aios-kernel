@@ -1,9 +1,9 @@
 # AIOS Kernel Room 관리 모델
 
 문서 상태: 정본
-전체 토폴로지 성숙도: `PARTIAL` (aggregate substrate와 K1 bounded hierarchy v0 `CURRENT`, K2+ `PLANNED`)
+전체 토폴로지 성숙도: `PARTIAL` (aggregate substrate, K1 hierarchy, bounded native K2-a oracle `CURRENT`; K2 lifecycle/reconcile `PARTIAL`)
 작성일: 2026-08-10
-최종 갱신: 2026-08-12 (K2 substrate-neutral 계약과 Linux 기본 delivery 경계)
+최종 갱신: 2026-08-15 (bounded native K2-a source binding oracle)
 적용 범위: `docs/kernel-room/`의 용어, 성숙도, 구현 순서
 
 ## 문서 권위
@@ -145,13 +145,15 @@ ABI, verifier가 없으므로 현재 상태는 `RESEARCH`다. Cell/Node 모델�
 |---|---|---|
 | `kernel_room_snapshot_read()`와 `[ROOM] snapshot`/`[ROOM] gates` | `CURRENT` | aggregate read-only 관측과 정적 gate 요약 |
 | 9개 Axis Gate descriptor | `CURRENT` | syscall range 분류 메타데이터만 해당 |
-| Kernel Room 전체 토폴로지 | `PARTIAL` | aggregate substrate와 K1 bootstrap hierarchy는 있으나 external binding/lifecycle/attribution은 없음 |
+| Kernel Room 전체 토폴로지 | `PARTIAL` | aggregate substrate, K1 bootstrap hierarchy, 한 native K2-a 결속은 있으나 live lifecycle/reconcile/attribution은 없음 |
 | Memory Fabric domain/window | `CURRENT` subsystem, `SCAFFOLD` adapter | Cell source 후보일 뿐 Cell identity가 아님 |
-| SLM agent tree | `CURRENT` subsystem, `SCAFFOLD` adapter | 계산된 agent snapshot이며 Cell binding 없음 |
+| SLM agent tree | `CURRENT` subsystem, bounded K2-a source `CURRENT` | exact-one active/persistent MAIN을 producer-owned boot-local instance/generation으로 복사 조회 |
 | runtime NodeBit | `CURRENT` subsystem, `SCAFFOLD` adapter | capability table과 per-node 통계, pipeline gate 범위 |
 | SLM NodeBit catalog | `CURRENT` subsystem, `SCAFFOLD` adapter | API/tool/device action policy view, 별도 namespace |
 | K1 management hierarchy registry v0 | `CURRENT` | schema 1/1024B producer, exact host 계약, strict QEMU/shell 검증 완료 |
-| external Node-to-Cell source binding / lifecycle | `PLANNED` | K1 bootstrap fixture 밖 source 정규화와 reconciliation 없음 |
+| K2-a native `AI_SERVICE` source binding oracle | `CURRENT` | 별도 schema 1/256B snapshot이 Node 101을 SLM MAIN source에 결속; exact boot/summary/`state binding` 검증 |
+| K2 전체 source lifecycle / reconciliation | `PARTIAL` | boot-local immutable native 결속만 있으며 refresh, exit/recreate, rebind, hosted source는 없음 |
+| Linux-hosted source adapter | `PLANNED` | producer-owned service lifecycle과 H1 replay 뒤에만 결속 |
 | legacy management NodeBit projection | `PLANNED` | runtime/SLM source adapter와 generation binding 없음 |
 | per-Cell/per-Node pressure와 resource ownership | `PLANNED` | pressure는 system-to-plane, resource owner는 unattributed |
 | Axis Gate enforcement / authorize / apply | `PLANNED` | management identity와 principal 계약 뒤에만 착수 |
@@ -220,30 +222,59 @@ unexpected extension, orphan, stale generation, capacity overflow, non-zero unus
 fail-closed로 거부해야 한다. 기존 `[ROOM] snapshot`과 `[ROOM] gates`는 호환성을 위해
 그대로 유지한다.
 
+## K2-a bounded native semantic oracle
+
+첫 K2 조각은 K1 ABI를 확장하지 않고 별도 계약으로 구현됐다.
+
+- SLM producer는 계산된 agent tree에서 `node_id=1`, role/model `MAIN`,
+  active/persistent인 source를 exact-one으로 선택한다.
+- source는 64B copied snapshot에서 typed namespace, semantic kind `AI_SERVICE`,
+  role, lifecycle, boot-local `source_instance=1`, 전용 `source_generation=1`을
+  소유한다. `policy_generation`, timestamp, PID를 재사용하지 않는다.
+- Kernel Room은 schema 1/256B, capacity 2의 별도 binding snapshot에서 canonical
+  Node 101과 parent Cell 1의 generation, source identity/generation, kind/role
+  일치를 고정한다.
+- public reject reason ID는 append-only이며 init-order, missing, schema/malformed,
+  overflow, duplicate, orphan, namespace/kind/role/instance, zero generation,
+  rollback, stale, non-zero tail을 구분한다.
+- boot marker와 structured `kernel_room_binding`, `state binding`은 exact-one
+  full-row로 검증하며 순서는 `entry-AC < K1 management < K2 binding < aggregate ROOM`이다.
+
+```text
+[ROOM] source binding selftest PASS schema=1 struct_size=256 binding_generation=1 bindings=1 capacity=2 canonical_namespace=2 canonical_id=101 canonical_kind=1 canonical_generation=1 parent_cell_id=1 parent_generation=1 source_namespace=1 source_id=1 source_instance=1 source_generation=1 source_kind=1 source_role=1 kind_match=1 role_match=1 producer_owned=1 copied_read=1 missing_rejected=1 duplicate_rejected=1 orphan_rejected=1 namespace_rejected=1 kind_rejected=1 role_rejected=1 instance_rejected=1 zero_generation_rejected=1 generation_rollback_rejected=1 stale_rejected=1 init_order_rejected=1 schema_rejected=1 overflow_rejected=1 tail_rejected=1 source_valid=1 generation_valid=1 binding_valid=1 observation_only=1 management_only=1
+```
+
+이 oracle은 한 부팅 안의 immutable 결속만 증명한다. source refresh,
+exit/recreate, explicit rebind, lease, cross-reboot uniqueness, Linux service,
+resource attribution, authorize/apply는 증명하지 않으므로 K2 전체는 `PARTIAL`이다.
+
 ## 후속 순서
 
 1. 관리 정본과 namespace 대응표 고정 — 완료
 2. management-only read-only hierarchy registry v0 — `CURRENT` (2026-08-11)
-3. Cell state/external source adapter와 validity
-4. Node-to-Cell binding 확대
-5. legacy NodeBit typed projection과 source generation 결속
-6. per-Cell/per-Node pressure·resource attribution 관측
-7. principal과 상태 전이 계약
-8. Axis Gate authorize/enforcement와 rollback proof
-9. 선택적 Orbit 연구
+3. bounded native K2-a semantic oracle — `CURRENT` (2026-08-15)
+4. H1 OS-neutral lifecycle trace/replay와 stable reason fixture
+5. Linux-hosted observe-only source adapter와 explicit reconcile
+6. legacy NodeBit typed projection과 source generation 결속
+7. per-Cell/per-Node pressure·resource attribution 관측
+8. principal과 상태 전이 계약
+9. Axis Gate authorize/enforcement와 rollback proof
+10. 선택적 Orbit 연구
 
 2단계의 완료 조건은 앞서 정의한 최소 Cell/Node/NodeBit 전체 hierarchy proof다.
 3~5단계는 Cell-only, Node-only, NodeBit-only 구현 순서가 아니라 v0에 이미 존재하는
 관계와 typed view를 실제 source에 연결하고 coverage를 확대하는 순서다.
 
-K2 계약은 substrate-neutral하다. Node 101은 `AI_SERVICE`이므로 native reference
-source의 우선 후보는 SLM agent-tree MAIN이고, 기본 delivery 경로의 hosted source는
-producer-owned service instance/generation을 가진 실제 Linux userspace service다.
-어느 쪽도 전용 producer-owned instance/generation과 copied read API가 생기기 전에는
-bind하지 않는다. 기존 `policy_generation`, timestamp, Memory Fabric domain ID,
+K2 semantic field/reject 의미는 substrate-neutral을 목표로 한다. 현재 `CURRENT`
+증거는 Node 101 `AI_SERVICE`를 SLM agent-tree MAIN에 묶은 native K2-a oracle뿐이며,
+OS-neutral lifecycle trace 계약은 다음 H1에서 고정한다. 기본 delivery 경로의 hosted
+source 후보는 producer-owned service instance/generation을 가진 실제 Linux userspace
+service다.
+native oracle은 전용 producer-owned instance/generation과 copied read API를 사용한다.
+기존 `policy_generation`, timestamp, Memory Fabric domain ID,
 process PID/run generation, Linux PID/pidfd/cgroup/PSI를 편의상 generation이나
-canonical identity로 대신 쓰지 않는다. 두 adapter의 binding/reconciliation은 K1
-1024B immutable snapshot과 분리된 같은 bounded/versioned contract로 시작하며
+canonical identity로 대신 쓰지 않는다. hosted adapter도 K1 1024B immutable
+snapshot과 분리된 같은 semantic field/reason 계약을 소비해야 하며
 missing, duplicate, role mismatch, orphan, zero/regressed/stale generation,
 init-order failure를 거부한다.
 

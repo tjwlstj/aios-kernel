@@ -5,6 +5,7 @@ import unittest
 from lib.boot_log import parse_boot_log_text
 from lib.kernel_lane import (
     CPU_SECURITY_PATTERNS,
+    KERNEL_ROOM_BINDING_PATTERN,
     KERNEL_ROOM_MANAGEMENT_PATTERN,
     RING3_ENTRY_AC_HARDENING_PATTERNS,
 )
@@ -292,6 +293,7 @@ class BootLogKernelRoomManagementTests(unittest.TestCase):
                 (
                     RING3_ENTRY_AC_HARDENING_PATTERNS["default"],
                     management,
+                    KERNEL_ROOM_BINDING_PATTERN,
                     ROOM_SNAPSHOT_LINE,
                 )
             ),
@@ -373,6 +375,7 @@ class BootLogKernelRoomManagementTests(unittest.TestCase):
                         (
                             RING3_ENTRY_AC_HARDENING_PATTERNS["default"],
                             canonical,
+                            KERNEL_ROOM_BINDING_PATTERN,
                             ROOM_SNAPSHOT_LINE,
                             extra,
                         )
@@ -390,12 +393,14 @@ class BootLogKernelRoomManagementTests(unittest.TestCase):
                 (
                     canonical,
                     RING3_ENTRY_AC_HARDENING_PATTERNS["default"],
+                    KERNEL_ROOM_BINDING_PATTERN,
                     ROOM_SNAPSHOT_LINE,
                 )
             ),
             "\n".join(
                 (
                     RING3_ENTRY_AC_HARDENING_PATTERNS["default"],
+                    KERNEL_ROOM_BINDING_PATTERN,
                     ROOM_SNAPSHOT_LINE,
                     canonical,
                 )
@@ -407,6 +412,168 @@ class BootLogKernelRoomManagementTests(unittest.TestCase):
                 )["kernel_room_management"]
                 self.assertFalse(management["ready"])
                 self.assertFalse(management["order"]["passed"])
+
+
+class BootLogKernelRoomBindingTests(unittest.TestCase):
+    def _summary(self, binding: str) -> dict[str, object]:
+        return parse_boot_log_text(
+            "\n".join(
+                (
+                    RING3_ENTRY_AC_HARDENING_PATTERNS["default"],
+                    KERNEL_ROOM_MANAGEMENT_PATTERN,
+                    binding,
+                    ROOM_SNAPSHOT_LINE,
+                )
+            ),
+            "minimal",
+            "synthetic.log",
+        )
+
+    def test_source_binding_record_is_structured_and_ordered(self) -> None:
+        binding = self._summary(KERNEL_ROOM_BINDING_PATTERN)[
+            "kernel_room_binding"
+        ]
+
+        self.assertTrue(binding["ready"])
+        self.assertTrue(binding["semantic_ready"])
+        self.assertEqual("PASS", binding["status"])
+        self.assertEqual(1, binding["schema"])
+        self.assertEqual(256, binding["struct_size"])
+        self.assertEqual(1, binding["binding_generation"])
+        self.assertEqual(1, binding["bindings"])
+        self.assertEqual(2, binding["capacity"])
+        self.assertEqual(2, binding["canonical_namespace"])
+        self.assertEqual(101, binding["canonical_id"])
+        self.assertEqual(1, binding["canonical_kind"])
+        self.assertEqual(1, binding["canonical_generation"])
+        self.assertEqual(1, binding["source_namespace"])
+        self.assertEqual(1, binding["source_id"])
+        self.assertEqual(1, binding["source_instance"])
+        self.assertEqual(1, binding["source_generation"])
+        self.assertEqual(1, binding["producer_owned"])
+        self.assertEqual(1, binding["copied_read"])
+        self.assertEqual(1, binding["generation_rollback_rejected"])
+        self.assertEqual(1, binding["binding_valid"])
+        self.assertEqual(1, binding["observation_only"])
+        self.assertEqual(1, binding["management_only"])
+        self.assertEqual(1, binding["record_count"])
+        self.assertEqual(1, binding["fullmatch_count"])
+        self.assertTrue(binding["order"]["passed"])
+
+    def test_source_binding_requires_semantic_management_record(self) -> None:
+        invalid_management = KERNEL_ROOM_MANAGEMENT_PATTERN.replace(
+            "schema=1", "schema=2", 1
+        )
+        summary = parse_boot_log_text(
+            "\n".join(
+                (
+                    RING3_ENTRY_AC_HARDENING_PATTERNS["default"],
+                    invalid_management,
+                    KERNEL_ROOM_BINDING_PATTERN,
+                    ROOM_SNAPSHOT_LINE,
+                )
+            ),
+            "minimal",
+            "synthetic.log",
+        )
+
+        self.assertFalse(summary["kernel_room_management"]["ready"])
+        self.assertFalse(summary["kernel_room_binding"]["ready"])
+
+    def test_source_binding_rejects_management_family_sibling(self) -> None:
+        summary = parse_boot_log_text(
+            "\n".join(
+                (
+                    RING3_ENTRY_AC_HARDENING_PATTERNS["default"],
+                    KERNEL_ROOM_MANAGEMENT_PATTERN,
+                    KERNEL_ROOM_BINDING_PATTERN,
+                    ROOM_SNAPSHOT_LINE,
+                    "[ROOM] management hierarchy selftest PARTIAL schema=1",
+                )
+            ),
+            "minimal",
+            "synthetic.log",
+        )
+        management = summary["kernel_room_management"]
+
+        self.assertFalse(management["ready"])
+        self.assertEqual(2, management["record_count"])
+        self.assertTrue(management["duplicate"])
+        self.assertFalse(summary["kernel_room_binding"]["ready"])
+
+    def test_source_binding_rejects_malformed_duplicate_and_order(self) -> None:
+        canonical = KERNEL_ROOM_BINDING_PATTERN
+        mutations = (
+            "[ROOM] source binding selftest PASS schema=1",
+            canonical.replace("schema=1", "schema=01", 1),
+            canonical.replace("struct_size=256", "struct_size=255"),
+            canonical.replace("canonical_id=101", "canonical_id=102"),
+            canonical.replace("source_instance=1", "source_instance=0"),
+            canonical.replace("source_generation=1", "source_generation=2"),
+            canonical.replace("kind_match=1", "kind_match=0"),
+            canonical.replace("role_match=1", "role_match=0"),
+            canonical.replace("producer_owned=1", "producer_owned=0"),
+            canonical.replace("copied_read=1", "copied_read=0"),
+            canonical.replace("stale_rejected=1", "stale_rejected=0"),
+            canonical.replace("binding_valid=1", "binding_valid=0"),
+            canonical.replace("observation_only=1", "observation_only=0"),
+            canonical + " extra=1",
+            f"  {canonical}",
+            f'"{canonical}"',
+        )
+        for line in mutations:
+            with self.subTest(line=line):
+                binding = self._summary(line)["kernel_room_binding"]
+                self.assertFalse(binding["ready"])
+
+        for extra in (
+            canonical,
+            "[ROOM] source binding selftest PARTIAL schema=1",
+            "[ROOM] source binding",
+        ):
+            with self.subTest(extra=extra):
+                summary = parse_boot_log_text(
+                    "\n".join(
+                        (
+                            RING3_ENTRY_AC_HARDENING_PATTERNS["default"],
+                            KERNEL_ROOM_MANAGEMENT_PATTERN,
+                            canonical,
+                            ROOM_SNAPSHOT_LINE,
+                            extra,
+                        )
+                    ),
+                    "minimal",
+                    "synthetic.log",
+                )
+                binding = summary["kernel_room_binding"]
+                self.assertFalse(binding["ready"])
+                self.assertEqual(2, binding["record_count"])
+                self.assertTrue(binding["duplicate"])
+
+        for reordered in (
+            "\n".join(
+                (
+                    RING3_ENTRY_AC_HARDENING_PATTERNS["default"],
+                    canonical,
+                    KERNEL_ROOM_MANAGEMENT_PATTERN,
+                    ROOM_SNAPSHOT_LINE,
+                )
+            ),
+            "\n".join(
+                (
+                    RING3_ENTRY_AC_HARDENING_PATTERNS["default"],
+                    KERNEL_ROOM_MANAGEMENT_PATTERN,
+                    ROOM_SNAPSHOT_LINE,
+                    canonical,
+                )
+            ),
+        ):
+            with self.subTest(reordered=reordered):
+                binding = parse_boot_log_text(
+                    reordered, "minimal", "synthetic.log"
+                )["kernel_room_binding"]
+                self.assertFalse(binding["ready"])
+                self.assertFalse(binding["order"]["passed"])
 
 
 class BootLogSecurityTests(unittest.TestCase):

@@ -2,7 +2,7 @@
 
 작성일: 2026-04-18
 재정비: 2026-08-10
-최종 갱신: 2026-08-12 (K2 substrate-neutral source gate)
+최종 갱신: 2026-08-15 (bounded native K2-a source binding oracle)
 
 > 이 가이드는 [AIOS Kernel Room 관리 모델](kernel_room_management_model_ko.md)을
 > 따른다. 정체성, 용어, 성숙도 또는 구현 순서가 충돌하면 정본을 우선한다.
@@ -35,8 +35,14 @@ Kernel Room 작업이 커널 작동 증명이나 enforcement 자체를 목표로
   - exact `[ROOM] management hierarchy selftest PASS ...` producer
 - `kernel/include/kernel/kernel_room_management.h`
   - schema 1의 Cell/Node/NodeBit typed record와 1024B snapshot contract
+- `kernel/runtime/slm_orchestrator.c` / `kernel/include/runtime/slm_orchestrator.h`
+  - exact-one active/persistent MAIN source와 64B producer-owned copied snapshot
+- `kernel/core/kernel_room_source_binding.c`
+  - K1 Node 101과 SLM MAIN을 묶는 immutable K2-a registry와 negative selftest
+- `kernel/include/kernel/kernel_room_source_binding.h`
+  - schema 1/256B binding snapshot, append-only namespace/kind/role/reject ID
 - `kernel/core/shell.c`
-  - `state room` exact read-only mirror
+  - `state room`과 별도 `state binding` exact read-only mirror
 - `kernel/runtime/ai_syscall.c`
   - `SYS_INFO_ROOM` read-only surface
 
@@ -55,11 +61,23 @@ Kernel Room 작업이 커널 작동 증명이나 enforcement 자체를 목표로
 - schema/size/source/generation/parent validity와 immutable snapshot
 - duplicate/orphan/unknown/stale/overflow와 non-zero unused tail rejection
 - default full/minimal/storage-only와 max-smap minimal strict kernel, default/max-smap
-  strict shell 17/17 검증 및 structured summary export
+  strict shell 18/18 검증 및 structured summary export
 
-### 아직 `PLANNED`
+### bounded native K2-a `CURRENT` (2026-08-15)
 
-- external source Node-to-Cell binding과 Cell lifecycle/reconciliation
+- SLM agent-tree MAIN의 전용 boot-local source instance/generation과 copied read API
+- K1 1024B ABI와 분리된 schema 1/256B, capacity 2 source-binding snapshot
+- canonical/source/binding generation 분리와 explicit namespace mapping
+- missing/duplicate/orphan/namespace/kind/role/instance/zero/rollback/stale/
+  init-order/schema/overflow/non-zero-tail rejection
+- exact `[ROOM] source binding selftest PASS ...`, structured
+  `kernel_room_binding`, `state binding` full-row 검증
+- `entry-AC < K1 management < K2 binding < aggregate ROOM` 부트 순서
+
+### 아직 `PLANNED` 또는 K2 전체에서 미완료
+
+- source refresh/exit/recreate/rebind와 Cell lifecycle/reconciliation
+- H1 OS-neutral trace/replay와 Linux-hosted observe-only source
 - runtime/SLM NodeBit projection
 - per-Cell/per-Node pressure와 resource ownership
 - principal/authorize와 Axis Gate enforcement
@@ -159,6 +177,18 @@ K1 bootstrap identity/relation/generation과 immutable-after-init snapshot을 �
 - subsystem adapter가 제공하는 copied read-only state
 - 후속 Axis Gate가 수행하는 transition/authorize
 
+### `kernel/include/kernel/kernel_room_source_binding.h`
+
+K2-a public namespace, semantic kind, role, lifecycle, reject reason과 정확히 256B인
+별도 snapshot을 소유한다. enum 값은 append-only이며 K1 header와 aggregate ABI에
+필드를 덧붙이지 않는다.
+
+### `kernel/core/kernel_room_source_binding.c`
+
+K1 copied snapshot과 SLM producer copied snapshot을 소비해 한 boot-local immutable
+binding을 만든다. 숫자가 같다는 이유로 cast하지 않고 각 namespace/kind/role을
+명시적으로 변환한다. refresh/reconcile, allocator, scheduler, authorize/apply를 넣지 않는다.
+
 ### 기존 subsystem
 
 Memory Fabric, SLM, scheduler, resource, pressure, process, pipeline은 자기 mutable state의
@@ -237,48 +267,53 @@ marker는 hierarchy invariant를 증명해야 한다.
 기존 `[ROOM] snapshot`, `[ROOM] gates`, `SYS_INFO_ROOM`은 새 hierarchy proof와 별개의
 호환 표면으로 유지한다.
 
-## K2 source adapter 착수 gate
+## K2 source adapter gate와 현재 경계
 
-K2 source를 canonical hierarchy에 연결하기 전에 아래를 모두 증명한다.
+native K2-a oracle은 아래 항목을 증명해 `CURRENT`가 됐다.
 
 - canonical Node/Cell kind와 source의 semantic kind가 일치한다.
 - source namespace와 ID는 typed이며 canonical ID와 분리된다.
 - source producer가 instance/generation을 직접 소유하고 copied read API로 제공한다.
-- init ordering, refresh/reconcile, source exit/recreate 의미가 정의된다.
+- init ordering과 immutable boot-local lifecycle 경계가 정의된다.
 - missing, duplicate, role mismatch, orphan, zero/regressed/stale generation을
   fail-closed fixture로 거부한다.
 - binding record는 별도 bounded/versioned snapshot이며 K1 1024B ABI와 기존 aggregate
   Room ABI를 변경하지 않는다.
 
-K2 계약은 substrate-neutral하다. Node 101 `AI_SERVICE`의 native reference 후보는
-SLM agent-tree MAIN source이고, Linux-hosted 기본 delivery 후보는 producer-owned
-service instance/generation을 가진 실제 userspace service record다. 현재 SLM
+K2 semantic field/reject 의미는 substrate-neutral을 목표로 하지만 현재 증거는 native
+oracle에 한정된다. Node 101 `AI_SERVICE`의 native reference는 구현된 exact-one
+active/persistent SLM agent-tree MAIN source다. Linux-hosted 기본
+delivery 후보는 producer-owned service instance/generation을 가진 실제 userspace
+service record다. 현재 SLM
 `policy_generation`은 agent-tree source generation 계약이 아니므로 재사용하지
 않는다. Linux PID/pidfd/cgroup/PSI는 service lifecycle/resource evidence일 뿐
 canonical Node identity가 아니다. Memory Fabric main domain은 Cell/resource source
-후보이고 bootstrap process는 execution-instance source 후보다. 구현이 쉽거나 숫자가
-같다는 이유로 어느 source도 Node 101에 결속하지 않는다.
+후보이고 bootstrap process는 execution-instance source 후보다. SLM MAIN 외의 source는
+구현이 쉽거나 숫자가 같다는 이유만으로 Node 101에 결속하지 않는다.
 
 작은 native K2 adapter는 canonical 의미가 Linux object 모양에 끌려가지 않게 하는
-semantic oracle/conformance proof다. K2 contract와 H1 fail-closed fixture를 먼저
-고정하되, 광범위한 native process/storage 확장을 H2 observe-only userspace service의
-선행조건으로 만들지 않는다. 두 adapter는 같은 bounded/versioned binding record와
-동일한 semantic verdict를 사용한다.
+semantic oracle/conformance proof로 구현됐다. refresh/reconcile과 source
+exit/recreate/rebind는 아직 `PLANNED`다. 다음 H1은 같은 field/reason 의미를 OS-neutral
+trace와 negative fixture에 고정하고, 광범위한 native process/storage 확장을 H2
+observe-only userspace service의 선행조건으로 만들지 않는다.
 
 ## 후속 구현 순서
 
 1. 정본과 typed namespace 대응표
 2. management-only hierarchy registry v0 — `CURRENT` (2026-08-11)
-3. Cell state adapter와 validity/source flags
-4. Node-to-Cell binding source 확대
-5. runtime/SLM NodeBit의 typed management view와 generation 연결
-6. per-Cell/per-Node pressure·resource attribution observation
-7. principal과 state-transition request 계약
-8. Axis Gate authorize/enforcement + deny/rollback proof
-9. 선택적 Orbit 연구
+3. bounded native K2-a semantic oracle — `CURRENT` (2026-08-15)
+4. H1 OS-neutral lifecycle trace/replay
+5. H2 Linux observe-only userspace adapter
+6. Cell lifecycle/reconcile와 source coverage 확대
+7. runtime/SLM NodeBit의 typed management view와 generation 연결
+8. per-Cell/per-Node pressure·resource attribution observation
+9. principal과 state-transition request 계약
+10. Axis Gate authorize/enforcement + deny/rollback proof
+11. 선택적 Orbit 연구
 
-2단계의 완료 조건은 최소 Cell/Node/NodeBit 전체 hierarchy proof다. 3~5단계를
-Cell-only -> Node-only -> NodeBit-only의 별도 완성 단계로 해석하지 않는다.
+2단계의 완료 조건은 최소 Cell/Node/NodeBit 전체 hierarchy proof다. 3단계의 bounded
+oracle을 전체 K2 lifecycle 완료로 해석하거나, 4~6단계를 Cell-only -> Node-only ->
+NodeBit-only의 별도 완성 단계로 해석하지 않는다.
 
 `snapshot -> gate metadata -> enforcement`를 Kernel Room의 기본 성장 순서로 쓰지 않는다.
 현재 snapshot과 gate는 보존할 substrate이며, 다음 중심 순서는

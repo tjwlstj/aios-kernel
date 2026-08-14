@@ -25,6 +25,7 @@
  *   state list       — enumerate available topics
  *   state health     — kernel health summary
  *   state room       — read-only Room/Cell/Node/NodeBit hierarchy v0
+ *   state binding    — read-only K2-a native source binding
  *   state mem        — heap statistics
  *   state sched      — kernel-thread context switches + workload task stats
  *   state nodes      — per-node gate/work observation (summary line +
@@ -46,6 +47,7 @@
 #include <kernel/cpu_sec.h>
 #include <kernel/stack_guard.h>
 #include <kernel/kernel_room_management.h>
+#include <kernel/kernel_room_source_binding.h>
 #include <runtime/node_pipeline.h>
 #include <runtime/nodebit.h>
 #include <runtime/autonomy.h>
@@ -117,7 +119,7 @@ static void cmd_ping(void) {
 }
 
 static void state_list(void) {
-    STATE_EMIT("[STATE] topics list=health,room,mem,sched,nodes,pipeline,resource,pressure,slm,autonomy,user,sec,time,version\n");
+    STATE_EMIT("[STATE] topics list=health,room,binding,mem,sched,nodes,pipeline,resource,pressure,slm,autonomy,user,sec,time,version\n");
 }
 
 static void state_room(void) {
@@ -164,6 +166,47 @@ static void state_room(void) {
         (uint64_t)room.generation_valid,
         (uint64_t)room.observation_only,
         (uint64_t)room.management_only);
+}
+
+static void state_binding(void) {
+    kernel_room_source_binding_snapshot_t snapshot;
+    const kernel_room_source_binding_record_t *binding;
+    aios_status_t status = kernel_room_source_binding_snapshot_read(&snapshot);
+
+    if (status != AIOS_OK ||
+        !kernel_room_source_binding_snapshot_valid(&snapshot) ||
+        snapshot.binding_count != 1U) {
+        STATE_EMIT("[STATE] binding error=unavailable\n");
+        return;
+    }
+
+    binding = &snapshot.bindings[0];
+    STATE_EMIT("[STATE] binding schema=%u struct_size=%u ready=%u binding_generation=%u bindings=%u capacity=%u canonical_namespace=%u canonical_id=%u canonical_kind=%u canonical_generation=%u parent_cell_id=%u parent_generation=%u source_namespace=%u source_id=%u source_instance=%u source_generation=%u source_kind=%u source_role=%u lifecycle=%u kind_match=1 role_match=1 producer_owned=1 source_valid=%u generation_valid=%u binding_valid=%u last_reject=%u observation_only=%u management_only=%u\n",
+        (uint64_t)snapshot.schema_version,
+        (uint64_t)snapshot.struct_size,
+        (uint64_t)snapshot.ready,
+        snapshot.binding_generation,
+        (uint64_t)snapshot.binding_count,
+        (uint64_t)snapshot.binding_capacity,
+        (uint64_t)binding->canonical_namespace,
+        (uint64_t)binding->canonical_id,
+        (uint64_t)binding->canonical_kind,
+        binding->canonical_generation,
+        (uint64_t)binding->parent_cell_id,
+        binding->parent_generation,
+        (uint64_t)binding->source_namespace,
+        (uint64_t)binding->source_id,
+        binding->source_instance,
+        binding->source_generation,
+        (uint64_t)binding->source_kind,
+        (uint64_t)binding->source_role,
+        (uint64_t)binding->lifecycle_state,
+        (uint64_t)snapshot.source_valid,
+        (uint64_t)snapshot.generation_valid,
+        (uint64_t)snapshot.binding_valid,
+        (uint64_t)snapshot.last_reject_reason,
+        (uint64_t)snapshot.observation_only,
+        (uint64_t)snapshot.management_only);
 }
 
 static void state_sched(void) {
@@ -591,6 +634,7 @@ static void cmd_state(const char *arg, uint32_t arg_len) {
     if (arg_len == 0 || topic_is(arg, arg_len, "list")) { state_list();    return; }
     if (topic_is(arg, arg_len, "health"))               { state_health();  return; }
     if (topic_is(arg, arg_len, "room"))                 { state_room();    return; }
+    if (topic_is(arg, arg_len, "binding"))              { state_binding(); return; }
     if (topic_is(arg, arg_len, "mem"))                  { state_mem();     return; }
     if (topic_is(arg, arg_len, "sched"))                { state_sched();   return; }
     if (topic_is(arg, arg_len, "nodes"))                { state_nodes();   return; }

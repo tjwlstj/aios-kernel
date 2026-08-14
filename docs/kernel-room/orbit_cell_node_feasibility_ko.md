@@ -27,17 +27,19 @@
   `CURRENT` substrate다. 아래 원문의 “중앙 레지스트리가 아직 없다”는 2026-04 중간
   상태 문장이다.
 - bounded bootstrap Cell registry, Node-to-Cell binding, typed management NodeBit view의
-  K1 v0는 2026-08-11 `CURRENT`가 됐다. external source adapter와 live
-  lifecycle/reconciliation으로 확장하는 K2+는 여전히 `PLANNED`다.
-- SLM agent tree, runtime NodeBit, SLM NodeBit은 각자 `CURRENT` subsystem이지만 서로
-  다른 namespace이며, Kernel Room hierarchy의 Node/NodeBit으로 결속되지 않았다.
+  K1 v0는 2026-08-11 `CURRENT`가 됐다. Node 101을 producer-owned SLM MAIN source에
+  결속하는 native K2-a oracle도 2026-08-15 `CURRENT`다. 전체 K2 live
+  lifecycle/reconciliation과 hosted source는 여전히 `PLANNED`다.
+- SLM agent tree, runtime NodeBit, SLM NodeBit은 각자 `CURRENT` subsystem이며 서로
+  다른 namespace다. exact-one SLM MAIN만 native K2-a로 Node 101에 결속됐고, 나머지
+  agent/NodeBit projection은 아직 없다.
 - Axis Gate는 관리 모델의 본체가 아니라 후속 전이·보안 경계다. per-syscall
   enforcement는 `PLANNED`이며 Cell/Node identity보다 먼저 구현하지 않는다.
 - Orbit는 구현 maturity가 아니라 선택적 `RESEARCH`다.
 
 첫 구현 조각은 enforcement가 아닌
 `management_only read-only hierarchy registry v0`로 완료됐다. 정확한 현재 경계와
-다음 K2 verifier 요구는 정본과 [개발 가이드](development_guide_ko.md)를 따른다.
+다음 H1/K2 lifecycle verifier 요구는 정본과 [개발 가이드](development_guide_ko.md)를 따른다.
 Cell-only table은 완료로 간주하지 않으며, K1은 Cell 1개 + bound Node 1개 +
 parent-bound typed NodeBit 2개의 전체 hierarchy proof를 함께 보존한다.
 

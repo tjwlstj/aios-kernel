@@ -95,6 +95,21 @@ KERNEL_ROOM_MANAGEMENT_PATTERN = (
     "stale_rejected=1 overflow_rejected=1 tail_rejected=1 observation_only=1 "
     "management_only=1"
 )
+KERNEL_ROOM_BINDING_PATTERN = (
+    "[ROOM] source binding selftest PASS schema=1 struct_size=256 "
+    "binding_generation=1 bindings=1 capacity=2 canonical_namespace=2 "
+    "canonical_id=101 canonical_kind=1 canonical_generation=1 "
+    "parent_cell_id=1 parent_generation=1 source_namespace=1 source_id=1 "
+    "source_instance=1 source_generation=1 source_kind=1 source_role=1 "
+    "kind_match=1 role_match=1 producer_owned=1 copied_read=1 "
+    "missing_rejected=1 duplicate_rejected=1 orphan_rejected=1 "
+    "namespace_rejected=1 kind_rejected=1 role_rejected=1 "
+    "instance_rejected=1 zero_generation_rejected=1 "
+    "generation_rollback_rejected=1 stale_rejected=1 "
+    "init_order_rejected=1 schema_rejected=1 overflow_rejected=1 "
+    "tail_rejected=1 source_valid=1 generation_valid=1 binding_valid=1 "
+    "observation_only=1 management_only=1"
+)
 
 
 def ensure_smoke_profile(smoke_profile: str) -> str:
@@ -188,6 +203,7 @@ def required_smoke_patterns(
         PROCESS_EVENT_JOURNAL_PATTERN,
         RING3_ENTRY_AC_HARDENING_PATTERNS[cpu_profile],
         KERNEL_ROOM_MANAGEMENT_PATTERN,
+        KERNEL_ROOM_BINDING_PATTERN,
         "[SHELL] Interactive shell started",
     ]
     if smoke_profile == "storage-only":

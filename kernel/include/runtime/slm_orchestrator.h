@@ -18,6 +18,9 @@
 #define AGENT_TREE_MAX_NODES 10
 #define SLM_NODEBIT_MAX_NODES 16
 #define SLM_HW_SNAPSHOT_ABI_VERSION 1u
+#define SLM_AGENT_SOURCE_SCHEMA_VERSION 1U
+#define SLM_AGENT_SOURCE_BOOT_INSTANCE  1ULL
+#define SLM_AGENT_SOURCE_BOOT_GENERATION 1ULL
 
 #define SLM_USER_HW_ACCESS_F_BOOTSTRAP_SNAPSHOT BIT(0)
 #define SLM_USER_HW_ACCESS_F_SHARED_RING        BIT(1)
@@ -115,6 +118,75 @@ typedef enum {
     AGENT_NODE_ROLE_TOOL_WORKER = 9,
     AGENT_NODE_ROLE_DEVICE = 10,
 } agent_node_role_t;
+
+/*
+ * Producer-owned identity for the bounded native K2 semantic oracle.
+ * These IDs are independent from Kernel Room, runtime NodeBit, PID, policy,
+ * and timestamp namespaces. Append new values; never renumber existing ones.
+ */
+typedef enum {
+    SLM_AGENT_SOURCE_NAMESPACE_INVALID = 0,
+    SLM_AGENT_SOURCE_NAMESPACE_AGENT_TREE = 1,
+    SLM_AGENT_SOURCE_NAMESPACE_COUNT = 2,
+} slm_agent_source_namespace_t;
+
+AIOS_STATIC_ASSERT(
+    SLM_AGENT_SOURCE_NAMESPACE_INVALID == 0 &&
+    SLM_AGENT_SOURCE_NAMESPACE_AGENT_TREE == 1 &&
+    SLM_AGENT_SOURCE_NAMESPACE_COUNT == 2,
+    "SLM agent source namespace IDs are append-only");
+
+typedef enum {
+    SLM_AGENT_SOURCE_KIND_INVALID = 0,
+    SLM_AGENT_SOURCE_KIND_AI_SERVICE = 1,
+    SLM_AGENT_SOURCE_KIND_COUNT = 2,
+} slm_agent_source_kind_t;
+
+AIOS_STATIC_ASSERT(
+    SLM_AGENT_SOURCE_KIND_INVALID == 0 &&
+    SLM_AGENT_SOURCE_KIND_AI_SERVICE == 1 &&
+    SLM_AGENT_SOURCE_KIND_COUNT == 2,
+    "SLM agent source kind IDs are append-only");
+
+typedef enum {
+    SLM_AGENT_SOURCE_ROLE_INVALID = 0,
+    SLM_AGENT_SOURCE_ROLE_MAIN = 1,
+    SLM_AGENT_SOURCE_ROLE_COUNT = 2,
+} slm_agent_source_role_t;
+
+AIOS_STATIC_ASSERT(
+    SLM_AGENT_SOURCE_ROLE_INVALID == 0 &&
+    SLM_AGENT_SOURCE_ROLE_MAIN == 1 &&
+    SLM_AGENT_SOURCE_ROLE_COUNT == 2,
+    "SLM agent source role IDs are append-only");
+
+typedef enum {
+    SLM_AGENT_SOURCE_LIFECYCLE_INVALID = 0,
+    SLM_AGENT_SOURCE_LIFECYCLE_ACTIVE = 1,
+    SLM_AGENT_SOURCE_LIFECYCLE_COUNT = 2,
+} slm_agent_source_lifecycle_t;
+
+AIOS_STATIC_ASSERT(
+    SLM_AGENT_SOURCE_LIFECYCLE_INVALID == 0 &&
+    SLM_AGENT_SOURCE_LIFECYCLE_ACTIVE == 1 &&
+    SLM_AGENT_SOURCE_LIFECYCLE_COUNT == 2,
+    "SLM agent source lifecycle IDs are append-only");
+
+#define SLM_AGENT_SOURCE_F_IDENTITY_VALID   ((uint32_t)BIT(0))
+#define SLM_AGENT_SOURCE_F_KIND_VALID       ((uint32_t)BIT(1))
+#define SLM_AGENT_SOURCE_F_ROLE_VALID       ((uint32_t)BIT(2))
+#define SLM_AGENT_SOURCE_F_LIFECYCLE_VALID  ((uint32_t)BIT(3))
+#define SLM_AGENT_SOURCE_F_GENERATION_VALID ((uint32_t)BIT(4))
+#define SLM_AGENT_SOURCE_ALL_VALID_FLAGS    ((uint32_t)0x1FU)
+
+AIOS_STATIC_ASSERT(
+    (SLM_AGENT_SOURCE_F_IDENTITY_VALID |
+     SLM_AGENT_SOURCE_F_KIND_VALID |
+     SLM_AGENT_SOURCE_F_ROLE_VALID |
+     SLM_AGENT_SOURCE_F_LIFECYCLE_VALID |
+     SLM_AGENT_SOURCE_F_GENERATION_VALID) ==
+        SLM_AGENT_SOURCE_ALL_VALID_FLAGS,
+    "SLM agent source validity flags are append-only");
 
 typedef enum {
     AGENT_MODEL_CLASS_MICRO = 0,
@@ -280,6 +352,25 @@ typedef struct {
 } agent_tree_node_t;
 
 typedef struct {
+    uint32_t schema_version;
+    uint32_t struct_size;
+    uint32_t ready;
+    uint32_t source_namespace;
+    uint32_t source_id;
+    uint32_t source_kind;
+    uint32_t source_role;
+    uint32_t lifecycle_state;
+    uint32_t valid_flags;
+    uint32_t reserved0;
+    uint64_t source_instance;
+    uint64_t source_generation;
+    uint64_t sample_sequence;
+} slm_agent_source_snapshot_t;
+
+AIOS_STATIC_ASSERT(sizeof(slm_agent_source_snapshot_t) == 64U,
+    "SLM agent source snapshot layout changed; version it explicitly");
+
+typedef struct {
     uint16_t node_id;
     uint16_t parent_id;
     slm_node_kind_t kind;
@@ -417,6 +508,12 @@ typedef struct {
 
 aios_status_t slm_orchestrator_init(void);
 aios_status_t slm_snapshot_read(slm_hw_snapshot_t *out);
+aios_status_t slm_agent_source_snapshot_read(
+    slm_agent_source_snapshot_t *out
+);
+bool slm_agent_source_snapshot_valid(
+    const slm_agent_source_snapshot_t *snapshot
+);
 aios_status_t slm_plan_submit(const slm_plan_request_t *req, uint32_t *plan_id_out);
 aios_status_t slm_plan_apply(uint32_t plan_id);
 aios_status_t slm_plan_get(uint32_t plan_id, slm_plan_t *out);

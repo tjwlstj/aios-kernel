@@ -63,9 +63,14 @@ def find_qemu() -> str | None:
     return None
 COMMAND_TIMEOUT_SEC = 15
 REBOOT_EXIT_TIMEOUT_SEC = 10
-EXACT_ONE_RESPONSE_FAMILIES = ("[STATE] room", "[STATE] sec ")
+EXACT_ONE_RESPONSE_FAMILIES = (
+    "[STATE] room",
+    "[STATE] binding",
+    "[STATE] sec ",
+)
 EXACT_CANONICAL_RESPONSE_FAMILIES = {
     "[STATE] room schema=1": "[STATE] room",
+    "[STATE] binding schema=1": "[STATE] binding",
     "[STATE] sec schema=1": "[STATE] sec ",
 }
 
@@ -167,9 +172,10 @@ def _record_has_duplicate_fields(record: str) -> bool:
 # whitespace-delimited token on the anchored response record.
 DEFAULT_EXCHANGES: list[dict[str, object]] = [
     {"command": "ping", "expect": ["[STATE] pong ticks="]},
-    {"command": "state list", "expect": ["[STATE] topics list=health,room,mem,sched,nodes,pipeline,resource,pressure,slm,autonomy,user,sec,time,version"]},
+    {"command": "state list", "expect": ["[STATE] topics list=health,room,binding,mem,sched,nodes,pipeline,resource,pressure,slm,autonomy,user,sec,time,version"]},
     {"command": "state health", "expect": ["[STATE] health stability=stable", "degraded=0", "failed=0", "io_degraded=0", "autonomy="]},
     {"command": "state room", "expect": ["[STATE] room schema=1", "struct_size=1024", "ready=1", "generation=1", "cells=1", "cell_capacity=2", "nodes=1", "node_capacity=4", "bound_nodes=1", "nodebits=2", "nodebit_capacity=8", "bound_nodebits=2", "cell_id=1", "node_id=101", "node_parent=1", "nodebit_ids=1001,1002", "nodebit_parents=101,101", "source_valid=1", "generation_valid=1", "duplicate=0", "orphan=0", "unknown=0", "stale=0", "overflow=0", "observation_only=1", "management_only=1"]},
+    {"command": "state binding", "expect": ["[STATE] binding schema=1", "struct_size=256", "ready=1", "binding_generation=1", "bindings=1", "capacity=2", "canonical_namespace=2", "canonical_id=101", "canonical_kind=1", "canonical_generation=1", "parent_cell_id=1", "parent_generation=1", "source_namespace=1", "source_id=1", "source_instance=1", "source_generation=1", "source_kind=1", "source_role=1", "lifecycle=1", "kind_match=1", "role_match=1", "producer_owned=1", "source_valid=1", "generation_valid=1", "binding_valid=1", "last_reject=0", "observation_only=1", "management_only=1"]},
     {"command": "state mem", "expect": ["[STATE] mem heap_total=", "heap_free=", "lock_acquires="]},
     {"command": "state sched", "expect": ["[STATE] sched kthread_switches=", "preempt_ticks=", "address_space_switches=", "address_space_ready=1", "user_leaf_slots=2", "user_leaf_isolated=1", "bootstrap_process_ready=1", "bootstrap_owned_processes=2", "completed_process_runs=2", "current_pid=0", "last_pid=2", "tss_rsp0_publishes=2", "tss_rsp0_restores=2", "tss_rsp0_baseline=1", "total_tasks="]},
     {"command": "state pipeline", "expect": ["[STATE] pipeline active=", "executions="]},

@@ -50,6 +50,7 @@ C_SOURCES   = $(KERNEL_DIR)/main.c \
               $(KERNEL_DIR)/health.c \
               $(KERNEL_DIR)/kernel_room.c \
               $(KERNEL_DIR)/kernel_room_management.c \
+              $(KERNEL_DIR)/kernel_room_source_binding.c \
               $(KERNEL_DIR)/time.c \
               $(KERNEL_DIR)/selftest.c \
               $(KERNEL_DIR)/user_mode.c \
@@ -218,6 +219,7 @@ test: iso
 	   tr -d '\r' < $(TEST_LOG) | grep -Fxq "[RESOURCE] ledger selftest PASS schema=1 kinds=5 units=2 entries=5 capacity=8 source_flags=31 limit_kinds=5 used_kinds=5 high_water_kinds=1 denied_kinds=0 owners_unattributed=1 observation_only=1" && \
 	   tr -d '\r' < $(TEST_LOG) | grep -Fxq "[PRESSURE] tracker selftest PASS schema=1 planes=3 max_levels=4 active_levels=2 balanced=1 hotspot=1 overlap=1 gate_mask=1 observation_only=1" && \
 	   tr -d '\r' < $(TEST_LOG) | grep -Fxq "[ROOM] management hierarchy selftest PASS schema=1 struct_size=1024 generation=1 cells=1 nodes=1 bound_nodes=1 nodebits=2 bound_nodebits=2 source_valid=1 generation_valid=1 duplicate_rejected=1 orphan_rejected=1 unknown_rejected=1 stale_rejected=1 overflow_rejected=1 tail_rejected=1 observation_only=1 management_only=1" && \
+	   tr -d '\r' < $(TEST_LOG) | grep -Fxq "[ROOM] source binding selftest PASS schema=1 struct_size=256 binding_generation=1 bindings=1 capacity=2 canonical_namespace=2 canonical_id=101 canonical_kind=1 canonical_generation=1 parent_cell_id=1 parent_generation=1 source_namespace=1 source_id=1 source_instance=1 source_generation=1 source_kind=1 source_role=1 kind_match=1 role_match=1 producer_owned=1 copied_read=1 missing_rejected=1 duplicate_rejected=1 orphan_rejected=1 namespace_rejected=1 kind_rejected=1 role_rejected=1 instance_rejected=1 zero_generation_rejected=1 generation_rollback_rejected=1 stale_rejected=1 init_order_rejected=1 schema_rejected=1 overflow_rejected=1 tail_rejected=1 source_valid=1 generation_valid=1 binding_valid=1 observation_only=1 management_only=1" && \
 	   grep -q "\\[HEALTH\\] stability=" $(TEST_LOG) && \
 	   grep -q "\\[SHELL\\] Interactive shell started" $(TEST_LOG); then \
 		echo "[OK] Smoke test PASSED - kernel booted and shell started"; \

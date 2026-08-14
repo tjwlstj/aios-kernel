@@ -5,6 +5,7 @@ import unittest
 from lib.boot_verdict import evaluate_normal_boot
 from lib.kernel_lane import (
     CPU_SECURITY_PATTERNS,
+    KERNEL_ROOM_BINDING_PATTERN,
     KERNEL_ROOM_MANAGEMENT_PATTERN,
     PRESSURE_SELFTEST_PATTERN,
     PROCESS_TRAP_SNAPSHOT_PATTERN,
@@ -21,6 +22,7 @@ from lib.kernel_lane import (
 REQUIRED_PATTERNS = [
     "[BOOT] profile-required",
     KERNEL_ROOM_MANAGEMENT_PATTERN,
+    KERNEL_ROOM_BINDING_PATTERN,
 ]
 ROOM_SNAPSHOT_LINE = (
     "[ROOM] snapshot stability=stable ok=18 degraded=0 failed=0 "
@@ -44,6 +46,7 @@ def normal_lines() -> list[str]:
         "[PROC] process event journal PASS schema=1 events=6",
         RING3_ENTRY_AC_HARDENING_PATTERNS["default"],
         KERNEL_ROOM_MANAGEMENT_PATTERN,
+        KERNEL_ROOM_BINDING_PATTERN,
         ROOM_SNAPSHOT_LINE,
         "[HEALTH] stability=stable ok=18 degraded=0 failed=0 unknown=2",
         "=== AIOS Kernel Ready ===",
@@ -290,6 +293,104 @@ class NormalBootVerdictTests(unittest.TestCase):
         ]
         after_room.insert(after_room.index(room) + 1, canonical)
         for reordered in (before_entry, after_room):
+            with self.subTest(reordered=reordered):
+                verdict = evaluate(reordered)
+                self.assertFalse(verdict["passed"])
+                self.assertIn(
+                    "TERMINAL_CHECKPOINT_ORDER_INVALID",
+                    reason_codes(verdict),
+                )
+
+    def test_kernel_room_binding_contract_is_exact_and_fails_closed(
+        self,
+    ) -> None:
+        canonical = KERNEL_ROOM_BINDING_PATTERN
+        mutations = (
+            "[ROOM] source binding selftest PASS schema=1",
+            canonical.replace("schema=1", "schema=01", 1),
+            canonical.replace("struct_size=256", "struct_size=255"),
+            canonical.replace("binding_generation=1", "binding_generation=0"),
+            canonical.replace("bindings=1", "bindings=0"),
+            canonical.replace("capacity=2", "capacity=3"),
+            canonical.replace("canonical_namespace=2", "canonical_namespace=3"),
+            canonical.replace("canonical_id=101", "canonical_id=102"),
+            canonical.replace("canonical_kind=1", "canonical_kind=2"),
+            canonical.replace("canonical_generation=1", "canonical_generation=2"),
+            canonical.replace("parent_cell_id=1", "parent_cell_id=2"),
+            canonical.replace("parent_generation=1", "parent_generation=2"),
+            canonical.replace("source_namespace=1", "source_namespace=2"),
+            canonical.replace("source_id=1", "source_id=2"),
+            canonical.replace("source_instance=1", "source_instance=0"),
+            canonical.replace("source_generation=1", "source_generation=2"),
+            canonical.replace("source_kind=1", "source_kind=2"),
+            canonical.replace("source_role=1", "source_role=2"),
+            canonical.replace("kind_match=1", "kind_match=0"),
+            canonical.replace("role_match=1", "role_match=0"),
+            canonical.replace("producer_owned=1", "producer_owned=0"),
+            canonical.replace("copied_read=1", "copied_read=0"),
+            canonical.replace("missing_rejected=1", "missing_rejected=0"),
+            canonical.replace("duplicate_rejected=1", "duplicate_rejected=0"),
+            canonical.replace("orphan_rejected=1", "orphan_rejected=0"),
+            canonical.replace("namespace_rejected=1", "namespace_rejected=0"),
+            canonical.replace("kind_rejected=1", "kind_rejected=0"),
+            canonical.replace("role_rejected=1", "role_rejected=0"),
+            canonical.replace("instance_rejected=1", "instance_rejected=0"),
+            canonical.replace("zero_generation_rejected=1", "zero_generation_rejected=0"),
+            canonical.replace("generation_rollback_rejected=1", "generation_rollback_rejected=0"),
+            canonical.replace("stale_rejected=1", "stale_rejected=0"),
+            canonical.replace("init_order_rejected=1", "init_order_rejected=0"),
+            canonical.replace("schema_rejected=1", "schema_rejected=0"),
+            canonical.replace("overflow_rejected=1", "overflow_rejected=0"),
+            canonical.replace("tail_rejected=1", "tail_rejected=0"),
+            canonical.replace("source_valid=1", "source_valid=0"),
+            canonical.replace("generation_valid=1", "generation_valid=0"),
+            canonical.replace("binding_valid=1", "binding_valid=0"),
+            canonical.replace("observation_only=1", "observation_only=0"),
+            canonical.replace("management_only=1", "management_only=0"),
+            canonical.replace(
+                "source_id=1", "source_id=1 source_id=1", 1
+            ),
+            canonical.replace("selftest PASS", "selftest PASSFAIL"),
+            canonical + " apply_enabled=1",
+            "  " + canonical,
+            '"' + canonical + '"',
+        )
+        for invalid in mutations:
+            with self.subTest(invalid=invalid):
+                lines = [
+                    invalid if line == canonical else line
+                    for line in normal_lines()
+                ]
+                self.assertFalse(evaluate(lines)["passed"])
+
+        missing = [line for line in normal_lines() if line != canonical]
+        self.assertFalse(evaluate(missing)["passed"])
+
+        for extra in (
+            canonical,
+            "[ROOM] source binding selftest PARTIAL schema=1",
+            "[ROOM] source binding",
+        ):
+            with self.subTest(extra=extra):
+                verdict = evaluate([*normal_lines(), extra])
+                self.assertFalse(verdict["passed"])
+                self.assertIn(
+                    "EVIDENCE_RECORD_INVALID", reason_codes(verdict)
+                )
+
+        management = KERNEL_ROOM_MANAGEMENT_PATTERN
+        room = ROOM_SNAPSHOT_LINE
+        before_management = [
+            line for line in normal_lines() if line != canonical
+        ]
+        before_management.insert(
+            before_management.index(management), canonical
+        )
+        after_room = [
+            line for line in normal_lines() if line != canonical
+        ]
+        after_room.insert(after_room.index(room) + 1, canonical)
+        for reordered in (before_management, after_room):
             with self.subTest(reordered=reordered):
                 verdict = evaluate(reordered)
                 self.assertFalse(verdict["passed"])

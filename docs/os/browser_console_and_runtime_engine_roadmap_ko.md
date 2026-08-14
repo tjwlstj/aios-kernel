@@ -2,7 +2,7 @@
 
 > 기준일: 2026-07-25
 > 관리축 재정렬: 2026-08-10
-> 최종 갱신: 2026-08-12 (Linux-hosted 기본 delivery와 W축 분리)
+> 최종 갱신: 2026-08-15 (native K2-a 관측면과 W축 정렬)
 >
 > 상태: 설계 정본. 아래 기능은 별도 표시가 없는 한 `PLANNED` 또는 `RESEARCH`다.
 
@@ -34,13 +34,14 @@ AIOS를 브라우저에서 관찰하고 제어하는 가까운 경로와, 장기
 |---|---|---|
 | QEMU 부팅과 COM1 로그 | `CURRENT` | testkit이 ISO를 부팅하고 시리얼 로그를 수집한다 |
 | 시리얼 셸 | `CURRENT` | host가 `ping`, `state *`, `reboot`를 송수신할 수 있다 |
-| 기계 판독 상태 | `CURRENT` | `[STATE] topic key=value`, `state room/resource/autonomy`의 versioned read-only 표면 |
+| 기계 판독 상태 | `CURRENT` | `[STATE] topic key=value`, `state room/binding/resource/autonomy`의 versioned read-only 표면 |
 | Kernel Room K1 계층 | `CURRENT` | 1024B bounded Cell 1/Node 1/NodeBit 2 registry와 strict boot/shell 검증 |
+| Kernel Room native K2-a 결속 | `CURRENT` | 별도 256B snapshot에서 Node 101과 producer-owned SLM MAIN source 결속; exact boot/summary/`state binding` 검증 |
 | 셸 종료 판정 | `CURRENT` | reader drain, reboot ack, clean QEMU exit를 검증한다 |
 | 커널 네트워크 | `PARTIAL` | e1000 bootstrap/smoke는 있으나 TCP/IP·소켓·HTTP 서버는 없다 |
 | 장기 실행 유저스페이스 | `PLANNED` | 현재 ring3는 PID 1→PID 2 정적 ELF의 bounded 순차 동기 실행이며, 선점 서비스 모델은 아니다 |
 | 브라우저 콘솔·게이트웨이 | `PLANNED` | 아직 구현 파일이나 정규 검증 경로가 없다 |
-| AIOS 자체 런타임 엔진 | `PLANNED` | K1은 완료됐으며, 남은 K2~K5 관리·권한, M3~M5 실행·I/O, C1/C2 영속 기반 이후의 기능이다 |
+| AIOS 자체 런타임 엔진 | `PLANNED` | K1과 bounded native K2-a는 완료됐으며, 남은 K2 lifecycle·K3~K5 관리·권한, M3~M5 실행·I/O, C1/C2 영속 기반 이후의 기능이다 |
 
 따라서 첫 브라우저 표면은 커널 네트워크 서버가 아니라 기존 COM1 계약을
 호스트에서 WebSocket으로 중계하는 방식이 맞다.

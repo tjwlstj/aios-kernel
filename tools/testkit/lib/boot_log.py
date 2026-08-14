@@ -44,6 +44,7 @@ CHECKPOINT_PATTERNS = {
     "process_event_journal": "[PROC] process event journal PASS",
     "ring3_entry_ac_hardening": "[SEC] ring3 entry AC hardening PASS",
     "kernel_room_management": "[ROOM] management hierarchy selftest PASS",
+    "kernel_room_binding": "[ROOM] source binding selftest PASS",
     "kernel_room": "[ROOM] snapshot stability=",
     "health": "[HEALTH] stability=",
     "ready": "AIOS Kernel Ready",
@@ -300,6 +301,95 @@ KERNEL_ROOM_MANAGEMENT_EXPECTED = {
     "management_only": 1,
 }
 KERNEL_ROOM_MANAGEMENT_FIELDS = tuple(KERNEL_ROOM_MANAGEMENT_EXPECTED)
+
+KERNEL_ROOM_BINDING_PREFIX = "[ROOM] source binding"
+KERNEL_ROOM_BINDING_UINT_RE = r"(?:0|[1-9][0-9]{0,19})"
+KERNEL_ROOM_BINDING_RE = re.compile(
+    rf"^\[ROOM\] source binding selftest (?P<status>PASS) "
+    rf"schema=(?P<schema>{KERNEL_ROOM_BINDING_UINT_RE}) "
+    rf"struct_size=(?P<struct_size>{KERNEL_ROOM_BINDING_UINT_RE}) "
+    rf"binding_generation=(?P<binding_generation>{KERNEL_ROOM_BINDING_UINT_RE}) "
+    rf"bindings=(?P<bindings>{KERNEL_ROOM_BINDING_UINT_RE}) "
+    rf"capacity=(?P<capacity>{KERNEL_ROOM_BINDING_UINT_RE}) "
+    rf"canonical_namespace=(?P<canonical_namespace>{KERNEL_ROOM_BINDING_UINT_RE}) "
+    rf"canonical_id=(?P<canonical_id>{KERNEL_ROOM_BINDING_UINT_RE}) "
+    rf"canonical_kind=(?P<canonical_kind>{KERNEL_ROOM_BINDING_UINT_RE}) "
+    rf"canonical_generation=(?P<canonical_generation>{KERNEL_ROOM_BINDING_UINT_RE}) "
+    rf"parent_cell_id=(?P<parent_cell_id>{KERNEL_ROOM_BINDING_UINT_RE}) "
+    rf"parent_generation=(?P<parent_generation>{KERNEL_ROOM_BINDING_UINT_RE}) "
+    rf"source_namespace=(?P<source_namespace>{KERNEL_ROOM_BINDING_UINT_RE}) "
+    rf"source_id=(?P<source_id>{KERNEL_ROOM_BINDING_UINT_RE}) "
+    rf"source_instance=(?P<source_instance>{KERNEL_ROOM_BINDING_UINT_RE}) "
+    rf"source_generation=(?P<source_generation>{KERNEL_ROOM_BINDING_UINT_RE}) "
+    rf"source_kind=(?P<source_kind>{KERNEL_ROOM_BINDING_UINT_RE}) "
+    rf"source_role=(?P<source_role>{KERNEL_ROOM_BINDING_UINT_RE}) "
+    rf"kind_match=(?P<kind_match>{KERNEL_ROOM_BINDING_UINT_RE}) "
+    rf"role_match=(?P<role_match>{KERNEL_ROOM_BINDING_UINT_RE}) "
+    rf"producer_owned=(?P<producer_owned>{KERNEL_ROOM_BINDING_UINT_RE}) "
+    rf"copied_read=(?P<copied_read>{KERNEL_ROOM_BINDING_UINT_RE}) "
+    rf"missing_rejected=(?P<missing_rejected>{KERNEL_ROOM_BINDING_UINT_RE}) "
+    rf"duplicate_rejected=(?P<duplicate_rejected>{KERNEL_ROOM_BINDING_UINT_RE}) "
+    rf"orphan_rejected=(?P<orphan_rejected>{KERNEL_ROOM_BINDING_UINT_RE}) "
+    rf"namespace_rejected=(?P<namespace_rejected>{KERNEL_ROOM_BINDING_UINT_RE}) "
+    rf"kind_rejected=(?P<kind_rejected>{KERNEL_ROOM_BINDING_UINT_RE}) "
+    rf"role_rejected=(?P<role_rejected>{KERNEL_ROOM_BINDING_UINT_RE}) "
+    rf"instance_rejected=(?P<instance_rejected>{KERNEL_ROOM_BINDING_UINT_RE}) "
+    rf"zero_generation_rejected=(?P<zero_generation_rejected>{KERNEL_ROOM_BINDING_UINT_RE}) "
+    rf"generation_rollback_rejected=(?P<generation_rollback_rejected>{KERNEL_ROOM_BINDING_UINT_RE}) "
+    rf"stale_rejected=(?P<stale_rejected>{KERNEL_ROOM_BINDING_UINT_RE}) "
+    rf"init_order_rejected=(?P<init_order_rejected>{KERNEL_ROOM_BINDING_UINT_RE}) "
+    rf"schema_rejected=(?P<schema_rejected>{KERNEL_ROOM_BINDING_UINT_RE}) "
+    rf"overflow_rejected=(?P<overflow_rejected>{KERNEL_ROOM_BINDING_UINT_RE}) "
+    rf"tail_rejected=(?P<tail_rejected>{KERNEL_ROOM_BINDING_UINT_RE}) "
+    rf"source_valid=(?P<source_valid>{KERNEL_ROOM_BINDING_UINT_RE}) "
+    rf"generation_valid=(?P<generation_valid>{KERNEL_ROOM_BINDING_UINT_RE}) "
+    rf"binding_valid=(?P<binding_valid>{KERNEL_ROOM_BINDING_UINT_RE}) "
+    rf"observation_only=(?P<observation_only>{KERNEL_ROOM_BINDING_UINT_RE}) "
+    rf"management_only=(?P<management_only>{KERNEL_ROOM_BINDING_UINT_RE})$"
+)
+KERNEL_ROOM_BINDING_EXPECTED = {
+    "schema": 1,
+    "struct_size": 256,
+    "binding_generation": 1,
+    "bindings": 1,
+    "capacity": 2,
+    "canonical_namespace": 2,
+    "canonical_id": 101,
+    "canonical_kind": 1,
+    "canonical_generation": 1,
+    "parent_cell_id": 1,
+    "parent_generation": 1,
+    "source_namespace": 1,
+    "source_id": 1,
+    "source_instance": 1,
+    "source_generation": 1,
+    "source_kind": 1,
+    "source_role": 1,
+    "kind_match": 1,
+    "role_match": 1,
+    "producer_owned": 1,
+    "copied_read": 1,
+    "missing_rejected": 1,
+    "duplicate_rejected": 1,
+    "orphan_rejected": 1,
+    "namespace_rejected": 1,
+    "kind_rejected": 1,
+    "role_rejected": 1,
+    "instance_rejected": 1,
+    "zero_generation_rejected": 1,
+    "generation_rollback_rejected": 1,
+    "stale_rejected": 1,
+    "init_order_rejected": 1,
+    "schema_rejected": 1,
+    "overflow_rejected": 1,
+    "tail_rejected": 1,
+    "source_valid": 1,
+    "generation_valid": 1,
+    "binding_valid": 1,
+    "observation_only": 1,
+    "management_only": 1,
+}
+KERNEL_ROOM_BINDING_FIELDS = tuple(KERNEL_ROOM_BINDING_EXPECTED)
 
 
 def room_snapshot_semantics(
@@ -573,6 +663,12 @@ def parse_boot_log_text(
     management_matches = _find_all_matches(
         lines, KERNEL_ROOM_MANAGEMENT_RE
     )
+    binding_prefix_records = [
+        (index, line)
+        for index, line in enumerate(lines, start=1)
+        if line.startswith(KERNEL_ROOM_BINDING_PREFIX)
+    ]
+    binding_matches = _find_all_matches(lines, KERNEL_ROOM_BINDING_RE)
     security: dict[str, object] = {
         "ready": False,
         "requested_cpu_profile": cpu_profile,
@@ -1068,6 +1164,7 @@ def parse_boot_log_text(
             "expected": [
                 "ring3_entry_ac_hardening",
                 "kernel_room_management",
+                "kernel_room_binding",
                 "kernel_room",
             ],
             "ring3_entry_ac_hardening_line": (
@@ -1076,6 +1173,11 @@ def parse_boot_log_text(
             "kernel_room_management_line": (
                 management_matches[0][0]
                 if len(management_matches) == 1
+                else None
+            ),
+            "kernel_room_binding_line": (
+                binding_matches[0][0]
+                if len(binding_matches) == 1
                 else None
             ),
             "kernel_room_line": (
@@ -1095,10 +1197,14 @@ def parse_boot_log_text(
         room_line = kernel_room_management["order"][  # type: ignore[index]
             "kernel_room_line"
         ]
+        binding_line = kernel_room_management["order"][  # type: ignore[index]
+            "kernel_room_binding_line"
+        ]
         order_passed = (
             isinstance(entry_line, int)
+            and isinstance(binding_line, int)
             and isinstance(room_line, int)
-            and entry_line < index < room_line
+            and entry_line < index < binding_line < room_line
         )
         semantic_ready = (
             match.group("status") == "PASS"
@@ -1109,6 +1215,78 @@ def parse_boot_log_text(
             {
                 "ready": (
                     len(management_prefix_records) == 1
+                    and semantic_ready
+                    and order_passed
+                ),
+                "line": index,
+                "text": line,
+                "status": match.group("status"),
+                "semantic_ready": semantic_ready,
+                **fields,
+            }
+        )
+
+    management_ready = bool(kernel_room_management.get("ready"))
+    kernel_room_binding: dict[str, object] = {
+        "ready": False,
+        "checkpoint_seen": checkpoints["kernel_room_binding"]["seen"],
+        "record_count": len(binding_prefix_records),
+        "fullmatch_count": len(binding_matches),
+        "duplicate": len(binding_prefix_records) > 1,
+        "order": {
+            "expected": [
+                "ring3_entry_ac_hardening",
+                "kernel_room_management",
+                "kernel_room_binding",
+                "kernel_room",
+            ],
+            "ring3_entry_ac_hardening_line": (
+                entry_matches[0][0] if len(entry_matches) == 1 else None
+            ),
+            "kernel_room_management_line": (
+                management_matches[0][0]
+                if len(management_matches) == 1
+                else None
+            ),
+            "kernel_room_binding_line": (
+                binding_matches[0][0]
+                if len(binding_matches) == 1
+                else None
+            ),
+            "kernel_room_line": (
+                room_matches[0][0] if len(room_matches) == 1 else None
+            ),
+            "passed": False,
+        },
+    }
+    if len(binding_matches) == 1:
+        index, line, match = binding_matches[0]
+        fields = _int_groupdict(match, *KERNEL_ROOM_BINDING_FIELDS)
+        entry_line = kernel_room_binding["order"][  # type: ignore[index]
+            "ring3_entry_ac_hardening_line"
+        ]
+        management_line = kernel_room_binding["order"][  # type: ignore[index]
+            "kernel_room_management_line"
+        ]
+        room_line = kernel_room_binding["order"][  # type: ignore[index]
+            "kernel_room_line"
+        ]
+        order_passed = (
+            isinstance(entry_line, int)
+            and isinstance(management_line, int)
+            and isinstance(room_line, int)
+            and entry_line < management_line < index < room_line
+        )
+        semantic_ready = (
+            match.group("status") == "PASS"
+            and fields == KERNEL_ROOM_BINDING_EXPECTED
+        )
+        kernel_room_binding["order"]["passed"] = order_passed  # type: ignore[index]
+        kernel_room_binding.update(
+            {
+                "ready": (
+                    len(binding_prefix_records) == 1
+                    and management_ready
                     and semantic_ready
                     and order_passed
                 ),
@@ -1297,6 +1475,7 @@ def parse_boot_log_text(
         "process_event_journal": process_event_journal,
         "security": security,
         "kernel_room_management": kernel_room_management,
+        "kernel_room_binding": kernel_room_binding,
         "kernel_room": kernel_room,
         "shell": shell_info,
         "nodebit": nodebit_info,

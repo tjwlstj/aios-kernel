@@ -79,7 +79,7 @@ CPU 프로파일은 smoke profile과 직교한다.
     primary process stack, 두 process 순차 실행 `process_pair`, process-owned
     trap evidence `process_trap_snapshot`, lifecycle evidence `process_event_journal`,
     CPU profile과 entry-AC를 결속한 `security`, K1 `kernel_room_management`,
-    legacy Kernel Room snapshot,
+    native K2-a `kernel_room_binding`, legacy Kernel Room snapshot,
     controller state, network/USB/storage bootstrap selection, SLM seed 결과,
     AI Resource Ledger와 AI Pressure Tracker schema/selftest를 저장
   - `process_trap_snapshot.ready`는 `record_count`(prefix 행 수)=1,
@@ -92,6 +92,9 @@ CPU 프로파일은 smoke profile과 직교한다.
     정확히 하나이며,
     `feature < entry-AC < legacy ROOM` 순서와
     요청한 `default`/`max-smap`의 exact 값이 맞아 `profile_match=true`일 때만 참
+  - `kernel_room_binding.ready`는 K1/K2 prefix/fullmatch가 각각 정확히 하나이고
+    typed semantic 값이 exact이며 `entry-AC < K1 management < K2 binding < legacy
+    ROOM` 순서일 때만 참
 
 공통 smoke marker:
 
@@ -104,6 +107,7 @@ CPU 프로파일은 smoke profile과 직교한다.
 - `[PROC] process event journal PASS schema=1 events=6 lifecycle=4 captures=2 seqs=1,2,3,4,5,6 kinds=1,2,3,1,2,3 ... from_pids=0,1,1,0,2,2 to_pids=1,1,0,2,2,0 ... dropped=0 overflow=0 evidence_only=1 switch_events=0 resume_ready=0`
 - `[SEC] ring3 entry AC hardening PASS schema=1 smap_supported=... smap=... gate_active=... common_entries=2 common_saved_ac=2 ... common_post_ac0=2 int80_entries=6 int80_saved_ac=4 ... int80_post_ac0=6 gate_skips=... gate_mismatch=0`
 - `[ROOM] management hierarchy selftest PASS schema=1 struct_size=1024 generation=1 cells=1 nodes=1 bound_nodes=1 nodebits=2 bound_nodebits=2 ... overflow_rejected=1 tail_rejected=1 observation_only=1 management_only=1`
+- `[ROOM] source binding selftest PASS schema=1 struct_size=256 binding_generation=1 bindings=1 capacity=2 canonical_namespace=2 canonical_id=101 ... producer_owned=1 copied_read=1 ... binding_valid=1 observation_only=1 management_only=1`
 - `[RESOURCE] ledger selftest PASS schema=1 kinds=5 units=2 entries=5 ... owners_unattributed=1 observation_only=1`
 - `[PRESSURE] tracker selftest PASS schema=1 planes=3 max_levels=4 active_levels=2 ... observation_only=1`
 - `[ROOM] snapshot stability=...`
@@ -122,9 +126,11 @@ owner/CR3/`rsp0`/IF/frame reference, `dropped=0 overflow=0 evidence_only=1
 switch_events=0 resume_ready=0`까지 정본과 같아야 한다. 임의 필드를 붙이거나 같은
 레코드를 중복해도 PASS하지 않는다. owner lifecycle `0→1→0→2→0`은 순차 bootstrap
 관찰이며 실제 context resume, CPU switch, A→B→A, preemption은 아직 구현 범위가 아니다.
-K1 management marker도 exact-one full row이며 entry-AC 뒤, legacy ROOM snapshot 앞에
-있어야 한다. structured `kernel_room_management.ready`는 schema/size/count/binding,
-source/generation validity, 모든 negative rejection과 순서를 함께 만족할 때만 참이다.
+K1 management marker와 native K2-a binding marker도 각각 exact-one full row다. 순서는
+`entry-AC < K1 management < K2 binding < legacy ROOM`이어야 한다. structured
+`kernel_room_management.ready`와 `kernel_room_binding.ready`는 각 schema/size/count,
+typed identity, source/generation validity, 모든 negative rejection과 순서를 함께
+만족할 때만 참이다. checked-in compact inventory baseline은 이 조각에서 바뀌지 않는다.
 
 부팅 매트릭스:
 
@@ -148,7 +154,7 @@ source/generation validity, 모든 negative rejection과 순서를 함께 만족
 
 - `shell`
   - QEMU 시리얼을 stdio에 붙여 "실행 중 커널"과 명령/응답으로 대화하는 레인
-  - `[SHELL] Interactive shell started` 대기 → `ping`, `state list/health/room/mem/sched/nodes/pipeline/resource/pressure/slm/autonomy/user/sec/time/version`,
+  - `[SHELL] Interactive shell started` 대기 → `ping`, `state list/health/room/binding/mem/sched/nodes/pipeline/resource/pressure/slm/autonomy/user/sec/time/version`,
     미지 토픽 오류 응답까지 순차 검증 → `reboot`로 클린 종료 (`-no-reboot` 덕에 QEMU exit)
   - 응답 프로토콜: 한 줄 `[STATE] <topic> key=value ...` (값에 공백 없음).
     리스트형 토픽(`state nodes`)은 요약 한 줄 + 항목당 `[STATE] node id=...` 한 줄
@@ -156,6 +162,9 @@ source/generation validity, 모든 negative rejection과 순서를 함께 만족
   - `state room`은 schema 1/1024B, capacity 2/4/8, Cell/Node/NodeBit count 1/1/2,
     exact IDs/parents, source/generation validity와 zero negative counters를
     `observation_only=1 management_only=1` canonical full row로 검증
+  - `state binding`은 schema 1/256B, Node 101/Cell 1과 SLM MAIN source의 typed
+    identity·instance·generation·validity를 `observation_only=1 management_only=1`
+    canonical full row로 검증
   - `state pressure`는 schema 1, observation-only/gate 분리 계약, 세 pressure plane과 raw queue/fabric/NodeBit 증거를 한 줄로 노출
   - `state user`는 trap capture와 process-owned snapshot의 `saved_*` mirror를 같은
     레코드에서 검증하며 `saved_resume_ready=0`을 요구한다. 같은 record의 journal

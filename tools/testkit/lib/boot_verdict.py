@@ -59,6 +59,10 @@ TERMINAL_CHECKPOINTS: tuple[tuple[str, str], ...] = (
         "kernel_room_management",
         "[ROOM] management hierarchy selftest PASS",
     ),
+    (
+        "kernel_room_binding",
+        "[ROOM] source binding selftest PASS",
+    ),
     ("kernel_room", "[ROOM] snapshot stability=stable"),
     ("health", "[HEALTH] stability="),
     ("kernel_ready", "=== AIOS Kernel Ready ==="),
@@ -89,12 +93,17 @@ EXACT_REQUIRED_RECORDS = (
         "[ROOM] management hierarchy selftest PASS ",
         "kernel_room_management",
     ),
+    (
+        "[ROOM] source binding selftest PASS ",
+        "kernel_room_binding",
+    ),
 )
 
 PROCESS_EVENT_JOURNAL_FAMILY_PREFIX = "[PROC] process event journal "
 CPU_SECURITY_FAMILY_PREFIX = "[SEC] nx="
 RING3_ENTRY_AC_HARDENING_FAMILY_PREFIX = "[SEC] ring3 entry AC hardening "
 KERNEL_ROOM_MANAGEMENT_FAMILY_PREFIX = "[ROOM] management hierarchy"
+KERNEL_ROOM_BINDING_FAMILY_PREFIX = "[ROOM] source binding"
 ROOM_SNAPSHOT_FAMILY_PREFIX = "[ROOM] snapshot "
 SECURITY_CHECKPOINT_ORDER = (
     "cpu_security",
@@ -327,6 +336,40 @@ def _invalid_kernel_room_management_family_records(
             "line": row["line"],
             "text": row["text"],
             "record": "kernel_room_management",
+        }
+        for row in family_rows
+        if row["text"] != canonical or len(family_rows) != 1
+    ]
+
+
+def _invalid_kernel_room_binding_family_records(
+    lines: list[str],
+    required_occurrences: Mapping[str, list[dict[str, object]]],
+) -> list[dict[str, object]]:
+    """Require one exact source-binding record and no family siblings."""
+
+    canonical_patterns = [
+        pattern
+        for pattern in required_occurrences
+        if pattern.startswith("[ROOM] source binding selftest PASS ")
+    ]
+    if not canonical_patterns:
+        return []
+
+    canonical = canonical_patterns[0]
+    family_rows = [
+        {"line": index, "text": line}
+        for index, line in enumerate(lines, start=1)
+        if line.startswith(KERNEL_ROOM_BINDING_FAMILY_PREFIX)
+    ]
+    if len(family_rows) == 1 and family_rows[0]["text"] == canonical:
+        return []
+
+    return [
+        {
+            "line": row["line"],
+            "text": row["text"],
+            "record": "kernel_room_binding",
         }
         for row in family_rows
         if row["text"] != canonical or len(family_rows) != 1
@@ -686,6 +729,11 @@ def evaluate_normal_boot(
     )
     invalid_evidence_records.extend(
         _invalid_kernel_room_management_family_records(
+            lines, required_occurrences
+        )
+    )
+    invalid_evidence_records.extend(
+        _invalid_kernel_room_binding_family_records(
             lines, required_occurrences
         )
     )

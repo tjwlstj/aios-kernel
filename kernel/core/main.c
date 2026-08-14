@@ -14,6 +14,7 @@
 #include <kernel/user_exec.h>
 #include <kernel/kernel_room.h>
 #include <kernel/kernel_room_management.h>
+#include <kernel/kernel_room_source_binding.h>
 #include <kernel/selftest.h>
 #include <kernel/time.h>
 #include <kernel/user_mode.h>
@@ -164,6 +165,17 @@ void kernel_main(uint64_t multiboot_magic, uint64_t multiboot_info) {
         kernel_health_mark(KERNEL_SUBSYSTEM_SELFTEST,
             KERNEL_HEALTH_FAILED, user_status);
         kernel_panic("Kernel Room management hierarchy selftest failed");
+    }
+
+    /*
+     * Bind the canonical K1 AI_SERVICE Node to the producer-owned SLM MAIN
+     * source through a separate bounded K2-a snapshot. K1 remains immutable.
+     */
+    user_status = kernel_room_source_binding_init();
+    if (user_status != AIOS_OK) {
+        kernel_health_mark(KERNEL_SUBSYSTEM_SELFTEST,
+            KERNEL_HEALTH_FAILED, user_status);
+        kernel_panic("Kernel Room source binding selftest failed");
     }
 
     kernel_room_dump();

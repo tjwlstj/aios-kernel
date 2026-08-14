@@ -1,7 +1,7 @@
 # AIOS 검증 도구 진화 설계
 
 작성일: 2026-07-15  
-최종 갱신: 2026-08-11 (K1 Kernel Room hierarchy v0 exact/fail-closed 계약)
+최종 갱신: 2026-08-15 (native K2-a binding exact/fail-closed 계약)
 기준 시작 체크포인트: `463a8b9`
 
 ## 1. 문서 역할
@@ -96,6 +96,11 @@ CI exit status + build artifacts
   2/4/8, bootstrap count 1/1/2, exact parent/source/generation, zero tail과
   duplicate/orphan/unknown/stale/overflow rejection. 전체 조각은
   `observation_only=1 management_only=1`이며 apply/authorize edge가 없다.
+- native K2-a source binding: producer-owned 64B SLM MAIN source copy와 K1 ABI에
+  독립적인 schema 1/256B binding snapshot. canonical/binding/source generation을
+  분리하고 init-order, missing, schema/malformed, overflow, duplicate, orphan,
+  namespace/kind/role/instance mismatch, zero/rollback/stale generation, non-zero tail을
+  fail-closed로 거부한다. boot-local immutable oracle이며 refresh/apply edge가 없다.
 - health registry, Kernel Room snapshot, panic/exception serial output
 - C structure/enum static asserts, linker layout assert, stack protector
 
@@ -121,10 +126,16 @@ CI exit status + build artifacts
 - K1 exact `[ROOM] management hierarchy selftest PASS ... tail_rejected=1`과
   structured `kernel_room_management`, `state room` canonical full row. missing,
   duplicate, truncation, extension, field drift와 family sibling을 fail-closed로 거부
+- K2-a exact `[ROOM] source binding selftest PASS ... tail_rejected=1`과 structured
+  `kernel_room_binding`, `state binding` canonical full row. typed identity, three
+  generations, producer ownership/copied read, named rejection, duplicate/truncation/
+  extension/family sibling을 Python과 PowerShell에서 fail-closed로 거부
 - structured boot-summary `security`의 feature/entry record count, fullmatch,
   ASCII uint32 anchored full-row·안정성 의미 검사를 통과한 ROOM exact-one,
   `feature < entry-AC < legacy ROOM` 순서, requested profile,
   `profile_match`, `ready` 결속
+- 별도 `kernel_room_binding.ready`의 exact-one semantic과
+  `entry-AC < K1 management < K2 binding < legacy ROOM` 순서 결속
 - Linux CI의 기본 CPU all/shell에 더해 `max-smap` minimal kernel smoke와
   `max-smap` shell lane
 - `process_trap_snapshot.ready`는 `record_count`(prefix 행 수)=1,
@@ -180,8 +191,9 @@ CI exit status + build artifacts
   5개 aggregate row다. cross-source snapshot은 single-BSP best-effort다.
   `SYS_INFO_RESOURCE=0x706`과 `state resource`는 CURRENT지만 per-owner attribution,
   공통 denial accounting, quota/apply는 아직 없다.
-- K1 hierarchy는 고정 bootstrap source 하나만 검증한다. external subsystem adapter,
-  live lifecycle/reconciliation, K2 source binding, K3 legacy NodeBit projection은 없다.
+- K1 hierarchy와 native K2-a oracle은 고정 bootstrap Node 101 ↔ boot-local SLM MAIN
+  binding 하나만 검증한다. source exit/recreate, refresh/rebind, live
+  lifecycle/reconciliation, hosted source, K3 legacy NodeBit projection은 없다.
 
 ## 6. 정상 부트 판정 계약 v1
 
@@ -234,6 +246,7 @@ CI exit status + build artifacts
 [SEC] nx=... smap_supported=... smap=...
 [SEC] ring3 entry AC hardening PASS
 [ROOM] management hierarchy selftest PASS schema=1 struct_size=1024 generation=1 cells=1 nodes=1 bound_nodes=1 nodebits=2 bound_nodebits=2 source_valid=1 generation_valid=1 duplicate_rejected=1 orphan_rejected=1 unknown_rejected=1 stale_rejected=1 overflow_rejected=1 tail_rejected=1 observation_only=1 management_only=1
+[ROOM] source binding selftest PASS schema=1 struct_size=256 binding_generation=1 bindings=1 capacity=2 canonical_namespace=2 canonical_id=101 canonical_kind=1 canonical_generation=1 parent_cell_id=1 parent_generation=1 source_namespace=1 source_id=1 source_instance=1 source_generation=1 source_kind=1 source_role=1 kind_match=1 role_match=1 producer_owned=1 copied_read=1 missing_rejected=1 duplicate_rejected=1 orphan_rejected=1 namespace_rejected=1 kind_rejected=1 role_rejected=1 instance_rejected=1 zero_generation_rejected=1 generation_rollback_rejected=1 stale_rejected=1 init_order_rejected=1 schema_rejected=1 overflow_rejected=1 tail_rejected=1 source_valid=1 generation_valid=1 binding_valid=1 observation_only=1 management_only=1
 [ROOM] snapshot stability=stable
 [HEALTH] stability=stable
 === AIOS Kernel Ready ===
@@ -449,8 +462,8 @@ kernel/build/test-runs/<run-id>/<profile>/
 구현 근거:
 
 - `tools/testkit/lib/boot_verdict.py`, `baseline_guard.py`
-- `tools/testkit/tests/` host unit test 84개
-- PowerShell 직접 verdict host selftest 101개와 CI 선행 gate
+- `tools/testkit/tests/` host unit test 90개
+- PowerShell 직접 verdict host selftest 131개와 CI 선행 gate
 - Resource Ledger exact marker/structured summary와 missing/truncated/
   observation-only/apply-capable 상충 반례
 - pressure marker도 같은 exact-record 규칙으로 강화해 trailing apply 필드를 거부
@@ -468,11 +481,14 @@ kernel/build/test-runs/<run-id>/<profile>/
 - K1 hierarchy marker의 exact-once/full-row 판정, structured
   `kernel_room_management`, malformed/extended/duplicate/순서/negative-proof 반례,
   shell `state room` canonical full-row mirror
-- 2026-08-11 K1 정규 재검증: default full/minimal/storage-only와 max-smap minimal
-  strict kernel summary export, default/max-smap strict shell 17/17 PASS
-- Python boot matrix의 QEMU `full/minimal/storage-only` 통과와 PowerShell 직접
-  verdict host selftest 101개 통과
-- shell 17개 교환(`state room`, `state resource`, `state pressure`, `state autonomy` 포함)과 `reader_drained=true reboot_ack=true clean_exit=true exit_code=0`,
+- native K2-a marker의 exact-once/full-row 판정, structured `kernel_room_binding`,
+  malformed/extended/duplicate/order/typed identity/generation/negative-proof 반례,
+  shell `state binding` canonical full-row mirror
+- 2026-08-15 K1/K2-a 정규 재검증: default full/minimal/storage-only와 max-smap minimal
+  strict kernel summary export, default/max-smap strict shell 18/18 PASS
+- Python boot matrix의 QEMU `full/minimal/storage-only` 통과와 Python host unit 90개,
+  PowerShell 직접 verdict host selftest 131개 통과
+- shell 18개 교환(`state room`, `state binding`, `state resource`, `state pressure`, `state autonomy` 포함)과 `reader_drained=true reboot_ack=true clean_exit=true exit_code=0`,
   `termination.reason=guest-reboot-exit`, 전체 transcript boot verdict PASS
 - strict boot inventory 3프로필 baseline 일치
 

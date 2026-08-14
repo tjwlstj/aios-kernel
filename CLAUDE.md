@@ -66,7 +66,7 @@ source-only, and schema v1 keeps `code_import=0`.
 The kernel shell reads from both the PS/2 keyboard and COM1 serial, so QEMU
 `-serial stdio` gives a scriptable REPL into the running kernel. Machine-oriented
 commands answer with single-line `[STATE] <topic> key=value...` responses:
-`ping`, `state list|health|mem|sched|nodes|pipeline|resource|pressure|slm|autonomy|user|sec|time|version`. List-shaped topics
+`ping`, `state list|health|room|binding|mem|sched|nodes|pipeline|resource|pressure|slm|autonomy|user|sec|time|version`. List-shaped topics
 (`state nodes`) emit one summary line plus one `[STATE] node id=...` line per item;
 every line still follows the key=value convention. Core pipeline/node/SLM/resource
 observation surfaces are mirrored as userspace syscalls (`SYS_PIPE_STATS`,
@@ -101,11 +101,13 @@ bare-metal x86_64 reference/proof kernel; the Linux-hosted backend remains
 
 The canonical product-management hierarchy is **Kernel Room → Cell → Node →
 NodeBit**. Overall Kernel Room topology maturity is `PARTIAL` because its
-aggregate substrate remains alongside a bounded `CURRENT` K1 hierarchy registry. The K1
+aggregate substrate remains alongside a bounded `CURRENT` K1 hierarchy registry and a
+bounded `CURRENT` native K2-a source-binding oracle. The K1
 registry owns one bootstrap Cell, one explicitly bound declared Node, and two
-typed child NodeBits in a 1024-byte management-only snapshot. It does not own
-external subsystem adapters, live lifecycle/reconciliation, attribution, or
-authorization; those remain K2+ `PLANNED`.
+typed child NodeBits in a 1024-byte management-only snapshot. K2-a keeps that ABI
+unchanged and binds Node 101 to the producer-owned SLM MAIN source through a
+separate 256-byte snapshot. Full K2 lifecycle/reconciliation remains `PARTIAL`;
+hosted sources, attribution, and authorization remain `PLANNED`.
 The existing Memory Fabric, SLM, runtime NodeBit,
 pipeline, scheduler, PID, and ring IDs are independent namespaces. Never infer
 identity from equal integers; introduce an explicit namespace, binding, and
@@ -176,10 +178,13 @@ kernel/boot/boot.asm  (Multiboot2 entry, GDT, paging, SSE/AVX setup, long mode)
 - `ai_resource.c` — schema 1 observation-only aggregate ledger. It exposes five append-only rows (heap bytes, tensor bytes, active Memory Fabric windows, registered inference rings, runnable scheduler tasks) through an internal fixed snapshot. Owners remain `NONE/UNATTRIBUTED`; only tensor has a source-native high-water value. Read it via the read-only `SYS_INFO_RESOURCE` (0x706) syscall or the shell's `state resource`; owner attribution and any quota, denial accounting, reserve, or apply edge still do not exist.
 - `ai_pressure.c` — schema 1 observation-only pressure tracker. It reads exact workload queue occupancy, exact Memory Fabric reader/writer overlap, and cumulative NodeBit denial counters into a fixed-point system→plane snapshot. `max_levels=4` is expansion capacity; only `active_levels=2` is current. Gate bitmap eligibility remains a separate intersection, and no scheduler apply/migration edge consumes this snapshot yet. Read it with `state pressure`.
 
-**Kernel Room (`kernel/core/kernel_room.c`, `kernel/core/kernel_room_management.c`)**
+**Kernel Room (`kernel/core/kernel_room.c`, `kernel/core/kernel_room_management.c`, `kernel/core/kernel_room_source_binding.c`)**
 - `kernel_room_snapshot_read()` keeps the legacy aggregate subsystem/health/fabric/scheduler/ring/runtime-NodeBit view.
 - `kernel_room_management_snapshot_read()` exposes the separate schema-1, 1024-byte K1 registry: capacity Cell 2 / Node 4 / NodeBit 8, with one bootstrap Cell (ID 1), one exact-bound declared Node (ID 101), and two parent-bound typed NodeBits (IDs 1001/1002). It is immutable after init and remains `observation_only=1 management_only=1`.
 - `kernel_room_management_snapshot_valid()` checks schema/size, typed namespace, explicit parents, source/generation validity, zero tail capacity, and rejects duplicate/orphan/unknown/stale/overflow fixtures. There is no legacy source projection or apply/authorize edge.
+- `slm_agent_source_snapshot_read()` exposes a separate 64-byte copied snapshot for the exact-one active/persistent SLM MAIN source. Its boot-local instance/generation are producer-owned and do not reuse policy generation, timestamps, or PID.
+- `kernel_room_source_binding_snapshot_read()` exposes the separate schema-1, 256-byte K2-a binding registry. It binds canonical Node 101/Cell 1 generations to the typed SLM MAIN `AI_SERVICE` source, separates canonical/binding/source generations, and remains `observation_only=1 management_only=1`.
+- K2-a rejects init-order, missing, schema/malformed, overflow, duplicate, orphan, namespace/kind/role/instance mismatch, zero/regressed/stale generation, and non-zero tail fixtures. Boot evidence, structured `kernel_room_binding`, and `state binding` are exact records; refresh/reconcile and hosted sources are not implemented.
 - 9 gate descriptors mapping syscall ranges to risk classifications (OBSERVE / BOUNDED_CONTROL / BOUNDED_DATA / IO_PATH).
 - Gate count must match the enum exactly, and gate ranges must cover every defined syscall number — extend the covering gate's `syscall_end` when adding syscalls.
 - The gate table is **classification metadata** summarized by `kernel_room_dump()` alongside the aggregate ROOM snapshot; `kernel_room_snapshot_read()` carries only `gate_count`, and the dispatcher does not check descriptors per call. Pipeline runtime NodeBit checks, autonomy safe-mode, and health flags are separate narrow controls, not a universal Kernel Room enforcement path. Axis Gate authorize/enforcement is `PLANNED` only after canonical hierarchy binding, principal, ownership, and generation exist.
@@ -223,6 +228,7 @@ A successful boot must emit all of:
 [PROC] process event journal PASS schema=1 events=6 lifecycle=4 captures=2 seqs=1,2,3,4,5,6 kinds=1,2,3,1,2,3 reasons=1,2,3,1,2,3 from_pids=0,1,1,0,2,2 to_pids=1,1,0,2,2,0 slots=0,0,0,1,1,1 generations=1,1,1,1,1,1 capture_seqs=0,1,1,0,2,2 owner_ok=1,1,1,1,1,1 cr3_ok=1,1,1,1,1,1 rsp0_ok=1,1,1,1,1,1 if0=1,1,1,1,1,1 snapshot_refs=0,1,1,0,1,1 outcomes=1,1,1,1,1,1 capture_seq_separate=1 current_pid=0 stale_owner=0 dropped=0 overflow=0 evidence_only=1 switch_events=0 resume_ready=0
 [SEC] ring3 entry AC hardening PASS schema=1 smap_supported=... smap=... gate_active=... common_entries=2 common_saved_ac=2 common_clac=... common_fallback=... common_post_ac0=2 int80_entries=6 int80_saved_ac=4 int80_clac=... int80_fallback=... int80_post_ac0=6 gate_skips=... gate_mismatch=0
 [ROOM] management hierarchy selftest PASS schema=1 struct_size=1024 generation=1 cells=1 nodes=1 bound_nodes=1 nodebits=2 bound_nodebits=2 source_valid=1 generation_valid=1 duplicate_rejected=1 orphan_rejected=1 unknown_rejected=1 stale_rejected=1 overflow_rejected=1 tail_rejected=1 observation_only=1 management_only=1
+[ROOM] source binding selftest PASS schema=1 struct_size=256 binding_generation=1 bindings=1 capacity=2 canonical_namespace=2 canonical_id=101 canonical_kind=1 canonical_generation=1 parent_cell_id=1 parent_generation=1 source_namespace=1 source_id=1 source_instance=1 source_generation=1 source_kind=1 source_role=1 kind_match=1 role_match=1 producer_owned=1 copied_read=1 missing_rejected=1 duplicate_rejected=1 orphan_rejected=1 namespace_rejected=1 kind_rejected=1 role_rejected=1 instance_rejected=1 zero_generation_rejected=1 generation_rollback_rejected=1 stale_rejected=1 init_order_rejected=1 schema_rejected=1 overflow_rejected=1 tail_rejected=1 source_valid=1 generation_valid=1 binding_valid=1 observation_only=1 management_only=1
 [ROOM] snapshot stability=...
 [HEALTH] stability=stable
 === AIOS Kernel Ready ===
@@ -274,7 +280,7 @@ The project has one canonical management lane and one primary hosted-delivery
 lane, plus supporting M/C/W axes, in
 `docs/meta/minimal_io_and_maturity_workflow_ko.md`. The preferred management
 lane builds K1 full hierarchy registry v0 (Cell 1 + bound Node 1 + parent-bound
-NodeBit 2 in one proof; implemented as the bounded bootstrap registry) → K2 source-binding hardening/expansion → K3 legacy
+NodeBit 2 in one proof) → bounded native K2-a oracle (implemented) → K2 lifecycle/reconcile expansion → K3 legacy
 NodeBit namespace projection → K4 observation-only attribution → K5
 principal/ownership and Axis Gate authorization. The M1-M5 sequence
 (uaccess/ELF/process/storage/disk loading)
@@ -286,12 +292,11 @@ apply the entry gate in
 `docs/tools/verification_tooling_evolution_design_ko.md`.
 
 The Linux-hosted H axis is the intended default delivery implementation lane.
-H0 upstream manifest/guard is `CURRENT` source policy only, while H1 trace/replay
-through H5 apply and the executable backend remain `PLANNED`. K2 defines the
-substrate-neutral identity, lifecycle, generation, and reject contract while H1
-builds its replay verifier in the same cycle. H2 may start after that shared
-contract, its fail-closed negative fixtures, and one bounded native semantic
-oracle are fixed; broad native process/storage expansion and final conformance
+H0 upstream manifest/guard and the bounded native K2-a oracle are `CURRENT`, while
+H1 trace/replay through H5 apply and the executable backend remain `PLANNED`.
+The next H1 slice must carry the K2 semantic fields and reject meanings into an
+OS-neutral lifecycle replay contract. H2 may start after those fail-closed
+fixtures are fixed; broad native process/storage expansion and final conformance
 closure are not prerequisites for the first observe-only hosted slice. H4/H5 require K5
 principal/ownership/authorize and separate approval. The canonical upstream pins
 and import boundary live in

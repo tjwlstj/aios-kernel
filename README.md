@@ -18,8 +18,10 @@ policy catalog와 runtime capability NodeBit, 관측 전용 AI pressure tracker�
 ledger, 제한된 AI 시스콜 표면이 있습니다. `CURRENT`인 K1은 1KiB 고정 snapshot에
 bootstrap Cell 1개, 그 Cell에 명시적으로 bound된 Node 1개, 그 Node를 부모로 하는
 typed NodeBit 2개를 함께 보존하는 management-only hierarchy v0입니다. 기존 subsystem을
-이 계층으로 투영하는 external adapter는 계속 `SCAFFOLD`이며, lifecycle/reconciliation,
-K2+ source binding과 Linux-hosted backend는 `PLANNED`입니다.
+이 계층으로 투영하는 첫 bounded native K2-a oracle도 `CURRENT`입니다. 별도 256B
+snapshot이 Node 101을 producer-owned SLM MAIN source에 boot-local immutable하게
+결속합니다. K2 전체 lifecycle/reconciliation은 `PARTIAL`, H1 replay와 Linux-hosted
+backend는 `PLANNED`입니다.
 
 장기 방향은 embodied AI OS입니다. LLM/SLM 에이전트는 유저스페이스에서 단기 기억과 장기 기억을 분리해 유지하고, 세션을 넘어 연속성을 보존하며, 하드웨어에는 커널이 중재하는 정책 경계를 통해 접근합니다.
 
@@ -36,13 +38,13 @@ Suggested repository description:
 
 > AI-native management/runtime project centered on Room → Cell → Node → NodeBit, with Linux-hosted userspace as the intended delivery path and a native proof kernel.
 
-## Current Status (2026-08-12)
+## Current Status (2026-08-15)
 
 - **Current beta:** `v0.2.0-beta.6` (`0.2.0-beta.6 "Genesis"` boot banner).
 - **Boot path:** x86_64 Multiboot2 커널, GDT/IDT/TSS, 페이징, PIT IRQ0 scheduler tick bootstrap, QEMU 스모크 테스트 기반.
 - **Hardening:** stack protector, NX/W^X 2MB identity-map marking, SMEP/UMIP/SMAP 감지/활성화 경로, uaccess STAC/CLAC fence, 검증된 CPL3 `#BP`/`int 0x80` entry AC 제거, #PF CR2 dump, #DF IST1, cppcheck CI.
 - **Memory:** 물리/가상 할당 기반, 텐서 메모리 메타데이터, 수명 프로파일링, 메모리 패브릭 노드, 공유 영역 스캐폴딩.
-- **Kernel Room topology maturity:** 전체 topology는 계속 `PARTIAL`이다. 기존 `kernel_room_snapshot_read()` aggregate와 9개 syscall-range descriptor에 더해, `CURRENT` K1 `kernel_room_management_snapshot_t`는 schema 1/1024B 고정 snapshot으로 Cell 1/2, Node 1/4, NodeBit 2/8을 보존하며 exact parent, namespace, generation, source validity를 검사한다. 이 registry는 bootstrap fixture이고 `observation_only=1 management_only=1`이다. external subsystem adapter, live lifecycle/reconciliation, resource attribution, principal/ownership는 K2+ `PLANNED`다.
+- **Kernel Room topology maturity:** 전체 topology는 계속 `PARTIAL`이다. 기존 aggregate와 9개 syscall-range descriptor, `CURRENT` K1 schema 1/1024B hierarchy에 더해 bounded native K2-a가 `CURRENT`다. K2-a는 K1 ABI를 바꾸지 않고 schema 1/256B snapshot에서 Node 101/Cell 1 generation과 SLM MAIN의 typed namespace, semantic kind/role, producer-owned boot-local instance/generation을 결속한다. exact boot marker, structured `kernel_room_binding`, `state binding`으로 검증된다. source refresh/exit/recreate/rebind, Linux source, resource attribution, principal/ownership는 아직 없다.
 - **Identity boundary:** Memory Fabric `domain_id`, SLM `agent_tree.node_id`, SLM policy `slm_nodebit_id`, 런타임 capability `node_id`, pipeline `owner_node`, scheduler task/PID/ring ID는 독립 네임스페이스다. 숫자가 같아도 같은 주체가 아니며, 명시적 namespace/binding/generation 없이 결합하지 않는다.
 - **Linux delivery direction:** Linux-hosted userspace service는 의도된 기본 delivery
   경로로 결정됐다. schema v1의 13개 upstream source row와 fail-closed guard만
@@ -68,8 +70,8 @@ AIOS의 우선 방향은 커널 기능을 더 많이 나열하는 것이 아니�
 - **Execution substrate:** ring3 process, scheduler, memory, storage, network, HAL은 위 관리 모델이 실제 일을 수행하도록 받치는 기반이다. M3~M5의 완성도는 계속 높이되 방향 선택을 독점하지 않는다.
 - **Hosted substrate:** Linux-hosted userspace service는 의도된 기본 delivery
   구현축이다. H0 source policy만 `CURRENT`이며 H1~H5와 실행 backend는
-  `PLANNED`다. K2 substrate-neutral semantic contract와 H1 replay를 같은 주기에서
-  고정하고, 공통 negative fixture와 bounded native semantic oracle이 준비되면 H2
+  `PLANNED`다. bounded native K2-a semantic oracle은 `CURRENT`이며, 다음 H1이
+  OS-neutral lifecycle trace와 공통 negative fixture를 고정하면 H2
   observe-only service를 시작한다. 광범위한 native process/storage 확장은 선행조건이
   아니다. H4 validation과 H5 apply는
   K5와 별도 승인 전까지 열지 않는다.
@@ -85,7 +87,8 @@ Kernel Room
     └── Node
         └── NodeBit
              │ K1 bootstrap hierarchy v0 implemented
-             │ external adapters / lifecycle remain K2+ PLANNED
+             │ native K2-a binding oracle implemented
+             │ lifecycle/reconcile remain PARTIAL/PLANNED
              ▼
                  ┌─ Linux-hosted userspace service
                  │  intended default delivery · PLANNED
@@ -136,12 +139,22 @@ resource/pressure observation · scheduler · ring3 · drivers · H0 source poli
 - exact `[ROOM] management hierarchy selftest PASS ...`와 structured `kernel_room_management`, `state room` full-row 계약으로 검증
 - legacy SLM/runtime NodeBit projection, resource attribution, authorize/apply edge는 없음
 
+### Kernel Room Native Source Binding K2-a
+- SLM producer는 exact-one active/persistent MAIN agent를 64B copied source snapshot으로 제공
+- source namespace/kind/role/lifecycle와 boot-local `source_instance`/`source_generation`은 policy generation·timestamp·PID와 분리
+- `kernel_room_source_binding_snapshot_t`는 schema 1의 bounded 256B read-only snapshot, capacity 2
+- canonical/source/binding generation과 append-only reject reason을 분리하고 missing/duplicate/orphan/kind/role/instance/rollback/stale/init-order/tail 반례를 거부
+- exact `[ROOM] source binding selftest PASS ...`, structured `kernel_room_binding`, `state binding`과 K1→K2→aggregate Room 순서로 검증
+- refresh/reconcile, hosted source, resource attribution, authorize/apply edge는 없음
+
 ### SLM Snapshot and Two Distinct NodeBit Surfaces
 - `slm_hw_snapshot_t`로 커널 health, 메모리 패브릭, agent tree, device readiness를 한 번에 노출
 - SLM 런타임이 없거나 준비되지 않은 경우에도 안정적인 snapshot/fallback 값 제공
 - `SYS_SLM_NODEBIT_LOOKUP`는 `slm_orchestrator.c`의 API/tool/device/memory/clock/policy catalog에서 effective policy node를 읽는다
 - `runtime/nodebit.c`는 별도 runtime capability registry이며 `SYS_NODEBIT_REGISTER/UPDATE/STATS`와 pipeline capability gate를 제공한다
-- 두 ID 공간과 Memory Fabric/agent-tree/pipeline의 Node ID는 아직 canonical Room→Cell→Node→NodeBit 계층에 bind되지 않았다
+- 두 NodeBit ID 공간과 Memory Fabric/pipeline Node ID, SLM의 나머지 agent는 아직
+  canonical Room→Cell→Node→NodeBit 계층에 bind되지 않았다. exact-one SLM MAIN만
+  별도 native K2-a snapshot으로 Node 101에 명시적으로 결속된다.
 
 ### AI Workload Scheduler Foundation
 - 다단계 피드백 큐와 virtual runtime 추적 기반

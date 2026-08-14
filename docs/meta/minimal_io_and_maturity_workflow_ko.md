@@ -1,6 +1,6 @@
 # AIOS 성숙도 우선 작업흐름 가이드 (2026-08-10 재정렬)
 
-최종 갱신: 2026-08-12 (Linux-hosted 기본 delivery와 K2 semantic gate 정렬)
+최종 갱신: 2026-08-15 (bounded native K2-a oracle 완료, H1 다음)
 
 **결정 배경:** 2026-07에는 ring3 첫 실행 슬라이스 뒤 "하드웨어 드라이버 확장 vs 기술 성숙도·정밀화" 중 **성숙도 우선**으로 결정했다. 2026-08-10에는 그 실행 M축이 프로젝트 방향을 독점하면서 본래의 Kernel Room 관리 구조가 뒤로 밀린 점을 바로잡았다. 2026-08-12에는 Linux-hosted userspace service를 의도된 기본 delivery substrate로 결정했다. 이 문서는 **Room→Cell→Node→NodeBit 관리축을 backend-neutral 의미 정본**으로 두고, Linux-hosted H축을 기본 delivery 구현축으로, 기존 M1~M5를 native reference/proof substrate 레인으로 유지한다.
 
@@ -63,8 +63,8 @@ native substrate backlog가 기본 delivery 우선순위를 다시 독점하지 
 ## 3-A. Kernel Room 관리축 (K0~K5) — 우선 정본
 
 목표 계층은 **Room → Cell → Node → NodeBit**다. 현재 코드에는 Room의 aggregate
-snapshot, K1 bounded bootstrap hierarchy v0, 각자 `CURRENT`인 subsystem, 이를
-Room에 연결할 `SCAFFOLD` adapter seam이 있다. Memory Fabric `domain_id`, SLM
+snapshot, K1 bounded bootstrap hierarchy v0, SLM MAIN을 Node 101에 결속하는
+bounded native K2-a oracle, 각자 `CURRENT`인 subsystem이 있다. Memory Fabric `domain_id`, SLM
 `agent_tree.node_id`, SLM `slm_nodebit_id`, runtime NodeBit `node_id`, pipeline
 `owner_node`, scheduler task/PID/ring ID는 서로 다른 네임스페이스이며 숫자 일치로
 관계를 추론하지 않는다.
@@ -73,7 +73,7 @@ Room에 연결할 `SCAFFOLD` adapter seam이 있다. Memory Fabric `domain_id`, 
 |---|---|---|
 | K0 문서/namespace 재정렬 | 문서 기준선 완료 | 정본 계층과 현재 구현의 간극을 명시한다. 코드 성숙도 `CURRENT` 판정이 아니다. |
 | K1 hierarchy registry v0 | `CURRENT` (2026-08-11) | 1024B snapshot에 Cell 1 + bound Node 1 + parent-bound NodeBit 2를 한 번에 소유·조회한다. |
-| K2 source binding hardening/expansion | `PLANNED` | canonical Node의 외부 source binding과 generation/reconciliation을 확장한다. |
+| K2 source binding hardening/expansion | `PARTIAL` | native K2-a boot-local immutable binding은 `CURRENT`; lifecycle/reconcile와 hosted source는 미완료다. |
 | K3 legacy NodeBit namespace projection | `PLANNED` | 선택한 legacy NodeBit를 namespace adapter로 canonical NodeBit에 read-only projection한다. |
 | K4 resource/pressure attribution | `PLANNED` | canonical Cell/Node owner에 관측치를 귀속하되 `observation_only=1`을 유지한다. |
 | K5 principal/ownership + Axis Gate | `PLANNED` | 검증된 identity/binding/generation 위에서만 authorize/enforcement를 추가한다. |
@@ -82,8 +82,8 @@ Room에 연결할 `SCAFFOLD` adapter seam이 있다. Memory Fabric `domain_id`, 
 
 - Kernel Room에는 aggregate snapshot + 9개 syscall-range 분류 descriptor와 별도 K1
   bootstrap hierarchy registry가 있다.
-- K1 밖 external Cell/Node/NodeBit source binding, lifecycle/reconciliation,
-  principal/ownership는 없다.
+- K1 밖에는 한 SLM MAIN native binding만 있으며 Cell/Node/NodeBit 전체 source
+  lifecycle/reconciliation, hosted source, principal/ownership는 없다.
 - `SYS_SLM_NODEBIT_LOOKUP`는 `slm_orchestrator.c`의 SLM policy catalog를 읽는다.
   `runtime/nodebit.c`의 별도 syscall은 `SYS_NODEBIT_REGISTER/UPDATE/STATS`다.
 
@@ -105,15 +105,22 @@ Room에 연결할 `SCAFFOLD` adapter seam이 있다. Memory Fabric `domain_id`, 
   boot record, structured `kernel_room_management`, read-only `state room` full row를
   Python/PowerShell과 shell lane이 exact-one/fail-closed로 검사한다.
 - **정규 증거:** default full/minimal/storage-only와 max-smap minimal strict kernel,
-  default/max-smap strict shell 17/17, 각 boot summary export가 통과했다.
+  default/max-smap strict shell 18/18, 각 boot summary export가 통과했다.
 
-### K2. source binding hardening/expansion
+### K2. source binding hardening/expansion — `PARTIAL`
 
-- **작업:** K1의 canonical `main-ai` Node에 선택한 기존 입력 source를
-  `(namespace, source_id, source_generation)`으로 bind하고 source refresh/reconcile
-  규약을 더한다. 필요하면 여러 Node로 확장하되 Cell parent는 계속 exact해야 한다.
-- **완료 기준:** exact parent/generation/source 증거와 duplicate/orphan/stale binding
-  반례 거부. SLM agent profile이나 runtime node의 숫자를 canonical ID로 재사용하지 않는다.
+- **완료된 K2-a (2026-08-15):** K1의 canonical `main-ai` Node 101을 typed
+  namespace/semantic kind/role, producer-owned boot-local instance/generation을 가진
+  exact-one SLM agent-tree MAIN source에 결속한다. K1과 분리된 schema 1/256B
+  snapshot, append-only reject reason, copied read API, exact marker/summary/
+  `state binding`으로 증명한다.
+- **실패 경계:** missing, duplicate, orphan, namespace/kind/role/instance mismatch,
+  zero/regressed/stale generation, init-order, schema/overflow/non-zero tail을 거부한다.
+  순서는 `entry-AC < K1 management < K2 binding < aggregate ROOM`이다.
+- **남은 K2:** source refresh, exit/recreate, explicit rebind, lease/cross-reboot
+  instance, 여러 source/Node, Linux-hosted producer와 reconciliation은 아직 `PLANNED`다.
+  SLM policy generation, timestamp, PID/cgroup을 canonical/source generation으로
+  재사용하지 않는다.
 
 ### K3. legacy NodeBit namespace projection
 
@@ -247,14 +254,15 @@ SQ/CQ, 자원, authorize, rollback 경계를 제공한다.
 세부 기준선과 source/import 경계의 정본은
 [Linux-hosted substrate와 upstream resource 정책](../os/linux_hosted_substrate_and_resource_policy_ko.md)이다.
 Linux-hosted userspace service는 의도된 기본 delivery 방향이지만 실행 backend의
-구현 성숙도는 아직 `PLANNED`다. Linux PID, cgroup, pidfd, PSI, namespace는
+구현 성숙도는 아직 `PLANNED`다. bounded native K2-a oracle만 `CURRENT`다.
+Linux PID, cgroup, pidfd, PSI, namespace는
 canonical Cell/Node/NodeBit가 아니라 `source_only` 입력이다. K1/K2 의미를 Linux
 object에 맞춰 바꾸지 않는다.
 
 | 단계 | 상태 | 관계 |
 |---|---|---|
 | H0 upstream resource manifest/guard | `CURRENT` | 13개 source row와 `code_import=0`을 검증한다. runtime backend 증거가 아니다. |
-| H1 OS-neutral trace/replay | `PLANNED` | K2 substrate-neutral contract와 같은 lifecycle·generation·reject reason을 고정하고 native/hosted producer가 함께 소비한다. |
+| H1 OS-neutral trace/replay | `PLANNED` | bounded native K2-a semantic field/reject proof를 바탕으로 OS-neutral lifecycle·generation·reject reason을 고정하고 native/hosted replay producer가 함께 소비한다. |
 | H2 Linux observe-only adapter | `PLANNED` | K2/H1 공통 계약, negative fixture와 bounded native semantic oracle가 고정된 뒤 userspace service로 source-only 관측을 시작한다. 광범위한 native process/storage 확장은 선행조건이 아니다. |
 | H3 binding reconciliation/parity | `PLANNED` | exit/PID reuse/cgroup recreate/host restart를 구분하고 native와 같은 semantic verdict를 요구한다. |
 | H4 proposal/validation parity | `PLANNED` | K5 action/principal 계약 뒤에만 validate-only로 열며 초기 capability는 전부 `UNSUPPORTED`다. |

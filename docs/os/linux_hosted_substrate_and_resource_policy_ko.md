@@ -1,6 +1,6 @@
 # AIOS Linux-hosted substrate와 upstream resource 정책 정본
 
-> 기준일: 2026-08-12
+> 기준일: 2026-08-15
 >
 > 문서 상태: 설계·resource 선정 정본
 >
@@ -65,7 +65,8 @@ kernel module로 바꾸는 계획이 아니다. 첫 제품 경로는 Linux users
 | Linux substrate resource policy schema v1 | `CURRENT` | checked-in manifest와 guard가 exact field set, 필수 13개 row, role·version·source-only·`code_import=0` 계약을 검사 |
 | 승인 upstream resource rows | `CURRENT` source metadata | `host_only=3 interface_only=5 reference_only=4 blocked_import=1`; 다운로드·vendoring·호환·실행 증거가 아님 |
 | Kernel Room K1 hierarchy registry v0 | `CURRENT` | 1024B bootstrap Cell 1, bound Node 1, parent-bound typed NodeBit 2의 management-only proof |
-| Kernel Room 전체 topology | `PARTIAL` | K2 external binding, K3 projection, K4 attribution, K5 authorize는 전체 연결되지 않음 |
+| Native K2-a semantic oracle | `CURRENT` | 별도 256B snapshot에서 Node 101을 producer-owned SLM MAIN source에 boot-local immutable 결속 |
+| Kernel Room 전체 topology | `PARTIAL` | K2-a 한 native binding만 있으며 lifecycle/reconcile, K3 projection, K4 attribution, K5 authorize는 전체 연결되지 않음 |
 | AI resource ledger / pressure | `CURRENT` | native aggregate read-only 관측; hosted resource나 owner attribution 증거가 아님 |
 | Native resource apply policy | 기존 정본을 따름 | upstream resource policy와 별도다. 이 문서가 native target/action의 성숙도를 바꾸지 않음 |
 | Linux-hosted observation backend | `PLANNED` | daemon, source adapter, binding reconciler, 정규 runtime verdict가 없음 |
@@ -355,13 +356,15 @@ substrate와 독립적으로 검증하는 bounded semantic oracle과 conformance
   versioned trace로 고정한다.
 - duplicate, orphan, PID reuse, source-generation rollback, host-instance mismatch,
   missing validity를 fail-closed로 거부한다.
-- K2 substrate-neutral semantic contract와 같은 주기에서 schema와 negative fixture를
-  고정하고 native와 hosted가 같은 semantic verdict를 소비하게 한다.
+- bounded native K2-a의 semantic field/reject proof를 입력으로 OS-neutral schema와
+  negative fixture를 고정한다. H1 뒤 native/hosted replay producer가 같은 semantic
+  verdict를 소비하게 한다.
 
 ### H2. Linux observe-only adapter — `PLANNED`
 
 - H1의 공통 lifecycle/generation/reject 계약, negative fixture와 하나의 bounded
-  native semantic oracle가 고정된 뒤 시작한다. 광범위한 native process/storage
+  native semantic oracle가 모두 고정된 뒤 시작한다. native oracle은 2026-08-15
+  `CURRENT`가 됐고 H1은 아직 `PLANNED`다. 광범위한 native process/storage
   확장과 최종 conformance closure는 첫 observe-only slice의 선행조건이 아니다.
 - primary Linux baseline 위에서 한 host instance와 bounded process source를 관측한다.
 - 실제 file/network/compute workload의 resource와 pressure source를 읽는다.
@@ -421,8 +424,8 @@ Linux-hosted를 기본 delivery로 삼는 제품 방향은 이미 결정됐다. 
 | 기간 | 구현 조각 | 종료 증거 |
 |---|---|---|
 | 시작점 | 방향·도메인·H0 기준선 잠금 | `hosted/` 책임 경계, userspace process 원칙, guard PASS와 13개 source row; runtime 증거는 아님 |
-| 1주차 | K2-a substrate-neutral 계약과 bounded native semantic oracle | semantic kind, typed namespace, producer-owned instance/generation, copied read API, 별도 binding snapshot과 missing/duplicate/orphan/role-mismatch/stale/rollback 거부 |
-| 1~2주차 병행 | H1 OS-neutral trace/replay verifier | `discover -> bind -> observe -> update -> exit -> stale reject -> rebind`와 stable reason; native oracle trace의 동일 verdict |
+| 1주차 | bounded native K2-a semantic oracle — 완료 (2026-08-15) | semantic kind, typed namespace, producer-owned instance/generation, copied read API, 별도 256B binding snapshot과 exact native reject proof; lifecycle trace 계약은 H1 |
+| 1~2주차 다음 | H1 OS-neutral trace/replay verifier | `discover -> bind -> observe -> update -> exit -> stale reject -> rebind`와 stable reason; native oracle trace의 동일 verdict |
 | 2~4주차 | H2 Linux observe-only userspace service | primary exact reference에서 한 host와 한 `AI_SERVICE` source를 관측하고 raw/normalized/binding artifact를 분리; 모든 action `UNSUPPORTED` |
 | 4~6주차 | H3 reconciliation과 parity | exit/PID reuse/cgroup recreate/collector restart/host reboot 구분, 명시적 rebind, backend ID leakage 없음 |
 | 6~8주차 | delivery acceptance와 native conformance | service startup/restart/remove, 실제 storage/network/model workload, exact kernel/config/package/hash provenance, 정규 host matrix와 cross-backend verdict |
@@ -443,20 +446,24 @@ K2 계약은 특정 substrate가 아니라 canonical `AI_SERVICE` 의미를 먼�
 K1 Node 101과 결속할 source는 semantic kind, typed namespace, producer-owned
 instance/generation과 copied read API를 가져야 한다.
 
-- Native reference source의 우선 후보는 SLM agent-tree MAIN agent다. 현재
-  `policy_generation`이나 timestamp를 source generation으로 재해석하지 않는다.
+- Native reference source는 exact-one active/persistent SLM agent-tree MAIN으로
+  구현됐다. 전용 boot-local instance/generation과 copied 64B source snapshot을
+  사용하며 `policy_generation`이나 timestamp를 source generation으로 재해석하지 않는다.
 - Hosted source는 실제 Linux userspace service가 소유하는 명시적인 service
   instance/generation record다. PID, pidfd, cgroup, PSI는 그 service의 lifecycle과
   resource evidence일 뿐 canonical Node identity가 아니다.
 - Memory Fabric main domain은 Cell/resource source 후보이고 bootstrap process는
   execution-instance source 후보다. 숫자나 구현 편의만으로 Node 101에 결속하지 않는다.
 
-두 adapter는 동일한 bounded/versioned binding record와
+native K2-a는 K1과 분리된 schema 1/256B bounded binding snapshot, append-only
+reject reason, exact marker/summary/`state binding`으로 검증된다. Hosted adapter는
+동일한 semantic field/reason과
 missing/duplicate/orphan/role-mismatch/zero/regressed/stale-generation 반례를
 통과해야 한다. 기존 K1 1024B immutable snapshot은 변경하지 않는다. 작은 native
-adapter는 Linux 의미가 canonical schema를 지배하지 못하게 하는 semantic oracle과
-conformance proof다. 광범위한 native process/storage 확장은 H2 착수 조건이 아니지만,
-K2 계약과 H1 negative fixture는 H2보다 먼저 고정한다.
+adapter는 Linux 의미가 canonical schema를 지배하지 못하게 하는 `CURRENT` semantic
+oracle이다. 다만 refresh/exit/recreate/rebind는 아직 없으므로 K2 전체는 `PARTIAL`이다.
+광범위한 native process/storage 확장은 H2 착수 조건이 아니지만 H1 lifecycle trace와
+negative fixture는 H2보다 먼저 고정한다.
 
 다음 readiness gate를 모두 통과해야 hosted backend를 지원됨 또는 배포 가능 상태로
 승격할 수 있다.

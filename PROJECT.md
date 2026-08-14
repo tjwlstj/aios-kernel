@@ -10,12 +10,13 @@ AI 에이전트(Claude Code)용 작업 규칙은 [CLAUDE.md](CLAUDE.md)를 본�
 저장소 디렉터리 구조와 다른 논리 구조다. aggregate substrate가 있어 전체 Kernel Room
 topology 성숙도는 `PARTIAL`이다. `CURRENT` K1은 별도 1024B management-only snapshot에 Cell 1,
 exact-bound Node 1, parent-bound typed NodeBit 2를 함께 둔 bounded bootstrap hierarchy를
-구현했다. 현 코드는 Room aggregate snapshot과 각자 `CURRENT`인 Memory Fabric domain, SLM agent
-profile/policy catalog, runtime capability NodeBit, pipeline ownership을 제공하며 Room
-adapter seam은 `SCAFFOLD`다. 새 작업은 이들을
+구현했다. `CURRENT`인 bounded native K2-a oracle은 별도 256B snapshot에서 Node 101을
+producer-owned SLM MAIN source에 boot-local immutable하게 결속한다. 현 코드는 Room
+aggregate snapshot과 각자 `CURRENT`인 Memory Fabric domain, SLM agent
+profile/policy catalog, runtime capability NodeBit, pipeline ownership을 제공한다. 새 작업은 이들을
 숫자 ID가 같다는 이유로 결합하지 말고 namespace + explicit binding + generation으로 연결한다.
 K1 bootstrap fixture는 Cell ID 1, Node ID 101, NodeBit ID 1001/1002를 사용하며
-external source binding/lifecycle은 K2+다.
+K2 전체 lifecycle/reconcile은 `PARTIAL`, H1/Linux-hosted source는 `PLANNED`다.
 용어와 성숙도 정본은
 [Kernel Room 관리 모델](docs/kernel-room/kernel_room_management_model_ko.md)이다.
 
@@ -115,10 +116,11 @@ Windows: `pwsh -File .\tools\testkit\kernel\build-windows.ps1 -Target test`
 - **Linux substrate identity는 source-only** — PID/cgroup/pidfd/PSI/path를 canonical
   Cell/Node/NodeBit ID로 재사용하지 않는다. H0 manifest/guard `CURRENT`는 hosted runtime,
   license compatibility 또는 code import 승인이 아니며 schema v1은 `code_import=0`이다.
-- **K2는 다음 직접 관리 계약** — substrate-neutral identity/lifecycle/generation과
-  reject reason을 고정하고 H1 replay를 같은 주기에서 만든다. 작은 native K2 adapter는
-  semantic oracle/conformance proof이며, H2 observe-only service는 공통 계약,
-  negative fixture와 bounded oracle이 고정된 뒤 시작한다. 광범위한 native
+- **K2-a native semantic oracle은 `CURRENT`, K2 전체는 `PARTIAL`** — 별도
+  256B snapshot이 Node 101을 producer-owned SLM MAIN instance/generation에 결속하고
+  append-only reject reason을 고정한다. refresh/exit/recreate/rebind는 아직 없다.
+  다음 H1 replay가 OS-neutral lifecycle과 negative fixture를 고정한 뒤 H2
+  observe-only service를 시작한다. 광범위한 native
   process/storage 확장은 선행조건이 아니다. H4 validation과 H5 apply는 K5와 별도 승인 전까지
   `PLANNED`다.
 - **process snapshot/journal은 증거 전용** — descriptor-owned 176B snapshot은 ISR 시점 owner/CR3/TSS `rsp0`/IF=0 검증과 `resume_ready=0`을 유지한다. per-boot process event journal v1의 schema/kind/reason/outcome 숫자 ID는 append-only이며, capacity 8 안에서 여섯 lifecycle/capture record를 덮어쓰지 않는다. journal은 `evidence_only=1 switch_events=0 resume_ready=0`이고 `0→1→0→2→0` 순차 bootstrap owner lifecycle만 증명한다. resumable saved context와 runnable-state 결속, live continuation/switch, 실제 A→B→A가 별도로 검증되기 전에는 snapshot이나 journal을 schedulable state 또는 CPU-switch trace로 해석하지 않는다.
