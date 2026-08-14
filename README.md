@@ -49,7 +49,7 @@ Suggested repository description:
 - **Linux delivery direction:** Linux-hosted userspace service는 의도된 기본 delivery
   경로로 결정됐다. schema v1의 13개 upstream source row와 fail-closed guard만
   `CURRENT`이고 Linux-hosted backend는 계속 `PLANNED`다. Linux `6.12.y` primary,
-  `6.18.y` forward, QEMU `11.0.x`, VirtIO 1.2 CS01 selected baseline은 source
+  `6.18.y` forward, QEMU `11.1.0`, VirtIO 1.2 CS01 selected baseline은 source
   기준선이며 PID/cgroup/pidfd/PSI는 source-only, `code_import=0`이다.
 - **Pressure observation:** schema 1의 `state pressure`가 workload queue, Memory Fabric reader/writer 중첩, 누적 NodeBit 거부율을 0..1024 정수 벡터로 읽는다. 현재는 system→plane 2단계 관측만 `CURRENT`이며 task migration이나 budget apply는 하지 않는다.
 - **Resource observation:** schema 1의 커널 내부 `ai_resource_snapshot_t`가 heap bytes, tensor bytes, active Memory Fabric windows, inference ring registrations, runnable scheduler tasks를 고정 5개 aggregate row로 읽는다. 모든 owner는 아직 `NONE/UNATTRIBUTED`이며 read-only `SYS_INFO_RESOURCE`(0x706) syscall과 `state resource` 셸 토픽은 `CURRENT`, owner attribution과 quota/reserve/apply는 `PLANNED`다.

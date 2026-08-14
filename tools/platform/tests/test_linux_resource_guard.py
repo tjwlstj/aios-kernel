@@ -242,6 +242,8 @@ class LinuxResourceGuardTests(unittest.TestCase):
             "reference_only=3",
             "VirtIO 1.3",
             "1.3 CSD",
+            "11.0.3",
+            "11.0.x",
         ):
             self.assertNotIn(stale_text, canonical_doc)
             self.assertNotIn(stale_text, platform_readme)

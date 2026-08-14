@@ -84,7 +84,7 @@ adapter, cgroup enforcement 또는 AIOS native resource apply를 뜻하지 않�
 |---|---|---|---|---|---|
 | Linux kernel primary | Linux-hosted 설계·호환의 주 기준선 | `6.12.y` LTS | `6.12.103` | 2026-08-09, EOL 2028-12 | 기본 API·동작 조사 기준; source-only |
 | Linux kernel secondary | 더 새 series의 전방 호환성 비교 | `6.18.y` | `6.18.44` | manifest의 provenance를 따름 | primary를 조용히 대체하지 않는 비교 기준; source-only |
-| QEMU | 계획된 Linux-hosted/QEMU lane의 canonical emulator series | `11.0.x` | `11.0.3` | 2026-07-24 | 정식 release만 허용, RC 금지; hosted lane은 여전히 `PLANNED` |
+| QEMU | 계획된 Linux-hosted/QEMU lane의 emulator source reference | `11.1.x` | `11.1.0` | 2026-08-11 | 정식 release만 허용, RC 금지; runtime qualification과 hosted lane은 여전히 `PLANNED` |
 | VirtIO selected implementation baseline | 보수적 구현·검증 기준 | `1.2 CS01` | `1.2-CS01` | manifest의 OASIS source URL | AIOS가 선택한 승인 구현 기준 |
 | VirtIO newer approved reference | 최신 차이 조사 | `1.4 CS01` | `1.4-CS01` | 2026-04-08 승인 | `RESEARCH` only; 1.2 selected baseline을 조용히 대체하지 않음 |
 
@@ -99,8 +99,9 @@ adapter, cgroup enforcement 또는 AIOS native resource apply를 뜻하지 않�
 
 ### 3.2 QEMU release 규칙
 
-- 계획된 Linux-hosted lane의 canonical series는 `11.0.x`, exact reference는
-  `11.0.3`이다.
+- 계획된 Linux-hosted lane의 source reference series는 `11.1.x`, exact reference는
+  `11.1.0`이다. 2026-08-15 공식 release 재검토에서 이전 exact pin을 대체했으며 이 갱신은
+  아직 없는 hosted runtime의 qualification이나 support 승격이 아니다.
 - release candidate, preview, nightly, branch tip은 canonical lane에 넣지 않는다.
 - RC를 검토할 필요가 있으면 별도 `RESEARCH` row와 비정규 artifact로만 다루며,
   stable verdict나 baseline을 갱신하지 않는다.

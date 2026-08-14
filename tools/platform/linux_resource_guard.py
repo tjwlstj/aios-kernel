@@ -127,8 +127,8 @@ REQUIRED_RESOURCES = {
         "kind": "emulator",
         "disposition": "host_only",
         "version_policy": "exact_release",
-        "version": "11.0.3",
-        "reference_pin": "11.0.3",
+        "version": "11.1.0",
+        "reference_pin": "11.1.0",
         "source_url": "https://www.qemu.org/download/",
         "boundary": "linux_host",
         "identity_semantics": "none",
@@ -265,7 +265,7 @@ REQUIRED_LICENSES = {
 EXPECTED_RESOURCE_DIGESTS = {
     "linux-host-primary": "f94f036a5d0d63a5970d7ca8ec5fdc6c39f8c68150f436d3a3095afcf8ef3383",
     "linux-host-forward": "0865ee0fba547ce53361b0636060bac78d54589d07345ca48096f14b1c59a459",
-    "qemu-system-linux-host": "d6ef97fa478267785b2fa3a7306ec2df8f3d9ce52006a894ed8ee4504afb094a",
+    "qemu-system-linux-host": "c53705176c47b94d5e037edee5d261193aa46f20d3919c67816154347842448d",
     "linux-kvm-uapi": "af296aac0a0f9ebe27bc3050b50fa3f12b352f061ef3e2371954698f4ce79165",
     "virtio-1-2-contract": "aaaee261b4f58ba76210a033a5f9b66c5f6c426d5079b5d6466c784d683474a4",
     "linux-cgroup-v2-source": "6b8ce3ee1e9a15d45243f8ef86e8d36fe88009a77390a5455882bcf5d317b266",
@@ -411,8 +411,8 @@ def validate_manifest(data: dict[str, Any], repo_root: Path = REPO_ROOT) -> tupl
         except ValueError:
             errors.append("reviewed_on must be a valid calendar date")
         else:
-            if reviewed_on != date(2026, 8, 11):
-                errors.append("reviewed_on must equal the schema v1 review date 2026-08-11")
+            if reviewed_on != date(2026, 8, 15):
+                errors.append("reviewed_on must equal the schema v1 review date 2026-08-15")
     if data.get("resource_policy_maturity") != "CURRENT":
         errors.append("resource_policy_maturity must equal CURRENT for schema v1")
     if data.get("hosted_backend_maturity") != "PLANNED":
