@@ -53,6 +53,7 @@
 
 ## os/ — 유저스페이스 OS 계층
 - [linux_hosted_substrate_and_resource_policy_ko.md](os/linux_hosted_substrate_and_resource_policy_ko.md) — Linux-hosted userspace service를 기본 delivery 방향으로 고정하고 Kernel Room 의미를 보존하는 정본; resource catalog `CURRENT`와 hosted backend `PLANNED`를 분리
+- [h1_binding_trace_replay_workplan_ko.md](os/h1_binding_trace_replay_workplan_ko.md) — native K2-a 다음 H1의 OS-neutral field, lifecycle, reason, fixture, 검증과 1~2주 구현 게이트; 구현은 `PLANNED`
 - [../hosted/README.md](../hosted/README.md) — Linux-hosted 제품 도메인의 책임·의존 경계; 실행 구현은 `PLANNED`
 - [browser_console_and_runtime_engine_roadmap_ko.md](os/browser_console_and_runtime_engine_roadmap_ko.md)
 - [user_space_os_direction_ko.md](os/user_space_os_direction_ko.md)
@@ -66,6 +67,7 @@
 ## tools/ — 테스트툴 · 빌드 · 보조 도구
 - [test_tooling_ko.md](tools/test_tooling_ko.md)
 - [testkit_guide_ko.md](tools/testkit_guide_ko.md)
+- [verification_tooling_evolution_design_ko.md](tools/verification_tooling_evolution_design_ko.md) — fail-closed verdict와 artifact의 V0~V5 정본; H1 replay 보조 레인은 generic `[EVT]` 계획과 분리
 - [boot_kernel_testkit_expansion_plan_ko.md](tools/boot_kernel_testkit_expansion_plan_ko.md)
 - [windows_build.md](tools/windows_build.md)
 - [gemini_cli_usage_strategy_ko.md](tools/gemini_cli_usage_strategy_ko.md)

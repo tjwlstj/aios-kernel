@@ -253,6 +253,9 @@ SQ/CQ, 자원, authorize, rollback 경계를 제공한다.
 
 세부 기준선과 source/import 경계의 정본은
 [Linux-hosted substrate와 upstream resource 정책](../os/linux_hosted_substrate_and_resource_policy_ko.md)이다.
+다음 H1의 exact field, lifecycle, reason, fixture와 구현 게이트는
+[H1 binding trace/replay 작업 준비서](../os/h1_binding_trace_replay_workplan_ko.md)에
+고정한다.
 Linux-hosted userspace service는 의도된 기본 delivery 방향이지만 실행 backend의
 구현 성숙도는 아직 `PLANNED`다. bounded native K2-a oracle만 `CURRENT`다.
 Linux PID, cgroup, pidfd, PSI, namespace는

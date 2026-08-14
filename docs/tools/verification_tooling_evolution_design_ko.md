@@ -492,6 +492,19 @@ kernel/build/test-runs/<run-id>/<profile>/
   `termination.reason=guest-reboot-exit`, 전체 transcript boot verdict PASS
 - strict boot inventory 3프로필 baseline 일치
 
+### H1 연동 레인. OS-neutral source-binding trace/replay — `PLANNED`
+
+- 세부 field, lifecycle, reason, fixture와 일정은
+  [`H1 binding trace/replay 작업 준비서`](../os/h1_binding_trace_replay_workplan_ko.md)가
+  소유한다.
+- raw JSONL evidence, fixture manifest의 expected verdict, replay가 계산한 verdict를
+  분리하고 exact-one terminal·연속 sequence·bounded size를 fail-closed로 검사한다.
+- 동일 fixture가 Ubuntu/Windows에서 같은 outcome과 first reason을 내야 한다.
+- 이 host-only 레인은 generic `[EVT]{json}` V1, QEMU 부팅, boot marker 또는 inventory
+  baseline 갱신을 선행조건으로 삼지 않는다.
+- 완료되어도 H1 contract/replay만 `CURRENT`로 승격할 수 있다. live native/hosted
+  producer, Linux adapter, K2 reconciliation과 apply 경로는 계속 별도 상태다.
+
 ### V1. 실행 종료와 산출물 — `PLANNED`
 
 - streaming serial collector와 terminal outcome

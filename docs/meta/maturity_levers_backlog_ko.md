@@ -38,7 +38,7 @@ generation/reconciliation을 확대하는 것이다. 아래 레버의 착수 가
 
 ### ① 버전드 기계판독 이벤트 — 가장 고레버리지
 - **왜:** 검증을 grep에서 필드 단위 assert로 승격. 문구 변경에 강하고 "정확히 이 값이어야 함"을 코드로 표현 가능. verdict 원칙 5가 이미 "문자열 마커 유지 + versioned event 병행"을 명시.
-- **현재 경계:** process event journal v1은 per-boot capacity 8/no-overwrite의 커널 내부 lifecycle/capture evidence schema다. exact `[PROC]` summary와 host structured section은 `CURRENT`지만 generic serial `[EVT]{json}`, shared marker manifest, `events.jsonl` artifact를 구현하지 않는다. journal의 `0→1→0→2→0`도 CPU switch가 아니다.
+- **현재 경계:** process event journal v1은 per-boot capacity 8/no-overwrite의 커널 내부 lifecycle/capture evidence schema다. exact `[PROC]` summary와 host structured section은 `CURRENT`지만 generic serial `[EVT]{json}`, shared marker manifest, `events.jsonl` artifact를 구현하지 않는다. H1 source-binding JSONL replay도 도메인 전용 host contract이므로 generic `[EVT]` 이행을 완료한 것으로 세지 않는다. journal의 `0→1→0→2→0`도 CPU switch가 아니다.
 - **형식(제안):** 사람용 마커는 그대로 두고, 셀프테스트가 한 줄 더 방출.
   `[EVT] {"v":1,"id":"heap.lock.selftest","ok":true,"acquires":4}`
 - **파일럿 착수점:** heap lock + context switch 셀프테스트 2개에 `[EVT]` 병행 방출 → `tools/testkit/lib/`에 이벤트 파서 추가 → verdict가 `id`별 기대 필드 assert. 기존 문자열 마커/스모크는 그대로 유지(점진 이행).

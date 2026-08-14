@@ -272,7 +272,8 @@ validity_flags
 
 PID 재사용, cgroup 삭제 뒤 같은 경로 재생성, host reboot, collector 재시작은 이전
 binding을 자동 복원하지 않는다. source generation이나 host instance가 달라지면 stale로
-거부하고, 명시적 reconcile 뒤 새 canonical generation과 결속한다.
+거부하고, 명시적 reconcile 뒤 증가한 binding generation으로 다시 결속한다. canonical
+generation은 target lifecycle이 별도로 바뀐 경우에만 변경한다.
 
 ## 6. 계획 구조
 
@@ -353,9 +354,13 @@ substrate와 독립적으로 검증하는 bounded semantic oracle과 conformance
 
 ### H1. OS-neutral trace와 replay verifier — `PLANNED`
 
-- `discover -> bind -> observe -> update -> exit -> stale reject -> rebind` lifecycle을
+- 세부 field, state machine, fixture와 검증 일정은
+  [H1 trace/replay 작업 준비서](h1_binding_trace_replay_workplan_ko.md)를 따른다.
+- `discover -> bind -> observe -> update -> stale reject -> rebind -> exit -> stale reject -> rediscover -> rebind`
+  lifecycle을
   versioned trace로 고정한다.
-- duplicate, orphan, PID reuse, source-generation rollback, host-instance mismatch,
+- duplicate, orphan, source identity/instance reuse without valid generation,
+  source-generation rollback, host-instance mismatch,
   missing validity를 fail-closed로 거부한다.
 - bounded native K2-a의 semantic field/reject proof를 입력으로 OS-neutral schema와
   negative fixture를 고정한다. H1 뒤 native/hosted replay producer가 같은 semantic
@@ -426,7 +431,7 @@ Linux-hosted를 기본 delivery로 삼는 제품 방향은 이미 결정됐다. 
 |---|---|---|
 | 시작점 | 방향·도메인·H0 기준선 잠금 | `hosted/` 책임 경계, userspace process 원칙, guard PASS와 13개 source row; runtime 증거는 아님 |
 | 1주차 | bounded native K2-a semantic oracle — 완료 (2026-08-15) | semantic kind, typed namespace, producer-owned instance/generation, copied read API, 별도 256B binding snapshot과 exact native reject proof; lifecycle trace 계약은 H1 |
-| 1~2주차 다음 | H1 OS-neutral trace/replay verifier | `discover -> bind -> observe -> update -> exit -> stale reject -> rebind`와 stable reason; native oracle trace의 동일 verdict |
+| 1~2주차 다음 | H1 OS-neutral trace/replay verifier | update 뒤 stale/rebind와 exit 뒤 stale/rediscover/rebind를 분리하고 stable reason과 native oracle trace의 동일 verdict를 검증 |
 | 2~4주차 | H2 Linux observe-only userspace service | primary exact reference에서 한 host와 한 `AI_SERVICE` source를 관측하고 raw/normalized/binding artifact를 분리; 모든 action `UNSUPPORTED` |
 | 4~6주차 | H3 reconciliation과 parity | exit/PID reuse/cgroup recreate/collector restart/host reboot 구분, 명시적 rebind, backend ID leakage 없음 |
 | 6~8주차 | delivery acceptance와 native conformance | service startup/restart/remove, 실제 storage/network/model workload, exact kernel/config/package/hash provenance, 정규 host matrix와 cross-backend verdict |

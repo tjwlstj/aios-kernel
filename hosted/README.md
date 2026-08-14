@@ -43,7 +43,8 @@ hosted/
 1. bounded native K2-a semantic oracle를 고정했다. 이 조각은 boot-local immutable
    source binding만 증명하며 전체 lifecycle 계약 완료가 아니다.
 2. 다음 H1에서 substrate-neutral identity/lifecycle/generation/reject trace와 replay
-   verifier, fail-closed negative fixture를 만든다.
+   verifier, fail-closed negative fixture를 만든다. 구현 전 field/state/fixture/일정은
+   [`H1 작업 준비서`](../docs/os/h1_binding_trace_replay_workplan_ko.md)를 따른다.
 3. H2는 Linux kernel module이 아닌 observe-only userspace service 한 개로 시작한다.
 4. H3에서 exit, PID reuse, cgroup recreation, collector restart, host reboot를 구분한다.
 
