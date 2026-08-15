@@ -356,7 +356,7 @@ substrate와 독립적으로 검증하는 bounded semantic oracle과 conformance
 
 - 세부 field, state machine, fixture와 검증 일정은
   [H1 trace/replay 작업 준비서](h1_binding_trace_replay_workplan_ko.md)를 따른다.
-- `discover -> bind -> observe -> update -> stale reject -> rebind -> exit -> stale reject -> rediscover -> rebind`
+- `discover -> bind -> observe -> update -> stale reject -> rebind -> observe -> exit -> stale reject -> rediscover -> rebind -> observe`
   lifecycle을
   versioned trace로 고정한다.
 - duplicate, orphan, source identity/instance reuse without valid generation,
