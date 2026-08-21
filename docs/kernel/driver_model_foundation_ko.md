@@ -17,8 +17,8 @@
 
 관련 파일:
 
-- [include/drivers/driver_model.h](/Z:/aios/aios-kernel/include/drivers/driver_model.h)
-- [drivers/driver_model.c](/Z:/aios/aios-kernel/drivers/driver_model.c)
+- [kernel/include/drivers/driver_model.h](../../kernel/include/drivers/driver_model.h)
+- [kernel/drivers/driver_model.c](../../kernel/drivers/driver_model.c)
 
 핵심 타입:
 

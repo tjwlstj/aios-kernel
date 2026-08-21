@@ -1,11 +1,18 @@
-# OLD 문서 체크리스트 (2026-07-03, 2026-08-11 재검토)
+# OLD/REVIEW 문서 감사 기록 (2026-07-03, 2026-08-21 재검토)
 
-이 문서는 현재 구현 기준보다 뒤처진 문서를 `OLD` 또는 `REVIEW`로 분류해 둔 체크리스트다.
-파일 이동은 하지 않는다. 기존 링크를 유지하되, 새 작업자는 먼저 최신 기준 문서를 읽고 아래 문서는
-역사적 맥락이나 이전 판단을 확인할 때만 참고한다.
+> 문서 역할: 과거 분류 근거를 보존하는 `REVIEW` 감사 기록
+>
+> 현재 수명주기 원장: [docs/README.md](../README.md)
+
+이 문서는 현재 구현 기준보다 뒤처진 문서를 `OLD` 또는 `REVIEW`로 분류해 온 감사
+기록이다. 파일 이동은 하지 않는다. 현재 문서 수명주기와 새 문서 등록은
+[문서 인덱스](../README.md), 작업·문서 관리 절차는
+[통합 작업 진입 가이드](integrated_work_guide_ko.md)를 우선한다. 아래 표와 운영 점검은
+각 분류 시점의 근거를 보존하며 현재 구현·명령의 정본이 아니다.
 
 ## 최신 기준
 
+- [통합 작업 진입 가이드](integrated_work_guide_ko.md): 요청 분류, 정본·스킬·검증 선택과 문서 수명주기 관리.
 - [CLAUDE.md](../../CLAUDE.md): 현재 빌드/테스트 명령, 구현 성숙도, ID namespace와 불변식.
 - [Kernel Room 문서 허브](../kernel-room/README.md)와 [관리 모델 정본](../kernel-room/kernel_room_management_model_ko.md): Room→Cell→Node→NodeBit 관리 구조와 `CURRENT`/`PARTIAL`/`PLANNED` 경계.
 - [minimal_io_and_maturity_workflow_ko.md](minimal_io_and_maturity_workflow_ko.md): K1~K5 관리축, M1~M5 실행 substrate, C/W/H 후속축의 현재 우선순위.
@@ -29,15 +36,26 @@
 
 | 체크 | 문서 | 이유 |
 |---|---|---|
-| [x] REVIEW | [ai_resource_management_development_plan_ko.md](../autonomy/ai_resource_management_development_plan_ko.md) | resource/service 계획 자체는 유효하지만 ring3 이후 전제 문장이 일부 낡았다. |
 | [x] REVIEW | [code_boundary_and_structure_tree_ko.md](../kernel/code_boundary_and_structure_tree_ko.md) | 디렉토리 경계 설명은 유효하나 ring3 이전 표현이 일부 남아 있다. |
 | [x] REVIEW | [orbit_cell_node_feasibility_ko.md](../kernel-room/orbit_cell_node_feasibility_ko.md) | Orbit 아이디어는 장기 탐색 자료로만 유효하다. 현재 상태는 `RESEARCH`이며 canonical Cell registry나 Node binding, 지원 topology가 아니다. |
 | [x] REVIEW | [hardware_core_foundation_ko.md](../kernel/hardware_core_foundation_ko.md) | 초기 hardware 기반 설명은 유효하지만 전역 “다음 우선순위”는 K2 semantic safety와 Linux-hosted 기본 delivery를 병행하는 현재 정본보다 앞선 기록이다. |
 | [x] REVIEW | [commercial_stability_baseline_ko.md](commercial_stability_baseline_ko.md) | 초기 health/driver 기준은 참고 가능하지만 QEMU stable과 driver-first 우선순위는 2026-04 checkpoint다. |
+| [x] OLD/REVIEW | [test_tooling_ko.md](../tools/test_tooling_ko.md) | 초기 testkit 구조 기록이며 현재 명령과 판정 계약은 별도 정본이 소유한다. |
+| [x] OLD/REVIEW | [boot_kernel_testkit_expansion_plan_ko.md](../tools/boot_kernel_testkit_expansion_plan_ko.md) | 2026-04 초기 확장 기록이며 현재 V0~V5 정본을 대체하지 않는다. |
+| [x] OLD/REVIEW | [hardening_baseline_2026_07_02_ko.md](hardening_baseline_2026_07_02_ko.md) | 현재 SMAP·entry-AC 범위 이전의 하드닝 점검 기록이다. |
+| [x] REVIEW/RESEARCH | [aios_build_project_landscape_2026_08_03_ko.md](aios_build_project_landscape_2026_08_03_ko.md) | 외부 프로젝트 조사와 당시 적용 순서를 보존하며 현재 전역 큐가 아니다. |
 
-## Claude/testkit 명령 확인
+## 활성 계획으로 재분류한 문서
 
-Claude가 주로 참고하는 테스트 진입점은 [CLAUDE.md](../../CLAUDE.md)의 `Build & Test Commands`와 `tools/testkit`이다.
+| 재검토일 | 문서 | 현재 역할 |
+|---|---|---|
+| 2026-08-21 | [ai_resource_management_development_plan_ko.md](../autonomy/ai_resource_management_development_plan_ko.md) | 2026-08-15에 현재 resource ledger와 H1→H2 경계를 반영한 native resource subsystem 분야별 작업 계획. 전역 우선순위 정본은 아님. |
+
+## Claude/testkit 명령 확인 (2026-07-03 역사적 점검)
+
+아래 내용은 당시 명령 점검을 보존한다. 현재 명령과 shell topic은
+[CLAUDE.md](../../CLAUDE.md), [Testkit 가이드](../tools/testkit_guide_ko.md)와
+[`tools/testkit/README.md`](../../tools/testkit/README.md)를 우선한다.
 
 권장 명령:
 

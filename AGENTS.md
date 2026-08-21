@@ -6,6 +6,9 @@
 - 새 작업 전에 현재 브랜치, 작업 트리, 최근 커밋을 확인한다.
 - `CLAUDE.md`, `PROJECT.md`, `docs/meta/codex_handoff_tips_ko.md`와 관련
   설계 문서를 현재 구현과 함께 읽는다.
+- 작업 유형, 질문별 정본, 검증 경로와 문서 수명주기는
+  `docs/meta/integrated_work_guide_ko.md`에서 고른다. 이 통합 가이드는 세부
+  정본을 대체하지 않는다.
 - Kernel Room, Cell, Node, NodeBit, Axis Gate, Orbit 또는 리소스 귀속을
   다룰 때는 `docs/kernel-room/kernel_room_management_model_ko.md`를 정본으로
   먼저 읽는다.

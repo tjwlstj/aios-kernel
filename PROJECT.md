@@ -1,10 +1,14 @@
-# AIOS 프로젝트 가이드 (도메인 맵)
+# AIOS 프로젝트 가이드 (도메인 맵 정본)
 
 이 문서는 저장소를 **하나의 큰 트리가 아니라 7개의 독립 도메인**으로 보고 관리하기 위한
-마스터 가이드다. "이 코드는 어디에 두나?", "무엇이 무엇에 의존해도 되나?"를 여기서 정한다.
+도메인 맵 정본이다. "이 코드는 어디에 두나?", "무엇이 무엇에 의존해도 되나?"를 여기서 정한다.
+작업 요청 분류, 정본 선택, 검증과 문서 관리 절차는
+[통합 작업 진입 가이드](docs/meta/integrated_work_guide_ko.md)를 따른다.
 
 제품 개요/기능 설명은 [README.md](README.md), 세부 설계는 [docs/README.md](docs/README.md),
-AI 에이전트(Claude Code)용 작업 규칙은 [CLAUDE.md](CLAUDE.md)를 본다.
+저장소 AI 작업·게시 규칙은 [AGENTS.md](AGENTS.md)와 [.agents/README.md](.agents/README.md),
+현재 빌드·구현 불변식은 [CLAUDE.md](CLAUDE.md)를 본다. 이 문서는 전역 작업 우선순위나
+세부 구현 성숙도를 단독으로 결정하지 않는다.
 
 제품 구조의 정본은 **Kernel Room → Cell → Node → NodeBit** 관리축이다. 이 계층은
 저장소 디렉터리 구조와 다른 논리 구조다. aggregate substrate가 있어 전체 Kernel Room

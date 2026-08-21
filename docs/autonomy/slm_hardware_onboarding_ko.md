@@ -30,10 +30,10 @@ AIOS의 SLM 계층은 커널 안에서 직접 "모든 드라이버를 생성"하
 
 관련 파일:
 
-- [runtime/slm_orchestrator.c](/Z:/aios/aios-kernel/runtime/slm_orchestrator.c)
-- [include/runtime/slm_orchestrator.h](/Z:/aios/aios-kernel/include/runtime/slm_orchestrator.h)
-- [runtime/ai_syscall.c](/Z:/aios/aios-kernel/runtime/ai_syscall.c)
-- [include/runtime/ai_syscall.h](/Z:/aios/aios-kernel/include/runtime/ai_syscall.h)
+- [kernel/runtime/slm_orchestrator.c](../../kernel/runtime/slm_orchestrator.c)
+- [kernel/include/runtime/slm_orchestrator.h](../../kernel/include/runtime/slm_orchestrator.h)
+- [kernel/runtime/ai_syscall.c](../../kernel/runtime/ai_syscall.c)
+- [kernel/include/runtime/ai_syscall.h](../../kernel/include/runtime/ai_syscall.h)
 
 ### 스냅샷에 포함되는 정보
 

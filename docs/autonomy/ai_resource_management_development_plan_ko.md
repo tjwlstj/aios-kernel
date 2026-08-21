@@ -4,6 +4,10 @@
 
 최종 갱신: 2026-08-15 (native K2-a 이후 H1→H2 순서 정렬)
 
+문서 역할: 활성 분야별 작업 계획. native resource subsystem 내부의 순서와 경계를
+소유하며, 전역 다음 작업은
+[성숙도 우선 작업흐름](../meta/minimal_io_and_maturity_workflow_ko.md)이 소유한다.
+
 ## 목적
 
 이 문서는 AIOS가 부팅 가능한 커널 기준선을 유지하면서,

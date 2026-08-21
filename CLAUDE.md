@@ -11,6 +11,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > ABI, driver, SLM, verification, documentation, workspace recovery, and
 > beta-first checkpoint rules. Publish to `beta` first; move `main` only by
 > fast-forward to the verified same SHA when explicitly authorized.
+>
+> Use the [integrated work entry guide](docs/meta/integrated_work_guide_ko.md)
+> to classify a request and select the owning canon, runbook, verification
+> path, and documentation mirrors. This file continues to own current build
+> commands, implementation status mirrors, and low-level invariants; the
+> integrated guide does not replace those details.
 
 ## Build & Test Commands
 

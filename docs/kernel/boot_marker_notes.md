@@ -1,6 +1,6 @@
 # Boot Marker Notes
 
-이 문서는 초기 부팅 디버깅을 위해 [boot/boot.asm](../boot/boot.asm)에 추가한 `debugcon` 마커의 의미와,
+이 문서는 초기 부팅 디버깅을 위해 [boot/boot.asm](../../kernel/boot/boot.asm)에 추가한 `debugcon` 마커의 의미와,
 이번 점검에서 확인된 해석 결과를 기록합니다.
 
 ## 출력 포트

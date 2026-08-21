@@ -2,6 +2,12 @@
 
 최종 갱신: 2026-08-15 (bounded native K2-a oracle 완료, H1 다음)
 
+문서 역할: K/M/C/W/H축의 제품 성숙도와 전역 작업 우선순위 정본. 요청 분류,
+스킬·주제별 정본 선택, 문서 관리와 게시 절차는
+[통합 작업 진입 가이드](integrated_work_guide_ko.md)를 따른다.
+
+문서 관리 연결: 2026-08-21 (마일스톤 성숙도 내용 변경 없음)
+
 **결정 배경:** 2026-07에는 ring3 첫 실행 슬라이스 뒤 "하드웨어 드라이버 확장 vs 기술 성숙도·정밀화" 중 **성숙도 우선**으로 결정했다. 2026-08-10에는 그 실행 M축이 프로젝트 방향을 독점하면서 본래의 Kernel Room 관리 구조가 뒤로 밀린 점을 바로잡았다. 2026-08-12에는 Linux-hosted userspace service를 의도된 기본 delivery substrate로 결정했다. 이 문서는 **Room→Cell→Node→NodeBit 관리축을 backend-neutral 의미 정본**으로 두고, Linux-hosted H축을 기본 delivery 구현축으로, 기존 M1~M5를 native reference/proof substrate 레인으로 유지한다.
 
 ---

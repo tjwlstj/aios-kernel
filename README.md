@@ -29,8 +29,9 @@ backend는 `PLANNED`입니다.
 
 AI 작업자는 루트 [`AGENTS.md`](AGENTS.md)의 저장소 규칙과
 [`.agents/README.md`](.agents/README.md)의 프로젝트 스킬 색인을 먼저
-확인합니다. 체크포인트는 `beta`에서 검증하고 승인된 동일 SHA만 `main`으로
-fast-forward합니다.
+확인한 뒤 [통합 작업 진입 가이드](docs/meta/integrated_work_guide_ko.md)에서
+요청 유형, 주제별 정본과 검증 경로를 고릅니다. 체크포인트는 `beta`에서 검증하고
+승인된 동일 SHA만 `main`으로 fast-forward합니다.
 
 ## GitHub Description
 
@@ -337,21 +338,18 @@ make debug          # GDB 디버깅 모드로 실행
 ## Planning Documents
 
 전체 설계 문서 색인은 **[docs/README.md](docs/README.md)**, 저장소 도메인 구조는
-**[PROJECT.md](PROJECT.md)** 를 참고하세요. 주요 문서:
+**[PROJECT.md](PROJECT.md)** 를 참고하세요. 현재 작업의 핵심 진입점은 다음과 같습니다.
 
-- [자율 OS 실행 로드맵](docs/autonomy/autonomous_os_execution_roadmap_ko.md) — `OLD`; 현재 우선순위는 성숙도 작업흐름 가이드 사용
-- [AI 친화 리소스 관리 개발 계획 (2026-04-27)](docs/autonomy/ai_resource_management_development_plan_ko.md)
+- [통합 작업 진입 가이드](docs/meta/integrated_work_guide_ko.md) — 요청 분류, 정본·스킬·검증 선택과 문서 관리
+- [AIOS 성숙도 우선 작업흐름](docs/meta/minimal_io_and_maturity_workflow_ko.md) — K/M/C/W/H축과 전역 우선순위 정본
+- [H1 OS-neutral binding trace/replay 작업 준비서](docs/os/h1_binding_trace_replay_workplan_ko.md) — 현재 bounded H1 계약; 구현은 `PLANNED`
 - [Kernel Room 관리 모델 정본](docs/kernel-room/kernel_room_management_model_ko.md)
-- [AIOS 성숙도 우선 작업흐름](docs/meta/minimal_io_and_maturity_workflow_ko.md)
-- [OLD 문서 체크리스트](docs/meta/old_docs_check_2026_07_03_ko.md)
-- [유저공간 OS 구현 방향](docs/os/user_space_os_direction_ko.md)
-- [브라우저 콘솔과 자체 런타임 엔진 로드맵](docs/os/browser_console_and_runtime_engine_roadmap_ko.md)
 - [Linux-hosted substrate와 upstream resource 정책 정본](docs/os/linux_hosted_substrate_and_resource_policy_ko.md)
-- [Linux-hosted runtime 도메인 경계](hosted/README.md)
-- [AI 에이전트 OS용 모델 스택 추천](docs/models/agent_model_stack_recommendations_ko.md)
-- [종합 점검 보고서 (2026-04-15)](docs/meta/inspection_report_2026_04_15.md)
-- [Kernel Room Topology 문서 모음](docs/kernel-room/README.md)
-- [OS 계층 소개](os/README.md)
+- [검증 도구 진화 설계](docs/tools/verification_tooling_evolution_design_ko.md)와 [Testkit 가이드](docs/tools/testkit_guide_ko.md)
+- [문서 전체 인덱스와 수명주기](docs/README.md) — 도메인별 활성·`REVIEW`·`OLD` 문서
+
+이전 로드맵, 과거 점검, 외부 조사와 분야별 참고 계획은 문서 인덱스에서 수명주기를
+확인한 뒤 사용합니다.
 
 ## License
 

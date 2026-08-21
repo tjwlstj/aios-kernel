@@ -1,5 +1,12 @@
 # tools/ — 테스트툴 + 빌드 오케스트레이션 도메인
 
+> 문서 역할: tools 도메인 진입 문서
+>
+> 검증 판정 정본은
+> [검증 툴링 진화 설계](../docs/tools/verification_tooling_evolution_design_ko.md),
+> 실제 명령·산출물 가이드는
+> [Testkit 가이드](../docs/tools/testkit_guide_ko.md)다.
+
 모든 도메인을 **빌드/검증**하는 도구가 모이는 곳이다. 다른 도메인은 `tools/`에 의존하지 않는다.
 (도메인 경계는 [../PROJECT.md](../PROJECT.md) 참고)
 
@@ -25,8 +32,17 @@ python tools/testkit/aios-testkit.py boot-matrix --profiles full minimal storage
 루트 `Makefile`에도 단축 타깃이 있다: `make test`, `make os-smoke`, `make testkit`.
 
 빌드 산출물은 커널 도메인의 `kernel/build/`에 모인다 (테스트 리포트 포함).
-세부 사용법은 [testkit/README.md](testkit/README.md), 확장안은
-[../docs/tools/boot_kernel_testkit_expansion_plan_ko.md](../docs/tools/boot_kernel_testkit_expansion_plan_ko.md).
+
+문서는 다음 순서로 확인한다.
+
+1. [통합 작업 가이드](../docs/meta/integrated_work_guide_ko.md) — 변경 종류와 필요한 검증 lane 선택
+2. [검증 툴링 진화 설계](../docs/tools/verification_tooling_evolution_design_ko.md) — evidence/verdict, fail-closed 계약 정본
+3. [Testkit 가이드](../docs/tools/testkit_guide_ko.md) — 실제 명령, profile, 산출물
+4. [testkit/README.md](testkit/README.md) — 현재 디렉터리와 도구 구성
+
+[초기 부팅 커널 테스트 확장안](../docs/tools/boot_kernel_testkit_expansion_plan_ko.md)은
+`OLD/REVIEW` 역사 기록이다. 현재 구현 상태, 다음 작업 또는 검증 계약의 정본으로
+사용하지 않는다.
 
 ## CI
 

@@ -145,8 +145,8 @@ x86_64 계열에서는 표준적인 하드웨어 엔트로피 소스가 있을 �
 
 관련 코드:
 
-- [include/kernel/time.h](Z:\aios\aios-kernel\include\kernel\time.h)
-- [kernel/time.c](Z:\aios\aios-kernel\kernel\time.c)
+- [kernel/include/kernel/time.h](../../kernel/include/kernel/time.h)
+- [kernel/core/time.c](../../kernel/core/time.c)
 
 현재 AIOS는 이미 `TSC`와 `PIT`를 이용해 보정된 시간원을 사용하고 있다.  
 따라서 다음을 엔트로피 후보로 쓸 수 있다.
@@ -169,8 +169,8 @@ x86_64 계열에서는 표준적인 하드웨어 엔트로피 소스가 있을 �
 
 관련 코드:
 
-- [include/kernel/selftest.h](Z:\aios\aios-kernel\include\kernel\selftest.h)
-- [kernel/selftest.c](Z:\aios\aios-kernel\kernel\selftest.c)
+- [kernel/include/kernel/selftest.h](../../kernel/include/kernel/selftest.h)
+- [kernel/core/selftest.c](../../kernel/core/selftest.c)
 
 이미 boot-time memory microbench가 있기 때문에 다음을 엔트로피 후보로 쓸 수 있다.
 
@@ -192,7 +192,7 @@ x86_64 계열에서는 표준적인 하드웨어 엔트로피 소스가 있을 �
 
 관련 코드:
 
-- [drivers/serial.c](Z:\aios\aios-kernel\drivers\serial.c)
+- [kernel/drivers/serial.c](../../kernel/drivers/serial.c)
 
 현재 시리얼 콘솔은 polling 기반이라, 입력 시점 자체가 엔트로피 후보가 될 수 있다.
 
@@ -209,9 +209,9 @@ x86_64 계열에서는 표준적인 하드웨어 엔트로피 소스가 있을 �
 
 관련 코드:
 
-- [drivers/e1000.c](Z:\aios\aios-kernel\drivers\e1000.c)
-- [drivers/usb_host.c](Z:\aios\aios-kernel\drivers\usb_host.c)
-- [drivers/storage_host.c](Z:\aios\aios-kernel\drivers\storage_host.c)
+- [kernel/drivers/e1000.c](../../kernel/drivers/e1000.c)
+- [kernel/drivers/usb_host.c](../../kernel/drivers/usb_host.c)
+- [kernel/drivers/storage_host.c](../../kernel/drivers/storage_host.c)
 
 현재는 smoke/bootstrap 단계지만, 다음을 후보로 쓸 수 있다.
 
@@ -233,9 +233,9 @@ x86_64 계열에서는 표준적인 하드웨어 엔트로피 소스가 있을 �
 
 관련 코드:
 
-- [sched/ai_sched.c](Z:\aios\aios-kernel\sched\ai_sched.c)
-- [runtime/slm_orchestrator.c](Z:\aios\aios-kernel\runtime\slm_orchestrator.c)
-- [runtime/autonomy.c](Z:\aios\aios-kernel\runtime\autonomy.c)
+- [kernel/sched/ai_sched.c](../../kernel/sched/ai_sched.c)
+- [kernel/runtime/slm_orchestrator.c](../../kernel/runtime/slm_orchestrator.c)
+- [kernel/runtime/autonomy.c](../../kernel/runtime/autonomy.c)
 
 현재는 완전한 선점 스케줄러는 아니지만, task submit/plan apply/telemetry 이벤트 간의 간격은 후보가 될 수 있다.
 

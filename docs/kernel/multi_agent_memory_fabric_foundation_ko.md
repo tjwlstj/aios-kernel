@@ -28,16 +28,16 @@
 
 코드 기준으로 다음 축을 새로 추가했다.
 
-- [include/mm/memory_fabric.h](Z:\aios\aios-kernel\include\mm\memory_fabric.h)
-- [mm/memory_fabric.c](Z:\aios\aios-kernel\mm\memory_fabric.c)
+- [kernel/include/mm/memory_fabric.h](../../kernel/include/mm/memory_fabric.h)
+- [kernel/mm/memory_fabric.c](../../kernel/mm/memory_fabric.c)
 
 보조적으로 함께 넣은 것:
 
-- [include/mm/tensor_mm.h](Z:\aios\aios-kernel\include\mm\tensor_mm.h)
-- [mm/tensor_mm.c](Z:\aios\aios-kernel\mm\tensor_mm.c)
+- [kernel/include/mm/tensor_mm.h](../../kernel/include/mm/tensor_mm.h)
+- [kernel/mm/tensor_mm.c](../../kernel/mm/tensor_mm.c)
   `tensor_info()` 추가
-- [include/runtime/slm_orchestrator.h](Z:\aios\aios-kernel\include\runtime\slm_orchestrator.h)
-- [runtime/slm_orchestrator.c](Z:\aios\aios-kernel\runtime\slm_orchestrator.c)
+- [kernel/include/runtime/slm_orchestrator.h](../../kernel/include/runtime/slm_orchestrator.h)
+- [kernel/runtime/slm_orchestrator.c](../../kernel/runtime/slm_orchestrator.c)
   `slm_hw_snapshot_t`에 `memory_fabric` 프로필 연결
 
 ## 핵심 아이디어
