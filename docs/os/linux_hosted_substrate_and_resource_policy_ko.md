@@ -1,6 +1,6 @@
 # AIOS Linux-hosted substrate와 upstream resource 정책 정본
 
-> 기준일: 2026-08-15
+> 기준일: 2026-08-23
 >
 > 문서 상태: 설계·resource 선정 정본
 >
@@ -82,8 +82,8 @@ adapter, cgroup enforcement 또는 AIOS native resource apply를 뜻하지 않�
 
 | Resource | 역할 | 승인 series / 문서 | exact reference | 날짜·수명 | 사용 경계 |
 |---|---|---|---|---|---|
-| Linux kernel primary | Linux-hosted 설계·호환의 주 기준선 | `6.12.y` LTS | `6.12.103` | 2026-08-09, EOL 2028-12 | 기본 API·동작 조사 기준; source-only |
-| Linux kernel secondary | 더 새 series의 전방 호환성 비교 | `6.18.y` | `6.18.44` | manifest의 provenance를 따름 | primary를 조용히 대체하지 않는 비교 기준; source-only |
+| Linux kernel primary | Linux-hosted 설계·호환의 주 기준선 | `6.12.y` LTS | `6.12.104` | 2026-08-19, EOL 2028-12 | 기본 API·동작 조사 기준; source-only |
+| Linux kernel secondary | 더 새 series의 전방 호환성 비교 | `6.18.y` | `6.18.45` | manifest의 provenance를 따름 | primary를 조용히 대체하지 않는 비교 기준; source-only |
 | QEMU | 계획된 Linux-hosted/QEMU lane의 emulator source reference | `11.1.x` | `11.1.0` | 2026-08-11 | 정식 release만 허용, RC 금지; runtime qualification과 hosted lane은 여전히 `PLANNED` |
 | VirtIO selected implementation baseline | 보수적 구현·검증 기준 | `1.2 CS01` | `1.2-CS01` | manifest의 OASIS source URL | AIOS가 선택한 승인 구현 기준 |
 | VirtIO newer approved reference | 최신 차이 조사 | `1.4 CS01` | `1.4-CS01` | 2026-04-08 승인 | `RESEARCH` only; 1.2 selected baseline을 조용히 대체하지 않음 |
@@ -91,9 +91,9 @@ adapter, cgroup enforcement 또는 AIOS native resource apply를 뜻하지 않�
 ### 3.1 Primary와 secondary의 의미
 
 - 새 hosted 설계는 Linux `6.12.y` LTS를 먼저 설명하고 검증한다.
-- `6.12.103`은 현재 exact reference다. `6.12.y`라는 움직이는 branch 이름만으로
+- `6.12.104`은 현재 exact reference다. `6.12.y`라는 움직이는 branch 이름만으로
   재현성이나 검증 완료를 주장하지 않는다.
-- `6.18.44`는 secondary comparison reference다. 새 API 탐색이나 향후 이동 비용을
+- `6.18.45`는 secondary comparison reference다. 새 API 탐색이나 향후 이동 비용을
   평가할 수 있지만, 별도 결정 없이 primary support baseline이 되지 않는다.
 - 두 Linux row를 동시에 등록해도 두 series를 runtime에서 지원한다는 뜻이 아니다.
 
@@ -113,6 +113,20 @@ adapter, cgroup enforcement 또는 AIOS native resource apply를 뜻하지 않�
   `reference_only`·`RESEARCH` 비교 기준이다.
 - 1.4에만 있는 기능을 사용하거나 1.2와 다른 해석을 채택하려면 capability와
   research lane을 따로 만들고, 1.2 baseline을 통과한 것으로 축약하지 않는다.
+
+### 3.4 2026-08-23 exact reference 재검토
+
+- [kernel.org signed release index](https://www.kernel.org/pub/linux/kernel/v6.x/)에서
+  primary exact pin을 `6.12.103`에서 `6.12.104`로, secondary exact pin을
+  `6.18.44`에서 `6.18.45`로 갱신했다(각각 2026-08-19 signed longterm release).
+  이는 source reference 갱신일 뿐 runtime qualification이나 support 승격이 아니다.
+- [QEMU 공식 download page](https://www.qemu.org/download/)에서 `11.1.0`(2026-08-11)이
+  여전히 최신 stable release임을 재확인했다. exact pin 변경 없음.
+- [OASIS VIRTIO TC page](https://www.oasis-open.org/committees/virtio/) 기준 승인된
+  최신 committee specification 변동 없음. `1.2-CS01` selected baseline과
+  `1.4-CS01` RESEARCH row를 유지한다.
+- 같은 패치에서 manifest row, guard REQUIRED_RESOURCES/digest, 이 문서 표를 함께
+  갱신했고 `linux_resource_guard.py` PASS를 확인했다.
 
 ## 4. Resource manifest와 guard 계약
 

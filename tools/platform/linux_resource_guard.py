@@ -106,7 +106,7 @@ REQUIRED_RESOURCES = {
         "disposition": "host_only",
         "version_policy": "lts_series",
         "version": "6.12.y",
-        "reference_pin": "6.12.103",
+        "reference_pin": "6.12.104",
         "source_url": "https://www.kernel.org/category/releases.html",
         "boundary": "linux_host",
         "identity_semantics": "none",
@@ -117,7 +117,7 @@ REQUIRED_RESOURCES = {
         "disposition": "host_only",
         "version_policy": "lts_series",
         "version": "6.18.y",
-        "reference_pin": "6.18.44",
+        "reference_pin": "6.18.45",
         "source_url": "https://www.kernel.org/category/releases.html",
         "boundary": "linux_host",
         "identity_semantics": "none",
@@ -172,7 +172,7 @@ REQUIRED_RESOURCES = {
         "disposition": "interface_only",
         "version_policy": "lts_series",
         "version": "6.12.y",
-        "reference_pin": "6.12.103",
+        "reference_pin": "6.12.104",
         "source_url": "https://docs.kernel.org/6.12/admin-guide/cgroup-v2.html",
         "boundary": "linux_userspace_source",
         "identity_semantics": "source_only",
@@ -194,7 +194,7 @@ REQUIRED_RESOURCES = {
         "disposition": "interface_only",
         "version_policy": "lts_series",
         "version": "6.12.y",
-        "reference_pin": "6.12.103",
+        "reference_pin": "6.12.104",
         "source_url": "https://docs.kernel.org/6.12/accounting/psi.html",
         "boundary": "linux_userspace_source",
         "identity_semantics": "source_only",
@@ -205,7 +205,7 @@ REQUIRED_RESOURCES = {
         "disposition": "blocked_import",
         "version_policy": "lts_series",
         "version": "6.12.y",
-        "reference_pin": "6.12.103",
+        "reference_pin": "6.12.104",
         "source_url": "https://docs.kernel.org/6.12/process/stable-api-nonsense.html",
         "boundary": "forbidden_internal",
         "identity_semantics": "none",
@@ -263,16 +263,16 @@ REQUIRED_LICENSES = {
 }
 
 EXPECTED_RESOURCE_DIGESTS = {
-    "linux-host-primary": "f94f036a5d0d63a5970d7ca8ec5fdc6c39f8c68150f436d3a3095afcf8ef3383",
-    "linux-host-forward": "0865ee0fba547ce53361b0636060bac78d54589d07345ca48096f14b1c59a459",
+    "linux-host-primary": "ee547b0749f4bcae9342c39efd995b9d0a3b6a79edae9b988da294bb05c9071d",
+    "linux-host-forward": "bf8e466bed73b73c599f8d61fe5902834a6ca9b83854ea953f757654b356e8c4",
     "qemu-system-linux-host": "c53705176c47b94d5e037edee5d261193aa46f20d3919c67816154347842448d",
     "linux-kvm-uapi": "af296aac0a0f9ebe27bc3050b50fa3f12b352f061ef3e2371954698f4ce79165",
     "virtio-1-2-contract": "aaaee261b4f58ba76210a033a5f9b66c5f6c426d5079b5d6466c784d683474a4",
-    "linux-cgroup-v2-source": "6b8ce3ee1e9a15d45243f8ef86e8d36fe88009a77390a5455882bcf5d317b266",
+    "linux-cgroup-v2-source": "f13037418cae31414bf24a526e95c71b2b6c92a9ed6af5243a39938a607fa1bc",
     "virtio-1-4-reference": "67aaf73e091d736af35c6267dd955551b1f3914f612acdc971999c75a3dd07c3",
     "linux-pidfd-source": "12acbb3060261231244a087ba0e2769dba613e6a2292a2942d22f5b95d78d9b3",
-    "linux-psi-source": "3f12f6b1431876622fa2a9f0bda63a335dd20c9b87a1feb2624953c1b434a9c7",
-    "linux-kernel-internal-source": "e3964ce55e75734bc242c104db62392a1c609e8909620a4740a0403e0eefb149",
+    "linux-psi-source": "05ff2cf48ec32db89c6e4d6e3ed8fdb6050550c233d1c663d57a07321bbaa115",
+    "linux-kernel-internal-source": "ef2e18d567787bf7d035e240cbc21ad44b48fe73991e7bc657c740d077236a8a",
     "sel4-design-reference": "38eb2cb7551ea1da0d551985d66c6db86184f2b361db173883c37cebd9ee55e4",
     "zircon-design-reference": "d3af1b7bf73119de6fa95de4b65a5ecde816b22c333be44a6a8a58233aa59950",
     "unikraft-design-reference": "c2a21e577f07d1f7b7999da3261b672f9d2f2f95591ac69d2c786ad08360564e",
@@ -411,8 +411,8 @@ def validate_manifest(data: dict[str, Any], repo_root: Path = REPO_ROOT) -> tupl
         except ValueError:
             errors.append("reviewed_on must be a valid calendar date")
         else:
-            if reviewed_on != date(2026, 8, 15):
-                errors.append("reviewed_on must equal the schema v1 review date 2026-08-15")
+            if reviewed_on != date(2026, 8, 23):
+                errors.append("reviewed_on must equal the schema v1 review date 2026-08-23")
     if data.get("resource_policy_maturity") != "CURRENT":
         errors.append("resource_policy_maturity must equal CURRENT for schema v1")
     if data.get("hosted_backend_maturity") != "PLANNED":
