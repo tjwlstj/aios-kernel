@@ -4,7 +4,7 @@
 >
 > 문서 상태: 구현 전 설계 기준선
 >
-> H1 구현 성숙도: `PLANNED`
+> H1 구현 성숙도: `PARTIAL` (H1-a 계약/loader 완료 2026-08-23; H1-b/c 진행 전)
 >
 > 방향 분류: Kernel Room `DIRECT` + Linux-hosted `HOSTED_DESIGN`
 
@@ -46,7 +46,7 @@ boot marker와 `state binding`은 H1에서 변경하지 않는다.
 | bounded native K2-a oracle | `CURRENT` | field/reject 의미와 native projection fixture의 기준 |
 | K2 전체 lifecycle/reconcile | `PARTIAL` | H1 replay가 생겨도 live producer refresh는 남음 |
 | H0 resource manifest/guard | `CURRENT` | upstream source-only 경계를 제공할 뿐 runtime 증거가 아님 |
-| H1 trace/replay | `PLANNED` | 이 문서의 다음 구현 조각 |
+| H1 trace/replay | `PARTIAL` (H1-a 완료 2026-08-23) | H1-b lifecycle replay/fixture가 다음 구현 조각 |
 | H2 Linux observe-only adapter | `PLANNED` | H1 acceptance gate 뒤에만 시작 |
 | authorize/apply | `PLANNED` | H1 범위 밖, K5와 별도 승인 필요 |
 
@@ -458,7 +458,7 @@ tests와 `git diff --check`를 통과해야 하며 빈 scaffold만 커밋하지 
 
 | 순서 | 조각 | 종료 증거 | H1 상태 |
 |---|---|---|---|
-| H1-a | contract manifest, strict JSONL loader, transport negative tests | duplicate key, truncation, type/limit 반례가 exact reason으로 실패 | `PARTIAL` |
+| H1-a — 완료 (2026-08-23) | contract manifest, strict JSONL loader, transport negative tests | duplicate key, truncation, type/limit 반례가 exact reason으로 실패 | `PARTIAL` |
 | H1-b | lifecycle replay, valid/semantic-negative fixture matrix, native K2-a projection | full lifecycle PASS, stale/rollback/orphan 등 fail-closed | `PARTIAL` |
 | H1-c | fixture manifest CLI, Ubuntu/Windows CI, artifact와 문서 mirror | 양 OS 같은 fixture verdict, 모든 정규 gate PASS | `CURRENT` 승격 가능 |
 

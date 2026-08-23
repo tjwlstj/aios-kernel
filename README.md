@@ -342,7 +342,7 @@ make debug          # GDB 디버깅 모드로 실행
 
 - [통합 작업 진입 가이드](docs/meta/integrated_work_guide_ko.md) — 요청 분류, 정본·스킬·검증 선택과 문서 관리
 - [AIOS 성숙도 우선 작업흐름](docs/meta/minimal_io_and_maturity_workflow_ko.md) — K/M/C/W/H축과 전역 우선순위 정본
-- [H1 OS-neutral binding trace/replay 작업 준비서](docs/os/h1_binding_trace_replay_workplan_ko.md) — 현재 bounded H1 계약; 구현은 `PLANNED`
+- [H1 OS-neutral binding trace/replay 작업 준비서](docs/os/h1_binding_trace_replay_workplan_ko.md) — 현재 bounded H1 계약; H1-a transport 조각은 `PARTIAL`, lifecycle replay(H1-b) 진행 전
 - [Kernel Room 관리 모델 정본](docs/kernel-room/kernel_room_management_model_ko.md)
 - [Linux-hosted substrate와 upstream resource 정책 정본](docs/os/linux_hosted_substrate_and_resource_policy_ko.md)
 - [검증 도구 진화 설계](docs/tools/verification_tooling_evolution_design_ko.md)와 [Testkit 가이드](docs/tools/testkit_guide_ko.md)

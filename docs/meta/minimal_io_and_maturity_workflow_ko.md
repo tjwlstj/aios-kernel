@@ -271,7 +271,7 @@ object에 맞춰 바꾸지 않는다.
 | 단계 | 상태 | 관계 |
 |---|---|---|
 | H0 upstream resource manifest/guard | `CURRENT` | 13개 source row와 `code_import=0`을 검증한다. runtime backend 증거가 아니다. |
-| H1 OS-neutral trace/replay | `PLANNED` | bounded native K2-a semantic field/reject proof를 바탕으로 OS-neutral lifecycle·generation·reject reason을 고정하고 native/hosted replay producer가 함께 소비한다. |
+| H1 OS-neutral trace/replay | `PARTIAL` (H1-a) | bounded native K2-a semantic field/reject proof를 바탕으로 OS-neutral lifecycle·generation·reject reason을 고정하고 native/hosted replay producer가 함께 소비한다. H1-a contract/transport verifier만 착수됐고 lifecycle replay/fixture는 다음 조각이다. |
 | H2 Linux observe-only adapter | `PLANNED` | K2/H1 공통 계약, negative fixture와 bounded native semantic oracle가 고정된 뒤 userspace service로 source-only 관측을 시작한다. 광범위한 native process/storage 확장은 선행조건이 아니다. |
 | H3 binding reconciliation/parity | `PLANNED` | exit/PID reuse/cgroup recreate/host restart를 구분하고 native와 같은 semantic verdict를 요구한다. |
 | H4 proposal/validation parity | `PLANNED` | K5 action/principal 계약 뒤에만 validate-only로 열며 초기 capability는 전부 `UNSUPPORTED`다. |

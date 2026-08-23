@@ -1,0 +1,182 @@
+{
+  "contract_id": "aios-binding-trace-v1",
+  "schema_version": 1,
+  "maturity": "PARTIAL",
+  "canonical_workplan": "docs/os/h1_binding_trace_replay_workplan_ko.md",
+  "slice_scope": {
+    "implemented": [
+      "transport boundary and limits",
+      "strict JSONL parsing with duplicate-key rejection",
+      "exact field-set, scalar-type, enum, and constant validation",
+      "envelope sequence continuity and terminal structure arithmetic"
+    ],
+    "not_implemented_yet": [
+      "semantic lifecycle replay (H1-b)",
+      "claimed-outcome versus recomputed outcome comparison (H1-b)",
+      "cross-axis validity, zero-sentinel legality, instance constancy (H1-b)",
+      "fixture manifest sidecar consumption (H1-c)",
+      "CI integration and artifact preservation (H1-c)"
+    ]
+  },
+  "transport": {
+    "encoding": "utf-8",
+    "bom_allowed": false,
+    "allowed_line_endings": ["lf", "crlf"],
+    "final_newline_required": true,
+    "blank_lines_allowed": false,
+    "max_line_bytes": 4096,
+    "max_records": 64,
+    "max_total_bytes": 262144,
+    "flat_objects_only": true,
+    "arrays_forbidden": true,
+    "duplicate_keys_allowed": false,
+    "line_length_counts": "line content bytes excluding trailing CR and LF terminators"
+  },
+  "scalar_types": {
+    "u32": {
+      "json_type": "integer",
+      "min_value": 0,
+      "max_value": 4294967295
+    },
+    "flag": {
+      "json_type": "integer",
+      "min_value": 0,
+      "max_value": 1
+    },
+    "u64-decimal": {
+      "json_type": "string",
+      "pattern": "^(0|[1-9][0-9]{0,19})$",
+      "max_value_string": "18446744073709551615"
+    },
+    "trace-id": {
+      "json_type": "string",
+      "pattern": "^(?=.{1,64}$)[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "kebab-token": {
+      "json_type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    }
+  },
+  "enums": {
+    "record_type": ["event", "terminal"],
+    "event": ["discover", "bind", "observe", "update", "exit", "rebind"],
+    "claimed_outcome": ["accepted", "rejected"],
+    "claimed_reason": [
+      "none",
+      "init-order",
+      "missing",
+      "schema",
+      "malformed",
+      "overflow",
+      "duplicate",
+      "orphan",
+      "namespace",
+      "kind",
+      "role",
+      "instance",
+      "zero-generation",
+      "generation-rollback",
+      "stale",
+      "tail"
+    ],
+    "lifecycle_state": ["active", "exited"],
+    "final_state": ["discovered", "bound", "exited"]
+  },
+  "constants": {
+    "schema_version": 1,
+    "observation_only": 1,
+    "management_only": 1
+  },
+  "records": {
+    "event": {
+      "fields_in_order": [
+        { "name": "schema_version", "type": "u32" },
+        { "name": "record_type", "type": "enum:record_type" },
+        { "name": "trace_id", "type": "trace-id" },
+        { "name": "trace_sequence", "type": "u32" },
+        { "name": "host_instance", "type": "u64-decimal" },
+        { "name": "event", "type": "enum:event" },
+        { "name": "claimed_outcome", "type": "enum:claimed_outcome" },
+        { "name": "claimed_reason", "type": "enum:claimed_reason" },
+        { "name": "canonical_namespace", "type": "kebab-token" },
+        { "name": "canonical_id", "type": "u64-decimal" },
+        { "name": "canonical_kind", "type": "kebab-token" },
+        { "name": "canonical_generation", "type": "u64-decimal" },
+        { "name": "canonical_valid", "type": "flag" },
+        { "name": "parent_cell_id", "type": "u64-decimal" },
+        { "name": "parent_generation", "type": "u64-decimal" },
+        { "name": "parent_valid", "type": "flag" },
+        { "name": "producer_instance", "type": "u64-decimal" },
+        { "name": "producer_owned", "type": "flag" },
+        { "name": "copied_read", "type": "flag" },
+        { "name": "source_namespace", "type": "kebab-token" },
+        { "name": "source_id", "type": "u64-decimal" },
+        { "name": "source_instance", "type": "u64-decimal" },
+        { "name": "source_generation", "type": "u64-decimal" },
+        { "name": "source_kind", "type": "kebab-token" },
+        { "name": "source_role", "type": "kebab-token" },
+        { "name": "source_valid", "type": "flag" },
+        { "name": "bound_source_instance", "type": "u64-decimal" },
+        { "name": "bound_source_generation", "type": "u64-decimal" },
+        { "name": "binding_generation", "type": "u64-decimal" },
+        { "name": "binding_valid", "type": "flag" },
+        { "name": "binding_current", "type": "flag" },
+        { "name": "kind_match", "type": "flag" },
+        { "name": "role_match", "type": "flag" },
+        { "name": "generation_valid", "type": "flag" },
+        { "name": "lifecycle_state", "type": "enum:lifecycle_state" },
+        { "name": "lifecycle_valid", "type": "flag" },
+        { "name": "observed_at_ns", "type": "u64-decimal" },
+        { "name": "observed_at_valid", "type": "flag" },
+        { "name": "observation_only", "type": "flag" },
+        { "name": "management_only", "type": "flag" }
+      ]
+    },
+    "terminal": {
+      "fields_in_order": [
+        { "name": "schema_version", "type": "u32" },
+        { "name": "record_type", "type": "enum:record_type" },
+        { "name": "trace_id", "type": "trace-id" },
+        { "name": "trace_sequence", "type": "u32" },
+        { "name": "host_instance", "type": "u64-decimal" },
+        { "name": "producer_instance", "type": "u64-decimal" },
+        { "name": "record_count", "type": "u32" },
+        { "name": "accepted_count", "type": "u32" },
+        { "name": "rejected_count", "type": "u32" },
+        { "name": "final_state", "type": "enum:final_state" },
+        { "name": "final_binding_generation", "type": "u64-decimal" },
+        { "name": "observation_only", "type": "flag" },
+        { "name": "management_only", "type": "flag" }
+      ]
+    }
+  },
+  "string_mappings_v1": {
+    "note": "native K2-a numeric meanings for the initial bounded projection; append-only registry, numeric equality across namespaces is forbidden",
+    "canonical_namespace": { "node": 2 },
+    "source_namespace": { "native-slm-agent-tree": 1 },
+    "canonical_kind": { "ai-service": 1 },
+    "source_kind": { "ai-service": 1 },
+    "source_role": { "main": 1 },
+    "lifecycle_state": { "active": 1 }
+  },
+  "outcome_pairing": {
+    "accepted": ["none"],
+    "rejected": [
+      "init-order",
+      "missing",
+      "schema",
+      "malformed",
+      "overflow",
+      "duplicate",
+      "orphan",
+      "namespace",
+      "kind",
+      "role",
+      "instance",
+      "zero-generation",
+      "generation-rollback",
+      "stale",
+      "tail"
+    ]
+  }
+}

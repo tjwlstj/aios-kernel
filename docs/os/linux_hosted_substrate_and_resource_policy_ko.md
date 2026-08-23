@@ -366,10 +366,15 @@ substrate와 독립적으로 검증하는 bounded semantic oracle과 conformance
 - guard가 exact reference, role, source-only/import 금지 경계를 fail-closed로 검사한다.
 - 이 완료는 hosted executable, runtime adapter 또는 AIOS support가 아니다.
 
-### H1. OS-neutral trace와 replay verifier — `PLANNED`
+### H1. OS-neutral trace와 replay verifier — `PARTIAL` (H1-a 완료, 2026-08-23)
 
 - 세부 field, state machine, fixture와 검증 일정은
   [H1 trace/replay 작업 준비서](h1_binding_trace_replay_workplan_ko.md)를 따른다.
+- H1-a(2026-08-23): `hosted/contracts/binding-trace-v1.contract.json`과
+  `tools/hosted/binding_trace_replay.py` transport verifier가 `PARTIAL`로 착수됐다.
+  transport·구조 verdict만 있고 semantic replay는 없다.
+- H1-b lifecycle replay/fixture matrix, H1-c CI/artifact 연결이 남아 있고 이들이
+  끝나기 전까지 H1을 `CURRENT`로 표기하지 않는다.
 - `discover -> bind -> observe -> update -> stale reject -> rebind -> observe -> exit -> stale reject -> rediscover -> rebind -> observe`
   lifecycle을
   versioned trace로 고정한다.
@@ -384,7 +389,7 @@ substrate와 독립적으로 검증하는 bounded semantic oracle과 conformance
 
 - H1의 공통 lifecycle/generation/reject 계약, negative fixture와 하나의 bounded
   native semantic oracle가 모두 고정된 뒤 시작한다. native oracle은 2026-08-15
-  `CURRENT`가 됐고 H1은 아직 `PLANNED`다. 광범위한 native process/storage
+  `CURRENT`가 됐고 H1은 H1-a transport 조각(2026-08-23)만 `PARTIAL`이다. 광범위한 native process/storage
   확장과 최종 conformance closure는 첫 observe-only slice의 선행조건이 아니다.
 - primary Linux baseline 위에서 한 host instance와 bounded process source를 관측한다.
 - 실제 file/network/compute workload의 resource와 pressure source를 읽는다.

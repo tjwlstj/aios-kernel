@@ -492,11 +492,14 @@ kernel/build/test-runs/<run-id>/<profile>/
   `termination.reason=guest-reboot-exit`, 전체 transcript boot verdict PASS
 - strict boot inventory 3프로필 baseline 일치
 
-### H1 연동 레인. OS-neutral source-binding trace/replay — `PLANNED`
+### H1 연동 레인. OS-neutral source-binding trace/replay — `PARTIAL` (H1-a transport 완료 2026-08-23)
 
 - 세부 field, lifecycle, reason, fixture와 일정은
   [`H1 binding trace/replay 작업 준비서`](../os/h1_binding_trace_replay_workplan_ko.md)가
   소유한다.
+- H1-a로 `hosted/contracts/binding-trace-v1.contract.json`과 strict JSONL loader의
+  transport verdict(raw/json/shape/envelope phase)가 호스트 유닛테스트와 함께 착수됐다.
+  lifecycle replay와 fixture matrix는 아직 없다.
 - raw JSONL evidence, fixture manifest의 expected verdict, replay가 계산한 verdict를
   분리하고 exact-one terminal·연속 sequence·bounded size를 fail-closed로 검사한다.
 - 동일 fixture가 Ubuntu/Windows에서 같은 outcome과 first reason을 내야 한다.

@@ -298,14 +298,15 @@ apply the entry gate in
 `docs/tools/verification_tooling_evolution_design_ko.md`.
 
 The Linux-hosted H axis is the intended default delivery implementation lane.
-H0 upstream manifest/guard and the bounded native K2-a oracle are `CURRENT`, while
-H1 trace/replay through H5 apply and the executable backend remain `PLANNED`.
-The next H1 slice must carry the K2 semantic fields and reject meanings into an
-OS-neutral lifecycle replay contract. H2 may start after those fail-closed
-fixtures are fixed; broad native process/storage expansion and final conformance
-closure are not prerequisites for the first observe-only hosted slice. H4/H5 require K5
-principal/ownership/authorize and separate approval. The canonical upstream pins
-and import boundary live in
+H0 upstream manifest/guard and the bounded native K2-a oracle are `CURRENT`.
+H1 reached `PARTIAL` with the H1-a contract/strict-loader slice (2026-08-23):
+transport verdicts only, no semantic replay yet. The H1-b lifecycle replay,
+fixture matrix, and K2 semantic field/reject projection are next; H1-c CI and
+artifact wiring follow before any promotion beyond `PARTIAL`. H2 may start only
+after those fail-closed fixtures pass; broad native process/storage expansion and
+final conformance closure are not prerequisites for the first observe-only hosted
+slice. H4/H5 require K5 principal/ownership/authorize and separate approval. The
+canonical upstream pins and import boundary live in
 `docs/os/linux_hosted_substrate_and_resource_policy_ko.md`.
 
 ### Browser / Runtime Engine Roadmap
@@ -334,7 +335,7 @@ replacement for QEMU or the normal verification path.
 | `kernel/include/` | Public headers, organized by subsystem |
 | `kernel/Makefile` | Kernel build system (root Makefile delegates here) |
 | `os/` | AIOS native ring3 userspace layer (main_ai, compat, runtime, tools) + `os/apps/` programs |
-| `hosted/` | Intended Linux-hosted delivery domain; responsibility boundary exists, H1/H2 runtime remains `PLANNED` |
+| `hosted/` | Intended Linux-hosted delivery domain; `contracts/` owns binding-trace-v1 (H1-a transport verifier `PARTIAL`), H1-b/H2 runtime remains `PLANNED` |
 | `models/` | AI/SLM model manifests (weights are gitignored) |
 | `store/` | Post-boot online driver/program/model download catalog |
 | `tools/testkit/` | Python test orchestration + Windows PS1 build helper |

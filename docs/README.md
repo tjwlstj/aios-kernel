@@ -13,7 +13,7 @@
 | 현재 구현, 빌드 명령, 저수준 불변식 | [CLAUDE.md](../CLAUDE.md) | 현재 구현 mirror·운영 기준 |
 | 파일 위치와 의존 방향 | [PROJECT.md](../PROJECT.md) | 도메인 맵 정본 |
 | 제품 축과 전역 우선순위 | [성숙도 우선 작업흐름](meta/minimal_io_and_maturity_workflow_ko.md) | roadmap 정본 |
-| 현재 bounded H1 계약 | [H1 trace/replay 작업 준비서](os/h1_binding_trace_replay_workplan_ko.md) | 작업 준비서; 구현 `PLANNED` |
+| 현재 bounded H1 계약 | [H1 trace/replay 작업 준비서](os/h1_binding_trace_replay_workplan_ko.md) | 작업 준비서; H1-a transport 조각 `PARTIAL`, lifecycle replay 진행 전 |
 | 검증 판정과 실제 명령 | [검증 도구 진화 설계](tools/verification_tooling_evolution_design_ko.md), [Testkit 가이드](tools/testkit_guide_ko.md) | 검증 정본·운영 가이드 |
 
 ## 문서 역할과 수명주기

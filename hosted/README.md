@@ -21,12 +21,16 @@ collector, reconciler 또는 runtime verdict가 구현됐다는 뜻이 아니다
 
 ```text
 hosted/
-├── contracts/    # H1 backend-neutral trace/wire contract (PLANNED)
-└── linux/        # H2 Linux userspace service (PLANNED)
+├── contracts/    # H1 backend-neutral trace/wire contract
+│   │             #   H1-a: binding-trace-v1.contract.json + transport verifier PARTIAL (2026-08-23)
+│   └── fixtures/ # H1-b에서 실제 fixture와 함께 추가 (아직 없음)
+└── linux/        # H2 Linux userspace service (PLANNED, 디렉터리 미생성)
 ```
 
 실제 하위 디렉터리는 해당 수직 조각과 verifier가 함께 생길 때 추가한다. 빈 scaffold를
-구현 진척으로 계산하지 않는다.
+구현 진척으로 계산하지 않는다. `contracts/binding-trace-v1.contract.json`과
+`tools/hosted/binding_trace_replay.py`는 H1-a 조각으로 존재하지만 semantic replay는
+H1-b까지 없으므로 H1 전체는 아직 `PARTIAL`(H1-a 완료)이다.
 
 ## 의존 경계
 
@@ -48,7 +52,9 @@ hosted/
 3. H2는 Linux kernel module이 아닌 observe-only userspace service 한 개로 시작한다.
 4. H3에서 exit, PID reuse, cgroup recreation, collector restart, host reboot를 구분한다.
 
-H1~H3는 실행 코드와 정규 verdict가 생기기 전까지 `PLANNED`다. H4/H5, quota,
+H1은 H1-a transport 계약/verifier(2026-08-23)만 `PARTIAL`이고, lifecycle replay와
+정규 fixture verdict가 생기기 전까지 H1 전체 승격은 없다. H2/H3는 실행 코드와 정규
+verdict가 생기기 전까지 `PLANNED`다. H4/H5, quota,
 throttle, scheduler migration, privileged actuator와 apply는 K5 principal/ownership/
 authorize 및 별도 승인 전까지 이 도메인의 범위 밖이다.
 
