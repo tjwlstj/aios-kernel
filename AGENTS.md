@@ -17,6 +17,9 @@
   `docs/os/linux_hosted_substrate_and_resource_policy_ko.md`와
   `tools/platform/resources/linux_substrate_resources.json`을 먼저 확인한다.
 - 사용자가 조사나 대기만 요청했다면 파일, Git, 원격 상태를 변경하지 않는다.
+- 대화형 QEMU 디버깅이 필요하면 `docs/tools/qemu_mcp_guide_ko.md`의 qemu-mcp
+  편의 도입을 쓸 수 있다. 이 경로는 진단 전용이며 PASS/FAIL 판정과 baseline은
+  반드시 `tools/testkit` 정규 lane으로만 수행한다.
 
 ## 프로젝트 스킬
 

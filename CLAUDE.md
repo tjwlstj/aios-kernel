@@ -58,6 +58,15 @@ python tools/testkit/aios-testkit.py shell --strict --skip-build # reuse existin
 python tools/testkit/aios-testkit.py os   # OS tool smoke test
 ```
 
+### Interactive Agent Debugging via MCP (optional, diagnostics-only)
+The external [qemu-mcp](https://github.com/0xmortuex/qemu-mcp) MCP server can be
+registered in Claude Code/opencode/Codex for conversational QEMU debugging
+(boot the ISO, wait for `=== AIOS Kernel Ready ===`, exchange `state *` topics on
+COM1, screenshot, raw QMP). Its output is diagnostic only: PASS/FAIL claims,
+marker contracts, and baselines still come exclusively from the testkit lanes
+above. Install, client registration, tool notes, and the verified-session record
+live in `docs/tools/qemu_mcp_guide_ko.md`.
+
 ### Linux substrate resource policy
 ```bash
 python tools/platform/linux_resource_guard.py
