@@ -67,6 +67,13 @@ marker contracts, and baselines still come exclusively from the testkit lanes
 above. Install, client registration, tool notes, and the verified-session record
 live in `docs/tools/qemu_mcp_guide_ko.md`.
 
+The optional `qemu-mcp-diagnostic --mcp-server <absolute executable> --skip-build`
+subcommand is a `PARTIAL` diagnostics-only helper: Windows actual E2E and cleanup
+are verified; Linux execution is not yet verified.
+It owns a dedicated process containment boundary and separate run artifacts;
+`OBSERVED` is not kernel PASS or clean guest exit. It never joins `all`, CI,
+inventory, or baseline writes, and does not modify any MCP client configuration.
+
 ### Linux substrate resource policy
 ```bash
 python tools/platform/linux_resource_guard.py

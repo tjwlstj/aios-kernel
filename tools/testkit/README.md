@@ -25,6 +25,8 @@
   - inventory/perf baseline 쓰기의 strict matrix·profile·record 출처를 검증
 - `lib/shell_lane.py`
   - QEMU `-serial stdio`로 커널 셸을 구동하고 reboot acknowledgement와 clean exit까지 검증
+- `lib/qemu_mcp_diagnostic.py`
+  - 별도 격리된 qemu-mcp 세션의 prompt/ping/QMP 관찰·artifact·cleanup을 관리하는 진단 전용 보조 경로
 - `lib/os_lane.py`
   - OS 계층 도구 smoke
 - `kernel/build-windows.ps1`
@@ -41,6 +43,18 @@
 - `all`은 항상 `kernel -> os` 순서로 순차 실행
 - 정상 부팅은 전체 로그의 fatal/health/terminal chain을 fail-closed로 판정
 - baseline 쓰기는 `--strict`와 완전한 trusted matrix 결과를 모두 요구
+- `qemu-mcp-diagnostic`은 `all`/CI/inventory/baseline에 연결하지 않는다.
+  `OBSERVED`는 진단 절차 관찰일 뿐 커널 PASS나 clean guest exit가 아니다.
+
+선택적 qemu-mcp 진단 (`PARTIAL`, Windows 실제 E2E 확인·Linux 실행 미검증):
+
+```powershell
+py -3 tools/testkit/aios-testkit.py qemu-mcp-diagnostic --mcp-server "C:\path\to\qemu-mcp.exe" --skip-build --timeout 90
+```
+
+기존 ISO를 쓰는 경우 freshness는 `unknown`으로 기록한다. 결과는 전용
+`kernel/build/qemu-mcp-diagnostic/<run-id>/`에 보존하며 기존 smoke 로그는 덮어쓰지 않는다.
+프로토콜·프로세스 격리·정리 한계는 [qemu-mcp 가이드](../../docs/tools/qemu_mcp_guide_ko.md)를 따른다.
 
 스모크 프로파일:
 

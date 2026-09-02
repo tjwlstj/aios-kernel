@@ -33,6 +33,7 @@ from lib.boot_matrix_lane import run_boot_matrix
 from lib.boot_perf import run_boot_perf
 from lib.kernel_lane import run_kernel_suite
 from lib.os_lane import run_os_tool_suite
+from lib.qemu_mcp_diagnostic import QemuMcpDiagnosticError, run_qemu_mcp_diagnostic
 from lib.shell_lane import run_shell_lane
 
 
@@ -182,6 +183,20 @@ def parse_args() -> argparse.Namespace:
     shell_cmd.add_argument("--timeout", type=int, default=DEFAULT_QEMU_TIMEOUT)
     shell_cmd.add_argument("--strict", action="store_true")
 
+    diagnostic_cmd = sub.add_parser(
+        "qemu-mcp-diagnostic",
+        help="Observe one isolated qemu-mcp session; never produce a kernel PASS verdict.",
+    )
+    diagnostic_cmd.add_argument(
+        "--mcp-server", required=True,
+        help="Absolute path to a single qemu-mcp executable (no shell arguments).",
+    )
+    diagnostic_cmd.add_argument(
+        "--skip-build", action="store_true",
+        help="Reuse the existing ISO; its freshness is recorded as unknown.",
+    )
+    diagnostic_cmd.add_argument("--timeout", type=int, default=DEFAULT_QEMU_TIMEOUT)
+
     sub.add_parser("os", help="Run OS-layer tool smoke tests.")
     sub.add_parser("info", help="Print environment/toolkit info.")
     return parser.parse_args()
@@ -212,6 +227,9 @@ def lock_label(args: argparse.Namespace) -> str:
     if args.command == "shell":
         mode = "reuse" if getattr(args, "skip_build", False) else "build"
         return f"shell:{mode}:{getattr(args, 'cpu_profile', 'default')}"
+    if args.command == "qemu-mcp-diagnostic":
+        mode = "reuse" if args.skip_build else "build"
+        return f"qemu-mcp-diagnostic:{mode}"
     return args.command
 
 
@@ -264,10 +282,21 @@ def main() -> int:
                     args.cpu_profile,
                 )
                 return 0
+            if args.command == "qemu-mcp-diagnostic":
+                run_qemu_mcp_diagnostic(args.mcp_server, args.timeout, args.skip_build)
+                return 0
             raise ToolError(f"Unsupported command: {args.command}")
+    except QemuMcpDiagnosticError as exc:
+        print(f"[AIOS] ERROR {exc}")
+        return exc.exit_code
     except (ToolError, subprocess.CalledProcessError, FileNotFoundError) as exc:
         print(f"[AIOS] ERROR {exc}")
-        return 1
+        return 2 if args.command == "qemu-mcp-diagnostic" else 1
+    except (OSError, ValueError) as exc:
+        if args.command != "qemu-mcp-diagnostic":
+            raise
+        print(f"[AIOS] ERROR diagnostic infrastructure failure: {exc}")
+        return 2
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@
 
 작성일: 2026-04-10
 
-최종 갱신: 2026-08-15 (native K2-a source binding 검증 계약)
+최종 갱신: 2026-09-02 (관찰 exact-family 경계와 qemu-mcp 진단 보조 경로)
 
 ## 목적
 
@@ -166,6 +166,29 @@ entry_gate_mismatch`를 요구한다. 전체 행은 선택한 CPU profile의 can
 exact하게 같아야 한다.
 `default` 결과는 `kernel/build/shell-smoke/`에, `max-smap` 결과는
 `kernel/build/shell-smoke/max-smap/`에 각각 transcript와 summary로 보존한다.
+
+### 선택적 qemu-mcp 진단 보조 경로 — `PARTIAL`
+
+```powershell
+py -3 tools/testkit/aios-testkit.py qemu-mcp-diagnostic --mcp-server "C:\path\to\qemu-mcp.exe" --skip-build --timeout 90
+```
+
+이 명령은 별도 qemu-mcp 프로세스로 `minimal/default` ISO의 prompt, 새 ping 응답,
+QMP running 상태를 관찰하고 자신이 만든 프로세스와 temp만 정리한다. `BuildLock`은
+재사용하되 정규 kernel/shell verdict에는 참여하지 않으며 `--strict`, 임의 ISO/VM 이름/
+QMP/extra-args/baseline 옵션을 열지 않는다. `--skip-build`를 생략하면 기존 ISO 빌더를
+사용하고, 지정하면 해당 ISO의 SHA-256과 `freshness=unknown`을 기록한다.
+2026-09-02 Windows에서 재사용 ISO와 당일 ISO 재생성 경로 모두 실제 `OBSERVED`와
+정리를 확인했다. Linux process-group 경로와 remote CI 연동은 미검증/미연결이다.
+
+산출물은 `kernel/build/qemu-mcp-diagnostic/<run-id>/`의 summary, serial, QEMU log,
+MCP transcript, stderr와 선택적 실패 화면이다. serial은 종료 전 복사 시점의 증거이며
+종료까지 완전한 로그나 clean guest exit 증거가 아니다. exit 0/`OBSERVED` 역시 커널
+PASS가 아니다. `TIMEOUT`/`VM_EXITED`는 exit 1, infrastructure/cleanup/abort는 exit 2다.
+키보드 인터럽트는 정리·summary 저장 뒤 다시 전파한다.
+
+Windows 실제 E2E와 Linux 경로의 검증 상태 및 상세 운영 계약은
+[qemu-mcp 가이드](qemu_mcp_guide_ko.md) §7을 정본으로 삼는다.
 
 ### 부팅 매트릭스
 
