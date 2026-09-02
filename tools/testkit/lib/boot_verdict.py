@@ -99,6 +99,24 @@ EXACT_REQUIRED_RECORDS = (
     ),
 )
 
+OBSERVATION_EXACT_FAMILY_CONTRACTS = (
+    (
+        "[RESOURCE] ledger selftest",
+        "[RESOURCE] ledger selftest PASS ",
+        "resource_ledger",
+    ),
+    (
+        "[PRESSURE] tracker selftest",
+        "[PRESSURE] tracker selftest PASS ",
+        "pressure_tracker",
+    ),
+    (
+        "[TRAP] frame contract selftest",
+        "[TRAP] frame contract selftest PASS ",
+        "trapframe_contract",
+    ),
+)
+
 PROCESS_EVENT_JOURNAL_FAMILY_PREFIX = "[PROC] process event journal "
 CPU_SECURITY_FAMILY_PREFIX = "[SEC] nx="
 RING3_ENTRY_AC_HARDENING_FAMILY_PREFIX = "[SEC] ring3 entry AC hardening "
@@ -304,6 +322,52 @@ def _invalid_process_event_journal_family_records(
         for row in family_rows
         if row["text"] != canonical or len(family_rows) != 1
     ]
+
+
+def _invalid_observation_exact_family_records(
+    lines: list[str],
+    required_occurrences: Mapping[str, list[dict[str, object]]],
+) -> list[dict[str, object]]:
+    """Reject non-canonical siblings beside an exact observation record.
+
+    The exact required-pattern check proves that one canonical row exists, but
+    it cannot see a second anchored row from the same family when a field or
+    the PASS token differs. Treat those sibling rows as conflicting evidence.
+    Exact duplicates remain owned by ``_duplicate_exact_required_records``.
+    """
+
+    invalid_records: list[dict[str, object]] = []
+    for family_prefix, canonical_prefix, record_name in (
+        OBSERVATION_EXACT_FAMILY_CONTRACTS
+    ):
+        canonical_patterns = [
+            pattern
+            for pattern in required_occurrences
+            if pattern.startswith(canonical_prefix)
+        ]
+        if not canonical_patterns:
+            continue
+
+        canonical_rows = set(canonical_patterns)
+        invalid_records.extend(
+            {
+                "line": index,
+                "text": line,
+                "record": record_name,
+            }
+            for index, line in enumerate(lines, start=1)
+            if (
+                line == family_prefix
+                or (
+                    line.startswith(family_prefix)
+                    and len(line) > len(family_prefix)
+                    and line[len(family_prefix)].isspace()
+                )
+            )
+            and line not in canonical_rows
+        )
+
+    return invalid_records
 
 
 def _invalid_kernel_room_management_family_records(
@@ -723,6 +787,11 @@ def evaluate_normal_boot(
         required_occurrences
     )
     invalid_evidence_records.extend(
+        _invalid_observation_exact_family_records(
+            lines, required_occurrences
+        )
+    )
+    invalid_evidence_records.extend(
         _invalid_process_event_journal_family_records(
             lines, required_occurrences
         )
@@ -743,6 +812,7 @@ def evaluate_normal_boot(
     invalid_evidence_records.extend(
         _invalid_room_snapshot_family_records(lines, occurrences)
     )
+    invalid_evidence_records.sort(key=lambda item: int(item["line"]))
     duplicate_evidence_records = _duplicate_exact_required_records(
         required_occurrences
     )

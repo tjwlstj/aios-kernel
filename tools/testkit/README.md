@@ -126,6 +126,11 @@ owner/CR3/`rsp0`/IF/frame reference, `dropped=0 overflow=0 evidence_only=1
 switch_events=0 resume_ready=0`까지 정본과 같아야 한다. 임의 필드를 붙이거나 같은
 레코드를 중복해도 PASS하지 않는다. owner lifecycle `0→1→0→2→0`은 순차 bootstrap
 관찰이며 실제 context resume, CPU switch, A→B→A, preemption은 아직 구현 범위가 아니다.
+Resource Ledger, Pressure Tracker, 초기 Trapframe contract의 same-family 행은 exact
+family root 또는 root 바로 다음 문자가 whitespace인 anchored 행이다. root-only와
+space/tab sibling은 비정본 상충 증거로 거부하고, `selftest-extra`처럼 whitespace
+경계가 없는 접두사 공유 행은 family로 오인하지 않는다. 여러 evidence 실패는 raw
+serial line 순으로 정렬해 실제 가장 이른 행을 `first_failure`로 보존한다.
 K1 management marker와 native K2-a binding marker도 각각 exact-one full row다. 순서는
 `entry-AC < K1 management < K2 binding < legacy ROOM`이어야 한다. structured
 `kernel_room_management.ready`와 `kernel_room_binding.ready`는 각 schema/size/count,

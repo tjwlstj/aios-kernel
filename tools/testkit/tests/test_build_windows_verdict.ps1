@@ -958,8 +958,161 @@ try {
         }
         Write-Output "PASS $($duplicateCase.Name) expected=False"
     }
+
+    $conflictingObservationCases = @(
+        [pscustomobject]@{
+            Name       = 'conflicting-resource-ledger-family'
+            Contract   = 'resource_ledger'
+            Root       = '[RESOURCE] ledger selftest'
+            Line       = ($normalLines | Where-Object {
+                    $_ -match '^\[RESOURCE\] ledger selftest '
+                } | Select-Object -First 1).Replace('used_kinds=5', 'used_kinds=4')
+        }
+        [pscustomobject]@{
+            Name       = 'conflicting-pressure-tracker-family'
+            Contract   = 'pressure_tracker'
+            Root       = '[PRESSURE] tracker selftest'
+            Line       = ($normalLines | Where-Object {
+                    $_ -match '^\[PRESSURE\] tracker selftest '
+                } | Select-Object -First 1).Replace('active_levels=2', 'active_levels=1')
+        }
+        [pscustomobject]@{
+            Name       = 'conflicting-trapframe-contract-family'
+            Contract   = 'trapframe_contract'
+            Root       = '[TRAP] frame contract selftest'
+            Line       = ($normalLines | Where-Object {
+                    $_ -match '^\[TRAP\] frame contract selftest '
+                } | Select-Object -First 1).Replace('canaries=15', 'canaries=14')
+        }
+    )
+    foreach ($conflictingCase in $conflictingObservationCases) {
+        $conflictingObservationLines = @($normalLines) + @(
+            [string]$conflictingCase.Line
+        )
+        [IO.File]::WriteAllLines(
+            $tempPath,
+            $conflictingObservationLines,
+            [Text.UTF8Encoding]::new($false)
+        )
+        $conflictingObservationVerdict =
+            Test-NormalSmokeVerdict -SerialLog $tempPath
+        if ([bool]$conflictingObservationVerdict.Passed -or
+                @($conflictingObservationVerdict.Reasons | Where-Object {
+                    $_ -like "evidence-family-count:$($conflictingCase.Contract):*"
+                }).Count -eq 0 -or
+                @($conflictingObservationVerdict.invalid_evidence_records |
+                    Where-Object {
+                        $_.Record -ceq $conflictingCase.Contract -and
+                        $_.Text -ceq $conflictingCase.Line
+                    }).Count -ne 1) {
+            throw "$($conflictingCase.Name) unexpectedly passed"
+        }
+        Write-Output "PASS $($conflictingCase.Name) expected=False"
+
+        $reversedObservationLines = @(
+            [string]$conflictingCase.Line
+        ) + @($normalLines)
+        [IO.File]::WriteAllLines(
+            $tempPath,
+            $reversedObservationLines,
+            [Text.UTF8Encoding]::new($false)
+        )
+        $reversedObservationVerdict =
+            Test-NormalSmokeVerdict -SerialLog $tempPath
+        if ([bool]$reversedObservationVerdict.Passed -or
+                $reversedObservationVerdict.first_failure.Kind -cne
+                    'EVIDENCE_RECORD_INVALID' -or
+                [int]$reversedObservationVerdict.first_failure.Line -ne 1 -or
+                $reversedObservationVerdict.first_failure.Text -cne
+                    $conflictingCase.Line) {
+            throw "$($conflictingCase.Name) reverse-order first failure mismatch"
+        }
+        Write-Output "PASS $($conflictingCase.Name)-reverse expected=False"
+
+        $rootTruncatedLines = @($normalLines) + @(
+            [string]$conflictingCase.Root
+        )
+        [IO.File]::WriteAllLines(
+            $tempPath,
+            $rootTruncatedLines,
+            [Text.UTF8Encoding]::new($false)
+        )
+        $rootTruncatedVerdict =
+            Test-NormalSmokeVerdict -SerialLog $tempPath
+        if ([bool]$rootTruncatedVerdict.Passed -or
+                @($rootTruncatedVerdict.Reasons | Where-Object {
+                    $_ -like "evidence-family-count:$($conflictingCase.Contract):*"
+                }).Count -eq 0 -or
+                @($rootTruncatedVerdict.invalid_evidence_records |
+                    Where-Object {
+                        $_.Record -ceq $conflictingCase.Contract -and
+                        $_.Text -ceq $conflictingCase.Root
+                    }).Count -ne 1) {
+            throw "$($conflictingCase.Name) truncated root unexpectedly passed"
+        }
+        Write-Output "PASS $($conflictingCase.Name)-root expected=False"
+
+        $tabSibling = "$($conflictingCase.Root)`tBROKEN=1"
+        $tabAfterLines = @($normalLines) + @($tabSibling)
+        [IO.File]::WriteAllLines(
+            $tempPath,
+            $tabAfterLines,
+            [Text.UTF8Encoding]::new($false)
+        )
+        $tabAfterVerdict = Test-NormalSmokeVerdict -SerialLog $tempPath
+        if ([bool]$tabAfterVerdict.Passed -or
+                [int]$tabAfterVerdict.first_failure.Line -ne
+                    $tabAfterLines.Count -or
+                @($tabAfterVerdict.invalid_evidence_records |
+                    Where-Object {
+                        $_.Record -ceq $conflictingCase.Contract -and
+                        $_.Text -ceq $tabSibling
+                    }).Count -ne 1) {
+            throw (
+                "$($conflictingCase.Name) tab-after mismatch: " +
+                "passed=$($tabAfterVerdict.Passed) " +
+                "kind=$($tabAfterVerdict.first_failure.Kind) " +
+                "line=$($tabAfterVerdict.first_failure.Line)/$($tabAfterLines.Count) " +
+                "text=$($tabAfterVerdict.first_failure.Text)"
+            )
+        }
+        Write-Output "PASS $($conflictingCase.Name)-tab-after expected=False"
+
+        $tabBeforeLines = @($tabSibling) + @($normalLines)
+        [IO.File]::WriteAllLines(
+            $tempPath,
+            $tabBeforeLines,
+            [Text.UTF8Encoding]::new($false)
+        )
+        $tabBeforeVerdict = Test-NormalSmokeVerdict -SerialLog $tempPath
+        if ([bool]$tabBeforeVerdict.Passed -or
+                $tabBeforeVerdict.first_failure.Kind -cne
+                    'EVIDENCE_RECORD_INVALID' -or
+                [int]$tabBeforeVerdict.first_failure.Line -ne 1 -or
+                $tabBeforeVerdict.first_failure.Text -cne $tabSibling) {
+            throw "$($conflictingCase.Name) tab-before first failure mismatch"
+        }
+        Write-Output "PASS $($conflictingCase.Name)-tab-before expected=False"
+
+        $nonBoundarySibling = "$($conflictingCase.Root)-extra BROKEN=1"
+        [IO.File]::WriteAllLines(
+            $tempPath,
+            @($normalLines) + @($nonBoundarySibling),
+            [Text.UTF8Encoding]::new($false)
+        )
+        $nonBoundaryVerdict = Test-NormalSmokeVerdict -SerialLog $tempPath
+        if (-not [bool]$nonBoundaryVerdict.Passed -or
+                @($nonBoundaryVerdict.invalid_evidence_records |
+                    Where-Object {
+                        $_.Record -ceq $conflictingCase.Contract -and
+                        $_.Text -ceq $nonBoundarySibling
+                    }).Count -ne 0) {
+            throw "$($conflictingCase.Name) non-boundary prefix was overmatched"
+        }
+        Write-Output "PASS $($conflictingCase.Name)-non-boundary expected=True"
+    }
 } finally {
     Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
 }
 
-Write-Output "PowerShell verdict selftest passed cases=$($cases.Count + 13 + $duplicateObservationCases.Count + $journalExtraCases + $securityExtraCases + $managementExtraCases + $bindingExtraCases + 1)"
+Write-Output "PowerShell verdict selftest passed cases=$($cases.Count + 13 + $duplicateObservationCases.Count + ($conflictingObservationCases.Count * 6) + $journalExtraCases + $securityExtraCases + $managementExtraCases + $bindingExtraCases + 1)"

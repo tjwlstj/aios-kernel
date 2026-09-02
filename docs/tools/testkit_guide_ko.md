@@ -283,6 +283,13 @@ evidence_only=1 switch_events=0 resume_ready=0`까지 정본과 같아야 한다
 record에 `apply_enabled=1`이나 `extra=1`을 덧붙이거나 같은 exact record를 두 번 제시한
 로그도 정상 PASS가 아니다. 선행 공백을 제거해 증거로 승격하지도 않는다.
 
+Resource Ledger, Pressure Tracker, 초기 Trapframe contract의 family는 exact root 또는
+root 바로 다음 문자가 whitespace인 anchored 행으로 한정한다. root-only truncation과
+space/tab으로 이어진 비정본 sibling은 canonical 행이 함께 있어도 실패한다.
+`selftest-extra`처럼 root 다음 문자가 whitespace가 아닌 접두사 공유 행은 family가 아니다.
+여러 상충 evidence가 있으면 Python/PowerShell 모두 raw serial line 순으로 실제 가장
+이른 행을 `first_failure`로 남긴다.
+
 K1 `[ROOM] management hierarchy selftest PASS ...`도 세 profile 공통 exact record다.
 schema 1/1024B, count 1/1/2, bound count 1/2, source/generation validity,
 `duplicate_rejected=1`, `orphan_rejected=1`, `unknown_rejected=1`,

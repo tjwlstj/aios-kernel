@@ -347,7 +347,23 @@ function Test-NormalSmokeVerdict {
         'observation_only=1 management_only=1$'
     )
     $invalidRoomRecords = @()
+    $invalidFamilyRecords = @()
     $familyContracts = @(
+        [pscustomobject]@{
+            Name = 'resource_ledger'
+            Root = '[RESOURCE] ledger selftest'
+            CanonicalPatternPrefix = '^\[RESOURCE\] ledger selftest PASS '
+        }
+        [pscustomobject]@{
+            Name = 'pressure_tracker'
+            Root = '[PRESSURE] tracker selftest'
+            CanonicalPatternPrefix = '^\[PRESSURE\] tracker selftest PASS '
+        }
+        [pscustomobject]@{
+            Name = 'trapframe_contract'
+            Root = '[TRAP] frame contract selftest'
+            CanonicalPatternPrefix = '^\[TRAP\] frame contract selftest PASS '
+        }
         [pscustomobject]@{ Name = 'process_event_journal'; Prefix = '[PROC] process event journal ' }
         [pscustomobject]@{ Name = 'cpu_security'; Prefix = '[SEC] nx=' }
         [pscustomobject]@{ Name = 'ring3_entry_ac_hardening'; Prefix = '[SEC] ring3 entry AC hardening ' }
@@ -360,14 +376,50 @@ function Test-NormalSmokeVerdict {
         $familyLines = @()
         for ($lineIndex = 0; $lineIndex -lt $lines.Count; $lineIndex++) {
             $lineText = [string]$lines[$lineIndex]
-            if ($lineText.StartsWith(
+            $isFamilyLine = if ($null -ne $family.Root) {
+                $familyRoot = [string]$family.Root
+                $lineText -ceq $familyRoot -or (
+                    $lineText.StartsWith(
+                        $familyRoot,
+                        [StringComparison]::Ordinal
+                    ) -and
+                    $lineText.Length -gt $familyRoot.Length -and
+                    [char]::IsWhiteSpace($lineText[$familyRoot.Length])
+                )
+            } else {
+                $lineText.StartsWith(
                     [string]$family.Prefix,
-                    [StringComparison]::Ordinal)) {
+                    [StringComparison]::Ordinal
+                )
+            }
+            if ($isFamilyLine) {
                 $familyLines += [pscustomobject]@{
                     LineNumber = $lineIndex + 1
                     Text       = $lineText
                 }
                 $null = $duplicateFieldLines.Add($lineIndex + 1)
+            }
+        }
+        if ($null -ne $family.CanonicalPatternPrefix) {
+            $canonicalFamilyLines = @(
+                $requiredOccurrences.GetEnumerator() |
+                    Where-Object {
+                        ([string]$_.Key).StartsWith(
+                            [string]$family.CanonicalPatternPrefix,
+                            [StringComparison]::Ordinal
+                        )
+                    } |
+                    ForEach-Object { @($_.Value) } |
+                    ForEach-Object { [int]$_.LineNumber }
+            )
+            foreach ($familyLine in $familyLines) {
+                if ([int]$familyLine.LineNumber -notin $canonicalFamilyLines) {
+                    $invalidFamilyRecords += [pscustomobject]@{
+                        Line   = [int]$familyLine.LineNumber
+                        Text   = [string]$familyLine.Text
+                        Record = [string]$family.Name
+                    }
+                }
             }
         }
         if ($family.Name -in @(
@@ -648,7 +700,7 @@ function Test-NormalSmokeVerdict {
     }
 
     $duplicateEvidenceFields = @()
-    $invalidEvidenceRecords = @($invalidRoomRecords)
+    $invalidEvidenceRecords = @($invalidRoomRecords) + @($invalidFamilyRecords)
     foreach ($lineNumber in @($duplicateFieldLines | Sort-Object)) {
         $lineText = [string]$lines[$lineNumber - 1]
         $fieldValues = @{}
@@ -717,6 +769,7 @@ function Test-NormalSmokeVerdict {
             }
         }
     }
+    $invalidEvidenceRecords = @($invalidEvidenceRecords | Sort-Object Line)
     if ($duplicateEvidenceFields.Count -gt 0) {
         $reasons += "evidence-fields-duplicated:line=$($duplicateEvidenceFields[0].Line)"
     }

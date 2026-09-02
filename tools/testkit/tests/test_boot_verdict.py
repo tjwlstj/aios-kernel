@@ -498,6 +498,159 @@ class NormalBootVerdictTests(unittest.TestCase):
         )
         self.assertFalse(duplicate["passed"])
 
+    def test_observation_exact_families_reject_conflicting_siblings(self) -> None:
+        cases = (
+            (
+                "resource_ledger",
+                RESOURCE_SELFTEST_PATTERN,
+                "[RESOURCE] ledger selftest",
+                RESOURCE_SELFTEST_PATTERN.replace(
+                    "used_kinds=5", "used_kinds=4"
+                ),
+            ),
+            (
+                "pressure_tracker",
+                PRESSURE_SELFTEST_PATTERN,
+                "[PRESSURE] tracker selftest",
+                PRESSURE_SELFTEST_PATTERN.replace(
+                    "active_levels=2", "active_levels=1"
+                ),
+            ),
+            (
+                "trapframe_contract",
+                TRAPFRAME_CONTRACT_PATTERN,
+                "[TRAP] frame contract selftest",
+                TRAPFRAME_CONTRACT_PATTERN.replace(
+                    "canaries=15", "canaries=14"
+                ),
+            ),
+        )
+
+        for record_name, canonical, family_root, conflicting in cases:
+            with self.subTest(record=record_name):
+                verdict = evaluate_normal_boot(
+                    "\n".join(
+                        [*normal_lines(), canonical, conflicting]
+                    ),
+                    [canonical],
+                )
+
+                self.assertFalse(verdict["passed"])
+                self.assertIn(
+                    "EVIDENCE_RECORD_INVALID", reason_codes(verdict)
+                )
+                self.assertTrue(
+                    any(
+                        event["record"] == record_name
+                        and event["text"] == conflicting
+                        for event in verdict["invalid_evidence_records"]
+                    )
+                )
+
+                reversed_verdict = evaluate_normal_boot(
+                    "\n".join(
+                        [conflicting, canonical, *normal_lines()]
+                    ),
+                    [canonical],
+                )
+                self.assertFalse(reversed_verdict["passed"])
+                self.assertEqual(
+                    "EVIDENCE_RECORD_INVALID",
+                    reversed_verdict["first_failure"]["kind"],
+                )
+                self.assertEqual(
+                    1, reversed_verdict["first_failure"]["line"]
+                )
+                self.assertEqual(
+                    conflicting,
+                    reversed_verdict["first_failure"]["text"],
+                )
+
+                root_truncated = evaluate_normal_boot(
+                    "\n".join(
+                        [*normal_lines(), canonical, family_root]
+                    ),
+                    [canonical],
+                )
+                self.assertFalse(root_truncated["passed"])
+                self.assertTrue(
+                    any(
+                        event["record"] == record_name
+                        and event["text"] == family_root
+                        for event in root_truncated[
+                            "invalid_evidence_records"
+                        ]
+                    )
+                )
+
+    def test_observation_exact_families_use_whitespace_boundary(self) -> None:
+        cases = (
+            (
+                "resource_ledger",
+                RESOURCE_SELFTEST_PATTERN,
+                "[RESOURCE] ledger selftest",
+            ),
+            (
+                "pressure_tracker",
+                PRESSURE_SELFTEST_PATTERN,
+                "[PRESSURE] tracker selftest",
+            ),
+            (
+                "trapframe_contract",
+                TRAPFRAME_CONTRACT_PATTERN,
+                "[TRAP] frame contract selftest",
+            ),
+        )
+
+        for record_name, canonical, family_root in cases:
+            tab_sibling = f"{family_root}\tBROKEN=1"
+            non_boundary = f"{family_root}-extra BROKEN=1"
+
+            with self.subTest(record=record_name, placement="after"):
+                lines = [*normal_lines(), canonical, tab_sibling]
+                verdict = evaluate_normal_boot("\n".join(lines), [canonical])
+
+                self.assertFalse(verdict["passed"])
+                self.assertEqual(
+                    "EVIDENCE_RECORD_INVALID",
+                    verdict["first_failure"]["kind"],
+                )
+                self.assertEqual(len(lines), verdict["first_failure"]["line"])
+                self.assertEqual(
+                    tab_sibling, verdict["first_failure"]["text"]
+                )
+
+            with self.subTest(record=record_name, placement="before"):
+                verdict = evaluate_normal_boot(
+                    "\n".join([tab_sibling, canonical, *normal_lines()]),
+                    [canonical],
+                )
+
+                self.assertFalse(verdict["passed"])
+                self.assertEqual(
+                    "EVIDENCE_RECORD_INVALID",
+                    verdict["first_failure"]["kind"],
+                )
+                self.assertEqual(1, verdict["first_failure"]["line"])
+                self.assertEqual(
+                    tab_sibling, verdict["first_failure"]["text"]
+                )
+
+            with self.subTest(record=record_name, placement="non-boundary"):
+                verdict = evaluate_normal_boot(
+                    "\n".join([*normal_lines(), canonical, non_boundary]),
+                    [canonical],
+                )
+
+                self.assertTrue(verdict["passed"])
+                self.assertFalse(
+                    any(
+                        event["record"] == record_name
+                        and event["text"] == non_boundary
+                        for event in verdict["invalid_evidence_records"]
+                    )
+                )
+
     def test_process_trap_snapshot_is_exact_and_fails_closed(self) -> None:
         for profile in ("full", "minimal", "storage-only"):
             with self.subTest(profile=profile):

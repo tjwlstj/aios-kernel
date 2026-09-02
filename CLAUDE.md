@@ -85,8 +85,10 @@ commands answer with single-line `[STATE] <topic> key=value...` responses:
 (`state nodes`) emit one summary line plus one `[STATE] node id=...` line per item;
 every line still follows the key=value convention. Core pipeline/node/SLM/resource
 observation surfaces are mirrored as userspace syscalls (`SYS_PIPE_STATS`,
-`SYS_NODEBIT_STATS`, `SYS_SLM_PLAN_OBSERVE`, `SYS_INFO_RESOURCE`), and a post-init
-selftest drives them through the real dispatcher (`[SYSCALL] observe dispatch selftest PASS`).
+`SYS_NODEBIT_STATS`, `SYS_SLM_PLAN_OBSERVE`, `SYS_INFO_RESOURCE`). The post-init
+selftest drives `SYS_PIPE_STATS`, `SYS_SLM_PLAN_OBSERVE`, and `SYS_INFO_RESOURCE`
+through the real dispatcher (`[SYSCALL] observe dispatch selftest PASS`);
+`SYS_NODEBIT_STATS` exists but is not exercised by that marker.
 `state sec` is also a same-record contract: schema 1 reports NX/SMEP/UMIP/SMAP,
 then `entry_*` mirrors the bounded ring3 entry-AC proof. It must preserve the
 saved user flags while showing two common `#BP` and six `int 0x80` entries with

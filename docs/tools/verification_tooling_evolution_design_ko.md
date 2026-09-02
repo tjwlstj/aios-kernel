@@ -279,6 +279,14 @@ entry-AC 레코드는 `smap_supported`, `smap`, `gate_active`, CLAC/fallback/ski
 `gate_mismatch=0` 중 하나라도 다르면 FAIL한다. saved user RFLAGS와 live kernel
 AC는 서로 다른 증거이므로 saved AC를 지운 결과를 hardening 성공으로 인정하지 않는다.
 
+Resource Ledger, Pressure Tracker, 초기 Trapframe contract의 same-family 범위는
+각 exact family root 그 자체 또는 root 바로 다음 문자가 whitespace인 anchored 행이다.
+따라서 root-only truncation과 space/tab 등 whitespace-delimited 비정본 sibling은
+canonical 행 옆에 있어도 모두 상충 증거로 실패한다. 반대로 `selftest-extra`처럼 root
+다음 문자가 whitespace가 아닌 단순 접두사 공유 행은 이 family로 승격하지 않는다.
+Python과 PowerShell 판정기는 상충 family 행을 다른 evidence failure와 합친 뒤 raw
+serial line 순으로 정렬해 실제 가장 이른 행을 `first_failure`로 보존한다.
+
 드라이버와 초기 selftest 전체의 엄격한 전역 순서 검증은 v1 범위에 넣지 않는다. 먼저 process 이후 terminal chain만 고정해 false positive를 줄인다.
 
 ### 6.3 금지 이벤트
