@@ -1,6 +1,6 @@
 # Kernel Room 문서 모음
 
-최종 갱신: 2026-09-02 (H1 로컬 구현과 remote/live 경계)
+최종 갱신: 2026-09-03 (H1 원격 acceptance 완료와 남은 live 경계)
 
 ## 정본
 
@@ -38,15 +38,16 @@ Room
   `state binding` exact full-row 검증 계약
 - Cell/Node 입력 후보가 되는 Memory Fabric, SLM agent tree, 두 NodeBit subsystem의
   각자 독립된 현재 표면
+- H1 OS-neutral trace/replay (2026-09-03)
+  - H1-a/b/c contract·12 fixtures·artifact/parity의 동일 run·exact SHA 원격 acceptance
+  - [H1 원격 acceptance 증거 (§13.2)](../os/h1_binding_trace_replay_workplan_ko.md#132-2026-09-03-원격-acceptance-완료)의
+    Linux/Windows/parity 세 job과 세 artifact 검증; live producer는 없음
 
 ### `PARTIAL`
 
 - Kernel Room 전체 토폴로지
   - aggregate substrate, K1 bootstrap hierarchy v0, bounded native K2-a oracle은 존재
   - K2 live lifecycle/reconciliation, hosted source, attribution은 없음
-- H1 OS-neutral trace/replay
-  - H1-a/b/c 로컬 contract·12 fixtures·artifact/parity는 존재
-  - exact-SHA 원격 Linux/Windows/parity terminal과 live producer는 없음
 
 ### `SCAFFOLD`
 
@@ -97,8 +98,8 @@ source에 명시적으로 bind한다. canonical, binding, source generation을 �
 producer-owned copied snapshot, boot-order, malformed/duplicate/orphan/mismatch/zero/
 rollback/stale/tail 거부를 검증한다. 이 oracle은 boot-local immutable proof일 뿐 live
 refresh/reconcile이나 hosted source는 아니다. 같은 semantic field와 reject 의미는
-OS-neutral H1 로컬 trace/replay로 옮겼고, 남은 직접 게이트는 원격 cross-OS acceptance와
-live K2/H2 producer/reconcile이다. aggregate snapshot의
+OS-neutral H1 trace/replay로 옮겨 원격 cross-OS acceptance까지 통과했고, 남은 직접
+조각은 live K2/H2 producer/reconcile이다. aggregate snapshot의
 `domains`, `nodes`, `nodebit_active` count는 여전히 canonical hierarchy나 binding
 증거가 아니다.
 

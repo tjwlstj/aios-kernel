@@ -164,9 +164,9 @@ schema/overflow/tail을 거부한다. exact marker, structured `kernel_room_bind
 `state binding`과 `entry-AC < K1 < K2 < aggregate ROOM` 순서가 정규 증거다.
 
 K2 전체는 `PARTIAL`이다. H1 OS-neutral lifecycle trace/replay와
-refresh/exit/recreate/rebind 의미는 로컬 contract/fixture로 고정됐고 exact-SHA 원격
-Linux/Windows/parity acceptance가 남아 있다. 그 뒤 live K2/H2 producer와 reconcile로
-확장한다. K1~K4의 hierarchy/binding/observation attribution이 먼저이며,
+refresh/exit/recreate/rebind 의미는 contract/fixture로 고정됐고 exact-SHA 원격
+Linux/Windows/parity acceptance를 완료해 H1은 `CURRENT`다(2026-09-03, §5.8).
+다음은 live K2/H2 producer와 reconcile 확장이다. K1~K4의 hierarchy/binding/observation attribution이 먼저이며,
 principal/ownership와 Axis Gate enforcement는 그 뒤의 K5 `PLANNED`다. Orbit은
 Cell/Node placement를 탐구하는 `RESEARCH`이므로 이 vertical slice의 완료 조건이 아니다.
 K2의 후속은 이 최소 계층의 source lifecycle/reconciliation을 강화·확대하고,
@@ -211,15 +211,15 @@ continuation/switch이고, bounded 실제 A→B→A를 증명한 뒤 timer preem
 
 주의: 두 static process 모두 실제 ring3 실행은 하지만 현재 resume 모델은 여전히 순차 동기 C 호출 프레임이다. descriptor의 trap snapshot과 process event journal은 증거 소유권과 순서만 고정하며 `resume_ready=0`이다. journal 완료를 live transition 완료로 해석하지 말고, 다음 단계에서만 current process·CR3·BSP `rsp0`·saved frame·`g_active_user_run_state`를 IF=0에서 함께 교대하는 live continuation으로 나아가야 한다.
 
-### 5.3 Linux-hosted H축은 H1 원격 acceptance→H2 순서로 진행한다
+### 5.3 Linux-hosted H축은 H1 완료 뒤 H2로 진행한다
 
-- H0 resource manifest/guard만 `CURRENT`다. Linux daemon, adapter, KVM lane,
+- H0 resource manifest/guard와 bounded H1 contract/replay가 `CURRENT`다. Linux daemon, adapter, KVM lane,
   resource apply는 아직 `PLANNED`다.
 - K2-a native semantic oracle와 kernel-side reject 계약은 `CURRENT`다. H1-a/b/c의
-  OS-neutral lifecycle, 12개 fail-closed fixture와 bundle/parity는 로컬 구현됐지만
-  원격 exact-SHA 세 job 결과 전까지 H1은 `PARTIAL`이다.
-- 공통 H1 remote acceptance까지 고정되면 H2 Linux
-  userspace collector를 시작한다. 광범위한 native 실행 substrate 완성과 최종
+  OS-neutral lifecycle, 12개 fail-closed fixture와 bundle/parity는 원격 exact-SHA
+  acceptance를 완료했다. 이는 live source runtime 완료가 아니다.
+- 공통 H1 remote acceptance가 고정됐으므로 다음은 H2 Linux
+  userspace collector다. 광범위한 native 실행 substrate 완성과 최종
   conformance closure는 H2의 선행조건이 아니다.
 - 기본 용량은 `SEMANTIC SAFETY K2/H1 40%`, `HOSTED DELIVERY H2/H3 50%`,
   `H0 PROVENANCE + NATIVE CONFORMANCE 10%`다. 단계별 증거가 실패하면 다음 단계나
@@ -297,3 +297,18 @@ continuation/switch이고, bounded 실제 A→B→A를 증명한 뒤 timer preem
   dirty Windows 작업 트리의 결과이므로 원격 cross-OS acceptance 입력은 아니다.
 - 다음 게시 단계는 §5.6의 승인된 beta-first 흐름이다. H1 `CURRENT` 승격은 새 exact
   SHA의 원격 named producer/parity jobs와 세 artifact를 확인한 뒤에만 수행한다.
+
+### 5.8 H1 원격 acceptance 완료 (2026-09-03)
+
+- 구현 커밋 `e6c7979b9114d32e5f2e28536d307e9cccaf8381`을 beta에 게시했다.
+  [Actions run 33688967921](https://github.com/tjwlstj/aios-kernel/actions/runs/33688967921)의
+  Ubuntu/Windows fixture와 parity 세 job이 terminal 성공했고 두 download step도 성공했다.
+  static-analysis, 양 OS-tools matrix와 build-and-boot를 포함한 전체 7개 job도 성공했다.
+- 세 artifact를 내려받은 뒤 같은 clean checkout에서 독립 parity를 재실행해 12개
+  PASS를 확인했다. H1 host-only contract/replay/fixture/artifact 범위를 `CURRENT`로
+  승격한다. 정확한 artifact ID와 hash/provenance 근거는
+  [H1 작업 준비서 §13.2](../os/h1_binding_trace_replay_workplan_ko.md#132-2026-09-03-원격-acceptance-완료)를 따른다.
+- 위 §5.4~5.7의 pending·로컬 결과는 당시 이력이다. 이 완료에 H2 runtime,
+  live K2 reconciliation, apply 또는 Linux qemu-mcp 실제 E2E를 포함하지 않는다.
+- maturity metadata와 mirror를 맞춘 최종 커밋은 새 exact SHA로 beta CI와 H1 artifacts를
+  다시 검증한 뒤에만 main으로 fast-forward한다. H2 실행 코드는 이번 게시에 추가하지 않는다.

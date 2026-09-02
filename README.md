@@ -12,7 +12,7 @@ AIOS(AI-Native Operating System)는 AI 워크로드를 **1급 시민(First-class
 취급하고 **Kernel Room → Cell → Node → NodeBit** 관리 모델을 중심에 둔 AI-native
 관리·런타임 프로젝트입니다. 의도된 기본 delivery substrate는 Linux-hosted userspace
 service입니다. 현재 저장소의 runtime 실행 증거는 x86_64 native reference/proof
-kernel에 있고, Linux 쪽은 H0 upstream source policy만 `CURRENT`입니다. 현재 베타에는 부팅 가능한 native kernel,
+kernel에 있고, Linux runtime은 `PLANNED`, H0 upstream source policy는 `CURRENT`입니다. 현재 베타에는 부팅 가능한 native kernel,
 텐서 지향 메모리 메타데이터, 메모리 패브릭, 헬스/SLM 스냅샷, 서로 독립적인 SLM
 policy catalog와 runtime capability NodeBit, 관측 전용 AI pressure tracker와 resource
 ledger, 제한된 AI 시스콜 표면이 있습니다. `CURRENT`인 K1은 1KiB 고정 snapshot에
@@ -22,8 +22,10 @@ typed NodeBit 2개를 함께 보존하는 management-only hierarchy v0입니다.
 snapshot이 Node 101을 producer-owned SLM MAIN source에 boot-local immutable하게
 결속합니다. K2 전체 lifecycle/reconciliation은 `PARTIAL`입니다. H1은 H1-a transport,
 H1-b bounded lifecycle replay와 12개 fixture, H1-c self-contained bundle/parity CLI 및
-전용 양 OS CI까지 로컬 구현됐습니다. 다만 exact SHA 원격 Linux/Windows/parity 결과가
-아직 없어 H1 전체는 `PARTIAL`이며, H2 Linux-hosted backend는 `PLANNED`입니다.
+전용 양 OS CI를 구현했고, 동일 run·exact SHA의 원격 Linux/Windows/parity와 세 artifact
+검증을 통과해 `CURRENT`입니다(2026-09-03). 근거는
+[H1 원격 acceptance 증거 (§13.2)](docs/os/h1_binding_trace_replay_workplan_ko.md#132-2026-09-03-원격-acceptance-완료)에 있습니다.
+H2 Linux-hosted backend와 live lifecycle producer는 여전히 구현되지 않았습니다.
 
 장기 방향은 embodied AI OS입니다. LLM/SLM 에이전트는 유저스페이스에서 단기 기억과 장기 기억을 분리해 유지하고, 세션을 넘어 연속성을 보존하며, 하드웨어에는 커널이 중재하는 정책 경계를 통해 접근합니다.
 
@@ -41,7 +43,7 @@ Suggested repository description:
 
 > AI-native management/runtime project centered on Room → Cell → Node → NodeBit, with Linux-hosted userspace as the intended delivery path and a native proof kernel.
 
-## Current Status (2026-08-31)
+## Current Status (2026-09-03)
 
 - **Current beta:** `v0.2.0-beta.6` (`0.2.0-beta.6 "Genesis"` boot banner).
 - **Boot path:** x86_64 Multiboot2 커널, GDT/IDT/TSS, 페이징, PIT IRQ0 scheduler tick bootstrap, QEMU 스모크 테스트 기반.
@@ -50,12 +52,11 @@ Suggested repository description:
 - **Kernel Room topology maturity:** 전체 topology는 계속 `PARTIAL`이다. 기존 aggregate와 9개 syscall-range descriptor, `CURRENT` K1 schema 1/1024B hierarchy에 더해 bounded native K2-a가 `CURRENT`다. K2-a는 K1 ABI를 바꾸지 않고 schema 1/256B snapshot에서 Node 101/Cell 1 generation과 SLM MAIN의 typed namespace, semantic kind/role, producer-owned boot-local instance/generation을 결속한다. exact boot marker, structured `kernel_room_binding`, `state binding`으로 검증된다. source refresh/exit/recreate/rebind, Linux source, resource attribution, principal/ownership는 아직 없다.
 - **Identity boundary:** Memory Fabric `domain_id`, SLM `agent_tree.node_id`, SLM policy `slm_nodebit_id`, 런타임 capability `node_id`, pipeline `owner_node`, scheduler task/PID/ring ID는 독립 네임스페이스다. 숫자가 같아도 같은 주체가 아니며, 명시적 namespace/binding/generation 없이 결합하지 않는다.
 - **Linux delivery direction:** Linux-hosted userspace service는 의도된 기본 delivery
-  경로로 결정됐다. schema v1의 13개 upstream source row와 fail-closed guard만
+  경로로 결정됐다. schema v1의 13개 upstream source row와 fail-closed guard는
   `CURRENT`이다. H1-a transport와 H1-b semantic replay, exact 12-fixture manifest,
-  H1-c self-contained artifact/독립 재생 parity는 로컬 구현됐고 host suite와 전용
-  Linux/Windows fixture/parity CI도 구성됐다. 현재 exact SHA의 원격 세 job 결과와
-  artifact는 확인 전이므로 H1은 계속 `PARTIAL`, H2 Linux-hosted backend는
-  `PLANNED`다. Linux
+  H1-c self-contained artifact/독립 재생 parity는 전용 Linux/Windows fixture/parity
+  CI의 동일 run·exact SHA terminal 성공과 세 artifact로 검증돼 `CURRENT`다.
+  H2 Linux-hosted backend는 `PLANNED`다. Linux
   `6.12.y` primary, `6.18.y` forward, QEMU `11.1.0`, VirtIO 1.2 CS01 selected
   baseline은 source 기준선이며 PID/cgroup/pidfd/PSI는 source-only,
   `code_import=0`이다.
@@ -78,10 +79,10 @@ AIOS의 우선 방향은 커널 기능을 더 많이 나열하는 것이 아니�
 - **Execution substrate:** ring3 process, scheduler, memory, storage, network, HAL은 위 관리 모델이 실제 일을 수행하도록 받치는 기반이다. M3~M5의 완성도는 계속 높이되 방향 선택을 독점하지 않는다.
 - **Hosted substrate:** Linux-hosted userspace service는 의도된 기본 delivery
   구현축이다. H0 source policy는 `CURRENT`이고 H1-a/H1-b/H1-c의 host-only contract,
-  lifecycle replay, fixture bundle/parity는 로컬 구현됐다. 전용 Ubuntu/Windows/parity
-  CI의 원격 exact-SHA terminal 증거는 아직 없으므로 H1은 계속 `PARTIAL`이다. bounded
-  native K2-a semantic oracle은 `CURRENT`이며, H1 remote acceptance를 통과한 뒤에만
-  `PLANNED` H2 observe-only service를 시작한다. 광범위한 native process/storage
+  lifecycle replay, fixture bundle/parity는 전용 Ubuntu/Windows/parity CI와 artifact의
+  exact-SHA acceptance를 통과해 `CURRENT`다. bounded native K2-a semantic oracle도
+  `CURRENT`이며 다음 직접 조각은 아직 `PLANNED`인 H2 observe-only service다.
+  광범위한 native process/storage
   확장은 선행조건이 아니다. H4 validation과 H5 apply는 K5와 별도 승인 전까지
   열지 않는다.
 - **Policy boundary:** Axis Gate의 실제 authorize/enforcement는 canonical identity, parent binding, generation, principal과 ownership이 생긴 뒤의 `PLANNED` 단계다. 현재 9개 descriptor는 분류 메타데이터다.
@@ -341,7 +342,7 @@ make debug          # GDB 디버깅 모드로 실행
 | 유저스페이스 | 첫 ring3 static ELF64 demo + `int 0x80` 왕복 완료, full service/runtime 예정 |
 | 기본 delivery 방향 | Linux-hosted userspace service (제품 결정 완료, backend 구현 `PLANNED`) |
 | AI 가속기 | PCI/capability abstraction scaffold, 실제 벤더 드라이버 예정 |
-| CI | GitHub Actions (cppcheck + resource/platform/H1 host suite + 전용 Linux/Windows fixture bundle/parity + OS tool/QEMU/shell lanes; H1 exact-SHA 원격 세 job 결과는 확인 전) |
+| CI | GitHub Actions (cppcheck + resource/platform/H1 host suite + 전용 Linux/Windows fixture bundle/parity + OS tool/QEMU/shell lanes; H1 exact-SHA 원격 세 job·artifact 검증 완료) |
 
 ## Planning Documents
 
@@ -350,7 +351,7 @@ make debug          # GDB 디버깅 모드로 실행
 
 - [통합 작업 진입 가이드](docs/meta/integrated_work_guide_ko.md) — 요청 분류, 정본·스킬·검증 선택과 문서 관리
 - [AIOS 성숙도 우선 작업흐름](docs/meta/minimal_io_and_maturity_workflow_ko.md) — K/M/C/W/H축과 전역 우선순위 정본
-- [H1 OS-neutral binding trace/replay 작업 준비서](docs/os/h1_binding_trace_replay_workplan_ko.md) — H1-a/b/c 로컬 구현과 12개 fixture/artifact/parity 계약; 원격 cross-OS acceptance 전까지 `PARTIAL`
+- [H1 OS-neutral binding trace/replay 작업 준비서](docs/os/h1_binding_trace_replay_workplan_ko.md) — H1-a/b/c와 12개 fixture/artifact/parity 계약 `CURRENT`; §13.2에 exact-SHA 원격 cross-OS acceptance 증거
 - [Kernel Room 관리 모델 정본](docs/kernel-room/kernel_room_management_model_ko.md)
 - [Linux-hosted substrate와 upstream resource 정책 정본](docs/os/linux_hosted_substrate_and_resource_policy_ko.md)
 - [검증 도구 진화 설계](docs/tools/verification_tooling_evolution_design_ko.md)와 [Testkit 가이드](docs/tools/testkit_guide_ko.md)

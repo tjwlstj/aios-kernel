@@ -4,19 +4,19 @@
 >
 > 최종 갱신: 2026-09-03
 >
-> 문서 상태: 부분 구현 정본 및 후속 작업 기준선
+> 문서 상태: bounded H1 구현·검증 정본 및 후속 작업 기준선
 >
-> H1 구현 성숙도: `PARTIAL` (H1-a transport, H1-b bounded semantic replay와 12개
-> fixture, H1-c self-contained bundle/parity CLI 및 전용 양 OS CI를 로컬 구현·검증;
-> 현재 exact SHA의 원격 Linux/Windows/parity terminal 결과는 확인 전)
+> H1 구현 성숙도: `CURRENT` (H1-a transport, H1-b bounded semantic replay와 12개
+> fixture, H1-c self-contained bundle/parity 및 exact-SHA 원격 Linux/Windows 검증 완료;
+> 2026-09-03, §13.2. live producer와 H2 runtime은 포함하지 않음)
 >
 > 방향 분류: Kernel Room `DIRECT` + Linux-hosted `HOSTED_DESIGN`
 
 이 문서는 bounded native K2-a source-binding oracle 다음에 수행할 H1의 정확한
 구현 경계, trace 의미, fail-closed verifier와 일정을 고정한다. 현재
 `hosted/contracts/`의 contract/fixture, replay 실행체, artifact/parity CLI와 host tests는
-구현됐다. 그러나 원격 cross-OS terminal 증거가 없고 live producer도 없으므로 H1은
-계속 `PARTIAL`이며, 이 구현이 Linux adapter를 뜻하지도 않는다.
+구현됐고 같은 SHA의 원격 cross-OS terminal 및 artifact를 확인해 H1은 `CURRENT`다.
+live native lifecycle producer와 Linux adapter는 여전히 없으며 이 완료에 포함되지 않는다.
 
 용어와 관리 불변식은
 [Kernel Room 관리 모델](../kernel-room/kernel_room_management_model_ko.md)이 우선하고,
@@ -51,7 +51,7 @@ boot marker와 `state binding`은 H1에서 변경하지 않는다.
 | bounded native K2-a oracle | `CURRENT` | field/reject 의미와 native projection fixture의 기준 |
 | K2 전체 lifecycle/reconcile | `PARTIAL` | H1 replay가 생겨도 live producer refresh는 남음 |
 | H0 resource manifest/guard | `CURRENT` | upstream source-only 경계를 제공할 뿐 runtime 증거가 아님 |
-| H1 trace/replay | `PARTIAL` (H1-a/H1-b/H1-c 로컬 구현 2026-08-31) | exact SHA 원격 Linux/Windows bundle과 parity terminal 확인 전 |
+| H1 trace/replay | `CURRENT` (2026-09-03) | H1-a/b/c와 exact SHA 원격 Linux/Windows bundle 및 독립 parity 완료 (§13.2) |
 | H2 Linux observe-only adapter | `PLANNED` | H1 acceptance gate 뒤에만 시작 |
 | authorize/apply | `PLANNED` | H1 범위 밖, K5와 별도 승인 필요 |
 
@@ -504,20 +504,20 @@ artifact 전송 무결성도 별도 필수 조건이다. 두 download step은
 정본의 1~2주 H1 구간을 다음 세 개의 되돌리기 쉬운 조각으로 나눈다. 각 커밋은 host
 tests와 `git diff --check`를 통과해야 하며 빈 scaffold만 커밋하지 않는다.
 
-| 순서 | 조각 | 종료 증거 | H1 상태 |
+| 순서 | 조각 | 종료 증거 | 당시 H1 상태 |
 |---|---|---|---|
 | H1-a — 완료 (2026-08-23) | contract manifest, strict JSONL loader, transport negative tests | duplicate key, truncation, type/limit 반례가 exact reason으로 실패 | `PARTIAL` |
 | H1-b — 로컬 완료 (2026-08-31) | lifecycle replay, valid/semantic-negative fixture matrix, native K2-a projection | full lifecycle와 exact native projection PASS, stale/rollback/orphan 등 fail-closed | H1은 계속 `PARTIAL` |
 | H1-c 로컬/CI wiring — 구현 완료 (2026-08-31) | fixture manifest CLI, self-contained bundle, 독립 재생 parity, 전용 Ubuntu/Windows jobs | 로컬 12/12와 host suite PASS; forged/same-OS/spoof/tamper 반례 거부 | H1은 계속 `PARTIAL` |
-| H1-c 원격 acceptance — 확인 전 | exact SHA Linux/Windows bundle과 parity artifact 확인 | 두 fixture job과 parity job terminal PASS, artifact 세트 보존 | 통과 뒤 `CURRENT` 승격 검토 가능 |
+| H1-c 원격 acceptance — 완료 (2026-09-03) | exact SHA Linux/Windows bundle과 parity artifact 확인 | 두 fixture job과 parity job terminal 성공, 12/12 match와 artifact 세트 확인 (§13.2) | `CURRENT` |
 
 H1-a/H1-b/H1-c 로컬 산출물은 구현됐고 host suite는 기존 `os-tools-matrix` 양 OS에서
 실행된다. fixture bundle은 무관한 OS-tool 실패와 결합하지 않도록 전용 Ubuntu/Windows
-job에서 만들며, 별도 parity job이 두 producer job만 `needs`로 받는다. 현재 wiring의
-원격 결과는 아직 확인 전이다. 어느 단계도 빈 `hosted/linux/`를 만들지 않는다.
+job에서 만들며, 별도 parity job이 두 producer job만 `needs`로 받는다. 이 wiring의
+원격 결과는 §13.2에서 확인했다. 어느 단계도 빈 `hosted/linux/`를 만들지 않는다.
 
-H1-c 원격 acceptance 완료 전 H2 adapter를 시작하거나 H1을 `CURRENT`로 표시하지 않는다. H1 완료 뒤
-첫 H2 slice는 Linux kernel module이 아니라 action이 전부 `UNSUPPORTED`인 한
+H1-c 원격 acceptance gate는 완료됐다. 다음 첫 H2 slice는 Linux kernel module이
+아니라 action이 전부 `UNSUPPORTED`인 한
 observe-only userspace service다.
 
 ## 11. 현재 및 예정 검증 명령
@@ -614,7 +614,39 @@ license compatibility 승인이 생기지 않는다.
 아니다. CI 정의에 사용한 `checkout@v6`, `setup-python@v6`, `upload-artifact@v7`,
 `download-artifact@v8` tag의 존재는 GitHub API로 확인했지만 실제 workflow 성공을
 뜻하지 않는다. 2026-09-02 사용자가 beta 검증 후 동일 SHA의 main 승격까지 승인했다.
-현재 남은 다음 동작은 beta checkpoint/push를 수행하고 그 새 exact SHA의 두 fixture
-job·parity job terminal 상태와 artifact를 확인하는 것이다. H1 `CURRENT` 승격과 H2
-시작은 이 원격 acceptance 완료 뒤에만 가능하며, main은 검증한 beta SHA로만
-fast-forward한다.
+당시 남은 동작은 beta checkpoint/push와 새 exact SHA의 두 fixture job·parity job
+terminal 및 artifact 확인이었고, 아래 §13.2에서 이 gate를 닫았다. main은 별도의 전체
+CI 검증을 통과한 beta SHA로만 fast-forward한다.
+
+### 13.2 2026-09-03 원격 acceptance 완료
+
+H1-a/b/c의 host-only contract/replay/fixture/artifact 경계를 `CURRENT`로 승격한다.
+검증한 구현 SHA는 `e6c7979b9114d32e5f2e28536d307e9cccaf8381`이며
+[GitHub Actions run 33688967921](https://github.com/tjwlstj/aios-kernel/actions/runs/33688967921)의
+다음 세 named job이 같은 SHA에서 terminal `success`를 기록했다.
+
+| Job | 결과 | 해당 run의 artifact |
+|---|---|---|
+| `hosted-binding-trace-fixtures-ubuntu` | 12/12 fixture match, terminal success | `hosted-binding-trace-Linux` (ID `9869240544`) |
+| `hosted-binding-trace-fixtures-windows` | 12/12 fixture match, terminal success | `hosted-binding-trace-Windows` (ID `9869251261`) |
+| `hosted-binding-trace-parity` | 독립 재생 12개 parity PASS, terminal success | `hosted-binding-trace-parity` (ID `9869258340`) |
+
+- parity의 Linux/Windows download, compare와 upload step도 모두 성공했다.
+  `digest-mismatch: error`를 완화하거나 실패를 무시한 결과가 아니다.
+- 두 producer의 `git.dirty=false`, `HEAD=GITHUB_SHA`, 정확한 Linux/Windows provenance,
+  입력 14개·출력 13개, verifier SHA-256 및 모든 bundled input hash가 검증됐다.
+  이 구현의 verifier SHA-256은
+  `9355bfd6beb49a298fe2a0ebd7c846ec2406866faae037123e386725d2dbacad`다.
+- 세 원격 artifact를 `build/hosted-binding-trace/ci-33688967921/`에 내려받고,
+  같은 clean checkout에서 comparator를 다시 실행했다. 로컬 독립 재생도 12개 PASS이며
+  `ci-33688967921-local-parity/` 결과와 원격 parity verdict가 일치한다.
+- 위 run의 Ubuntu/Windows host suite도 132개 회귀를 통과했다. 이 증거는 Ubuntu
+  runner의 H1 host 검증이며 primary Linux backend qualification은 아니다.
+- 같은 run의 static-analysis, 두 OS-tools matrix와 build-and-boot를 포함한 전체
+  7개 job도 terminal `success`를 기록했다.
+- 이 완료를 반영하는 문서·contract maturity metadata 커밋은 입력 hash와 SHA가
+  바뀌므로 beta에서 같은 CI/artifact gate를 다시 통과해야 main 승격 대상이 된다.
+
+H2 userspace service, live native producer/K2 reconciliation, resource attribution,
+authorize/apply, Linux qemu-mcp 실제 E2E는 이 완료에 포함되지 않는다. 다음 직접 조각은
+H2 bounded observe-only service이며 backend 구현은 계속 `PLANNED`다.

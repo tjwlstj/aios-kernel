@@ -2,7 +2,7 @@
 
 작성일: 2026-04-18
 재정비: 2026-08-10
-최종 갱신: 2026-09-02 (native K2-a와 H1 로컬/remote 경계 반영)
+최종 갱신: 2026-09-03 (H1 원격 acceptance 완료와 남은 live 경계 반영)
 문서 성격: 정본 관리 모델을 설명하는 개념 뷰
 
 > 용어, 성숙도, 구현 순서의 정본은
@@ -163,5 +163,7 @@ Axis Gate enforcement도 붙이지 않는다.
 Kernel Room의 중심은 gate 수나 snapshot field 수가 아니다. Cell 상태를 기준으로
 Node를 결속하고, Node를 NodeBit으로 세분화해 유효한 관리 뷰를 제공하는 것이 중심이다.
 현재 커널 substrate, K1 bootstrap hierarchy, native K2-a oracle은 보존한다. semantic
-contract는 OS-neutral H1 로컬 trace/replay와 12개 fixture로 옮겼고, exact-SHA 원격
-acceptance를 닫은 뒤 live K2/H2 lifecycle/reconciliation을 확대한다.
+contract는 OS-neutral H1 trace/replay와 12개 fixture로 옮겨 exact-SHA 원격 acceptance를
+통과했다(`CURRENT`, 2026-09-03). 근거는
+[H1 원격 acceptance 증거 (§13.2)](../os/h1_binding_trace_replay_workplan_ko.md#132-2026-09-03-원격-acceptance-완료)를 따른다.
+후속 live K2/H2 lifecycle/reconciliation은 여전히 별도 미구현 조각이다.

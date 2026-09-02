@@ -1,10 +1,9 @@
 # AIOS Binding Trace Contract v1 (H1-a/H1-b/H1-c)
 
-> 상태: `PARTIAL` — H1-a transport, bounded H1-b semantic replay, H1-c fixture
-> manifest/self-contained artifact/parity 구현 완료(2026-08-31), type-strict 로컬
-> 재검증 완료(2026-09-02).
-> Ubuntu/Windows matrix와 별도 parity job도 구성했지만, 현재 exact SHA의 원격 terminal
-> 결과는 아직 확인하지 않았으므로 H1 전체를 `CURRENT`로 승격하지 않는다.
+> 상태: `CURRENT` — H1-a transport, bounded H1-b semantic replay, H1-c fixture
+> manifest/self-contained artifact/parity 및 exact-SHA Ubuntu/Windows 원격 acceptance
+> 완료(2026-09-03). 범위는 host-only 계약과 재생 검증이며 live producer/H2 runtime은 아니다.
+> 검증 SHA, named jobs와 세 artifact 근거는 [작업 준비서 §13.2](../../docs/os/h1_binding_trace_replay_workplan_ko.md#132-2026-09-03-원격-acceptance-완료)를 따른다.
 >
 > 정본: [H1 작업 준비서](../../docs/os/h1_binding_trace_replay_workplan_ko.md) ·
 > [Linux-hosted substrate 정책](../../docs/os/linux_hosted_substrate_and_resource_policy_ko.md)
@@ -129,7 +128,8 @@ host suite는 `.github/workflows/linux-boot-check.yml`의 `os-tools-matrix`에�
 Windows 양쪽에 실행된다. 별도 `hosted-binding-trace-fixtures-ubuntu`와
 `hosted-binding-trace-fixtures-windows` job이 clean exact-SHA bundle을 만들고,
 `hosted-binding-trace-parity` job이 `actions/download-artifact@v8`로 받아 독립 재생과
-동일 verdict tuple을 확인한다. 이 변경의 원격 실행 결과는 아직 확인 전이다.
+동일 verdict tuple을 확인한다. 세 named job과 artifact의 원격 acceptance는 2026-09-03
+완료했다(작업 준비서 §13.2). 후속 변경도 새 exact SHA로 같은 gate를 통과해야 한다.
 
 두 다운로드는 `digest-mismatch: error`이며 `continue-on-error`를 허용하지 않는다.
 Linux 다운로드가 실패해도 Windows 다운로드와 comparator는 취소되지 않은 한 실행하고,

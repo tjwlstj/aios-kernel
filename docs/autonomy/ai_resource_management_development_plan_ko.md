@@ -2,7 +2,7 @@
 
 작성일: 2026-04-27
 
-최종 갱신: 2026-09-02 (H1 로컬 replay·원격 acceptance→H2 순서 정렬)
+최종 갱신: 2026-09-03 (H1 원격 acceptance 완료와 H2 후속 순서 정렬)
 
 문서 역할: 활성 분야별 작업 계획. native resource subsystem 내부의 순서와 경계를
 소유하며, 전역 다음 작업은
@@ -13,10 +13,11 @@
 이 문서는 AIOS가 부팅 가능한 커널 기준선을 유지하면서,
 AI workload와 agent runtime에 맞는 리소스 관리를 어떤 순서로 확장할지 정리한다.
 
-이 문서의 Slice 순서는 **native resource subsystem 내부 계획**이다. 전역 작업은
-bounded native K2-a oracle과 H1 OS-neutral trace/replay·12개 fixture는 로컬에서
-고정했다. exact-SHA 원격 H1 acceptance 뒤 Linux-hosted 기본 delivery H2/H3로
-진행한다. upstream Linux/QEMU/VirtIO
+이 문서의 Slice 순서는 **native resource subsystem 내부 계획**이다. 전역 작업에서는
+bounded native K2-a oracle과 H1 OS-neutral trace/replay·12개 fixture를 고정했다.
+H1은 [exact-SHA 원격 acceptance (§13.2)](../os/h1_binding_trace_replay_workplan_ko.md#132-2026-09-03-원격-acceptance-완료)를
+통과해 `CURRENT`다(2026-09-03). 후속은 아직 `PLANNED`인 Linux-hosted 기본 delivery
+H2/H3의 observe-only 수직 조각이다. upstream Linux/QEMU/VirtIO
 resource 선정과 정확한 H축 일정은
 [별도 정본](../os/linux_hosted_substrate_and_resource_policy_ko.md)을 따른다. H0
 manifest/guard가 `CURRENT`여도 native resource policy나 hosted backend가 구현된 것은
@@ -434,8 +435,8 @@ Slice 1/2 필수 negative test:
 ## 리소스 subsystem 내부 후속 후보 — 전역 우선순위 아님
 
 Slice 2까지 완료한 리소스 레인 안의 가장 작은 후속 후보는 Slice 3 bounded policy
-schema 고정이다. 다만 전역 직접 우선순위는 H1 exact-SHA 원격 acceptance,
-그 다음 H2/H3 Linux-hosted observe-only delivery 수직 조각이다. Slice 3은 이 순서를
+schema 고정이다. H1 exact-SHA 원격 acceptance는 완료됐으며, 전역 직접 우선순위는
+H2/H3 Linux-hosted observe-only delivery 수직 조각이다. Slice 3은 이 순서를
 대체하지 않는 design-only `SUPPORTING` 작업일 뿐이며 K5 전에는 apply 가능성을 열지
 않는다.
 

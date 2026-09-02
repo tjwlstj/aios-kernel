@@ -1,6 +1,6 @@
 # AI 에이전트 운용 계약 (2026-07-15, 2026-08-10 관리축 정렬)
 
-최종 갱신: 2026-09-02 (H1 로컬 replay와 남은 remote/live 경계 반영)
+최종 갱신: 2026-09-03 (H1 원격 acceptance 완료와 read-only resource ABI 정렬)
 
 ## 1. 목적
 
@@ -32,7 +32,7 @@ AIOS에서 "AI가 편하게 움직인다"는 것은 커널 내부를 자유 형�
 | 커널 관측 | `CURRENT` | `state health/room/binding/mem/sched/nodes/pipeline/resource/pressure/slm/autonomy/user/sec/time/version` |
 | Kernel Room K1 계층 | `CURRENT` | schema 1/1024B management-only snapshot + exact boot/summary + `state room` |
 | Kernel Room native K2-a 결속 | `CURRENT` | schema 1/256B management-only snapshot + producer-owned SLM source + exact boot/summary + `state binding` |
-| H1 OS-neutral binding replay | `PARTIAL` | H1-a/b/c 로컬 contract·12 fixtures·artifact/parity 구현; exact-SHA 원격 Linux/Windows/parity 결과 없음 |
+| H1 OS-neutral binding replay | `CURRENT` | H1-a/b/c contract·12 fixtures·artifact/parity가 동일 run·exact SHA의 원격 Linux/Windows/parity 및 세 artifact 검증을 통과; live producer는 없음 |
 | 커널 내부 리소스 ledger | `CURRENT` | schema 1 aggregate snapshot + exact boot summary + `SYS_INFO_RESOURCE=0x706` + `state resource` |
 | 자율 제어 관측 | `CURRENT` | `state autonomy` schema 1 |
 | 제한된 행동 제안 | `PARTIAL` | `SYS_AUTONOMY_ACTION_PROPOSE`; scheduler만 apply 지원, delta ±32 |
@@ -71,8 +71,9 @@ ring3는 두 정적 bootstrap process를 PID 1→PID 2 순서로 각각 동기 �
 ## 5. 안전 경계
 
 - `state autonomy` 계약 자체는 read-only 관측면이며 action, syscall 번호, enum 값,
-  구조체 ABI를 늘리지 않는다. 별도 AI Resource Ledger는 커널 내부 versioned snapshot만
-  추가했고 userspace ABI는 아직 열지 않았다.
+  구조체 ABI를 늘리지 않는다. 별도 AI Resource Ledger는 커널 내부 versioned snapshot과
+  read-only `SYS_INFO_RESOURCE=0x706` userspace ABI를 제공한다. owner attribution과
+  reserve/quota/apply ABI는 아직 없다.
 - memory/accel/infer target은 계속 `observe-only`다.
 - scheduler action만 구현돼 있으며 delta는 `-32..32`로 제한된다.
 - raw pointer, register, MMIO 주소를 모델 출력으로 받지 않는다.
@@ -90,11 +91,13 @@ ring3는 두 정적 bootstrap process를 PID 1→PID 2 순서로 각각 동기 �
 1. K1은 Cell 1 + bound Node 1 + parent-bound NodeBit 2의 management-only
    read-only hierarchy v0를 한 vertical proof로 완성했다.
 2. native K2-a는 Node 101과 exact-one active/persistent SLM MAIN source를 별도
-   snapshot으로 결속했다. K1과 이 bounded boot-local oracle만 `CURRENT`다.
+   snapshot으로 결속했다. K1과 이 bounded boot-local oracle은 `CURRENT`이며,
+   K2 전체 live lifecycle/reconciliation은 `PARTIAL`이다.
 3. 같은 semantic field/reject 의미를 OS-neutral H1 trace/replay와 12개 fixture로
-   로컬 고정했다. exact-SHA 원격 Linux/Windows bundle과 parity acceptance 전까지
-   H1은 `PARTIAL`이다.
-4. H1 원격 acceptance 뒤 K2 live lifecycle/reconciliation과 H2 Linux-hosted
+   고정했고 exact-SHA 원격 Linux/Windows bundle과 parity acceptance를 통과해
+   H1 contract/replay는 `CURRENT`다(2026-09-03). 근거는
+   [H1 원격 acceptance 증거 (§13.2)](../os/h1_binding_trace_replay_workplan_ko.md#132-2026-09-03-원격-acceptance-완료)를 따른다.
+4. 다음으로 K2 live lifecycle/reconciliation과 H2 Linux-hosted
    observe-only source를 별도 조각으로 확장한다.
 5. K3에서 선택한 legacy NodeBit를 namespace adapter로 read-only projection한다.
 6. K4에서 resource/pressure를 canonical Cell/Node에 귀속하되

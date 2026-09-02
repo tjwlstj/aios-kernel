@@ -1,6 +1,6 @@
 # AIOS 성숙도 우선 작업흐름 가이드 (2026-08-10 재정렬)
 
-최종 갱신: 2026-09-02 (bounded H1-a/b/c 로컬 구현, 원격 acceptance 다음)
+최종 갱신: 2026-09-03 (H1 원격 acceptance 완료, H2 observe-only 후속)
 
 문서 역할: K/M/C/W/H축의 제품 성숙도와 전역 작업 우선순위 정본. 요청 분류,
 스킬·주제별 정본 선택, 문서 관리와 게시 절차는
@@ -259,12 +259,13 @@ SQ/CQ, 자원, authorize, rollback 경계를 제공한다.
 
 세부 기준선과 source/import 경계의 정본은
 [Linux-hosted substrate와 upstream resource 정책](../os/linux_hosted_substrate_and_resource_policy_ko.md)이다.
-H1의 exact field, lifecycle, reason, fixture와 남은 acceptance gate는
+H1의 exact field, lifecycle, reason, fixture와 acceptance 증거는
 [H1 binding trace/replay 작업 준비서](../os/h1_binding_trace_replay_workplan_ko.md)에
 고정한다.
 Linux-hosted userspace service는 의도된 기본 delivery 방향이지만 실행 backend의
 구현 성숙도는 아직 `PLANNED`다. bounded native K2-a oracle은 `CURRENT`이고 H1
-host-only verifier는 원격 acceptance 전까지 `PARTIAL`이다.
+host-only verifier는 [원격 acceptance 증거 (§13.2)](../os/h1_binding_trace_replay_workplan_ko.md#132-2026-09-03-원격-acceptance-완료)로
+`CURRENT`다(2026-09-03).
 Linux PID, cgroup, pidfd, PSI, namespace는
 canonical Cell/Node/NodeBit가 아니라 `source_only` 입력이다. K1/K2 의미를 Linux
 object에 맞춰 바꾸지 않는다.
@@ -272,7 +273,7 @@ object에 맞춰 바꾸지 않는다.
 | 단계 | 상태 | 관계 |
 |---|---|---|
 | H0 upstream resource manifest/guard | `CURRENT` | 13개 source row와 `code_import=0`을 검증한다. runtime backend 증거가 아니다. |
-| H1 OS-neutral trace/replay | `PARTIAL` (H1-a/b/c 로컬 구현) | bounded native K2-a field/reject proof, lifecycle replay, 12 fixtures와 self-contained Linux/Windows bundle/parity가 구현됐다. exact-SHA 원격 세 job terminal/artifact 확인 전이며 live producer는 없다. |
+| H1 OS-neutral trace/replay | `CURRENT` (2026-09-03) | bounded native K2-a field/reject proof, lifecycle replay, 12 fixtures와 self-contained Linux/Windows bundle/parity가 동일 run·exact SHA의 원격 세 job terminal·세 artifact 검증을 통과했다. live producer는 없다. |
 | H2 Linux observe-only adapter | `PLANNED` | K2/H1 공통 계약, negative fixture와 bounded native semantic oracle가 고정된 뒤 userspace service로 source-only 관측을 시작한다. 광범위한 native process/storage 확장은 선행조건이 아니다. |
 | H3 binding reconciliation/parity | `PLANNED` | exit/PID reuse/cgroup recreate/host restart를 구분하고 native와 같은 semantic verdict를 요구한다. |
 | H4 proposal/validation parity | `PLANNED` | K5 action/principal 계약 뒤에만 validate-only로 열며 초기 capability는 전부 `UNSUPPORTED`다. |
@@ -280,10 +281,10 @@ object에 맞춰 바꾸지 않는다.
 
 ### 4~8주 통합 우선순위
 
-1. **SEMANTIC SAFETY 40% — K2/H1:** 로컬 contract와 fixture는 고정됐다. exact-SHA
-   Linux/Windows/parity remote acceptance를 닫고, 작은 native K2 adapter가 Linux
+1. **SEMANTIC SAFETY 40% — K2/H1:** contract와 fixture 및 exact-SHA
+   Linux/Windows/parity remote acceptance가 고정됐다. 작은 native K2 adapter가 Linux
    object의 canonical 의미 유입을 막는 semantic oracle이라는 경계를 유지한다.
-2. **HOSTED DELIVERY 50% — H2/H3:** H1 원격 acceptance가 고정되면
+2. **HOSTED DELIVERY 50% — H2/H3:** 검증된 H1 계약 위에서
    한 Linux userspace service의 observe-only 수직 조각과
    exit/reuse/recreate/restart/reboot reconciliation을 구현한다.
 3. **H0 PROVENANCE + NATIVE CONFORMANCE 10%:** resource guard와 primary artifact

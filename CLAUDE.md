@@ -58,7 +58,7 @@ python tools/testkit/aios-testkit.py shell --strict --skip-build # reuse existin
 python tools/testkit/aios-testkit.py os   # OS tool smoke test
 ```
 
-### Hosted Binding-Trace Contract (H1 `PARTIAL`)
+### Hosted Binding-Trace Contract (H1 `CURRENT`)
 ```bash
 python -m unittest discover -s tools/hosted/tests -p "test_*.py" -v
 python tools/hosted/binding_trace_replay.py --fixture-manifest hosted/contracts/fixtures/manifest.json --artifact-dir build/hosted-binding-trace/manual --json
@@ -66,9 +66,11 @@ python tools/hosted/binding_trace_replay.py --fixture-manifest hosted/contracts/
 
 These host-only gates cover H1-a transport, bounded H1-b semantic replay, and
 the 12-fixture H1-c self-contained bundle/parity lane. The host suite runs in
-the Ubuntu/Windows matrix; dedicated fixture producers and a parity job are
-also configured. Remote exact-SHA results are still pending, so H1 remains
-`PARTIAL`. The H2 hosted service remains `PLANNED`.
+the Ubuntu/Windows matrix. Dedicated Linux/Windows fixture producers and the
+parity job passed same-run, exact-SHA acceptance with all three artifacts on
+2026-09-03; see [H1 acceptance evidence (§13.2)](docs/os/h1_binding_trace_replay_workplan_ko.md#132-2026-09-03-원격-acceptance-완료).
+Only this host-only contract/replay lane is `CURRENT`. The H2 hosted service
+remains `PLANNED`.
 
 ### Interactive Agent Debugging via MCP (optional, diagnostics-only)
 The external [qemu-mcp](https://github.com/0xmortuex/qemu-mcp) MCP server can be
@@ -331,10 +333,10 @@ The Linux-hosted H axis is the intended default delivery implementation lane.
 H0 upstream manifest/guard and the bounded native K2-a oracle are `CURRENT`.
 H1-a transport, bounded H1-b lifecycle replay, the exact 12-fixture matrix,
 native K2-a projection, and H1-c self-contained bundle/independent parity CLI
-are implemented locally (2026-08-31). The host suite and dedicated Ubuntu,
-Windows, and parity jobs are configured, but remote exact-SHA terminal results
-and artifacts are not yet available; H1 therefore remains `PARTIAL`. H2 may
-start only after that remote acceptance passes; broad native
+were implemented locally (2026-08-31). The dedicated Ubuntu, Windows, and parity
+jobs passed same-run, exact-SHA acceptance with all three artifacts (2026-09-03),
+so H1 contract/replay is `CURRENT`. H2 observe-only service is the next bounded
+implementation slice and remains `PLANNED`; broad native
 process/storage expansion and final conformance closure are not prerequisites for
 the first observe-only hosted slice. H4/H5 require K5
 principal/ownership/authorize and separate approval. The
@@ -367,7 +369,7 @@ replacement for QEMU or the normal verification path.
 | `kernel/include/` | Public headers, organized by subsystem |
 | `kernel/Makefile` | Kernel build system (root Makefile delegates here) |
 | `os/` | AIOS native ring3 userspace layer (main_ai, compat, runtime, tools) + `os/apps/` programs |
-| `hosted/` | Intended Linux-hosted delivery domain; `contracts/` owns locally implemented H1-a/H1-b/H1-c trace, fixtures, artifact/parity (`PARTIAL` pending remote acceptance); H2 runtime remains `PLANNED` |
+| `hosted/` | Intended Linux-hosted delivery domain; `contracts/` owns H1-a/H1-b/H1-c trace, fixtures, artifact/parity (`CURRENT` after exact-SHA cross-OS acceptance); H2 runtime remains `PLANNED` |
 | `models/` | AI/SLM model manifests (weights are gitignored) |
 | `store/` | Post-boot online driver/program/model download catalog |
 | `tools/testkit/` | Python test orchestration + Windows PS1 build helper |

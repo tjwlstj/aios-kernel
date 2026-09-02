@@ -1,7 +1,7 @@
 # AIOS 검증 도구 진화 설계
 
 작성일: 2026-07-15  
-최종 갱신: 2026-09-03 (H1 malformed JSON의 정규 실패 출력 보강)
+최종 갱신: 2026-09-03 (H1 입력 실패 보강 및 원격 acceptance 완료)
 기준 시작 체크포인트: `463a8b9`
 
 ## 1. 문서 역할
@@ -426,7 +426,7 @@ lifecycle은 순차 bootstrap 관찰이다. 실제 process 전환은 resumable c
 
 현재 Ubuntu/Windows `os-tools-matrix`는 Linux resource guard, platform host tests,
 H1 hosted suite, OS tool smoke를 실행하도록 구성됐다. H1 fixture bundle과 parity는
-별도 전용 jobs이며 exact-SHA 원격 결과는 확인 전이다. Windows kernel/QEMU parity는
+별도 전용 jobs이며 exact-SHA 원격 acceptance를 2026-09-03 확인했다. Windows kernel/QEMU parity는
 계속 `PLANNED`다.
 
 ## 12. Artifact와 provenance
@@ -519,7 +519,7 @@ kernel/build/test-runs/<run-id>/<profile>/
 - 2026-09-02 재개 점검: H1 artifact download의 digest 실패가 `continue-on-error`로
   숨겨지지 않게 하고, 후속 download/compare와 artifact 보존은 진단 목적으로 계속한다.
   두 workflow 정적 계약 테스트를 추가해 hosted suite는 122개다. 이 검사는 실제
-  Actions 실행 증거가 아니며 exact-SHA 원격 acceptance는 여전히 확인 전이다.
+  Actions 실행 증거가 아니며 당시 exact-SHA 원격 acceptance는 확인 전이었다.
 - 2026-09-03 재개 검증: 깊은 JSON 중첩과 surrogate 입력의 trace/contract/manifest/
   bundle 실패 처리 및 UTF-8 verdict/artifact/사람용 detail 보존을 보강해 hosted suite 132개를
   통과했다. checked-in fixture도 12/12 일치하며, 이 로컬 결과는 원격 acceptance와
@@ -528,7 +528,7 @@ kernel/build/test-runs/<run-id>/<profile>/
   `termination.reason=guest-reboot-exit`, 전체 transcript boot verdict PASS
 - strict boot inventory 3프로필 baseline 일치
 
-### H1 연동 레인. OS-neutral source-binding trace/replay — `PARTIAL` (H1-a/b/c 로컬 구현 2026-08-31)
+### H1 연동 레인. OS-neutral source-binding trace/replay — `CURRENT` (원격 acceptance 완료 2026-09-03)
 
 - 세부 field, lifecycle, reason, fixture와 일정은
   [`H1 binding trace/replay 작업 준비서`](../os/h1_binding_trace_replay_workplan_ko.md)가
@@ -537,7 +537,9 @@ kernel/build/test-runs/<run-id>/<profile>/
   12개 fixture와 H1-c exact manifest/self-contained bundle/독립 재생 parity가 호스트
   유닛테스트와 함께 구현됐다.
 - host suite는 Ubuntu/Windows `os-tools-matrix`, fixture producer와 parity는 전용
-  jobs로 구성됐다. 이 wiring의 exact-SHA 원격 결과와 실제 세 artifact는 아직 확인 전이다.
+  jobs다. exact SHA `e6c7979`의 세 H1 job terminal 성공과 실제 artifact 세 개를 확인했고
+  clean checkout의 독립 재생도 12개 PASS였다. 근거는
+  [H1 작업 준비서 §13.2](../os/h1_binding_trace_replay_workplan_ko.md#132-2026-09-03-원격-acceptance-완료)에 모은다.
 - 2026-08-28 raw transport 회귀는 실제 LF/CRLF만 terminator로 인정하고 EOF 단독
   `CR`을 `trace.encoding`으로 판정한다. blank-line `trace.syntax`는 JSON phase에 두어
   뒤쪽 BOM/invalid UTF-8 raw encoding보다 먼저 선택되지 않게 했다.
@@ -548,7 +550,7 @@ kernel/build/test-runs/<run-id>/<profile>/
   Ubuntu/Windows에서 같은 outcome과 first reason을 내야 한다.
 - 이 host-only 레인은 generic `[EVT]{json}` V1, QEMU 부팅, boot marker 또는 inventory
   baseline 갱신을 선행조건으로 삼지 않는다.
-- 원격 acceptance까지 완료되어도 H1 contract/replay만 `CURRENT`로 승격할 수 있다. live native/hosted
+- 원격 acceptance로 H1 contract/replay만 `CURRENT`가 됐다. live native/hosted
   producer, Linux adapter, K2 reconciliation과 apply 경로는 계속 별도 상태다.
 
 ### V1. 실행 종료와 산출물 — `PARTIAL`

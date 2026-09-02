@@ -3,7 +3,7 @@
 문서 상태: 정본
 전체 토폴로지 성숙도: `PARTIAL` (aggregate substrate, K1 hierarchy, bounded native K2-a oracle `CURRENT`; K2 lifecycle/reconcile `PARTIAL`)
 작성일: 2026-08-10
-최종 갱신: 2026-09-02 (bounded H1 lifecycle contract와 남은 remote/live 경계)
+최종 갱신: 2026-09-03 (H1 원격 acceptance 완료와 남은 live 경계)
 적용 범위: `docs/kernel-room/`의 용어, 성숙도, 구현 순서
 
 ## 문서 권위
@@ -153,8 +153,8 @@ ABI, verifier가 없으므로 현재 상태는 `RESEARCH`다. Cell/Node 모델�
 | K1 management hierarchy registry v0 | `CURRENT` | schema 1/1024B producer, exact host 계약, strict QEMU/shell 검증 완료 |
 | K2-a native `AI_SERVICE` source binding oracle | `CURRENT` | 별도 schema 1/256B snapshot이 Node 101을 SLM MAIN source에 결속; exact boot/summary/`state binding` 검증 |
 | K2 전체 source lifecycle / reconciliation | `PARTIAL` | boot-local immutable native 결속만 있으며 refresh, exit/recreate, rebind, hosted source는 없음 |
-| H1 OS-neutral lifecycle trace/replay | `PARTIAL` | H1-a/b/c 로컬 contract·12 fixtures·artifact/parity 구현; exact-SHA 원격 Linux/Windows/parity 결과와 live producer는 없음 |
-| Linux-hosted source adapter | `PLANNED` | H1 remote acceptance 뒤 producer-owned service lifecycle로만 결속 |
+| H1 OS-neutral lifecycle trace/replay | `CURRENT` | H1-a/b/c contract·12 fixtures·artifact/parity가 동일 run·exact SHA의 원격 Linux/Windows/parity 및 세 artifact 검증을 통과; live producer는 없음 |
+| Linux-hosted source adapter | `PLANNED` | 검증된 H1 계약을 소비하며 producer-owned service lifecycle로만 결속할 후속 조각 |
 | legacy management NodeBit projection | `PLANNED` | runtime/SLM source adapter와 generation binding 없음 |
 | per-Cell/per-Node pressure와 resource ownership | `PLANNED` | pressure는 system-to-plane, resource owner는 unattributed |
 | Axis Gate enforcement / authorize / apply | `PLANNED` | management identity와 principal 계약 뒤에만 착수 |
@@ -254,7 +254,7 @@ resource attribution, authorize/apply는 증명하지 않으므로 K2 전체는 
 1. 관리 정본과 namespace 대응표 고정 — 완료
 2. management-only read-only hierarchy registry v0 — `CURRENT` (2026-08-11)
 3. bounded native K2-a semantic oracle — `CURRENT` (2026-08-15)
-4. H1 OS-neutral lifecycle trace/replay와 stable reason fixture — 로컬 구현, 원격 acceptance 확인 전
+4. H1 OS-neutral lifecycle trace/replay와 stable reason fixture — `CURRENT` (2026-09-03)
 5. Linux-hosted observe-only source adapter와 explicit reconcile
 6. legacy NodeBit typed projection과 source generation 결속
 7. per-Cell/per-Node pressure·resource attribution 관측
@@ -266,10 +266,11 @@ resource attribution, authorize/apply는 증명하지 않으므로 K2 전체는 
 3~5단계는 Cell-only, Node-only, NodeBit-only 구현 순서가 아니라 v0에 이미 존재하는
 관계와 typed view를 실제 source에 연결하고 coverage를 확대하는 순서다.
 
-K2 semantic field/reject 의미는 substrate-neutral을 목표로 한다. 현재 `CURRENT`
-증거는 Node 101 `AI_SERVICE`를 SLM agent-tree MAIN에 묶은 native K2-a oracle뿐이며,
-OS-neutral lifecycle trace 계약은 H1 로컬 verifier/fixture로 고정했지만 exact-SHA
-원격 cross-OS acceptance와 live producer는 아직 없다. 기본 delivery 경로의 hosted
+K2 semantic field/reject 의미는 substrate-neutral을 목표로 한다. 현재 native producer의
+`CURRENT` 증거는 Node 101 `AI_SERVICE`를 SLM agent-tree MAIN에 묶은 K2-a oracle뿐이며,
+OS-neutral lifecycle trace 계약은 H1 verifier/fixture와 exact-SHA 원격 cross-OS acceptance로
+고정됐다. 근거는 [H1 원격 acceptance 증거 (§13.2)](../os/h1_binding_trace_replay_workplan_ko.md#132-2026-09-03-원격-acceptance-완료)를
+따르며 live producer는 아직 없다. 기본 delivery 경로의 hosted
 source 후보는 producer-owned service instance/generation을 가진 실제 Linux userspace
 service다.
 native oracle은 전용 producer-owned instance/generation과 copied read API를 사용한다.

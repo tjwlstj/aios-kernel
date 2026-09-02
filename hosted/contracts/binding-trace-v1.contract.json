@@ -1,7 +1,7 @@
 {
   "contract_id": "aios-binding-trace-v1",
   "schema_version": 1,
-  "maturity": "PARTIAL",
+  "maturity": "CURRENT",
   "canonical_workplan": "docs/os/h1_binding_trace_replay_workplan_ko.md",
   "slice_scope": {
     "implemented": [
@@ -14,12 +14,12 @@
       "cross-axis validity, zero-sentinel, identity, generation, and retained-binding checks",
       "checked-in fixture manifest and self-contained verdict bundles",
       "fail-closed Linux/Windows bundle parity comparison",
-      "Ubuntu/Windows CI configuration for transport, fixture, and parity lanes"
+      "Ubuntu/Windows CI configuration for transport, fixture, and parity lanes",
+      "verified same-SHA Ubuntu/Windows fixture and independent parity artifacts"
     ],
     "not_implemented_yet": [
       "live native lifecycle trace producer",
-      "Linux hosted observe-only adapter (H2)",
-      "remote terminal evidence for the configured Linux/Windows parity lane"
+      "Linux hosted observe-only adapter (H2)"
     ]
   },
   "transport": {
