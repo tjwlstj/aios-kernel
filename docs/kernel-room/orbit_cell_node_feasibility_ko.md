@@ -2,6 +2,7 @@
 
 작성일: 2026-04-12
 갱신: 2026-04-18
+현재 경계 동기화: 2026-08-31
 
 > [!WARNING]
 > **REVIEW / 역사적 탐색 문서**
@@ -28,8 +29,10 @@
   상태 문장이다.
 - bounded bootstrap Cell registry, Node-to-Cell binding, typed management NodeBit view의
   K1 v0는 2026-08-11 `CURRENT`가 됐다. Node 101을 producer-owned SLM MAIN source에
-  결속하는 native K2-a oracle도 2026-08-15 `CURRENT`다. 전체 K2 live
-  lifecycle/reconciliation과 hosted source는 여전히 `PLANNED`다.
+  결속하는 native K2-a oracle도 2026-08-15 `CURRENT`다. H1-a/b/c 로컬 replay와
+  12개 fixture/artifact/parity는 구현됐지만 원격 acceptance 전이라 H1은 `PARTIAL`이다.
+  K2 전체는 `PARTIAL`이며 남은 live lifecycle/reconciliation과 H2 hosted source는
+  여전히 `PLANNED`다.
 - SLM agent tree, runtime NodeBit, SLM NodeBit은 각자 `CURRENT` subsystem이며 서로
   다른 namespace다. exact-one SLM MAIN만 native K2-a로 Node 101에 결속됐고, 나머지
   agent/NodeBit projection은 아직 없다.
@@ -39,7 +42,8 @@
 
 첫 구현 조각은 enforcement가 아닌
 `management_only read-only hierarchy registry v0`로 완료됐다. 정확한 현재 경계와
-다음 H1/K2 lifecycle verifier 요구는 정본과 [개발 가이드](development_guide_ko.md)를 따른다.
+H1 원격 acceptance, K2 live lifecycle과 H2 verifier 요구는 정본과
+[개발 가이드](development_guide_ko.md)를 따른다.
 Cell-only table은 완료로 간주하지 않으며, K1은 Cell 1개 + bound Node 1개 +
 parent-bound typed NodeBit 2개의 전체 hierarchy proof를 함께 보존한다.
 

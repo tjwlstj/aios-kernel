@@ -2,7 +2,7 @@
 
 작성일: 2026-04-18
 재정비: 2026-08-10
-최종 갱신: 2026-08-15 (bounded native K2-a source binding oracle)
+최종 갱신: 2026-09-02 (H1 로컬 verifier와 remote/live 경계)
 
 > 이 가이드는 [AIOS Kernel Room 관리 모델](kernel_room_management_model_ko.md)을
 > 따른다. 정체성, 용어, 성숙도 또는 구현 순서가 충돌하면 정본을 우선한다.
@@ -77,7 +77,8 @@ Kernel Room 작업이 커널 작동 증명이나 enforcement 자체를 목표로
 ### 아직 `PLANNED` 또는 K2 전체에서 미완료
 
 - source refresh/exit/recreate/rebind와 Cell lifecycle/reconciliation
-- H1 OS-neutral trace/replay와 Linux-hosted observe-only source
+- H1 exact-SHA 원격 Linux/Windows/parity acceptance
+- H2 Linux-hosted observe-only source/runtime
 - runtime/SLM NodeBit projection
 - per-Cell/per-Node pressure와 resource ownership
 - principal/authorize와 Axis Gate enforcement
@@ -293,16 +294,16 @@ canonical Node identity가 아니다. Memory Fabric main domain은 Cell/resource
 
 작은 native K2 adapter는 canonical 의미가 Linux object 모양에 끌려가지 않게 하는
 semantic oracle/conformance proof로 구현됐다. refresh/reconcile과 source
-exit/recreate/rebind는 아직 `PLANNED`다. 다음 H1은 같은 field/reason 의미를 OS-neutral
-trace와 negative fixture에 고정하고, 광범위한 native process/storage 확장을 H2
-observe-only userspace service의 선행조건으로 만들지 않는다.
+exit/recreate/rebind는 아직 `PLANNED`다. H1 로컬 verifier는 같은 field/reason 의미를
+OS-neutral trace와 12개 fixture에 고정했고 원격 acceptance가 남았다. 광범위한 native
+process/storage 확장은 H2 observe-only userspace service의 선행조건이 아니다.
 
 ## 후속 구현 순서
 
 1. 정본과 typed namespace 대응표
 2. management-only hierarchy registry v0 — `CURRENT` (2026-08-11)
 3. bounded native K2-a semantic oracle — `CURRENT` (2026-08-15)
-4. H1 OS-neutral lifecycle trace/replay
+4. H1 OS-neutral lifecycle trace/replay — 로컬 구현 완료, 원격 acceptance 확인 전
 5. H2 Linux observe-only userspace adapter
 6. Cell lifecycle/reconcile와 source coverage 확대
 7. runtime/SLM NodeBit의 typed management view와 generation 연결

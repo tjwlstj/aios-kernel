@@ -1,15 +1,17 @@
 # 기술 성숙도 레버 백로그 (2026-07-15, 2026-08-10 관리축 정렬)
 
-최종 갱신: 2026-08-15 (native K2-a oracle와 H1 다음 조각 정렬)
+최종 갱신: 2026-09-02 (H1 로컬 계약과 남은 remote/live 경계 정렬)
 
 이 문서는 특정 기능(M-레벨)이 아니라 **바닥을 올리는 성숙도 레버**를 한곳에 모아 우선순위·착수점·담당·조율지점을 고정한다. Claude가 회귀 정비 중 관찰한 것을 근거로 정리했고, Codex와 의견을 조율한 뒤 착수한다.
 
 이 백로그는 관리 K축을 대체하지 않는 `SUPPORTING`/`ORTHOGONAL` 품질 작업 모음이다.
 K1 hierarchy registry v0와 bounded native K2-a source-binding oracle은 `CURRENT`다.
-프로젝트의 다음 직접 조각은 [Kernel Room 관리 모델](../kernel-room/kernel_room_management_model_ko.md)의
-semantic field/reject 계약을 OS-neutral H1 trace/replay로 옮긴 뒤 K2 live
-generation/reconciliation을 확대하는 것이다. 아래 레버의 착수 가능 표시는 그
-우선순위를 뒤집지 않는다.
+같은 semantic field/reject 계약을 옮긴 OS-neutral H1-a/b/c trace/replay·12개 fixture·
+artifact/parity는 로컬 구현됐지만 exact-SHA 원격 acceptance 전이므로 H1은 `PARTIAL`이다.
+프로젝트의 다음 직접 게이트는 [Kernel Room 관리 모델](../kernel-room/kernel_room_management_model_ko.md)의
+H1 원격 acceptance이며, 그 뒤 K2 live generation/reconciliation과 H2 observe-only
+source를 별도 조각으로 확대한다. 아래 레버의 착수 가능 표시는 그 우선순위를
+뒤집지 않는다.
 
 ## 문서 관계 (중복 금지)
 

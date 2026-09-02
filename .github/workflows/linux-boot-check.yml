@@ -51,6 +51,9 @@ jobs:
       - name: Run platform resource guard tests
         run: python -m unittest discover -s tools/platform/tests -p "test_*.py" -v
 
+      - name: Run hosted binding-trace host tests (fail closed)
+        run: python -m unittest discover -s tools/hosted/tests -p "test_*.py" -v
+
       - name: Run OS tool smoke
         run: python tools/testkit/aios-testkit.py os
 
@@ -65,6 +68,112 @@ jobs:
             kernel/build/tool-smoke/memory_journal.jsonl
             kernel/build/tool-smoke/adapter_candidates.jsonl
           if-no-files-found: warn
+
+  hosted-binding-trace-fixtures-ubuntu:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Run hosted binding-trace fixture manifest (fail closed)
+        run: >-
+          python tools/hosted/binding_trace_replay.py
+          --fixture-manifest hosted/contracts/fixtures/manifest.json
+          --artifact-dir build/hosted-binding-trace/Linux
+          --json
+
+      - name: Upload Linux binding-trace bundle
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: hosted-binding-trace-Linux
+          path: build/hosted-binding-trace/Linux/
+          if-no-files-found: error
+          retention-days: 30
+
+  hosted-binding-trace-fixtures-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Run hosted binding-trace fixture manifest (fail closed)
+        run: >-
+          python tools/hosted/binding_trace_replay.py
+          --fixture-manifest hosted/contracts/fixtures/manifest.json
+          --artifact-dir build/hosted-binding-trace/Windows
+          --json
+
+      - name: Upload Windows binding-trace bundle
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: hosted-binding-trace-Windows
+          path: build/hosted-binding-trace/Windows/
+          if-no-files-found: error
+          retention-days: 30
+
+  hosted-binding-trace-parity:
+    needs:
+      - hosted-binding-trace-fixtures-ubuntu
+      - hosted-binding-trace-fixtures-windows
+    if: ${{ always() && !cancelled() }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Download Linux binding-trace bundle
+        uses: actions/download-artifact@v8
+        with:
+          name: hosted-binding-trace-Linux
+          path: build/hosted-binding-trace/download/Linux
+          digest-mismatch: error
+
+      - name: Download Windows binding-trace bundle
+        if: ${{ always() && !cancelled() }}
+        uses: actions/download-artifact@v8
+        with:
+          name: hosted-binding-trace-Windows
+          path: build/hosted-binding-trace/download/Windows
+          digest-mismatch: error
+
+      - name: Compare Linux and Windows binding-trace bundles
+        if: ${{ always() && !cancelled() }}
+        run: >-
+          python tools/hosted/binding_trace_replay.py
+          --compare-fixture-bundles
+          build/hosted-binding-trace/download/Linux
+          build/hosted-binding-trace/download/Windows
+          --artifact-dir build/hosted-binding-trace/parity
+          --json
+
+      - name: Upload binding-trace parity verdict
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: hosted-binding-trace-parity
+          path: build/hosted-binding-trace/parity/
+          if-no-files-found: error
+          retention-days: 30
 
   build-and-boot:
     runs-on: ubuntu-latest

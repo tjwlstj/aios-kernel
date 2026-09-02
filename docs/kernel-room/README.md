@@ -1,6 +1,6 @@
 # Kernel Room 문서 모음
 
-최종 갱신: 2026-08-15
+최종 갱신: 2026-09-02 (H1 로컬 구현과 remote/live 경계)
 
 ## 정본
 
@@ -44,6 +44,9 @@ Room
 - Kernel Room 전체 토폴로지
   - aggregate substrate, K1 bootstrap hierarchy v0, bounded native K2-a oracle은 존재
   - K2 live lifecycle/reconciliation, hosted source, attribution은 없음
+- H1 OS-neutral trace/replay
+  - H1-a/b/c 로컬 contract·12 fixtures·artifact/parity는 존재
+  - exact-SHA 원격 Linux/Windows/parity terminal과 live producer는 없음
 
 ### `SCAFFOLD`
 
@@ -76,7 +79,7 @@ Room
 - [orbit_cell_node_feasibility_ko.md](orbit_cell_node_feasibility_ko.md)
   - `REVIEW`: 2026-04 탐색 기록. 현재 구현 지침으로 사용하지 않는다.
 
-## K1과 native K2-a 구현 범위, 다음 조각
+## K1, native K2-a와 H1 구현 범위, 다음 조각
 
 K1 `management_only read-only hierarchy registry v0`는 다음 고정 계약을 구현한다.
 
@@ -93,8 +96,9 @@ native K2-a는 이 bootstrap fixture의 Node 101을 exact-one active/persistent 
 source에 명시적으로 bind한다. canonical, binding, source generation을 분리하고
 producer-owned copied snapshot, boot-order, malformed/duplicate/orphan/mismatch/zero/
 rollback/stale/tail 거부를 검증한다. 이 oracle은 boot-local immutable proof일 뿐 live
-refresh/reconcile이나 hosted source는 아니다. 다음 직접 조각은 같은 semantic field와
-reject 의미를 OS-neutral H1 trace/replay로 옮기는 것이다. aggregate snapshot의
+refresh/reconcile이나 hosted source는 아니다. 같은 semantic field와 reject 의미는
+OS-neutral H1 로컬 trace/replay로 옮겼고, 남은 직접 게이트는 원격 cross-OS acceptance와
+live K2/H2 producer/reconcile이다. aggregate snapshot의
 `domains`, `nodes`, `nodebit_active` count는 여전히 canonical hierarchy나 binding
 증거가 아니다.
 

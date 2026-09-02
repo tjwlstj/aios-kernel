@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "manifest_id": "aios-binding-trace-v1-fixtures",
+  "contract_id": "aios-binding-trace-v1",
+  "fixtures": [
+    {
+      "id": "valid-full-lifecycle",
+      "trace": "valid/full-lifecycle.jsonl",
+      "evidence_kind": "synthetic-lifecycle",
+      "expected_outcome": "PASS",
+      "expected_first_reason": null
+    },
+    {
+      "id": "valid-native-k2a-observation",
+      "trace": "valid/native-k2a-observation.jsonl",
+      "evidence_kind": "native-k2a-projection",
+      "expected_outcome": "PASS",
+      "expected_first_reason": null
+    },
+    {
+      "id": "invalid-orphan-parent",
+      "trace": "invalid/orphan-parent.jsonl",
+      "evidence_kind": "semantic-negative",
+      "expected_outcome": "FAIL",
+      "expected_first_reason": "orphan"
+    },
+    {
+      "id": "invalid-source-generation-rollback",
+      "trace": "invalid/source-generation-rollback.jsonl",
+      "evidence_kind": "semantic-negative",
+      "expected_outcome": "FAIL",
+      "expected_first_reason": "generation-rollback"
+    },
+    {
+      "id": "invalid-stale-observe-accepted",
+      "trace": "invalid/stale-observe-accepted.jsonl",
+      "evidence_kind": "semantic-negative",
+      "expected_outcome": "FAIL",
+      "expected_first_reason": "stale"
+    },
+    {
+      "id": "invalid-host-instance-drift",
+      "trace": "invalid/host-instance-drift.jsonl",
+      "evidence_kind": "semantic-negative",
+      "expected_outcome": "FAIL",
+      "expected_first_reason": "trace.host-instance"
+    },
+    {
+      "id": "invalid-producer-instance-drift",
+      "trace": "invalid/producer-instance-drift.jsonl",
+      "evidence_kind": "semantic-negative",
+      "expected_outcome": "FAIL",
+      "expected_first_reason": "trace.producer-instance"
+    },
+    {
+      "id": "invalid-source-instance-reuse",
+      "trace": "invalid/source-instance-reuse.jsonl",
+      "evidence_kind": "semantic-negative",
+      "expected_outcome": "FAIL",
+      "expected_first_reason": "trace.source-reuse"
+    },
+    {
+      "id": "invalid-rebind-before-rediscover",
+      "trace": "invalid/rebind-before-rediscover.jsonl",
+      "evidence_kind": "semantic-negative",
+      "expected_outcome": "FAIL",
+      "expected_first_reason": "trace.state-transition"
+    },
+    {
+      "id": "invalid-transport-duplicate-key",
+      "trace": "invalid/transport-duplicate-key.jsonl",
+      "evidence_kind": "transport-negative",
+      "expected_outcome": "FAIL",
+      "expected_first_reason": "trace.duplicate-key"
+    },
+    {
+      "id": "invalid-transport-sequence-gap",
+      "trace": "invalid/transport-sequence-gap.jsonl",
+      "evidence_kind": "transport-negative",
+      "expected_outcome": "FAIL",
+      "expected_first_reason": "trace.sequence"
+    },
+    {
+      "id": "invalid-terminal-final-state",
+      "trace": "invalid/terminal-final-state.jsonl",
+      "evidence_kind": "semantic-negative",
+      "expected_outcome": "FAIL",
+      "expected_first_reason": "trace.terminal"
+    }
+  ]
+}

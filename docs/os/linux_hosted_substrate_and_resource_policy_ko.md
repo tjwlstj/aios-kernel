@@ -2,6 +2,9 @@
 
 > 기준일: 2026-08-23
 >
+> 최종 갱신: 2026-09-02 (H1-a/b/c 로컬 구현·CI/잔여 범위 문구 동기화;
+> upstream exact reference 재검토일은 2026-08-23 유지)
+>
 > 문서 상태: 설계·resource 선정 정본
 >
 > Upstream resource policy: `CURRENT` (`schema_version=1`,
@@ -366,15 +369,18 @@ substrate와 독립적으로 검증하는 bounded semantic oracle과 conformance
 - guard가 exact reference, role, source-only/import 금지 경계를 fail-closed로 검사한다.
 - 이 완료는 hosted executable, runtime adapter 또는 AIOS support가 아니다.
 
-### H1. OS-neutral trace와 replay verifier — `PARTIAL` (H1-a 완료, 2026-08-23)
+### H1. OS-neutral trace와 replay verifier — `PARTIAL` (H1-a/b/c 로컬 구현, 2026-08-31)
 
 - 세부 field, state machine, fixture와 검증 일정은
   [H1 trace/replay 작업 준비서](h1_binding_trace_replay_workplan_ko.md)를 따른다.
-- H1-a(2026-08-23): `hosted/contracts/binding-trace-v1.contract.json`과
-  `tools/hosted/binding_trace_replay.py` transport verifier가 `PARTIAL`로 착수됐다.
-  transport·구조 verdict만 있고 semantic replay는 없다.
-- H1-b lifecycle replay/fixture matrix, H1-c CI/artifact 연결이 남아 있고 이들이
-  끝나기 전까지 H1을 `CURRENT`로 표기하지 않는다.
+- H1-a transport, H1-b bounded lifecycle semantic replay와 12개 valid/invalid fixture,
+  H1-c exact manifest, self-contained bundle과 독립 재생 Linux/Windows parity CLI가
+  로컬 구현됐다.
+- native K2-a projection은 C header/producer의 source tuple과 string/numeric mapping을
+  host drift test로 고정한다. 이는 live native lifecycle capture가 아니다.
+- host unit gate는 Ubuntu/Windows `os-tools-matrix`, bundle producer와 parity는 별도
+  전용 jobs로 구성됐다. exact SHA의 원격 terminal 결과와 세 artifact는 아직 확인 전이다.
+- 따라서 H1은 계속 `PARTIAL`이며 원격 acceptance 전에는 `CURRENT`로 표기하지 않는다.
 - `discover -> bind -> observe -> update -> stale reject -> rebind -> observe -> exit -> stale reject -> rediscover -> rebind -> observe`
   lifecycle을
   versioned trace로 고정한다.
@@ -389,7 +395,8 @@ substrate와 독립적으로 검증하는 bounded semantic oracle과 conformance
 
 - H1의 공통 lifecycle/generation/reject 계약, negative fixture와 하나의 bounded
   native semantic oracle가 모두 고정된 뒤 시작한다. native oracle은 2026-08-15
-  `CURRENT`가 됐고 H1은 H1-a transport 조각(2026-08-23)만 `PARTIAL`이다. 광범위한 native process/storage
+  `CURRENT`가 됐고 H1 로컬 계약/fixture/parity는 구현됐지만 원격 acceptance가 남아
+  `PARTIAL`이다. 광범위한 native process/storage
   확장과 최종 conformance closure는 첫 observe-only slice의 선행조건이 아니다.
 - primary Linux baseline 위에서 한 host instance와 bounded process source를 관측한다.
 - 실제 file/network/compute workload의 resource와 pressure source를 읽는다.
@@ -450,7 +457,7 @@ Linux-hosted를 기본 delivery로 삼는 제품 방향은 이미 결정됐다. 
 |---|---|---|
 | 시작점 | 방향·도메인·H0 기준선 잠금 | `hosted/` 책임 경계, userspace process 원칙, guard PASS와 13개 source row; runtime 증거는 아님 |
 | 1주차 | bounded native K2-a semantic oracle — 완료 (2026-08-15) | semantic kind, typed namespace, producer-owned instance/generation, copied read API, 별도 256B binding snapshot과 exact native reject proof; lifecycle trace 계약은 H1 |
-| 1~2주차 다음 | H1 OS-neutral trace/replay verifier | update 뒤 stale/rebind와 exit 뒤 stale/rediscover/rebind를 분리하고 stable reason과 native oracle trace의 동일 verdict를 검증 |
+| 1~2주차 로컬 완료 / 원격 확인 전 | H1 OS-neutral trace/replay verifier | update/exit lifecycle, 12 fixtures, self-contained 양 OS bundle과 strict parity 구현; exact-SHA 원격 세 job terminal/artifact 대기 |
 | 2~4주차 | H2 Linux observe-only userspace service | primary exact reference에서 한 host와 한 `AI_SERVICE` source를 관측하고 raw/normalized/binding artifact를 분리; 모든 action `UNSUPPORTED` |
 | 4~6주차 | H3 reconciliation과 parity | exit/PID reuse/cgroup recreate/collector restart/host reboot 구분, 명시적 rebind, backend ID leakage 없음 |
 | 6~8주차 | delivery acceptance와 native conformance | service startup/restart/remove, 실제 storage/network/model workload, exact kernel/config/package/hash provenance, 정규 host matrix와 cross-backend verdict |
@@ -488,7 +495,7 @@ missing/duplicate/orphan/role-mismatch/zero/regressed/stale-generation 반례를
 adapter는 Linux 의미가 canonical schema를 지배하지 못하게 하는 `CURRENT` semantic
 oracle이다. 다만 refresh/exit/recreate/rebind는 아직 없으므로 K2 전체는 `PARTIAL`이다.
 광범위한 native process/storage 확장은 H2 착수 조건이 아니지만 H1 lifecycle trace와
-negative fixture는 H2보다 먼저 고정한다.
+negative fixture, 원격 cross-OS acceptance는 H2보다 먼저 고정한다.
 
 다음 readiness gate를 모두 통과해야 hosted backend를 지원됨 또는 배포 가능 상태로
 승격할 수 있다.

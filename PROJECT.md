@@ -20,8 +20,9 @@ aggregate snapshot과 각자 `CURRENT`인 Memory Fabric domain, SLM agent
 profile/policy catalog, runtime capability NodeBit, pipeline ownership을 제공한다. 새 작업은 이들을
 숫자 ID가 같다는 이유로 결합하지 말고 namespace + explicit binding + generation으로 연결한다.
 K1 bootstrap fixture는 Cell ID 1, Node ID 101, NodeBit ID 1001/1002를 사용하며
-K2 전체 lifecycle/reconcile은 `PARTIAL`, H1은 H1-a transport 조각만 `PARTIAL`
-(2026-08-23)이고 Linux-hosted source는 `PLANNED`다.
+K2 전체 lifecycle/reconcile은 `PARTIAL`이다. H1-a transport, H1-b bounded semantic
+replay와 12개 fixture, H1-c bundle/parity는 로컬 구현됐지만 원격 exact-SHA
+Linux/Windows/parity 결과 전까지 H1도 `PARTIAL`이고 Linux-hosted source는 `PLANNED`다.
 용어와 성숙도 정본은
 [Kernel Room 관리 모델](docs/kernel-room/kernel_room_management_model_ko.md)이다.
 
@@ -33,7 +34,7 @@ K2 전체 lifecycle/reconcile은 `PARTIAL`, H1은 H1-a transport 조각만 `PART
 |---|---|---|---|
 | **`kernel/`** | 베어메탈 x86_64 커널. Kernel Room 관리축, 클럭·메모리 보호·인터럽트·드라이버·AI 시스콜 표면 | `kernel/build/aios-kernel.bin` | `make` (→ `kernel/Makefile`) |
 | **`os/`** | ring3 유저스페이스 런타임 + 전용 프로그램(`os/apps/`) | 파이썬 도구, (예정) ELF 앱 | `python os/tools/*.py` |
-| **`hosted/`** | 의도된 기본 delivery 경로인 Linux-hosted userspace service와 backend-neutral contract | binding-trace-v1 contract(H1-a `PARTIAL`), 책임 경계 문서, (예정) H1-b fixtures/H2 service | H1-a transport verifier: `tools/hosted/binding_trace_replay.py`; 실행 service는 없음 (`PLANNED`) |
+| **`hosted/`** | 의도된 기본 delivery 경로인 Linux-hosted userspace service와 backend-neutral contract | binding-trace-v1 contract, 12 fixtures, self-contained artifact/parity(H1 `PARTIAL`), (예정) H2 service | H1 verifier/fixture CLI: `tools/hosted/binding_trace_replay.py`; 실행 service는 없음 (`PLANNED`) |
 | **`models/`** | AI/SLM 모델 매니페스트(가중치는 비추적) | `models/manifests/*.json` | — (데이터) |
 | **`store/`** | 부팅 후 온라인 드라이버/프로그램/모델 다운로드 카탈로그 | `store/catalog/*.json` | (예정) 런타임 클라이언트 |
 | **`tools/`** | 테스트·빌드 오케스트레이션과 외부 substrate source 정책 검증 | `tools/testkit/`, `tools/platform/` | testkit + platform guard |
@@ -124,8 +125,8 @@ Windows: `pwsh -File .\tools\testkit\kernel\build-windows.ps1 -Target test`
 - **K2-a native semantic oracle은 `CURRENT`, K2 전체는 `PARTIAL`** — 별도
   256B snapshot이 Node 101을 producer-owned SLM MAIN instance/generation에 결속하고
   append-only reject reason을 고정한다. refresh/exit/recreate/rebind는 아직 없다.
-  다음 H1 replay가 OS-neutral lifecycle과 negative fixture를 고정한 뒤 H2
-  observe-only service를 시작한다. 광범위한 native
+  로컬 H1 replay/negative fixture가 고정됐고 exact-SHA remote cross-OS acceptance를
+  통과한 뒤 H2 observe-only service를 시작한다. 광범위한 native
   process/storage 확장은 선행조건이 아니다. H4 validation과 H5 apply는 K5와 별도 승인 전까지
   `PLANNED`다.
 - **process snapshot/journal은 증거 전용** — descriptor-owned 176B snapshot은 ISR 시점 owner/CR3/TSS `rsp0`/IF=0 검증과 `resume_ready=0`을 유지한다. per-boot process event journal v1의 schema/kind/reason/outcome 숫자 ID는 append-only이며, capacity 8 안에서 여섯 lifecycle/capture record를 덮어쓰지 않는다. journal은 `evidence_only=1 switch_events=0 resume_ready=0`이고 `0→1→0→2→0` 순차 bootstrap owner lifecycle만 증명한다. resumable saved context와 runnable-state 결속, live continuation/switch, 실제 A→B→A가 별도로 검증되기 전에는 snapshot이나 journal을 schedulable state 또는 CPU-switch trace로 해석하지 않는다.
@@ -152,7 +153,7 @@ aios-kernel/
 │   └── apps/             # 전용 프로그램 (스캐폴드)
 │
 ├── hosted/               # ③ Linux-hosted 기본 delivery 도메인
-│   └── contracts/        # binding-trace-v1 계약(H1-a PARTIAL) + README; H1-b fixtures/H2 service는 PLANNED
+│   └── contracts/        # H1-a/b/c 계약·12 fixtures·artifact/parity PARTIAL; H2 service는 PLANNED
 ├── models/               # ④ 모델 매니페스트 (가중치 비추적)
 │   └── manifests/
 ├── store/                # ⑤ 온라인 배포 카탈로그

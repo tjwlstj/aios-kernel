@@ -8,14 +8,18 @@
       "transport boundary and limits",
       "strict JSONL parsing with duplicate-key rejection",
       "exact field-set, scalar-type, enum, and constant validation",
-      "envelope sequence continuity and terminal structure arithmetic"
+      "envelope sequence continuity and terminal structure arithmetic",
+      "bounded Node 101 / Cell 1 lifecycle semantic replay",
+      "claimed-outcome versus independently computed outcome comparison",
+      "cross-axis validity, zero-sentinel, identity, generation, and retained-binding checks",
+      "checked-in fixture manifest and self-contained verdict bundles",
+      "fail-closed Linux/Windows bundle parity comparison",
+      "Ubuntu/Windows CI configuration for transport, fixture, and parity lanes"
     ],
     "not_implemented_yet": [
-      "semantic lifecycle replay (H1-b)",
-      "claimed-outcome versus recomputed outcome comparison (H1-b)",
-      "cross-axis validity, zero-sentinel legality, instance constancy (H1-b)",
-      "fixture manifest sidecar consumption (H1-c)",
-      "CI integration and artifact preservation (H1-c)"
+      "live native lifecycle trace producer",
+      "Linux hosted observe-only adapter (H2)",
+      "remote terminal evidence for the configured Linux/Windows parity lane"
     ]
   },
   "transport": {
@@ -30,7 +34,7 @@
     "flat_objects_only": true,
     "arrays_forbidden": true,
     "duplicate_keys_allowed": false,
-    "line_length_counts": "line content bytes excluding trailing CR and LF terminators"
+    "line_length_counts": "line content bytes excluding an actual LF or CRLF terminator; an unterminated trailing CR remains content and is rejected as trace.encoding"
   },
   "scalar_types": {
     "u32": {
@@ -86,6 +90,22 @@
     "schema_version": 1,
     "observation_only": 1,
     "management_only": 1
+  },
+  "trusted_target_v1": {
+    "note": "bounded H1 v1 projection mirrored from the K1/K2 C headers; C headers remain the numeric source of truth and host drift tests must fail closed",
+    "canonical_namespace": "node",
+    "canonical_id": "101",
+    "canonical_kind": "ai-service",
+    "canonical_generation": "1",
+    "parent_cell_id": "1",
+    "parent_generation": "1",
+    "source_namespace": "native-slm-agent-tree",
+    "source_kind": "ai-service",
+    "source_role": "main",
+    "native_source_id": "1",
+    "native_source_instance": "1",
+    "native_binding_generation": "1",
+    "initial_source_generation": "1"
   },
   "records": {
     "event": {
@@ -178,5 +198,53 @@
       "stale",
       "tail"
     ]
+  },
+  "trace_reasons_v1": [
+    "trace.io",
+    "trace.encoding",
+    "trace.syntax",
+    "trace.duplicate-key",
+    "trace.missing-field",
+    "trace.unknown-field",
+    "trace.type",
+    "trace.range",
+    "trace.limit",
+    "trace.truncated",
+    "trace.sequence",
+    "trace.trace-id",
+    "trace.event",
+    "trace.outcome",
+    "trace.terminal",
+    "trace.host-instance",
+    "trace.producer-instance",
+    "trace.source-reuse",
+    "trace.state-transition",
+    "trace.fixture-mismatch"
+  ],
+  "fixture_manifest_v1": {
+    "top_level_fields_in_order": [
+      "schema_version",
+      "manifest_id",
+      "contract_id",
+      "fixtures"
+    ],
+    "fixture_fields_in_order": [
+      "id",
+      "trace",
+      "evidence_kind",
+      "expected_outcome",
+      "expected_first_reason"
+    ],
+    "max_fixtures": 64,
+    "fixture_id_pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+    "evidence_kind": [
+      "synthetic-lifecycle",
+      "native-k2a-projection",
+      "semantic-negative",
+      "transport-negative"
+    ],
+    "expected_outcome": ["PASS", "FAIL"],
+    "trace_suffix": ".jsonl",
+    "path_style": "relative-posix-beneath-manifest-root"
   }
 }

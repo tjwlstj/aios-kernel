@@ -20,8 +20,10 @@ bootstrap Cell 1개, 그 Cell에 명시적으로 bound된 Node 1개, 그 Node를
 typed NodeBit 2개를 함께 보존하는 management-only hierarchy v0입니다. 기존 subsystem을
 이 계층으로 투영하는 첫 bounded native K2-a oracle도 `CURRENT`입니다. 별도 256B
 snapshot이 Node 101을 producer-owned SLM MAIN source에 boot-local immutable하게
-결속합니다. K2 전체 lifecycle/reconciliation은 `PARTIAL`, H1 replay와 Linux-hosted
-backend는 `PLANNED`입니다.
+결속합니다. K2 전체 lifecycle/reconciliation은 `PARTIAL`입니다. H1은 H1-a transport,
+H1-b bounded lifecycle replay와 12개 fixture, H1-c self-contained bundle/parity CLI 및
+전용 양 OS CI까지 로컬 구현됐습니다. 다만 exact SHA 원격 Linux/Windows/parity 결과가
+아직 없어 H1 전체는 `PARTIAL`이며, H2 Linux-hosted backend는 `PLANNED`입니다.
 
 장기 방향은 embodied AI OS입니다. LLM/SLM 에이전트는 유저스페이스에서 단기 기억과 장기 기억을 분리해 유지하고, 세션을 넘어 연속성을 보존하며, 하드웨어에는 커널이 중재하는 정책 경계를 통해 접근합니다.
 
@@ -39,7 +41,7 @@ Suggested repository description:
 
 > AI-native management/runtime project centered on Room → Cell → Node → NodeBit, with Linux-hosted userspace as the intended delivery path and a native proof kernel.
 
-## Current Status (2026-08-15)
+## Current Status (2026-08-31)
 
 - **Current beta:** `v0.2.0-beta.6` (`0.2.0-beta.6 "Genesis"` boot banner).
 - **Boot path:** x86_64 Multiboot2 커널, GDT/IDT/TSS, 페이징, PIT IRQ0 scheduler tick bootstrap, QEMU 스모크 테스트 기반.
@@ -49,9 +51,14 @@ Suggested repository description:
 - **Identity boundary:** Memory Fabric `domain_id`, SLM `agent_tree.node_id`, SLM policy `slm_nodebit_id`, 런타임 capability `node_id`, pipeline `owner_node`, scheduler task/PID/ring ID는 독립 네임스페이스다. 숫자가 같아도 같은 주체가 아니며, 명시적 namespace/binding/generation 없이 결합하지 않는다.
 - **Linux delivery direction:** Linux-hosted userspace service는 의도된 기본 delivery
   경로로 결정됐다. schema v1의 13개 upstream source row와 fail-closed guard만
-  `CURRENT`이고 Linux-hosted backend는 계속 `PLANNED`다. Linux `6.12.y` primary,
-  `6.18.y` forward, QEMU `11.1.0`, VirtIO 1.2 CS01 selected baseline은 source
-  기준선이며 PID/cgroup/pidfd/PSI는 source-only, `code_import=0`이다.
+  `CURRENT`이다. H1-a transport와 H1-b semantic replay, exact 12-fixture manifest,
+  H1-c self-contained artifact/독립 재생 parity는 로컬 구현됐고 host suite와 전용
+  Linux/Windows fixture/parity CI도 구성됐다. 현재 exact SHA의 원격 세 job 결과와
+  artifact는 확인 전이므로 H1은 계속 `PARTIAL`, H2 Linux-hosted backend는
+  `PLANNED`다. Linux
+  `6.12.y` primary, `6.18.y` forward, QEMU `11.1.0`, VirtIO 1.2 CS01 selected
+  baseline은 source 기준선이며 PID/cgroup/pidfd/PSI는 source-only,
+  `code_import=0`이다.
 - **Pressure observation:** schema 1의 `state pressure`가 workload queue, Memory Fabric reader/writer 중첩, 누적 NodeBit 거부율을 0..1024 정수 벡터로 읽는다. 현재는 system→plane 2단계 관측만 `CURRENT`이며 task migration이나 budget apply는 하지 않는다.
 - **Resource observation:** schema 1의 커널 내부 `ai_resource_snapshot_t`가 heap bytes, tensor bytes, active Memory Fabric windows, inference ring registrations, runnable scheduler tasks를 고정 5개 aggregate row로 읽는다. 모든 owner는 아직 `NONE/UNATTRIBUTED`이며 read-only `SYS_INFO_RESOURCE`(0x706) syscall과 `state resource` 셸 토픽은 `CURRENT`, owner attribution과 quota/reserve/apply는 `PLANNED`다.
 - **Autonomy and policy:** 헬스 스냅샷, 제한된 자율 제안/롤백 경로, SLM 하드웨어 스냅샷, 두 종류의 NodeBit 조회/통계, Kernel Room syscall-range 분류 메타데이터. Kernel Room Axis Gate의 dispatcher-level 강제는 아직 없다.
@@ -70,12 +77,13 @@ AIOS의 우선 방향은 커널 기능을 더 많이 나열하는 것이 아니�
 - **NodeBit:** Node 안의 가장 작은 capability/policy/resource projection. 기존 SLM policy node와 runtime capability node를 곧바로 동일시하지 않고 namespace가 있는 adapter로 연결한다.
 - **Execution substrate:** ring3 process, scheduler, memory, storage, network, HAL은 위 관리 모델이 실제 일을 수행하도록 받치는 기반이다. M3~M5의 완성도는 계속 높이되 방향 선택을 독점하지 않는다.
 - **Hosted substrate:** Linux-hosted userspace service는 의도된 기본 delivery
-  구현축이다. H0 source policy만 `CURRENT`이며 H1~H5와 실행 backend는
-  `PLANNED`다. bounded native K2-a semantic oracle은 `CURRENT`이며, 다음 H1이
-  OS-neutral lifecycle trace와 공통 negative fixture를 고정하면 H2
-  observe-only service를 시작한다. 광범위한 native process/storage 확장은 선행조건이
-  아니다. H4 validation과 H5 apply는
-  K5와 별도 승인 전까지 열지 않는다.
+  구현축이다. H0 source policy는 `CURRENT`이고 H1-a/H1-b/H1-c의 host-only contract,
+  lifecycle replay, fixture bundle/parity는 로컬 구현됐다. 전용 Ubuntu/Windows/parity
+  CI의 원격 exact-SHA terminal 증거는 아직 없으므로 H1은 계속 `PARTIAL`이다. bounded
+  native K2-a semantic oracle은 `CURRENT`이며, H1 remote acceptance를 통과한 뒤에만
+  `PLANNED` H2 observe-only service를 시작한다. 광범위한 native process/storage
+  확장은 선행조건이 아니다. H4 validation과 H5 apply는 K5와 별도 승인 전까지
+  열지 않는다.
 - **Policy boundary:** Axis Gate의 실제 authorize/enforcement는 canonical identity, parent binding, generation, principal과 ownership이 생긴 뒤의 `PLANNED` 단계다. 현재 9개 descriptor는 분류 메타데이터다.
 - **Orbit:** Cell/Node placement와 분산 배치를 탐구하는 `RESEARCH` 축이다. Cell 관리 기반과 검증 증거 없이 지원 기능으로 선언하지 않는다.
 
@@ -89,7 +97,7 @@ Kernel Room
         └── NodeBit
              │ K1 bootstrap hierarchy v0 implemented
              │ native K2-a binding oracle implemented
-             │ lifecycle/reconcile remain PARTIAL/PLANNED
+             │ H1 lifecycle semantics implemented; live reconcile remains PARTIAL/PLANNED
              ▼
                  ┌─ Linux-hosted userspace service
                  │  intended default delivery · PLANNED
@@ -333,7 +341,7 @@ make debug          # GDB 디버깅 모드로 실행
 | 유저스페이스 | 첫 ring3 static ELF64 demo + `int 0x80` 왕복 완료, full service/runtime 예정 |
 | 기본 delivery 방향 | Linux-hosted userspace service (제품 결정 완료, backend 구현 `PLANNED`) |
 | AI 가속기 | PCI/capability abstraction scaffold, 실제 벤더 드라이버 예정 |
-| CI | GitHub Actions (cppcheck + OS tool smoke + QEMU smoke + shell lane) |
+| CI | GitHub Actions (cppcheck + resource/platform/H1 host suite + 전용 Linux/Windows fixture bundle/parity + OS tool/QEMU/shell lanes; H1 exact-SHA 원격 세 job 결과는 확인 전) |
 
 ## Planning Documents
 
@@ -342,7 +350,7 @@ make debug          # GDB 디버깅 모드로 실행
 
 - [통합 작업 진입 가이드](docs/meta/integrated_work_guide_ko.md) — 요청 분류, 정본·스킬·검증 선택과 문서 관리
 - [AIOS 성숙도 우선 작업흐름](docs/meta/minimal_io_and_maturity_workflow_ko.md) — K/M/C/W/H축과 전역 우선순위 정본
-- [H1 OS-neutral binding trace/replay 작업 준비서](docs/os/h1_binding_trace_replay_workplan_ko.md) — 현재 bounded H1 계약; H1-a transport 조각은 `PARTIAL`, lifecycle replay(H1-b) 진행 전
+- [H1 OS-neutral binding trace/replay 작업 준비서](docs/os/h1_binding_trace_replay_workplan_ko.md) — H1-a/b/c 로컬 구현과 12개 fixture/artifact/parity 계약; 원격 cross-OS acceptance 전까지 `PARTIAL`
 - [Kernel Room 관리 모델 정본](docs/kernel-room/kernel_room_management_model_ko.md)
 - [Linux-hosted substrate와 upstream resource 정책 정본](docs/os/linux_hosted_substrate_and_resource_policy_ko.md)
 - [검증 도구 진화 설계](docs/tools/verification_tooling_evolution_design_ko.md)와 [Testkit 가이드](docs/tools/testkit_guide_ko.md)

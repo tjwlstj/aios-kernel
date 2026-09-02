@@ -1,7 +1,7 @@
 # AIOS 검증 도구 진화 설계
 
 작성일: 2026-07-15  
-최종 갱신: 2026-08-15 (native K2-a binding exact/fail-closed 계약)
+최종 갱신: 2026-09-03 (H1 malformed JSON의 정규 실패 출력 보강)
 기준 시작 체크포인트: `463a8b9`
 
 ## 1. 문서 역할
@@ -344,8 +344,8 @@ inventory와 perf가 같은 출처 신뢰 규칙을 공유해야 한다.
 | shell reboot/clean-exit gate | `CURRENT` | 전체 transcript verdict, reader drain, reboot ack, exit code 0을 PASS 조건으로 강제 |
 | baseline trusted-source guard | `CURRENT` | strict matrix/profile/verdict, profile-aware inventory와 comparable finite perf 검사 |
 | shared marker manifest | `PLANNED` | Python/PowerShell 중복 계약 제거 |
-| streaming serial collector | `PLANNED` | terminal event에서 즉시 판정하고 timeout 의미 분리 |
-| per-run artifact bundle | `PLANNED` | profile별 raw log와 provenance 보존 |
+| 일반 kernel/matrix streaming serial collector | `PLANNED` | terminal event에서 즉시 판정하고 timeout 의미 분리; shell 한정 구현은 아래 V1 참조 |
+| 일반 kernel/matrix per-run artifact bundle | `PLANNED` | profile별 raw log와 provenance 공통화; shell 한정 구현은 아래 V1 참조 |
 | post-link verifier | `PLANNED` | ELF type/entry/W^X/GNU_STACK/relocation/layout 검사 |
 | panic symbolizer | `PLANNED` | RIP를 kernel ELF와 `addr2line`로 자동 해석 |
 | repeat/stress executor | `PLANNED` | 첫 실패 seed와 아티팩트를 보존하는 반복 실행 |
@@ -424,7 +424,10 @@ lifecycle은 순차 bootstrap 관찰이다. 실제 process 전환은 resumable c
 - host-local perf advisory
 - sanitizer/host fuzz
 
-현재 Windows CI는 OS tool smoke만 수행한다. Windows kernel parity는 `PLANNED`이며 현재 상태로 과장하지 않는다.
+현재 Ubuntu/Windows `os-tools-matrix`는 Linux resource guard, platform host tests,
+H1 hosted suite, OS tool smoke를 실행하도록 구성됐다. H1 fixture bundle과 parity는
+별도 전용 jobs이며 exact-SHA 원격 결과는 확인 전이다. Windows kernel/QEMU parity는
+계속 `PLANNED`다.
 
 ## 12. Artifact와 provenance
 
@@ -470,11 +473,16 @@ kernel/build/test-runs/<run-id>/<profile>/
 구현 근거:
 
 - `tools/testkit/lib/boot_verdict.py`, `baseline_guard.py`
-- `tools/testkit/tests/` host unit test 90개
-- PowerShell 직접 verdict host selftest 131개와 CI 선행 gate
+- `tools/testkit/tests/` 정규 verifier host unit test 92개와 별도 qemu-mcp 진단 테스트
+  (진단 테스트는 kernel verdict 지원 범위를 늘리지 않음)
+- PowerShell 직접 verdict host selftest 149개와 CI 선행 gate
 - Resource Ledger exact marker/structured summary와 missing/truncated/
   observation-only/apply-capable 상충 반례
 - pressure marker도 같은 exact-record 규칙으로 강화해 trailing apply 필드를 거부
+- Resource Ledger, Pressure Tracker, 초기 Trapframe contract의 canonical row 옆에
+  exact root 또는 whitespace-delimited anchored sibling row가 있으면 Python/PowerShell
+  양쪽 모두 fail-closed. root-only truncation과 tab sibling은 거부하지만
+  `selftest-extra` 같은 non-boundary prefix는 family로 오인하지 않음
 - process trap snapshot의 세 profile 공통 required/exact-once 판정,
   malformed/extended/duplicate/owner/sequence/current/stale/resume 반례와
   structured `process_trap_snapshot`, shell `state user saved_*` mirror
@@ -496,31 +504,67 @@ kernel/build/test-runs/<run-id>/<profile>/
   strict kernel summary export, default/max-smap strict shell 18/18 PASS
 - Python boot matrix의 QEMU `full/minimal/storage-only` 통과와 Python host unit 90개,
   PowerShell 직접 verdict host selftest 131개 통과
+- 2026-08-23 verifier 회귀 보강: Python host unit 91개, PowerShell direct verdict
+  140개, H1-a hosted transport unit 57개 통과. 기존 90/131 수치는 위 2026-08-15
+  재검증 당시의 역사적 결과다.
+- 2026-08-28 verifier 회귀 보강: observation family의 whitespace 경계와 실제
+  first-failure line을 Python 92개/PowerShell 149개에서 고정하고, H1-a raw parser의
+  EOF 단독 `CR`·blank-line phase 우선순위를 hosted transport unit 60개에서 고정
+- 2026-08-31 H1 host 회귀 보강: H1-b lifecycle/native first-reason과 12-fixture
+  manifest, H1-c exact artifact/독립 재생 parity, forged aggregate·same-OS·OS-label
+  spoof·tamper 반례를 고정
+- 2026-09-02 H1 exactness 보강: alternate-contract와 JSON bool/int/float type drift가
+  contract·manifest·persisted verdict·aggregate·provenance에서 일반 값 동등성으로
+  통과하지 않도록 hosted unit 120개에서 고정
+- 2026-09-02 재개 점검: H1 artifact download의 digest 실패가 `continue-on-error`로
+  숨겨지지 않게 하고, 후속 download/compare와 artifact 보존은 진단 목적으로 계속한다.
+  두 workflow 정적 계약 테스트를 추가해 hosted suite는 122개다. 이 검사는 실제
+  Actions 실행 증거가 아니며 exact-SHA 원격 acceptance는 여전히 확인 전이다.
+- 2026-09-03 재개 검증: 깊은 JSON 중첩과 surrogate 입력의 trace/contract/manifest/
+  bundle 실패 처리 및 UTF-8 verdict/artifact/사람용 detail 보존을 보강해 hosted suite 132개를
+  통과했다. checked-in fixture도 12/12 일치하며, 이 로컬 결과는 원격 acceptance와
+  별개다.
 - shell 18개 교환(`state room`, `state binding`, `state resource`, `state pressure`, `state autonomy` 포함)과 `reader_drained=true reboot_ack=true clean_exit=true exit_code=0`,
   `termination.reason=guest-reboot-exit`, 전체 transcript boot verdict PASS
 - strict boot inventory 3프로필 baseline 일치
 
-### H1 연동 레인. OS-neutral source-binding trace/replay — `PARTIAL` (H1-a transport 완료 2026-08-23)
+### H1 연동 레인. OS-neutral source-binding trace/replay — `PARTIAL` (H1-a/b/c 로컬 구현 2026-08-31)
 
 - 세부 field, lifecycle, reason, fixture와 일정은
   [`H1 binding trace/replay 작업 준비서`](../os/h1_binding_trace_replay_workplan_ko.md)가
   소유한다.
-- H1-a로 `hosted/contracts/binding-trace-v1.contract.json`과 strict JSONL loader의
-  transport verdict(raw/json/shape/envelope phase)가 호스트 유닛테스트와 함께 착수됐다.
-  lifecycle replay와 fixture matrix는 아직 없다.
+- H1-a strict transport, H1-b bounded lifecycle semantic replay/native K2-a projection,
+  12개 fixture와 H1-c exact manifest/self-contained bundle/독립 재생 parity가 호스트
+  유닛테스트와 함께 구현됐다.
+- host suite는 Ubuntu/Windows `os-tools-matrix`, fixture producer와 parity는 전용
+  jobs로 구성됐다. 이 wiring의 exact-SHA 원격 결과와 실제 세 artifact는 아직 확인 전이다.
+- 2026-08-28 raw transport 회귀는 실제 LF/CRLF만 terminator로 인정하고 EOF 단독
+  `CR`을 `trace.encoding`으로 판정한다. blank-line `trace.syntax`는 JSON phase에 두어
+  뒤쪽 BOM/invalid UTF-8 raw encoding보다 먼저 선택되지 않게 했다.
 - raw JSONL evidence, fixture manifest의 expected verdict, replay가 계산한 verdict를
   분리하고 exact-one terminal·연속 sequence·bounded size를 fail-closed로 검사한다.
-- 동일 fixture가 Ubuntu/Windows에서 같은 outcome과 first reason을 내야 한다.
+- bundle parity는 clean GitHub SHA, OS provenance, checked-out verifier/input exact hash를
+  확인하고 raw fixture에서 개별/aggregate verdict를 다시 계산한다. 동일 fixture가
+  Ubuntu/Windows에서 같은 outcome과 first reason을 내야 한다.
 - 이 host-only 레인은 generic `[EVT]{json}` V1, QEMU 부팅, boot marker 또는 inventory
   baseline 갱신을 선행조건으로 삼지 않는다.
-- 완료되어도 H1 contract/replay만 `CURRENT`로 승격할 수 있다. live native/hosted
+- 원격 acceptance까지 완료되어도 H1 contract/replay만 `CURRENT`로 승격할 수 있다. live native/hosted
   producer, Linux adapter, K2 reconciliation과 apply 경로는 계속 별도 상태다.
 
-### V1. 실행 종료와 산출물 — `PLANNED`
+### V1. 실행 종료와 산출물 — `PARTIAL`
 
-- streaming serial collector와 terminal outcome
-- timeout/guest-exit/host-kill 분리
-- profile별 raw artifact bundle과 provenance
+현재 bounded 구현:
+
+- shell lane은 streaming serial 수집, 전체 transcript와 summary의 run artifact 보존,
+  reader drain, reboot acknowledgement, clean exit/exit code 결속을 구현했다.
+- shell summary는 `guest-reboot-exit`, timeout, host kill 등 종료 이유를 분리한다.
+- 일반 kernel/matrix lane은 아직 V0 전체-log verdict이므로 위 shell 범위를 일반화한
+  것으로 보지 않는다.
+
+남은 `PLANNED` 범위:
+
+- 일반 kernel/matrix streaming collector와 terminal outcome 결속
+- profile별 raw artifact bundle과 provenance의 공통 형식
 - shared marker manifest와 `make test`의 testkit 위임
 - generic `[EVT]{json}` parser와 `events.jsonl` artifact. 현재 process event journal v1의
   bounded 내부 schema/summary는 이 일반 이벤트 이행을 완료한 것으로 보지 않는다.

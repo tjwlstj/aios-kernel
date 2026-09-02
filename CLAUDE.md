@@ -58,6 +58,18 @@ python tools/testkit/aios-testkit.py shell --strict --skip-build # reuse existin
 python tools/testkit/aios-testkit.py os   # OS tool smoke test
 ```
 
+### Hosted Binding-Trace Contract (H1 `PARTIAL`)
+```bash
+python -m unittest discover -s tools/hosted/tests -p "test_*.py" -v
+python tools/hosted/binding_trace_replay.py --fixture-manifest hosted/contracts/fixtures/manifest.json --artifact-dir build/hosted-binding-trace/manual --json
+```
+
+These host-only gates cover H1-a transport, bounded H1-b semantic replay, and
+the 12-fixture H1-c self-contained bundle/parity lane. The host suite runs in
+the Ubuntu/Windows matrix; dedicated fixture producers and a parity job are
+also configured. Remote exact-SHA results are still pending, so H1 remains
+`PARTIAL`. The H2 hosted service remains `PLANNED`.
+
 ### Interactive Agent Debugging via MCP (optional, diagnostics-only)
 The external [qemu-mcp](https://github.com/0xmortuex/qemu-mcp) MCP server can be
 registered in Claude Code/opencode/Codex for conversational QEMU debugging
@@ -317,13 +329,15 @@ apply the entry gate in
 
 The Linux-hosted H axis is the intended default delivery implementation lane.
 H0 upstream manifest/guard and the bounded native K2-a oracle are `CURRENT`.
-H1 reached `PARTIAL` with the H1-a contract/strict-loader slice (2026-08-23):
-transport verdicts only, no semantic replay yet. The H1-b lifecycle replay,
-fixture matrix, and K2 semantic field/reject projection are next; H1-c CI and
-artifact wiring follow before any promotion beyond `PARTIAL`. H2 may start only
-after those fail-closed fixtures pass; broad native process/storage expansion and
-final conformance closure are not prerequisites for the first observe-only hosted
-slice. H4/H5 require K5 principal/ownership/authorize and separate approval. The
+H1-a transport, bounded H1-b lifecycle replay, the exact 12-fixture matrix,
+native K2-a projection, and H1-c self-contained bundle/independent parity CLI
+are implemented locally (2026-08-31). The host suite and dedicated Ubuntu,
+Windows, and parity jobs are configured, but remote exact-SHA terminal results
+and artifacts are not yet available; H1 therefore remains `PARTIAL`. H2 may
+start only after that remote acceptance passes; broad native
+process/storage expansion and final conformance closure are not prerequisites for
+the first observe-only hosted slice. H4/H5 require K5
+principal/ownership/authorize and separate approval. The
 canonical upstream pins and import boundary live in
 `docs/os/linux_hosted_substrate_and_resource_policy_ko.md`.
 
@@ -353,7 +367,7 @@ replacement for QEMU or the normal verification path.
 | `kernel/include/` | Public headers, organized by subsystem |
 | `kernel/Makefile` | Kernel build system (root Makefile delegates here) |
 | `os/` | AIOS native ring3 userspace layer (main_ai, compat, runtime, tools) + `os/apps/` programs |
-| `hosted/` | Intended Linux-hosted delivery domain; `contracts/` owns binding-trace-v1 (H1-a transport verifier `PARTIAL`), H1-b/H2 runtime remains `PLANNED` |
+| `hosted/` | Intended Linux-hosted delivery domain; `contracts/` owns locally implemented H1-a/H1-b/H1-c trace, fixtures, artifact/parity (`PARTIAL` pending remote acceptance); H2 runtime remains `PLANNED` |
 | `models/` | AI/SLM model manifests (weights are gitignored) |
 | `store/` | Post-boot online driver/program/model download catalog |
 | `tools/testkit/` | Python test orchestration + Windows PS1 build helper |

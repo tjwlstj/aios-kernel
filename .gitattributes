@@ -1,0 +1,4 @@
+hosted/contracts/binding-trace-v1.contract.json text eol=lf
+hosted/contracts/fixtures/manifest.json text eol=lf
+hosted/contracts/fixtures/**/*.jsonl text eol=lf
+tools/hosted/binding_trace_replay.py text eol=lf

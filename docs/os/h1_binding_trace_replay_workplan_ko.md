@@ -2,16 +2,21 @@
 
 > 기준일: 2026-08-15
 >
-> 문서 상태: 구현 전 설계 기준선
+> 최종 갱신: 2026-09-03
 >
-> H1 구현 성숙도: `PARTIAL` (H1-a 계약/loader 완료 2026-08-23; H1-b/c 진행 전)
+> 문서 상태: 부분 구현 정본 및 후속 작업 기준선
+>
+> H1 구현 성숙도: `PARTIAL` (H1-a transport, H1-b bounded semantic replay와 12개
+> fixture, H1-c self-contained bundle/parity CLI 및 전용 양 OS CI를 로컬 구현·검증;
+> 현재 exact SHA의 원격 Linux/Windows/parity terminal 결과는 확인 전)
 >
 > 방향 분류: Kernel Room `DIRECT` + Linux-hosted `HOSTED_DESIGN`
 
 이 문서는 bounded native K2-a source-binding oracle 다음에 수행할 H1의 정확한
-구현 경계, trace 의미, fail-closed verifier와 일정을 고정한다. 문서가 생겼다는
-사실은 `hosted/contracts/`, replay 실행체 또는 Linux adapter가 구현됐다는 뜻이
-아니다.
+구현 경계, trace 의미, fail-closed verifier와 일정을 고정한다. 현재
+`hosted/contracts/`의 contract/fixture, replay 실행체, artifact/parity CLI와 host tests는
+구현됐다. 그러나 원격 cross-OS terminal 증거가 없고 live producer도 없으므로 H1은
+계속 `PARTIAL`이며, 이 구현이 Linux adapter를 뜻하지도 않는다.
 
 용어와 관리 불변식은
 [Kernel Room 관리 모델](../kernel-room/kernel_room_management_model_ko.md)이 우선하고,
@@ -46,7 +51,7 @@ boot marker와 `state binding`은 H1에서 변경하지 않는다.
 | bounded native K2-a oracle | `CURRENT` | field/reject 의미와 native projection fixture의 기준 |
 | K2 전체 lifecycle/reconcile | `PARTIAL` | H1 replay가 생겨도 live producer refresh는 남음 |
 | H0 resource manifest/guard | `CURRENT` | upstream source-only 경계를 제공할 뿐 runtime 증거가 아님 |
-| H1 trace/replay | `PARTIAL` (H1-a 완료 2026-08-23) | H1-b lifecycle replay/fixture가 다음 구현 조각 |
+| H1 trace/replay | `PARTIAL` (H1-a/H1-b/H1-c 로컬 구현 2026-08-31) | exact SHA 원격 Linux/Windows bundle과 parity terminal 확인 전 |
 | H2 Linux observe-only adapter | `PLANNED` | H1 acceptance gate 뒤에만 시작 |
 | authorize/apply | `PLANNED` | H1 범위 밖, K5와 별도 승인 필요 |
 
@@ -57,18 +62,17 @@ attribution, quota, scheduler migration, privileged actuator 또는 production i
 ## 3. 산출물과 의존 방향
 
 각 구현 조각은 빈 디렉터리를 만들지 않고 필요한 contract/replay/test 또는 fixture를
-실제 파일과 함께 추가한다. 아래는 H1-c까지의 목표 구조이며 H1-a에서 전체 트리를
-미리 만들지 않는다.
+실제 파일과 함께 추가한다. 아래는 2026-08-31 현재 H1-c 로컬 구현 구조다.
 
 ```text
 hosted/
 └── contracts/
     ├── README.md                         # binding trace v1 사람용 정본
     ├── binding-trace-v1.contract.json    # exact field/type/event 계약 manifest
-    └── fixtures/                         # H1-b에서 실제 fixture와 함께 추가
+    └── fixtures/                         # 12개 checked-in fixture와 exact sidecar
         ├── manifest.json                 # trace와 기대 verdict의 분리
         ├── valid/
-        │   ├── lifecycle.jsonl
+        │   ├── full-lifecycle.jsonl
         │   └── native-k2a-observation.jsonl
         └── invalid/
             └── *.jsonl
@@ -77,7 +81,8 @@ tools/
 └── hosted/
     ├── binding_trace_replay.py           # stdlib-only parser/replay/CLI
     └── tests/
-        └── test_binding_trace_replay.py
+        ├── test_binding_trace_replay.py
+        └── test_binding_trace_fixture_manifest.py
 ```
 
 - `hosted/contracts/`가 public trace 의미와 fixture를 소유한다.
@@ -97,13 +102,16 @@ fixture의 기대 PASS/FAIL은 trace 안에 넣지 않고 `fixtures/manifest.jso
 초기 bounded limit은 다음과 같이 고정한다.
 
 - UTF-8, BOM 없음
-- LF와 CRLF 허용, 마지막 newline 필수
+- 실제 LF와 CRLF terminator만 허용, 마지막 newline 필수. EOF의 단독 `CR`은
+  CRLF로 보지 않고 content 안의 bare CR로 `trace.encoding` 처리
 - 빈 행 금지
-- 행당 UTF-8 4096 bytes 이하
-- trace당 64 records 이하, 전체 256 KiB 이하
+- 행당 UTF-8 4096 bytes 이하. 길이에서 제외하는 것은 실제 LF 또는 CRLF terminator뿐이며,
+  EOF의 단독 `CR`은 content byte 수에도 포함
+- trace당 terminal을 포함해 64 records 이하(따라서 event는 최대 63개), 전체 256 KiB 이하
 - JSON object nesting과 array 금지
 - `record_type`별 exact field set; 누락과 unknown field 모두 실패
 - duplicate object key 실패
+- `NaN`, `Infinity`, `-Infinity` 같은 비유한 JSON token 실패
 - integer field에 JSON boolean, float, exponent, 음수 또는 범위 밖 값 금지
 - 문자열 enum은 ASCII lower-kebab-case exact match
 
@@ -189,7 +197,8 @@ observation_only=1
 management_only=1
 ```
 
-terminal은 exact-one이며 반드시 마지막 행이다. `record_count`는 terminal 앞의 event
+terminal은 exact-one이며 반드시 마지막 행이다. transport의 `max_records=64`는 이
+terminal도 포함하므로 event는 최대 63개다. `record_count`는 terminal 앞의 event
 행 수이고 `trace_sequence=record_count+1`, `accepted_count+rejected_count=record_count`다.
 이 count들과 `final_binding_generation`, `final_state`는 producer가 기록하지만 replay가
 독립 계산해 exact match를 요구한다. `final_state` 허용값은
@@ -351,6 +360,7 @@ trace.range
 trace.limit
 trace.truncated
 trace.sequence
+trace.trace-id
 trace.event
 trace.outcome
 trace.terminal
@@ -373,7 +383,7 @@ record sequence와 계산된/claimed outcome을 machine-readable verdict에 남�
 1. raw boundary: `trace.io -> trace.limit -> trace.encoding -> trace.truncated`
 2. JSON: `trace.syntax -> trace.duplicate-key`
 3. shape/type: `trace.missing-field -> trace.unknown-field -> trace.type -> trace.range`
-4. envelope/terminal: `trace.sequence -> trace.event -> trace.outcome -> trace.terminal`
+4. envelope/terminal: `trace.sequence -> trace.trace-id -> trace.event -> trace.outcome -> trace.terminal`
 5. semantic replay: native semantic reason, 그 다음 `trace.host-instance ->
    trace.producer-instance -> trace.source-reuse -> trace.state-transition`
 6. sidecar comparison: `trace.fixture-mismatch`
@@ -381,6 +391,11 @@ record sequence와 계산된/claimed outcome을 machine-readable verdict에 남�
 첫 실패 뒤 추가 진단을 수집할 수는 있지만 overall outcome은 다시 PASS로 바뀌지 않는다.
 H1 전용 `trace.*` reason에는 이번 준비 커밋에서 numeric ID를 배정하지 않으며 K2의
 `0..15`를 재해석하지 않는다.
+
+구현은 한 record에서 여러 native 축이 동시에 깨져도 C validator의 의미 순서를
+보존한다. source instance mismatch와 어느 generation 축의 stale도 generation rollback보다
+먼저 판정한다. producer가 거부를 주장했다고 trace가 유효해지는 것은 아니며, 정상
+lifecycle 안에서 상태 불변으로 허용하는 expected rejection은 exact `stale`뿐이다.
 
 ## 8. 최소 fixture matrix
 
@@ -398,6 +413,8 @@ lifecycle fixture가 live native exit/rebind를 구현했다고 주장하지 않
 
 - malformed JSON, duplicate key, unknown/missing field
 - blank line, BOM, invalid UTF-8, final newline 누락
+- bare `CR`, `CRCRLF`, EOF의 단독 `CR`(마지막 경우에는 `trace.encoding`이
+  `trace.truncated`보다 우선)
 - oversized line/trace와 record overflow
 - bool-as-int, float/exponent, negative/out-of-range integer
 - sequence 0, gap, duplicate, reorder와 trace ID drift
@@ -425,6 +442,12 @@ byte stream으로 생성한다. 나머지 canonical fixture는 정상 UTF-8 파�
 fixture manifest는 각 파일의 expected overall outcome과 first reason을 소유한다. invalid
 trace 안의 `claimed_outcome=rejected`가 곧 fixture PASS를 뜻하지 않는다.
 
+2026-08-31 checked-in matrix는 정상 2개와 반례 10개다. CRLF, invalid UTF-8,
+non-finite JSON, limits, bool/float와 조합형 first-reason 반례는 host test가 임시 bytes로
+추가 생성한다. `native-k2a-projection` label은 source ID/instance/generation과 binding
+generation을 현재 C producer/header 값과 exact 대조하며 임의 synthetic tuple에 붙일 수
+없다.
+
 ## 9. Replay verdict와 artifact
 
 CLI는 사람용 terminal line과 machine-readable JSON verdict를 분리한다. JSON verdict는
@@ -446,10 +469,35 @@ observation_only
 management_only
 ```
 
-원본 trace를 verdict로 덮어쓰지 않는다. CI artifact에는 raw trace, fixture manifest,
-verdict와 정확한 git SHA/Python version을 함께 보존한다. expected negative fixture의
-실행 성공은 "replay가 지정된 이유로 trace를 거부했다"는 뜻이며 trace 자체의 outcome은
-`FAIL`이다.
+원본 trace를 verdict로 덮어쓰지 않는다. fixture 실행은 새 디렉터리에 contract,
+manifest, 12개 raw trace, 12개 개별 verdict, aggregate verdict와 provenance를 보존한다.
+provenance는 exact input/output byte 수와 SHA-256, clean git HEAD/GitHub SHA,
+Python/platform과 verifier SHA-256을 가진다. expected negative fixture의 실행 성공은
+"replay가 지정된 이유로 trace를 거부했다"는 뜻이며 trace 자체의 outcome은 `FAIL`이다.
+
+parity loader는 provenance에 적힌 hash만 신뢰하지 않는다. exact file set과 checked-out
+contract/manifest/raw fixture/verifier를 대조하고 모든 fixture verdict와 aggregate를 raw
+input에서 다시 계산한다. 왼쪽 `Linux`, 오른쪽 `Windows`, clean checkout,
+`GITHUB_SHA=HEAD`, `runner_os=platform.system`, CPython 3.11과 동일 HEAD를 요구한다.
+누락·손상·위조 bundle은 infrastructure `trace.io`/exit 2, 재생 결과 차이는
+`trace.fixture-mismatch`/exit 1이다.
+
+여기서 provenance 검사는 **내용과 선언의 정합성** 검사이지 OS 실행 출처의 암호학적
+증명이 아니다. `runner_os`, `platform.system`, git/CI metadata를 모두 함께 재작성한
+로컬 묶음만으로 실제 Linux/Windows 실행을 증명할 수 없다. host parity 테스트도 두 OS
+metadata를 mock하므로 parser/comparator 회귀 증거일 뿐 cross-OS 실행 증거가 아니다.
+H1-c acceptance에서는 동일 GitHub Actions run의 두 named producer job과 parity job,
+그 run의 exact SHA 및 해당 job에서 업로드·다운로드한 세 artifact의 출처를 함께
+확인해야 한다. 임의로 전달받은 bundle의 단독 `PASS`를 원격 acceptance로 승격하지 않는다.
+
+artifact 전송 무결성도 별도 필수 조건이다. 두 download step은
+`digest-mismatch: error`를 명시하고 실패를 `continue-on-error`로 숨기지 않는다.
+다운로드 뒤 digest 검사가 실패해도 추출된 파일이 남을 수 있으므로, 그 파일의 replay
+성공으로 전송 실패를 지우면 안 된다. 후속 Windows download와 comparator는
+`always() && !cancelled()`로 진단을 계속하고 parity artifact는 `always()`로 보존하되,
+앞선 download step의 실패는 job 실패로 남긴다. 이 구분은
+[download-artifact v8 구현](https://github.com/actions/download-artifact/blob/3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c/src/download-artifact.ts)의
+다운로드 완료 뒤 digest mismatch 처리 순서를 따른다.
 
 ## 10. 구현 순서와 일정
 
@@ -459,29 +507,51 @@ tests와 `git diff --check`를 통과해야 하며 빈 scaffold만 커밋하지 
 | 순서 | 조각 | 종료 증거 | H1 상태 |
 |---|---|---|---|
 | H1-a — 완료 (2026-08-23) | contract manifest, strict JSONL loader, transport negative tests | duplicate key, truncation, type/limit 반례가 exact reason으로 실패 | `PARTIAL` |
-| H1-b | lifecycle replay, valid/semantic-negative fixture matrix, native K2-a projection | full lifecycle PASS, stale/rollback/orphan 등 fail-closed | `PARTIAL` |
-| H1-c | fixture manifest CLI, Ubuntu/Windows CI, artifact와 문서 mirror | 양 OS 같은 fixture verdict, 모든 정규 gate PASS | `CURRENT` 승격 가능 |
+| H1-b — 로컬 완료 (2026-08-31) | lifecycle replay, valid/semantic-negative fixture matrix, native K2-a projection | full lifecycle와 exact native projection PASS, stale/rollback/orphan 등 fail-closed | H1은 계속 `PARTIAL` |
+| H1-c 로컬/CI wiring — 구현 완료 (2026-08-31) | fixture manifest CLI, self-contained bundle, 독립 재생 parity, 전용 Ubuntu/Windows jobs | 로컬 12/12와 host suite PASS; forged/same-OS/spoof/tamper 반례 거부 | H1은 계속 `PARTIAL` |
+| H1-c 원격 acceptance — 확인 전 | exact SHA Linux/Windows bundle과 parity artifact 확인 | 두 fixture job과 parity job terminal PASS, artifact 세트 보존 | 통과 뒤 `CURRENT` 승격 검토 가능 |
 
-H1-a는 `hosted/contracts/README.md`, `binding-trace-v1.contract.json`, replay 실행체와
-host tests만 만든다. H1-b에서 처음 `fixtures/`를 추가하고 H1-c에서 기존
-`os-tools-matrix`와 artifact upload를 연결한다. 어느 단계도 빈 `hosted/linux/`를 만들지
-않는다.
+H1-a/H1-b/H1-c 로컬 산출물은 구현됐고 host suite는 기존 `os-tools-matrix` 양 OS에서
+실행된다. fixture bundle은 무관한 OS-tool 실패와 결합하지 않도록 전용 Ubuntu/Windows
+job에서 만들며, 별도 parity job이 두 producer job만 `needs`로 받는다. 현재 wiring의
+원격 결과는 아직 확인 전이다. 어느 단계도 빈 `hosted/linux/`를 만들지 않는다.
 
-H1-c 완료 전 H2 adapter를 시작하거나 H1을 `CURRENT`로 표시하지 않는다. H1 완료 뒤
+H1-c 원격 acceptance 완료 전 H2 adapter를 시작하거나 H1을 `CURRENT`로 표시하지 않는다. H1 완료 뒤
 첫 H2 slice는 Linux kernel module이 아니라 action이 전부 `UNSUPPORTED`인 한
 observe-only userspace service다.
 
-## 11. 예정 검증 명령
+## 11. 현재 및 예정 검증 명령
 
-H1 구현 커밋의 최소 host gate는 다음과 같다.
+현재 H1-a/H1-b/H1-c 및 공통 회귀 변경의 최소 host gate는 다음과 같다.
 
 ```powershell
 py -3 -m unittest discover -s tools/hosted/tests -p "test_*.py" -v
-py -3 tools/hosted/binding_trace_replay.py --fixture-manifest hosted/contracts/fixtures/manifest.json
 py -3 tools/platform/linux_resource_guard.py
 py -3 -m unittest discover -s tools/platform/tests -p "test_*.py" -v
 py -3 -m unittest discover -s tools/testkit/tests -t tools/testkit -p "test_*.py" -v
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/testkit/tests/test_build_windows_verdict.ps1
 git diff --check
+```
+
+2026-09-03 현재 hosted suite는 132개다. 이 수치는 로컬 verifier/fixture/artifact
+구현의 회귀 증거이며 원격 cross-OS acceptance나 live runtime 증거로 승격하지 않는다.
+추가된 두 workflow 정적 계약 테스트는 다운로드 실패 은폐 금지와 실패 뒤 진단 보존을
+검사한다. 일반 YAML validator와 실제 runner 동작 증거는 아니다.
+추가 입력 회귀는 byte 한도 안의 깊은 JSON 중첩을 `trace.syntax`로 거부하고,
+contract/manifest/bundle JSON의 decoding 실패를 infrastructure 오류로 보존한다.
+잘못된 trace ID는 verdict metadata로 승격하지 않으며, surrogate가 포함된 실패
+진단도 UTF-8 JSON 출력과 artifact에 안전하게 escape한다. 사람용 trace/parity 실패
+detail도 같은 surrogate 경계를 보존한다.
+
+fixture-manifest 실행은 새 artifact 디렉터리를 필수로 요구한다.
+
+```powershell
+py -3 tools/hosted/binding_trace_replay.py `
+  --fixture-manifest hosted/contracts/fixtures/manifest.json `
+  --artifact-dir build/hosted-binding-trace/manual --json
+py -3 tools/hosted/binding_trace_replay.py `
+  --compare-fixture-bundles <linux-bundle> <windows-bundle> `
+  --artifact-dir build/hosted-binding-trace/parity --json
 ```
 
 H1이 host-only contract/verifier만 바꾸는 동안 QEMU baseline과 boot marker는 갱신하지
@@ -512,7 +582,7 @@ verdict, shell과 inventory lane을 다시 요구한다.
 `code_import=false`다. 이 조사로 upstream code import, Linux backend 실행 또는
 license compatibility 승인이 생기지 않는다.
 
-## 13. 착수 체크리스트
+## 13. 유지·acceptance 체크리스트
 
 - K1/K2 public ABI와 exact marker를 변경하지 않는가
 - evidence trace와 fixture expected verdict가 분리됐는가
@@ -520,7 +590,31 @@ license compatibility 승인이 생기지 않는다.
 - PID, pidfd, cgroup, path, timestamp를 canonical identity/generation으로 쓰지 않는가
 - expected rejection 뒤 replay state가 불변인가
 - duplicate key, truncation, unknown field, bool-as-int가 실패하는가
+- contract/manifest/verdict/aggregate에서 `true`, integer, float의 JSON 타입 drift가
+  일반 값 동등성으로 통과하지 않는가
 - update 뒤 old generation은 stale이며 명시적 rebind 전에는 다시 관측할 수 없는가
 - stale old instance 뒤 rediscover 없이는 rebind할 수 없는가
 - Ubuntu/Windows가 같은 fixture outcome과 first reason을 내는가
 - H1 완료가 H2 runtime/apply 성숙도로 과장되지 않는가
+
+### 13.1 2026-09-02 로컬 closure와 남은 원격 gate
+
+| 요구 | 현재 직접 확인한 근거 | 남은 조건 |
+|---|---|---|
+| lifecycle/retained binding/first reason | hosted host suite 122개, full-lifecycle/native projection과 semantic negative | 현재 로컬 코드의 원격 양 OS 회귀 |
+| fixture expected/raw 분리 | checked-in manifest 12개, 로컬 12/12 exact match | 같은 exact SHA에서 두 producer job 실행 |
+| 재현 가능한 입력·출력 묶음 | 로컬 bundle의 입력 14개·출력 13개, verifier SHA-256 일치 | clean producer checkout의 원격 bundle 두 개 |
+| checkout 바이트 안정성 | contract/manifest/JSONL/verifier의 `git check-attr` 결과 `text`/`eol=lf` | 실제 Ubuntu/Windows checkout 간 같은 input hash |
+| 독립 parity 판정 | 재생 comparator와 spoof/tamper/type-drift host 반례 | 동일 Actions run의 parity terminal 성공과 artifact 보존 |
+| artifact 전송 실패 유지 | download 실패 은폐 금지 및 후속 진단 보존의 workflow 정적 계약 2개 | 실제 download/action step 성공과 세 named job terminal 확인 |
+| ABI/source-only 경계 | `kernel/` 실행 코드와 public header 변경 없음, `os/` 변경은 README뿐 | 후속 조각에서도 경계 유지 |
+
+로컬 확인 묶음은 `build/hosted-binding-trace/manual-qemu-helper-closure-20260902/`다.
+이 묶음은 Windows에서 dirty worktree로 만들어졌으므로 원격 parity acceptance 입력이
+아니다. CI 정의에 사용한 `checkout@v6`, `setup-python@v6`, `upload-artifact@v7`,
+`download-artifact@v8` tag의 존재는 GitHub API로 확인했지만 실제 workflow 성공을
+뜻하지 않는다. 2026-09-02 사용자가 beta 검증 후 동일 SHA의 main 승격까지 승인했다.
+현재 남은 다음 동작은 beta checkpoint/push를 수행하고 그 새 exact SHA의 두 fixture
+job·parity job terminal 상태와 artifact를 확인하는 것이다. H1 `CURRENT` 승격과 H2
+시작은 이 원격 acceptance 완료 뒤에만 가능하며, main은 검증한 beta SHA로만
+fast-forward한다.

@@ -59,7 +59,7 @@ Linux-hosted 기본 delivery userspace service는 별도 `../hosted/` 도메인�
 - [전체 문서 인덱스](../docs/README.md)
   도메인별 정본, 작업 준비서, 참고·역사 문서의 상태 색인
 - [H1 binding trace/replay 작업 준비서](../docs/os/h1_binding_trace_replay_workplan_ko.md)
-  현재 직접 조각인 OS-neutral H1 계약. H1-a transport 조각만 `PARTIAL`, lifecycle replay 진행 전
+  OS-neutral H1-a/b/c 로컬 verifier·12 fixtures·artifact/parity 계약. 원격 exact-SHA acceptance 전까지 `PARTIAL`
 - [AI resource 관리 개발 계획](../docs/autonomy/ai_resource_management_development_plan_ko.md)
   native resource subsystem 내부 계획이며 프로젝트 전역 우선순위를 대체하지 않음
 - [runtime/README.md](runtime/README.md)

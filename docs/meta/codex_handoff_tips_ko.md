@@ -1,6 +1,6 @@
 # Codex 작업 핸드오프 팁 (2026-07-15)
 
-최종 갱신: 2026-08-21 (통합 작업 진입·문서 권위 연결; 커널 내용은 bounded native K2-a handoff 기준)
+최종 갱신: 2026-09-02 (통합 진입·bounded H1 로컬 계약과 remote/live 경계)
 
 문서 역할: 커널 작업의 실전 지뢰와 디버깅 이유를 보존하는 참고 runbook.
 저장소 전체 작업 분류와 문서 관리는
@@ -163,8 +163,10 @@ missing/duplicate/orphan/namespace/kind/role/instance/zero/rollback/stale/init-o
 schema/overflow/tail을 거부한다. exact marker, structured `kernel_room_binding`,
 `state binding`과 `entry-AC < K1 < K2 < aggregate ROOM` 순서가 정규 증거다.
 
-K2 전체는 `PARTIAL`이다. 다음 직접 관리 단계는 H1 OS-neutral lifecycle trace/replay와
-refresh/exit/recreate/rebind 의미 고정이다. K1~K4의 hierarchy/binding/observation attribution이 먼저이며,
+K2 전체는 `PARTIAL`이다. H1 OS-neutral lifecycle trace/replay와
+refresh/exit/recreate/rebind 의미는 로컬 contract/fixture로 고정됐고 exact-SHA 원격
+Linux/Windows/parity acceptance가 남아 있다. 그 뒤 live K2/H2 producer와 reconcile로
+확장한다. K1~K4의 hierarchy/binding/observation attribution이 먼저이며,
 principal/ownership와 Axis Gate enforcement는 그 뒤의 K5 `PLANNED`다. Orbit은
 Cell/Node placement를 탐구하는 `RESEARCH`이므로 이 vertical slice의 완료 조건이 아니다.
 K2의 후속은 이 최소 계층의 source lifecycle/reconciliation을 강화·확대하고,
@@ -209,13 +211,14 @@ continuation/switch이고, bounded 실제 A→B→A를 증명한 뒤 timer preem
 
 주의: 두 static process 모두 실제 ring3 실행은 하지만 현재 resume 모델은 여전히 순차 동기 C 호출 프레임이다. descriptor의 trap snapshot과 process event journal은 증거 소유권과 순서만 고정하며 `resume_ready=0`이다. journal 완료를 live transition 완료로 해석하지 말고, 다음 단계에서만 current process·CR3·BSP `rsp0`·saved frame·`g_active_user_run_state`를 IF=0에서 함께 교대하는 live continuation으로 나아가야 한다.
 
-### 5.3 Linux-hosted H축은 native K2-a 다음 H1→H2 순서로 진행한다
+### 5.3 Linux-hosted H축은 H1 원격 acceptance→H2 순서로 진행한다
 
 - H0 resource manifest/guard만 `CURRENT`다. Linux daemon, adapter, KVM lane,
   resource apply는 아직 `PLANNED`다.
-- K2-a native semantic oracle와 kernel-side reject 계약은 `CURRENT`다. H1 replay는
-  다음 독립 조각에서 OS-neutral lifecycle과 fail-closed negative fixture를 고정한다.
-- 공통 H1 fixture까지 고정되면 H2 Linux
+- K2-a native semantic oracle와 kernel-side reject 계약은 `CURRENT`다. H1-a/b/c의
+  OS-neutral lifecycle, 12개 fail-closed fixture와 bundle/parity는 로컬 구현됐지만
+  원격 exact-SHA 세 job 결과 전까지 H1은 `PARTIAL`이다.
+- 공통 H1 remote acceptance까지 고정되면 H2 Linux
   userspace collector를 시작한다. 광범위한 native 실행 substrate 완성과 최종
   conformance closure는 H2의 선행조건이 아니다.
 - 기본 용량은 `SEMANTIC SAFETY K2/H1 40%`, `HOSTED DELIVERY H2/H3 50%`,
@@ -227,3 +230,70 @@ continuation/switch이고, bounded 실제 A→B→A를 증명한 뒤 timer preem
   H0 통과를 runtime support, license 승인, code import로 표현하지 않는다.
 - 상세 H0~H5와 upstream pin은
   `docs/os/linux_hosted_substrate_and_resource_policy_ko.md`를 따른다.
+
+### 5.4 qemu-mcp 진단 보조 경로 인수인계 (2026-09-02)
+
+- `tools/testkit/aios-testkit.py qemu-mcp-diagnostic`와 전용 helper/65개 host 테스트를
+  추가했다. Windows 실제 `--skip-build`와 ISO 재생성 경로 모두 `OBSERVED`/`CLEAN`을
+  확인했다. Linux 실제 실행은 미검증이므로 helper는 `PARTIAL`이다.
+- Windows launcher는 실행 전 suspended 상태에서 Job에 결속한다. known QEMU의
+  retained process handle 종료, registry 제거, server exit 0, reader drain,
+  Job active count 0, 소유 temp 제거를 구분해 검증한다. timeout/stop 실패를
+  containment로 회수해도 `CLEANUP_ERROR`를 유지한다.
+- 최신 진단 묶음은 `kernel/build/qemu-mcp-diagnostic/20260902t033015z-13524-9601270e/`다.
+  앞선 기본 빌드 포함 실행은 `20260902t032805z-23836-cbfe372c`다. 로그는 종료 전
+  snapshot이며 clean guest exit 또는 kernel PASS 증거가 아니다. 원본 실패 실행의
+  screenshot/로그도 같은 루트의 별도 run 디렉터리에 보존돼 있다.
+- 로컬 재검증: testkit 157개, PowerShell verdict 149개, hosted 120개,
+  platform 26개와 Linux resource guard 통과. 기존 H1 fixture/CI 구현은 유지됐으며
+  H1 exact-SHA Ubuntu/Windows/parity acceptance는 여전히 미확인이다.
+- 이 검증 당시 사용자/프로젝트 MCP 등록 설정, kernel ABI, baseline, main은 변경하지
+  않았고 작업 트리는 미커밋 상태였다. 이후 게시 승인과 진행은 §5.6을 따른다.
+- 상세 운영 계약/잔여 한계는 [qemu-mcp 가이드](../tools/qemu_mcp_guide_ko.md) §7을 따른다.
+
+### 5.5 H1 CI 전송 실패 경계 재개 점검 (2026-09-02)
+
+- H1 parity의 두 artifact download에서 `continue-on-error`를 제거하고
+  `digest-mismatch: error`를 명시했다. 다운로드 후 추출된 bundle의 replay가 성공해도
+  archive digest 실패를 CI 성공으로 숨길 수 없게 한다. 두 번째 download와 comparator는
+  `always() && !cancelled()`, parity upload는 `always()`로 진단 증거를 보존한다.
+- 두 workflow 정적 계약 테스트가 수정 전 실패·수정 후 통과했다. 전체 hosted suite는
+  이제 122개이며 testkit 157개, PowerShell 149개, platform 26개, resource guard와
+  OS tool smoke도 재실행해 통과했다. 일반 YAML validator/actionlint와 실제 Actions
+  실행은 수행하지 않았고, 정적 테스트를 그 대체 증거로 해석하지 않는다.
+- 새 로컬 fixture 묶음은
+  `build/hosted-binding-trace/manual-ci-integrity-resume-20260902/`이며 12/12 일치다.
+  Windows dirty-worktree 결과이므로 원격 cross-OS acceptance 입력은 아니다.
+- checkpoint 범위는 기존 Python/PowerShell verifier 보강, H1 contract/fixtures/CI,
+  qemu-mcp helper의 세 그룹이다. 공유 문서는 hunk별로 나누고 H1의 `.gitattributes`와
+  전체 fixture, qemu CLI의 eager import와 helper 파일을 각각 같은 그룹에 포함한다.
+- 이 점검 당시에는 게시 승인이 없어 staging/commit/push를 하지 않았다.
+  H1은 원격 exact-SHA 세 named job의 terminal 성공·artifact 확인 전까지 `PARTIAL`이다.
+
+### 5.6 beta 검증 후 동일 SHA main 승격 승인 (2026-09-02)
+
+- 사용자가 검증 결과를 근거로 main 승격까지 진행하도록 명시적으로 승인했다.
+  기존 verifier 보강, qemu-mcp 진단 helper, H1 contract/fixtures/CI를 독립 커밋으로
+  정리해 beta에 먼저 게시한다. main은 beta의 exact SHA가 원격 필수 gate와 H1 세
+  artifact 검증을 모두 통과한 뒤 같은 SHA로만 fast-forward한다.
+- 게시 전 로컬 QEMU full/minimal/storage-only boot inventory, max-smap minimal
+  boot, default/max-smap shell과 Cppcheck를 다시 실행해 통과했다. 이 로컬 결과는
+  새 커밋의 원격 CI나 H1 cross-OS acceptance를 대신하지 않는다.
+- 코드 감사에서 발견한 깊은 JSON 중첩과 잘못된 Unicode trace ID의 정규 실패 출력
+  경계는 게시 전에 회귀 테스트와 함께 보강한다. H1 검증 완료가 H2 runtime,
+  live K2 reconciliation, apply 지원 또는 qemu-mcp Linux E2E 완료를 뜻하지 않는다.
+
+### 5.7 접근 복구와 H1 입력 실패 계약 closure (2026-09-03)
+
+- NAS 접근 복구 뒤 beta의 로컬 커밋 `669bd5f`(관찰 family 판정)와
+  `a1f12c1`(qemu-mcp 진단 helper), 미커밋 H1 작업을 확인했다. 원격 beta는
+  `228f78b`, main은 `5b345f3`으로 그대로였다.
+- 중단 시 호출부만 저장돼 있던 strict JSON decoder를 완성했다. 깊은 중첩은 trace의
+  `trace.syntax` 또는 contract/manifest/bundle infrastructure 실패로 남기고, invalid
+  trace ID metadata와 surrogate JSON 출력/artifact 문제를 함께 회귀로 고정했다.
+- hosted 132개, testkit 157개, PowerShell 149개, platform 26개, resource guard,
+  OS smoke를 통과했다. 새 로컬 fixture 묶음
+  `build/hosted-binding-trace/prepublish-20260903/`은 12/12 일치다.
+  dirty Windows 작업 트리의 결과이므로 원격 cross-OS acceptance 입력은 아니다.
+- 다음 게시 단계는 §5.6의 승인된 beta-first 흐름이다. H1 `CURRENT` 승격은 새 exact
+  SHA의 원격 named producer/parity jobs와 세 artifact를 확인한 뒤에만 수행한다.
