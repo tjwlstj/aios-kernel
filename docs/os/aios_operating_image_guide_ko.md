@@ -989,3 +989,21 @@ primary host matrix 지원 승격이 아니다.
 MAIN·CONSOLE_RUNTIME client에서 stdout 파일을 연 뒤 stderr 파일 열기가 실패할 때 첫 파일을
 닫는 처리다. 전자는 현재 비정상 종료로 거부되어 false PASS는 없고, 후자는 실패 경로의 자원 정리다.
 제품 client 수정과 그 소스에 대한 실행 검증은 별도 후속이며 기존 실제 PASS를 변경하지 않는다.
+
+### 11.1 첫 원격 베타 검증의 Windows 경로 차이
+
+첫 체크포인트 `a5cd44c`를 실제 Git clone한 Windows 로컬 전체 검사는
+701개(633 실행 PASS·68 skip, 136.208초)로 통과했다. 앞의 `.git` 없는 복사본 실패와 구분한다.
+[첫 원격 실행](https://github.com/tjwlstj/aios-kernel/actions/runs/34240648311)의
+Windows hosted 검사에서는 임시 경로의 `RUNNER~1`과 `runneradmin` 표기 차이로 33개가 실패했다
+(701개·66 skip). 실제 runner와 verifier는 canonical 경로를 사용하지만 일부 fixture가
+해석 전 경로를 기록하거나 mock의 예상 인자로 사용했다. 원본 job 로그와 실패 목록은
+`build/beta-userspace-checkpoint/remote-windows-job-original.log` 및
+`remote-windows-first-failure.json`에 보존한다.
+
+이 회귀는 fixture 세 곳의 경로 정규화와 portable alias 반례 세 개로 보완했다.
+로컬 관련 suite는 이미지 31개·선택 14개·복구 18개, 합계 63개를 skip 없이 통과했다.
+새 반례만 별도로 다시 실행한 3개·4.662초 PASS 로그는 `path-alias-regressions.log`에 보존한다.
+실제 제품 runtime과 verifier의 디스크
+판정 계약은 유지하며, 수정 커밋은 새로운 SHA의 전체 원격 CI 결과로 별도 판정한다.
+첫 실행의 Linux·H1 검증 성공을 Windows 실패나 새 SHA의 성공으로 대신하지 않는다.

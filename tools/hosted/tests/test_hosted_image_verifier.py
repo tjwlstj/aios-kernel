@@ -37,11 +37,48 @@ def get(path):
     return json.loads(path.read_bytes())
 
 
+class AliasedTemporaryDirectory:
+    """Supply an existing noncanonical path without requiring Windows 8.3 names."""
+    factory = tempfile.TemporaryDirectory
+
+    def __init__(self, *args, **kwargs):
+        self.directory = self.factory(*args, **kwargs)
+        parent = Path(self.directory.name) / 'alias-parent'
+        parent.mkdir()
+        self.name = str(parent / '..')
+
+    def cleanup(self):
+        # The real temporary directory retains its original cleanup target.
+        self.directory.cleanup()
+
+    def __enter__(self):
+        return self.name
+
+    def __exit__(self, *args):
+        self.cleanup()
+
+
+class TemporaryPathCanonicalizationTests(unittest.TestCase):
+    def test_noncanonical_temp_root_records_canonical_disk_and_passes(self):
+        with patch.object(tempfile, 'TemporaryDirectory', AliasedTemporaryDirectory):
+            fixture = ImageVerifierTests()
+            self.addCleanup(fixture.doCleanups)
+            fixture.setUp()
+            verdict = verifier.verify_image(fixture.root, require_live=False)
+            self.assertEqual(verdict['outcome'], 'PASS', verdict)
+            self.assertEqual(fixture.root, fixture.root.resolve())
+            self.assertEqual(fixture.disk_value['path'], str(fixture.disk))
+            launch = get(fixture.boots[0] / 'launch.json')['qemu_argv']
+            self.assertEqual(launch[launch.index('-drive') + 1],
+                             'file=' + fixture.disk.as_posix() + ',format=raw,if=virtio')
+
+
 class ImageVerifierTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix='aios-image-test-')
         self.addCleanup(self.temporary.cleanup)
-        self.root = Path(self.temporary.name)
+        # Match the producer's canonical root, including Windows 8.3 temp aliases.
+        self.root = Path(self.temporary.name).resolve()
         self.disk = self.root / 'system.raw'
         self.disk.write_bytes(b'explicit fixture disk bytes')
         self.runtime = self.root / 'runtime-source'

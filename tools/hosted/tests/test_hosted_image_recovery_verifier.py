@@ -317,11 +317,24 @@ class FaultContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'auxiliary_requests'): self.check()
 
 
+class TemporaryPathCanonicalizationTests(unittest.TestCase):
+    def test_noncanonical_temp_root_keeps_exact_base_replay_path(self):
+        from test_hosted_image_verifier import AliasedTemporaryDirectory
+        with patch.object(tempfile, 'TemporaryDirectory', AliasedTemporaryDirectory):
+            fixture = SidecarJoinTests()
+            self.addCleanup(fixture.doCleanups)
+            fixture.setUp()
+            value, _base = fixture.check()
+            self.assertEqual(value, fixture.sidecar)
+            self.assertEqual(fixture.source, fixture.source.resolve())
+            self.assertEqual(fixture.output, fixture.output.resolve())
+
+
 class SidecarJoinTests(unittest.TestCase):
     """Exercise the complete sidecar IO path; base model replay has its own suite."""
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(); self.addCleanup(temporary.cleanup)
-        root = Path(temporary.name)
+        root = Path(temporary.name).resolve()
         self.source, self.output = root / 'normal', root / 'fault'
         self.source.mkdir(); self.output.mkdir()
         self.boot = self.output / 'boots/boot-01'; self.boot.mkdir(parents=True)

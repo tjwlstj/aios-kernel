@@ -21,12 +21,26 @@ import test_hosted_image_verifier as fixtures
 from test_hosted_image_verifier import get, put
 
 
+class TemporaryPathCanonicalizationTests(unittest.TestCase):
+    def test_noncanonical_temp_roots_keep_source_and_user_pins_canonical(self):
+        with patch.object(tempfile, 'TemporaryDirectory', fixtures.AliasedTemporaryDirectory):
+            fixture = ImageSelectionContractTests()
+            self.addCleanup(fixture.doCleanups)
+            fixture.setUp()
+            entry = fixture.inspect()
+            self.assertEqual(fixture.parent, fixture.parent.resolve())
+            self.assertEqual(entry['image_directory'], str(fixture.user.resolve()))
+            self.assertEqual(entry['source_directory'], str(fixture.source.resolve()))
+            fixture.add_boot()
+            self.assertEqual(fixture.inspect(), entry)
+
+
 class ImageSelectionContractTests(unittest.TestCase):
     def setUp(self):
         self.fixture = fixtures.ImageVerifierTests(); self.fixture.setUp(); self.addCleanup(self.fixture.doCleanups)
         self.source = self.fixture.root
         temporary = tempfile.TemporaryDirectory(prefix='aios-user-selection-'); self.addCleanup(temporary.cleanup)
-        self.parent = Path(temporary.name)
+        self.parent = Path(temporary.name).resolve()
         self.user = self.parent / 'user'; self.user.mkdir()
         put(self.source / 'boot.json', self.fixture.config)
         put(self.source / 'build-result.json', {'schema_version': 1, 'outcome': 'PASS'})
