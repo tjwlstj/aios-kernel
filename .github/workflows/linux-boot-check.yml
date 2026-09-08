@@ -51,8 +51,21 @@ jobs:
       - name: Run platform resource guard tests
         run: python -m unittest discover -s tools/platform/tests -p "test_*.py" -v
 
-      - name: Run hosted binding-trace host tests (fail closed)
+      - name: Run hosted contracts and userspace tests (fail closed)
         run: python -m unittest discover -s tools/hosted/tests -p "test_*.py" -v
+
+      - name: Run AIOS userspace boot and hardware observation (Linux only)
+        if: runner.os == 'Linux'
+        run: python tools/hosted/boot_smoke.py --artifact-dir build/hosted-boot/ci
+
+      - name: Upload AIOS userspace boot evidence
+        if: always() && runner.os == 'Linux'
+        uses: actions/upload-artifact@v7
+        with:
+          name: hosted-boot-Linux
+          path: build/hosted-boot/ci/
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Run OS tool smoke
         run: python tools/testkit/aios-testkit.py os

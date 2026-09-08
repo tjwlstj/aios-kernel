@@ -9,7 +9,7 @@
 | Skill | 사용할 때 | 막으려는 문제 |
 |---|---|---|
 | `aios-repo-triage-planner` | 넓은 요청, 다음 작업 선정, 조사 | 현재 구현을 보지 않은 과대 계획 |
-| `aios-linux-substrate-curator` | Linux substrate 자료, upstream 리소스, hosted backend 계획, 라이선스·SPDX·provenance 검토 | source 목록이 코드 import 승인이나 구현된 backend로 과장되는 경계 붕괴 |
+| `aios-linux-substrate-curator` | Linux substrate 자료, upstream 리소스, hosted backend 계약·구현·검증, 라이선스·SPDX·provenance 검토 | source 목록이 코드 import 승인이나 구현된 backend로 과장되는 경계 붕괴 |
 | `aios-kernel-room-architecture` | Kernel Room, Cell, Node, NodeBit, Axis Gate, Orbit, 귀속 설계 | 관리 계층보다 커널 메커니즘이나 enforcement가 먼저 커지는 방향 drift |
 | `aios-kernel-change-guardian` | 커널, 런타임, MM, 스케줄러, HAL | 저수준 invariant와 rollback 손상 |
 | `aios-enum-abi-integrity` | enum, syscall, action/reason ID | 숫자·ABI의 조용한 drift |
@@ -34,3 +34,6 @@
 
 각 스킬의 `agents/openai.yaml`은 Codex UI에서 보이는 이름, 설명, 기본
 프롬프트를 제공한다. 구조나 설명을 바꾸면 skill validator를 다시 실행한다.
+
+MAIN과 모델 backend 작업은 [backend 수명·실행 결속 가이드](../docs/os/aios_backend_lifecycle_guide_ko.md)에서
+제품 runtime과 외부 검증 도구의 책임, 보존된 과거 증거와 현재 소스의 검증 상태를 확인한다.

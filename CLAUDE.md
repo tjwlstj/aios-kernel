@@ -69,8 +69,97 @@ the 12-fixture H1-c self-contained bundle/parity lane. The host suite runs in
 the Ubuntu/Windows matrix. Dedicated Linux/Windows fixture producers and the
 parity job passed same-run, exact-SHA acceptance with all three artifacts on
 2026-09-03; see [H1 acceptance evidence (§13.2)](docs/os/h1_binding_trace_replay_workplan_ko.md#132-2026-09-03-원격-acceptance-완료).
-Only this host-only contract/replay lane is `CURRENT`. The H2 hosted service
-remains `PLANNED`.
+Only this host-only contract/replay lane is `CURRENT`. H2-a userspace startup,
+Linux-visible hardware inventory and the interactive CLI with DNS/HTTP(S) are
+`PARTIAL`; full H2/H3 acceptance remains `PLANNED`.
+Run `python3 hosted/linux/aios-boot.py --artifact-dir <new-directory>` on Linux;
+the independent execution gate is `python3 tools/hosted/boot_smoke.py --artifact-dir <new-directory>`.
+The [userspace boot guide](docs/os/aios_userspace_boot_hardware_guide_ko.md) owns the
+exact scope: source-only observations, no H1 binding or native boot claim, management actions
+`UNSUPPORTED`, and guest-visible devices distinct from physical-host support.
+The [CLI and Internet guide](docs/os/aios_cli_internet_guide_ko.md) owns the separate
+user-requested DNS/HTTP(S) I/O surface. Run `hosted/linux/aios-console.py --artifact-dir
+<new-directory>` with Python on Linux, or `tools/hosted/Start-AiosConsole.ps1` on Windows.
+The Windows `-Smoke -GuestTests` lane checks real guest commands/Internet and shutdown;
+`verify_console.py --execution` rechecks saved session-process evidence, while VM shutdown
+has its own `vm-verdict.json`. These commands do not implement canonical service binding.
+The unbound `CONSOLE_RUNTIME` daemon adds explicit service start/status/stop/restart,
+private Unix IPC, producer-owned instance/generation and periodic observations. This is
+`SUPPORTING/PARTIAL`; see the [service lifecycle guide](docs/os/aios_service_lifecycle_guide_ko.md).
+`Start-AiosConsole.ps1 -ServiceSmoke -GuestTests` checks two separate consoles and three
+generations; `verify_service.py --workflow` replays its evidence. Bare Linux CLI exit leaves
+the daemon alive; the Windows wrapper stops it before guest poweroff.
+CLI v0.3/schema 3 introduced a separate MAIN `AI_SERVICE`, `agent`/`room`/`ask`, and
+an explicit hosted management authority (`PARTIAL`). See the
+[MAIN binding guide](docs/os/aios_agent_binding_guide_ko.md) for actual-model acceptance and remaining scope.
+`Start-AiosConsole.ps1 -Agent` prepares pinned local dependencies; `-AgentSmoke -GuestTests`
+runs two consoles, real requests, stale rejection and explicit rebind. `verify_agent.py --workflow`
+independently checks model provenance, request/source/binding records and actual shutdown.
+This hosted authority is not the native K1 instance. Full H2/H3 and resource actions remain `PLANNED`.
+
+Current CLI v0.7/session schema 7 records 31 runtime source files; MAIN protocol/run schema 4
+records 24. Archived CLI schemas 1/2/3/4/5/6 and MAIN run schemas 1/2/3 remain replayable with their
+retained sources. Explicit `resources link/status/sample` and per-request process observations
+were introduced in v0.4. See [resource observation guide](docs/os/aios_resource_observation_guide_ko.md)
+for current evidence. MAIN and backend CPU/RSS stay separate; system PSI is unattributed.
+Read failure never changes model readiness. No ownership, quota or scheduler authority follows.
+
+`cell status/activate/deactivate` implements bounded Cell 1 management transitions (`PARTIAL`).
+Deactivation changes management generations and invalidates binding trust while MAIN/backend
+processes remain running. Reactivation requires explicit `room discover`, `room reconcile`, and
+`resources link`. The [Cell lifecycle guide](docs/os/aios_cell_lifecycle_guide_ko.md) owns this
+contract and `-CellSmoke -GuestTests` / `verify_agent.py --cells` evidence; the local Linux and
+actual-model scenario passed with the retained v0.5 sources in `cell-01`. This historical run does
+not validate the current v0.7 source. Full H2/H3 and native Cell lifecycle remain future work.
+The separate model operating image profile has the partial implementation described below.
+
+`backend status/start/stop/restart` now manages a separate model supervisor and its owned child.
+MAIN fixes the execution descriptor at startup and receipt schema 2 adds `backend_execution`
+evidence before sending, on the connected socket and after receiving. Backend replacement
+invalidates MAIN readiness and binding trust; recovery requires explicit MAIN restart and rebind.
+The [backend lifecycle guide](docs/os/aios_backend_lifecycle_guide_ko.md) owns this `PARTIAL`
+implementation and `-BackendSmoke -GuestTests` acceptance. The local `backend-02` run passed
+actual Linux/model validation, rejection after backend replacement, explicit recovery, resource
+observation, DNS/HTTPS and normal shutdown. Independent replay matched the sources at that time.
+This is retained-source evidence; the subsequent model-image record-path fix changes the current
+runtime bytes and requires separate verification. The maturity remains `PARTIAL`.
+Current v0.7 adds explicit `backend recover` using a child pidfd retained by the same CLI
+before supervisor loss (`PARTIAL`; actual Linux/model evidence passed separate independent replay).
+The original recovery-model-02 verdict remains FAIL; the corrected replay report owns the new acceptance. Its separate
+`RECOVERED` receipt never replaces the original failed run with a normal stop; MAIN restart
+and rebind remain explicit. The backend lifecycle guide owns this bounded recovery contract.
+Recovery after CLI loss or reboot, ownership, general installation and updates remain future work.
+
+The separate [operating image guide](docs/os/aios_operating_image_guide_ko.md) owns the bounded
+`SUPPORTING/PARTIAL` basic image. `image-07` passed two online and one offline cold boots of the
+same installed 4 GiB disk, UID 1000 CLI, config/history preservation, service cleanup and normal
+poweroff. `Start-AiosImage.cmd` now runs a persistent user copy while preserving the verified
+original. The retained image-07 source 35 adds four boot files to its CLI v0.6/schema 6/source 31
+snapshot. This basic image contains no model bundle, restores no canonical state across boots,
+and does not promote native maturity or full H2/H3 acceptance.
+
+The separate `-Agent` model image profile is also `SUPPORTING/PARTIAL`. `model-image-04` passed
+all 51 Linux image tests, online and offline cold boots of the same installed disk, two warmups and
+two user requests, explicit stale rebind, DNS/HTTPS and normal service/VM shutdown. Independent
+replay matched the then-current v0.6 runtime 35 files and preserved the original disk and artifacts.
+At that v0.6 milestone, `Start-AiosImage.cmd -Agent` ran a persistent `local-model` user copy; its actual entry, status
+queries and normal exit also passed separately. The operating image guide owns these results and
+preserved failures. This bounded image does not qualify full H2/H3, native execution or a release.
+
+The current CLI v0.7/session 7 model image is `model-image-05`, with all 35 current product sources
+matching its installed manifest and retained snapshot. Its separate normal acceptance passed two
+online/offline cold boots, 45 commands, two warmups and two actual user requests, explicit rebind,
+Internet access and normal shutdown; independent replay matched the original verdict and preserved
+all original files. Start-Aios-0.7.cmd (`build/hosted-image-v07/Start-Aios-0.7.cmd`) selects the separate
+`model-image-05-user` copy, whose actual three-command entry/status/exit also passed. Existing v0.6
+`local-model` and default pointers remain preserved. Separate fault clone 02 passed actual
+supervisor-loss, same-worker recover, immediate exit and normal shutdown; clone 01's original FAIL
+remains preserved. Maturity stays `SUPPORTING/PARTIAL`.
+Host `Selection`/`Select`/`Rollback` now selects a default user copy while preserving each disk and
+history; no selection state retains the legacy default. This selector is `SUPPORTING/PARTIAL`:
+Windows-local actual default boots of 0.7 and 0.6 passed, followed by final reselection of 0.7.
+Its contract and evidence belong to operating image §9.8;
+the preceding v0.6/v0.7 launch receipts predate this selector change.
 
 ### Interactive Agent Debugging via MCP (optional, diagnostics-only)
 The external [qemu-mcp](https://github.com/0xmortuex/qemu-mcp) MCP server can be
@@ -95,7 +184,8 @@ python -m unittest discover -s tools/platform/tests -p "test_*.py" -v
 ```
 
 These commands validate the `CURRENT` upstream source catalog only. The
-Linux-hosted runtime remains `PLANNED`, all Linux runtime identities are
+Full Linux-hosted acceptance remains `PLANNED` (bounded startup/CLI/MAIN binding, resource
+observations and Cell 1 transitions are `PARTIAL`), all Linux runtime identities are
 source-only, and schema v1 keeps `code_import=0`.
 
 ### Interactive Shell Lane (runtime observation channel)
@@ -133,9 +223,10 @@ add an exchange to `DEFAULT_EXCHANGES` in `tools/testkit/lib/shell_lane.py`.
 
 **AIOS** is an AI-native management/runtime project centered on Kernel Room.
 Its intended default delivery substrate is a Linux-hosted userspace service.
-The executable kernel evidence currently checked into this repository is the
-bare-metal x86_64 reference/proof kernel; the Linux-hosted backend remains
-`PLANNED`. Current version: v0.2.0-beta.6 "Genesis".
+The repository contains the bare-metal x86_64 reference/proof kernel and a `PARTIAL`
+Linux userspace bootstrap/CLI with bounded DNS/HTTP(S), MAIN/hosted binding, separate process
+resource observations and Cell 1 management transitions.
+Full H2/H3 acceptance remains `PLANNED`. Current native version: v0.2.0-beta.6 "Genesis".
 
 The canonical product-management hierarchy is **Kernel Room → Cell → Node →
 NodeBit**. Overall Kernel Room topology maturity is `PARTIAL` because its
@@ -145,7 +236,7 @@ registry owns one bootstrap Cell, one explicitly bound declared Node, and two
 typed child NodeBits in a 1024-byte management-only snapshot. K2-a keeps that ABI
 unchanged and binds Node 101 to the producer-owned SLM MAIN source through a
 separate 256-byte snapshot. Full K2 lifecycle/reconciliation remains `PARTIAL`;
-hosted sources, attribution, and authorization remain `PLANNED`.
+full native/hosted conformance, resource ownership, and authorization remain `PLANNED`.
 The existing Memory Fabric, SLM, runtime NodeBit,
 pipeline, scheduler, PID, and ring IDs are independent namespaces. Never infer
 identity from equal integers; introduce an explicit namespace, binding, and
@@ -335,8 +426,9 @@ H1-a transport, bounded H1-b lifecycle replay, the exact 12-fixture matrix,
 native K2-a projection, and H1-c self-contained bundle/independent parity CLI
 were implemented locally (2026-08-31). The dedicated Ubuntu, Windows, and parity
 jobs passed same-run, exact-SHA acceptance with all three artifacts (2026-09-03),
-so H1 contract/replay is `CURRENT`. H2 observe-only service is the next bounded
-implementation slice and remains `PLANNED`; broad native
+so H1 contract/replay is `CURRENT`. H2-a startup/hardware observation and CLI/Internet are `PARTIAL`.
+The bounded MAIN producer/hosted binding, separate CPU/RSS observations and Cell 1 management
+transitions are `PARTIAL`; full H2/H3 and ownership remain `PLANNED`. Broad native
 process/storage expansion and final conformance closure are not prerequisites for
 the first observe-only hosted slice. H4/H5 require K5
 principal/ownership/authorize and separate approval. The
@@ -369,7 +461,7 @@ replacement for QEMU or the normal verification path.
 | `kernel/include/` | Public headers, organized by subsystem |
 | `kernel/Makefile` | Kernel build system (root Makefile delegates here) |
 | `os/` | AIOS native ring3 userspace layer (main_ai, compat, runtime, tools) + `os/apps/` programs |
-| `hosted/` | Intended Linux-hosted delivery domain; `contracts/` owns H1-a/H1-b/H1-c trace, fixtures, artifact/parity (`CURRENT` after exact-SHA cross-OS acceptance); H2 runtime remains `PLANNED` |
+| `hosted/` | Intended Linux-hosted delivery domain; H1 contract/replay `CURRENT`; `linux/` H2-a/CLI/Internet/MAIN binding, resource observations, Cell 1 transitions and backend lifecycle/execution binding `PARTIAL`; full H2/H3 acceptance `PLANNED` |
 | `models/` | AI/SLM model manifests (weights are gitignored) |
 | `store/` | Post-boot online driver/program/model download catalog |
 | `tools/testkit/` | Python test orchestration + Windows PS1 build helper |

@@ -14,6 +14,9 @@
 | 파일 위치와 의존 방향 | [PROJECT.md](../PROJECT.md) | 도메인 맵 정본 |
 | 제품 축과 전역 우선순위 | [성숙도 우선 작업흐름](meta/minimal_io_and_maturity_workflow_ko.md) | roadmap 정본 |
 | 현재 bounded H1 계약 | [H1 trace/replay 작업 준비서](os/h1_binding_trace_replay_workplan_ko.md) | H1-a/b/c와 12개 fixture/artifact/parity `CURRENT`; §13.2의 exact-SHA 원격 acceptance 증거 |
+| hosted Cell 1 활성 상태·재결속 | [Cell 수명 가이드](os/aios_cell_lifecycle_guide_ko.md) | CLI v0.5의 bounded 관리 전이 계약과 검증, `PARTIAL` |
+| 모델 backend 수명·MAIN 실제 요청 대상 | [backend 수명 가이드](os/aios_backend_lifecycle_guide_ko.md) | CLI v0.7의 명시적 backend 관리·실행 결속·동일 CLI recover, 실제 Linux·모델 기록의 독립 재검증 PASS와 원본 FAIL 보존, `PARTIAL` |
+| 설치된 디스크에서 반복 부팅·CLI 사용 | [운영 이미지 가이드](os/aios_operating_image_guide_ko.md) | 현재 v0.7 model-image-05의 모델·두 부팅·정상 종료·전용 사용자 사본 검증; v0.6 image-07/model-image-04 보존, `SUPPORTING/PARTIAL` |
 | 검증 판정과 실제 명령 | [검증 도구 진화 설계](tools/verification_tooling_evolution_design_ko.md), [Testkit 가이드](tools/testkit_guide_ko.md) | 검증 정본·운영 가이드 |
 
 ## 문서 역할과 수명주기
@@ -77,9 +80,18 @@
 - [ai_resource_management_development_plan_ko.md](autonomy/ai_resource_management_development_plan_ko.md) — 활성 분야별 작업 계획; 전역 순서는 성숙도 작업흐름이 소유
 
 ## os/ — 유저스페이스 OS 계층
-- [linux_hosted_substrate_and_resource_policy_ko.md](os/linux_hosted_substrate_and_resource_policy_ko.md) — Linux-hosted userspace service를 기본 delivery 방향으로 고정하고 Kernel Room 의미를 보존하는 정본; resource catalog `CURRENT`와 hosted backend `PLANNED`를 분리
+- [linux_hosted_substrate_and_resource_policy_ko.md](os/linux_hosted_substrate_and_resource_policy_ko.md) — Linux-hosted userspace service를 기본 delivery 방향으로 고정하고 Kernel Room 의미를 보존하는 정본; resource catalog `CURRENT`, bounded hosted 구현 `PARTIAL`, 전체 H2/H3 `PLANNED`를 분리
 - [h1_binding_trace_replay_workplan_ko.md](os/h1_binding_trace_replay_workplan_ko.md) — H1 OS-neutral field/lifecycle/reason과 H1-a/b/c·12 fixtures·artifact/parity `CURRENT`, §13.2의 원격 acceptance 증거
-- [../hosted/README.md](../hosted/README.md) — Linux-hosted 제품 도메인의 책임·의존 경계; H1 verifier는 `CURRENT`, H2 실행 runtime은 `PLANNED`
+- [../hosted/README.md](../hosted/README.md) — Linux-hosted 제품 도메인의 책임·의존 경계; H1 `CURRENT`, H2-a/CLI/인터넷/MAIN 결속·자원 관측·Cell 1 관리 전이·backend 수명/실행 결속 `PARTIAL`, 전체 H2/H3 `PLANNED`
+- [aios_userspace_boot_hardware_guide_ko.md](os/aios_userspace_boot_hardware_guide_ko.md) — 독자 AIOS·Linux 드라이버 경계, 유저스페이스 시작 로그·하드웨어 관측·실행 증거와 장기 순서
+- [aios_service_lifecycle_guide_ko.md](os/aios_service_lifecycle_guide_ko.md) — 활성 운영 가이드; CLI와 분리된 CONSOLE_RUNTIME의 시작·중지·재시작·세대 증거, SUPPORTING/PARTIAL
+- [aios_agent_binding_guide_ko.md](os/aios_agent_binding_guide_ko.md) — 활성 운영 가이드; 실제 MAIN 모델 요청·hosted authority 결속·재결속과 실행 증거, DIRECT/PARTIAL
+- [aios_resource_observation_guide_ko.md](os/aios_resource_observation_guide_ko.md) — MAIN/backend 명시적 관계·CPU/RSS 및 system PSI 관측의 계약과 검증, DIRECT/PARTIAL
+- [aios_cell_lifecycle_guide_ko.md](os/aios_cell_lifecycle_guide_ko.md) — 활성 계약·운영 가이드; Cell 1 활성/비활성·관리 세대·명시적 재결속, DIRECT/PARTIAL; cell-01은 보존된 CLI v0.5 소스로 로컬 Linux·실제 모델 검증 통과
+- [aios_backend_lifecycle_guide_ko.md](os/aios_backend_lifecycle_guide_ko.md) — 활성 계약·운영 가이드; 현재 CLI v0.7/schema 7/source 31개, MAIN protocol/run 4/source 24개, receipt 2의 backend 수명·실제 요청 대상 결속, DIRECT/PARTIAL; recovery-model-02의 동일 CLI recover·실제 모델·인터넷·정상 종료 기록은 독립 재검증 PASS, 원본 FAIL 보존; v0.6 backend-02는 당시 소스의 별도 역사적 증거
+- [aios_cli_internet_guide_ko.md](os/aios_cli_internet_guide_ko.md) — 활성 운영 가이드; 고유 대화형 CLI·DNS/HTTP(S)·실행 증거, H2-a `PARTIAL`과 전체 H2/H3 `PLANNED` 경계
+- [aios_operating_image_guide_ko.md](os/aios_operating_image_guide_ko.md) — 활성 설계·acceptance 정본 및 운영 가이드; 현재 v0.7/schema 7/source 35개 model-image-05의 online/offline 45명령·실제 질문·재결속·정상 종료와 독립 재검증, 전용 사용자 사본 실행 PASS; 별도 장애 복사본 02의 recover·즉시 exit·정상 종료 PASS와 01 원본 FAIL 보존; 당시 v0.6 image-07/model-image-04 및 기본 포인터 보존, SUPPORTING/PARTIAL; 범용 설치/복구는 후속
+  - §9.8의 기본 이미지 `Selection`·`Select`·`Rollback`: Windows 로컬의 0.7·0.6 실제 기본 부팅과 최종 0.7 재선택 PASS, `SUPPORTING/PARTIAL`; 각 사용자 디스크·history 보존.
 - [browser_console_and_runtime_engine_roadmap_ko.md](os/browser_console_and_runtime_engine_roadmap_ko.md)
 - [user_space_os_direction_ko.md](os/user_space_os_direction_ko.md) — `OLD`; ring3/static ELF 이전 방향 기록
 - [user_space_os_build_slices_ko.md](os/user_space_os_build_slices_ko.md) — `OLD`; M1/M2 이전 빌드 계획

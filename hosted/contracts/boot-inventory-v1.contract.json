@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "contract": "aios-userspace-boot-inventory-v1",
+  "boot_kind": "userspace-startup",
+  "sections": ["cpu", "memory", "pci", "usb", "block", "net"],
+  "required_core_sections": ["cpu", "memory"],
+  "section_states": ["observed", "partial", "unavailable"],
+  "exit_codes": {"READY": 0, "FAILED": 1, "DEGRADED": 2, "UNSUPPORTED": 3},
+  "scope": "linux-visible",
+  "source_only": true,
+  "observation_only": true,
+  "binding_status": "UNBOUND",
+  "action_support": "UNSUPPORTED",
+  "usability": "UNTESTED",
+  "max_devices_per_section": 256,
+  "max_errors_per_section": 32,
+  "artifact_files": ["boot.log", "events.jsonl", "inventory.json", "result.json"],
+  "claim_boundary": "Startup and guest/namespace-visible enumeration only; no H1 binding, native boot, device I/O, ownership, driver import, or apply proof."
+}

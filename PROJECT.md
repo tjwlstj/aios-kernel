@@ -24,7 +24,8 @@ K2 전체 lifecycle/reconcile은 `PARTIAL`이다. H1-a transport, H1-b bounded s
 replay와 12개 fixture, H1-c bundle/parity는 동일 run·exact SHA의 원격
 Linux/Windows/parity 및 세 artifact 검증을 통과해 `CURRENT`다(2026-09-03).
 근거는 [H1 원격 acceptance 증거 (§13.2)](docs/os/h1_binding_trace_replay_workplan_ko.md#132-2026-09-03-원격-acceptance-완료)를
-따르며 Linux-hosted source는 계속 `PLANNED`다.
+따른다. 별도 MAIN·hosted authority의 bounded binding과
+[Cell 1 관리 전이](docs/os/aios_cell_lifecycle_guide_ko.md)는 `PARTIAL`이며 전체 H2/H3는 후속이다.
 용어와 성숙도 정본은
 [Kernel Room 관리 모델](docs/kernel-room/kernel_room_management_model_ko.md)이다.
 
@@ -36,7 +37,7 @@ Linux/Windows/parity 및 세 artifact 검증을 통과해 `CURRENT`다(2026-09-0
 |---|---|---|---|
 | **`kernel/`** | 베어메탈 x86_64 커널. Kernel Room 관리축, 클럭·메모리 보호·인터럽트·드라이버·AI 시스콜 표면 | `kernel/build/aios-kernel.bin` | `make` (→ `kernel/Makefile`) |
 | **`os/`** | ring3 유저스페이스 런타임 + 전용 프로그램(`os/apps/`) | 파이썬 도구, (예정) ELF 앱 | `python os/tools/*.py` |
-| **`hosted/`** | 의도된 기본 delivery 경로인 Linux-hosted userspace service와 backend-neutral contract | binding-trace-v1 contract, 12 fixtures, self-contained artifact/parity(H1 `CURRENT`), (예정) H2 service | H1 verifier/fixture CLI: `tools/hosted/binding_trace_replay.py`; 실행 service는 없음 (`PLANNED`) |
+| **`hosted/`** | 의도된 기본 delivery 경로인 Linux-hosted userspace service와 backend-neutral contract | H1 contract/replay `CURRENT`; H2-a startup/inventory/CLI/인터넷·service lifecycle·MAIN binding·자원 관측·Cell 1 관리 전이·backend 수명/실행 결속 `PARTIAL` | `hosted/linux/aios-boot.py`, `aios-console.py`, `aios-agent.py`, `aios-backend.py`; `tools/hosted/Start-AiosConsole.ps1`; 전체 H2/H3는 후속 |
 | **`models/`** | AI/SLM 모델 매니페스트(가중치는 비추적) | `models/manifests/*.json` | — (데이터) |
 | **`store/`** | 부팅 후 온라인 드라이버/프로그램/모델 다운로드 카탈로그 | `store/catalog/*.json` | (예정) 런타임 클라이언트 |
 | **`tools/`** | 테스트·빌드 오케스트레이션과 외부 substrate source 정책 검증 | `tools/testkit/`, `tools/platform/` | testkit + platform guard |
@@ -128,9 +129,46 @@ Windows: `pwsh -File .\tools\testkit\kernel\build-windows.ps1 -Target test`
   256B snapshot이 Node 101을 producer-owned SLM MAIN instance/generation에 결속하고
   append-only reject reason을 고정한다. refresh/exit/recreate/rebind는 아직 없다.
   H1 replay/negative fixture와 exact-SHA remote cross-OS acceptance가 고정됐다.
-  다음 H2 observe-only service는 아직 `PLANNED`다. 광범위한 native
+  H2-a 시작·Linux-visible 하드웨어 관측·CLI/DNS/HTTP(S)는 `PARTIAL`이며 AIOS 자체 관리 계약과
+  native kernel을 유지한다. MAIN producer·hosted authority의 명시적 결속과 재결속은
+  `PARTIAL`이며 [MAIN 서비스 가이드](docs/os/aios_agent_binding_guide_ko.md)의 실제 실행 증거를 따른다.
+  MAIN/backend 각각의 CPU/RSS·system PSI 관측은 [자원 관측 가이드](docs/os/aios_resource_observation_guide_ko.md)를 따른다.
+  현재 CLI v0.7/session schema 7/source 31개와 MAIN protocol/run schema 4/source 24개는
+  `cell status/activate/deactivate`를 지원한다. 기존 Cell 1의 관리 전이는 `PARTIAL`이며
+  이전 v0.5 `cell-01`의 로컬 Linux·실제 모델 검증을 통과했다([Cell 수명 가이드](docs/os/aios_cell_lifecycle_guide_ko.md)).
+  비활성화는 MAIN 프로세스 중지가 아니며 재활성화 뒤 명시적 발견·재결속이 필요하다.
+  v0.5 Cell 실행은 당시 source snapshot의 증거다. 현재 `backend status/start/stop/restart`와
+  receipt schema 2의 실제 요청 대상 결속은 `backend-02`에서 로컬 Linux·실제 모델 검증을
+  완료했다. 교체 후 요청 거부·명시적 복구·자원 관측·DNS/HTTPS·정상 종료와 당시 소스의
+  독립 재검증을 통과했으며 `PARTIAL`을 유지한다([backend 수명 가이드](docs/os/aios_backend_lifecycle_guide_ko.md)).
+  `backend-02`는 보존된 소스의 증거이며 이후 모델 이미지 경로 수정이 있는 현재 소스는 별도 검증한다.
+  현재 `backend recover`는 동일 CLI가 미리 확보한 child pidfd로 supervisor 소실 뒤 정리하는
+  `PARTIAL` 구현이며 실제 Linux·모델 기록의 별도 독립 재검증을 통과했다. 원본 FAIL은
+  보존하며 새 판정은 별도 replay report가 소유한다. 별도 `RECOVERED` 증거와 명시적
+  MAIN 재시작·재결속 계약은 위 backend 수명 가이드를 따른다. CLI 소실·재부팅 이후 복구,
+  전체 H2/H3·자원 소유권은 후속이다. 광범위한 native
   process/storage 확장은 선행조건이 아니다. H4 validation과 H5 apply는 K5와 별도 승인 전까지
   `PLANNED`다.
+
+  별도 기본 운영 이미지는 `SUPPORTING/PARTIAL`이다. `image-07`의 설치된 4 GiB 디스크에서
+  온라인 두 번·오프라인 한 번의 cold boot, UID 1000 CLI, 설정·history 보존과 정상 종료를
+  검증했다. `Start-AiosImage.cmd`는 검증 원본을 보존하고 영속 사용자 복사본을 실행한다.
+  보존된 image-07 source 35개는 당시 CLI v0.6/schema 6/source 31개와 boot module 4개다.
+  이 기본 이미지에는 모델 bundle과 부팅 간 canonical 상태 복원이 없으며 범용 설치·업데이트·복구는 후속이다.
+  별도 모델 profile도 `SUPPORTING/PARTIAL`이다. `model-image-04`에서 Linux 이미지 검사
+  51개, 같은 디스크의 online·offline 두 cold boot와 실제 warmup·질문 각 2회, 명시적
+  재결속·인터넷·정상 종료 및 당시 v0.6 source 35개의 독립 재검증을 통과했다.
+  `Start-AiosImage.cmd -Agent`의 `local-model` 사용자 사본 실행·정상 종료도 검증했다.
+  현재 v0.7/session 7/source 35개의 `model-image-05`는 별도 정상 이미지로 online·offline
+  두 부팅 45명령, 실제 질문 2회·재결속·인터넷·정상 종료와 현재 소스 독립 재검증을 통과했다.
+  전용 0.7 실행기 (`build/hosted-image-v07/Start-Aios-0.7.cmd`)의 `model-image-05-user` 사본도
+  세 명령·정상 종료를 검증했다. 기존 v0.6 디스크·포인터는 보존한다. 별도 장애 복사본 02도
+  같은 worker의 recover·즉시 exit·정상 종료를 실제 검증했고, 첫 복사본 01의 원본 FAIL은
+  보존한다. 성숙도는 `SUPPORTING/PARTIAL`이다.
+  기본 실행의 `Selection`·`Select`·`Rollback`은 별도 host 선택 기능으로 구현했으며
+  Windows 로컬의 실제 0.7·0.6 기본 부팅과 최종 0.7 재선택 PASS로 `SUPPORTING/PARTIAL`이다.
+  선택 기록이 없을 때는 기존 기본 경로를 유지하고 각 사용자 디스크와 history는 보존한다.
+  [운영 이미지 가이드](docs/os/aios_operating_image_guide_ko.md)가 계약과 실제 증거를 소유한다.
 - **process snapshot/journal은 증거 전용** — descriptor-owned 176B snapshot은 ISR 시점 owner/CR3/TSS `rsp0`/IF=0 검증과 `resume_ready=0`을 유지한다. per-boot process event journal v1의 schema/kind/reason/outcome 숫자 ID는 append-only이며, capacity 8 안에서 여섯 lifecycle/capture record를 덮어쓰지 않는다. journal은 `evidence_only=1 switch_events=0 resume_ready=0`이고 `0→1→0→2→0` 순차 bootstrap owner lifecycle만 증명한다. resumable saved context와 runnable-state 결속, live continuation/switch, 실제 A→B→A가 별도로 검증되기 전에는 snapshot이나 journal을 schedulable state 또는 CPU-switch trace로 해석하지 않는다.
 - **ring3 entry AC 계약은 saved/live를 분리한다** — 현재 QEMU bootstrap pair의 CPL3 `#BP` 2회와 `int 0x80` 6회에서 saved user RFLAGS는 불변이고 entry live AC는 항상 0이어야 한다. SMAP active는 `clac`, 비활성·미지원은 `pushfq/btr/popfq` fallback을 사용하며 `default`/`max-smap` CPU profile과 exact marker/`state sec` mirror가 분기를 고정한다. 이 계약을 future ring3 IRQ/NMI/IST, 실기기, resumable context 또는 process switch 증거로 확장 해석하지 않는다.
 
@@ -155,7 +193,8 @@ aios-kernel/
 │   └── apps/             # 전용 프로그램 (스캐폴드)
 │
 ├── hosted/               # ③ Linux-hosted 기본 delivery 도메인
-│   └── contracts/        # H1-a/b/c 계약·12 fixtures·artifact/parity CURRENT; H2 service는 PLANNED
+│   ├── contracts/        # H1-a/b/c CURRENT; 별도 boot-inventory-v1 계약
+│   └── linux/            # H2-a/CLI/Internet/MAIN binding PARTIAL; full H2/H3 PLANNED
 ├── models/               # ④ 모델 매니페스트 (가중치 비추적)
 │   └── manifests/
 ├── store/                # ⑤ 온라인 배포 카탈로그

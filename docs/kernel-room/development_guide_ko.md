@@ -2,10 +2,16 @@
 
 작성일: 2026-04-18
 재정비: 2026-08-10
-최종 갱신: 2026-09-03 (H1 원격 acceptance 완료와 남은 live 경계)
+최종 갱신: 2026-09-07 (hosted MAIN·자원 관측·Cell 1 관리 전이 경계)
 
 > 이 가이드는 [AIOS Kernel Room 관리 모델](kernel_room_management_model_ko.md)을
 > 따른다. 정체성, 용어, 성숙도 또는 구현 순서가 충돌하면 정본을 우선한다.
+
+[CONSOLE_RUNTIME 서비스 수명 관리](../os/aios_service_lifecycle_guide_ko.md)는
+CLI와 별도 프로세스의 생존·시작·중지·재시작을 제공하는 SUPPORTING/PARTIAL 조각이다.
+별도 MAIN AI_SERVICE producer의 typed record와 명시적 Cell/Node binding은
+`DIRECT/PARTIAL`로 구현됐다. [Cell 수명 가이드](../os/aios_cell_lifecycle_guide_ko.md)의
+bounded Cell 1 관리 전이는 이전 v0.5 `cell-01`의 로컬 Linux·실제 모델 검증을 통과했다.
 
 ## 목적
 
@@ -81,13 +87,44 @@ Kernel Room 작업이 커널 작동 증명이나 enforcement 자체를 목표로
 - [H1 원격 acceptance 증거 (§13.2)](../os/h1_binding_trace_replay_workplan_ko.md#132-2026-09-03-원격-acceptance-완료)를 따르며
   live native producer 또는 H2 runtime 증거로 확대하지 않음
 
-### 아직 `PLANNED` 또는 K2 전체에서 미완료
+### hosted bounded 구현과 전체 미완료 범위
 
-- source refresh/exit/recreate/rebind와 Cell lifecycle/reconciliation
-- H2 Linux-hosted observe-only source/runtime
+H2-a 초기화 로그·Linux-visible 하드웨어 inventory는 `PARTIAL`로 추가됐다.
+이 관측 기반의 실행 방법과 검증 범위는
+[유저스페이스 가이드](../os/aios_userspace_boot_hardware_guide_ko.md)를 따른다.
+아래 bound runtime·관리 계층 미완료 항목을 대신하지 않는다.
+고유 CLI와 사용자 요청 DNS·HTTP(S)도 이 실행 기반의 `SUPPORTING/PARTIAL` 확장이다.
+[CLI·인터넷 가이드](../os/aios_cli_internet_guide_ko.md)의 실제 I/O와 canonical binding을 구별한다.
+별도 MAIN producer와 hosted authority의 명시적 발견·결속·재결속 구현은 `PARTIAL`이다.
+[MAIN 서비스 가이드](../os/aios_agent_binding_guide_ko.md)가 실제 모델·수명·결속 증거를 소유한다.
+구현된 관측 조각은 [자원 관측 가이드](../os/aios_resource_observation_guide_ko.md)의
+명시적 MAIN/backend 관계와 개별 CPU/RSS·unattributed system PSI다. 자원 소유권은 별도다.
+현재 CLI v0.7/session schema 7/source 31개, MAIN protocol/run schema 4/source 24개는
+`cell status/activate/deactivate`로 기존 Cell 1의 관리 상태를 다룬다(`PARTIAL`).
+MAIN 프로세스를 유지한 채 결속 신뢰를 무효화하며 재활성화 뒤 명시적 발견·재결속이
+필요하다. 이전 v0.5 `cell-01`의 로컬 Linux·실제 모델 검증을 통과했으며 Cell 수명 가이드에서 결과를 확인한다.
+hosted authority의 Cell/Node는 native K1과 같은 실행 instance가 아니며, 아래 전체
+Cell lifecycle·자원 귀속·principal 완료를 대신하지 않는다.
+
+현재 backend 자체 교체·종료의 관리와 MAIN 실행 결속은
+[backend 수명 가이드](../os/aios_backend_lifecycle_guide_ko.md)의 `PARTIAL` 구현이다.
+`backend status/start/stop/restart`와 receipt schema 2의 `backend_execution`을 제공하며
+`backend-02`에서 로컬 Linux·실제 모델·교체 후 요청 거부·명시적 복구·자원 관측·
+인터넷·정상 종료와 당시 소스 독립 재검증을 통과했다. `backend-02`는 보존된 소스의
+증거이며 이후 변경된 현재 소스의 실행 검증을 대신하지 않는다.
+이전 `cell-01`은 보존된 v0.5 소스의 증거다.
+
+- 동일 CLI의 보유 pidfd 복구를 넘는 CLI 소실·재부팅 뒤 복구와 전체 source/다중 Cell/native Cell lifecycle·reconciliation
+- 전체 H2 Linux-hosted source/runtime 및 H3 acceptance, 범용 설치/복구
 - runtime/SLM NodeBit projection
 - per-Cell/per-Node pressure와 resource ownership
 - principal/authorize와 Axis Gate enforcement
+
+기본 CLI 이미지의 반복 부팅·설정/history 보존은 별도
+[운영 이미지 가이드](../os/aios_operating_image_guide_ko.md)의 `SUPPORTING/PARTIAL`이다.
+`image-07`과 모델 포함 `model-image-05`의 실제 온라인·오프라인 cold boot, 별도 장애 복사본의
+동일 worker backend 복구·즉시 exit를 검증했다. 이 결과가 Kernel Room의 부팅 간 canonical 상태
+복원이나 native lifecycle을 구현한 것은 아니다.
 
 ### `RESEARCH`
 
@@ -287,11 +324,11 @@ native K2-a oracle은 아래 항목을 증명해 `CURRENT`가 됐다.
 - binding record는 별도 bounded/versioned snapshot이며 K1 1024B ABI와 기존 aggregate
   Room ABI를 변경하지 않는다.
 
-K2 semantic field/reject 의미는 substrate-neutral을 목표로 하지만 현재 증거는 native
-oracle에 한정된다. Node 101 `AI_SERVICE`의 native reference는 구현된 exact-one
-active/persistent SLM agent-tree MAIN source다. Linux-hosted 기본
-delivery 후보는 producer-owned service instance/generation을 가진 실제 userspace
-service record다. 현재 SLM
+K2 semantic field/reject 의미는 substrate-neutral을 목표로 하며 native oracle의 실행
+증거와 별도 hosted MAIN의 실행 증거를 구분한다. Node 101 `AI_SERVICE`의 native
+reference는 구현된 exact-one active/persistent SLM agent-tree MAIN source다. Linux-hosted
+기본 delivery는 producer-owned service instance/generation을 가진 실제 userspace
+MAIN service record를 `PARTIAL`로 구현했다. 현재 SLM
 `policy_generation`은 agent-tree source generation 계약이 아니므로 재사용하지
 않는다. Linux PID/pidfd/cgroup/PSI는 service lifecycle/resource evidence일 뿐
 canonical Node identity가 아니다. Memory Fabric main domain은 Cell/resource source
@@ -299,8 +336,8 @@ canonical Node identity가 아니다. Memory Fabric main domain은 Cell/resource
 구현이 쉽거나 숫자가 같다는 이유만으로 Node 101에 결속하지 않는다.
 
 작은 native K2 adapter는 canonical 의미가 Linux object 모양에 끌려가지 않게 하는
-semantic oracle/conformance proof로 구현됐다. refresh/reconcile과 source
-exit/recreate/rebind는 아직 `PLANNED`다. H1 verifier는 같은 field/reason 의미를
+semantic oracle/conformance proof로 구현됐다. 이 native adapter의 refresh/reconcile과
+source exit/recreate/rebind는 아직 `PLANNED`다. H1 verifier는 같은 field/reason 의미를
 OS-neutral trace와 12개 fixture에 고정했고 원격 exact-SHA acceptance를 통과했다. 광범위한 native
 process/storage 확장은 H2 observe-only userspace service의 선행조건이 아니다.
 
@@ -310,8 +347,8 @@ process/storage 확장은 H2 observe-only userspace service의 선행조건이 �
 2. management-only hierarchy registry v0 — `CURRENT` (2026-08-11)
 3. bounded native K2-a semantic oracle — `CURRENT` (2026-08-15)
 4. H1 OS-neutral lifecycle trace/replay — `CURRENT` (2026-09-03)
-5. H2 Linux observe-only userspace adapter
-6. Cell lifecycle/reconcile와 source coverage 확대
+5. H2 Linux userspace adapter — bootstrap·MAIN 결속·자원 관측 `PARTIAL`, 전체 acceptance 후속
+6. Cell lifecycle/reconcile와 source coverage 확대 — hosted Cell 1 관리 전이 `PARTIAL`, v0.5 cell-01의 로컬 Linux·실제 모델 검증 통과
 7. runtime/SLM NodeBit의 typed management view와 generation 연결
 8. per-Cell/per-Node pressure·resource attribution observation
 9. principal과 state-transition request 계약

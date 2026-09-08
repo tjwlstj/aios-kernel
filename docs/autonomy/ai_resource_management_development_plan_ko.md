@@ -2,11 +2,26 @@
 
 작성일: 2026-04-27
 
-최종 갱신: 2026-09-03 (H1 원격 acceptance 완료와 H2 후속 순서 정렬)
+최종 갱신: 2026-09-07 (hosted 자원 관측과 Cell 수명 후속 경계)
 
 문서 역할: 활성 분야별 작업 계획. native resource subsystem 내부의 순서와 경계를
 소유하며, 전역 다음 작업은
 [성숙도 우선 작업흐름](../meta/minimal_io_and_maturity_workflow_ko.md)이 소유한다.
+
+[CONSOLE_RUNTIME lifecycle](../os/aios_service_lifecycle_guide_ko.md)은 서비스 수명·관측을
+소유하는 SUPPORTING/PARTIAL 기반이다. 이 source identity/generation을 canonical 객체로
+간주하지 않으며, 실제 AI_SERVICE binding과 H3 reconcile 전에는 workload 자원 귀속이나
+resource apply 지원으로 승격하지 않는다.
+별도 MAIN producer와 hosted authority의 명시적 결속·재결속은
+[MAIN 서비스 가이드](../os/aios_agent_binding_guide_ko.md)의 DIRECT/PARTIAL 조각이다.
+실제 모델 요청을 결속에 연결해도 workload별 자원·pressure 귀속과 ownership·authorize는
+자동으로 구현되지 않는다. 모델 출력은 텍스트이며 resource action으로 실행하지 않는다.
+[자원 관측 가이드](../os/aios_resource_observation_guide_ko.md)의 검증된 DIRECT/PARTIAL 조각은
+MAIN과 실제 backend 사이의 명시적 관계, 개별 process CPU/RSS와 system PSI 관측이다.
+요청 구간의 관측값을 독점 비용·물리 메모리 소유권 또는 Node pressure로 바꾸지 않는다.
+[Cell 수명 가이드](../os/aios_cell_lifecycle_guide_ko.md)는 Cell 1의 명시적 비활성화·활성화,
+결속 무효화와 재결속을 잇는다. MAIN/backend 프로세스 수명 및 resource ownership·apply는
+별도 계약이며, 전이 실행 증거와 남는 범위는 해당 가이드가 소유한다.
 
 ## 목적
 
@@ -16,8 +31,12 @@ AI workload와 agent runtime에 맞는 리소스 관리를 어떤 순서로 확�
 이 문서의 Slice 순서는 **native resource subsystem 내부 계획**이다. 전역 작업에서는
 bounded native K2-a oracle과 H1 OS-neutral trace/replay·12개 fixture를 고정했다.
 H1은 [exact-SHA 원격 acceptance (§13.2)](../os/h1_binding_trace_replay_workplan_ko.md#132-2026-09-03-원격-acceptance-완료)를
-통과해 `CURRENT`다(2026-09-03). 후속은 아직 `PLANNED`인 Linux-hosted 기본 delivery
-H2/H3의 observe-only 수직 조각이다. upstream Linux/QEMU/VirtIO
+통과해 `CURRENT`다(2026-09-03). Linux-hosted 기본 delivery의 시작·하드웨어 관측은
+[H2-a bootstrap](../os/aios_userspace_boot_hardware_guide_ko.md) `PARTIAL`로 로컬 검증했다.
+그 위의 [CLI·인터넷](../os/aios_cli_internet_guide_ko.md)은 사용자 요청 DNS/HTTP(S)를
+수행하는 `SUPPORTING/PARTIAL` 확장이며 native resource apply와 구분한다.
+bounded MAIN binding·자원 관측 조각은 위 가이드의 `PARTIAL` 범위를 따르며,
+전체 H2/H3 acceptance는 여전히 `PLANNED`다. upstream Linux/QEMU/VirtIO
 resource 선정과 정확한 H축 일정은
 [별도 정본](../os/linux_hosted_substrate_and_resource_policy_ko.md)을 따른다. H0
 manifest/guard가 `CURRENT`여도 native resource policy나 hosted backend가 구현된 것은

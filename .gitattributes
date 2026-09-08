@@ -2,3 +2,11 @@ hosted/contracts/binding-trace-v1.contract.json text eol=lf
 hosted/contracts/fixtures/manifest.json text eol=lf
 hosted/contracts/fixtures/**/*.jsonl text eol=lf
 tools/hosted/binding_trace_replay.py text eol=lf
+# Keep packaged runtime and verifier source hashes stable across host checkouts.
+hosted/linux/*.py text eol=lf
+hosted/linux/**/*.py text eol=lf
+hosted/contracts/boot-inventory-v1.contract.json text eol=lf
+tools/hosted/*.py text eol=lf
+tools/hosted/tests/*.py text eol=lf
+tools/hosted/*.sh text eol=lf
+tools/hosted/*.cmd text eol=crlf

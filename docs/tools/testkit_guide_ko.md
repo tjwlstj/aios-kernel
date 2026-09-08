@@ -2,9 +2,86 @@
 
 작성일: 2026-04-10
 
-최종 갱신: 2026-09-02 (관찰 exact-family 경계와 qemu-mcp 진단 보조 경로)
+최종 갱신: 2026-09-08 (hosted backend recover와 운영 이미지의 버전별 검증 경계)
+
+`tools/hosted/Start-AiosConsole.ps1 -ServiceSmoke -GuestTests`는 일반 Linux 사용자 서비스의
+시작→첫 CLI 종료→두 번째 CLI 재접속→재시작→중지/시작→최종 중지를 검증한다.
+`py -3 tools/hosted/verify_service.py <run-directory> --workflow`는 보존된 runtime-source와
+서비스·두 CLI·control 실행 증거를 독립 재생한다. VM poweroff 판정은 별도다.
+정확한 계약과 실제 결과는 [서비스 가이드](../os/aios_service_lifecycle_guide_ko.md)를 따른다.
+
+별도 MAIN 경로는 `Start-AiosConsole.ps1 -AgentSmoke -GuestTests`다. 실제 모델 bytes와
+provenance, warmup·질문, 두 CLI 사이 동일 producer, 재시작 뒤 stale 거부와 명시적 재결속,
+서비스/backend/VM 종료를 `verify_agent.py <run-directory> --workflow`로 재검증한다.
+fixture 의미 검증과 live acceptance는 분리하며, 정확한 결과·제한은
+[MAIN 서비스 가이드](../os/aios_agent_binding_guide_ko.md)를 따른다. native testkit baseline은 별도다.
+`-ResourceSmoke -GuestTests`는 MAIN/backend 관계를 명시적으로 연결한 실제 추론 전후
+CPU/RSS와 Linux system PSI, DNS/HTTPS 및 종료를 검사한다. `verify_agent.py --resources`로
+재생하며 상세 acceptance는 [자원 관측 가이드](../os/aios_resource_observation_guide_ko.md)를 따른다.
+
+현재 CLI v0.7/session schema 7/source 31개와 MAIN protocol/run schema 4/source 24개의
+Cell 경로는 `Start-AiosConsole.ps1 -CellSmoke -GuestTests`다.
+`cell status/activate/deactivate`, parent 세대·결속 무효화·명시적 재결속, 실제 모델 요청과
+CPU/RSS·DNS/HTTPS·정상 종료를 `verify_agent.py <run-directory> --cells`로 검증한다.
+Cell 비활성화는 MAIN/backend 프로세스 중지가 아니며 native Cell lifecycle 증거도 아니다.
+구현은 `PARTIAL`, 로컬 Linux·실제 모델 검증은 v0.5 `cell-01`에서 당시 보존 소스로 통과했으며 최종 결과는
+[Cell 수명 가이드](../os/aios_cell_lifecycle_guide_ko.md)를 따른다. 과거 CLI schema 1~6과
+MAIN run schema 1~3의 증거는 당시 보존 소스로 재생한다. `cell-01`은 현재 v0.7 소스의 검증이 아니다.
+
+새 `Start-AiosConsole.ps1 -BackendSmoke -GuestTests`는 제품 backend supervisor 두 수명과
+MAIN 두 수명, 교체 후 요청 거부와 명시적 복구, receipt schema 2의 실제 요청 대상 증거,
+DNS/HTTPS와 정상 종료를 검사한다. `backend status/start/stop/restart`의 로컬 Linux·실제
+모델 검증은 `backend-02`에서 완료했다. 당시 소스 대조와 독립 재검증도 통과했으며
+성숙도는 `PARTIAL`을 유지한다. `backend-02`는 보존된 소스의 증거이며 이후 변경된
+현재 소스의 실행 검증을 대신하지 않는다.
+[backend 수명 가이드](../os/aios_backend_lifecycle_guide_ko.md)가 정확한 acceptance를 소유한다.
+
+CLI v0.7의 동일 CLI `backend recover`는 별도 `qemu_console.py --recovery-smoke` 경로다.
+`recovery-model-02`의 실제 supervisor 소실·보유 pidfd TERM·잔존 자식 종료·새 세대와
+MAIN 재결속·모델 응답·인터넷·정상 종료 기록은 수정된 검증기로 독립 재생하여 PASS였다.
+원본 실행의 FAIL verdict는 보존하며 재검증 당시 제품 source 31개와 실행 snapshot의 일치를 확인했다.
+재생 진입점은 `verify_agent.py <run-directory> --recovery-smoke`이며 기본으로 해당 실행의
+`runtime-source/`를 사용한다. 베타 형식 정리 뒤 checkout의 byte 차이를 과거 증거에 덮어쓰지 않는다.
+이 실제 개발 VM 증거는 현재 이미지 source 35개의 디스크 복구 acceptance와 구분한다.
+
+설치된 기본 디스크는 `Start-AiosImage.cmd -Action Build -ImageDirectory <새 경로> -GuestTests`
+뒤 같은 경로의 `-Action Smoke`로 검증한다. 실제 `image-07`은 온라인 두 번·오프라인 한 번
+cold boot, UID 1000 CLI, 설정/history 보존·서비스 cleanup·정상 poweroff를 통과했다.
+당시 v0.6 이미지 source 35개는 CLI source 31개와 boot module 4개이며, 모델을 포함하지 않는
+`SUPPORTING/PARTIAL` 증거다. 기본 `Start-AiosImage.cmd`는 이미 검증된 원본을 보존하고
+사용자 복사본을 실행한다. [운영 이미지 가이드](../os/aios_operating_image_guide_ko.md)가
+실제 판정·검사 개수·실패 이력과 native baseline·모델 실행과의 경계를 소유한다.
+
+현재 v0.7/session 7/source 35개의 `model-image-05`는 별도 정상 모델 이미지로 online·offline
+두 부팅 45명령, 실제 warmup·질문 각 2회, 재결속·인터넷·정상 종료를 검증했다.
+현재 소스 독립 재검증 (`build/hosted-image-v07/model-image-05-replay/report.json`)은 원본 verdict와
+정확히 일치하며 전체 원본 파일을 보존했다. 빌드 당시 Linux 이미지 검사는 53개·skip 0 PASS였고,
+이후 추가된 장애 검증기 검사 수를 소급 합산하지 않는다.
+전용 0.7 실행기 (`build/hosted-image-v07/Start-Aios-0.7.cmd`)의 사용자 사본 세 명령·정상 종료도
+별도 PASS다. 기존 v0.6 사본·포인터를 보존한다. 장애 주입 도구 `qemu_image_recovery.py`와
+별도 `verify_image_recovery.py`는 정상 verifier와 구분한다. 장애 복사본 02는 실제 6명령의
+recover·즉시 exit·정상 종료 PASS이며 01의 원본 FAIL은 보존한다. 후속 closure를 포함한
+집중 host 검사 27개는 2.655초·skip 0 PASS로, 위 빌드 당시 Linux 53개와 별도다.
+기본 이미지 `Selection`·`Select`·`Rollback`은 Windows 로컬에서 0.7·0.6의 실제 기본 부팅과
+최종 0.7 재선택을 검증한 `SUPPORTING/PARTIAL`이다. selector gate는 정상 source 전체·최신 사용자
+boot 전체를 재생하고 이전 사용자 boot는 disk/archive/serial/history metadata만 대조한다.
+기존 이미지·장애 검사 수를 이 선택 경로의 PASS로 합산하지 않는다(운영 이미지 가이드 §9.8).
+선택 경로의 frozen 집중 검사는 별도 34개·41.121초·skip 0 PASS다. 이전 fixture import 실패와
+실제 시험 01의 launcher 경로 준비 실패는 각각 보존하고 실제 시험 02 PASS와 구분한다.
 
 ## 목적
+
+Linux userspace 초기화·하드웨어 관측에는 별도
+`python3 tools/hosted/boot_smoke.py --artifact-dir <새 디렉터리>`를 사용한다.
+이는 native QEMU/testkit baseline과 독립이며 runtime 네 artifact, 실제 process exit,
+stdout 일치와 외부 판정을 남긴다. Windows 개발 VM 실행은
+`tools/hosted/Start-AiosBootDemo.ps1`이며 정확한 의미·범위는
+[유저스페이스 가이드](../os/aios_userspace_boot_hardware_guide_ko.md)를 따른다.
+고유 대화형 CLI·DNS/HTTP(S)의 실제 Linux 검증은
+`tools/hosted/Start-AiosConsole.ps1 -Smoke -GuestTests`다. 저장된 세션은
+`verify_console.py --execution`으로 process/stdout와 명령 의미를 재검증하고,
+VM 종료는 별도 `vm-verdict.json`에 보존한다.
+[CLI·인터넷 가이드](../os/aios_cli_internet_guide_ko.md)가 해당 실행 계약을 소유한다.
 
 기존 테스트 도구는 `scripts/` 아래에 커널/OS smoke 엔트리포인트가 섞여 있었고,
 같은 `kernel/build/` 산출물을 병렬로 건드릴 때 Windows에서 object file lock 충돌이

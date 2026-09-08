@@ -2,7 +2,7 @@
 
 > 기준일: 2026-08-23
 >
-> 최종 갱신: 2026-09-03 (H1-a/b/c 원격 acceptance 완료·잔여 범위 동기화;
+> 최종 갱신: 2026-09-08 (기본 운영 이미지의 로컬 반복 부팅 범위 동기화;
 > upstream exact reference 재검토일은 2026-08-23 유지)
 >
 > 문서 상태: 설계·resource 선정 정본
@@ -13,7 +13,14 @@
 > 제품 delivery 방향: Linux-hosted userspace service
 > (의도된 기본 경로로 결정; 구현 성숙도 표기가 아님)
 >
-> Linux-hosted backend 구현 성숙도: `PLANNED`
+> Linux-hosted bound backend 전체 acceptance: `PLANNED` (bounded hosted 구현은 아래 `PARTIAL` 범위)
+>
+> H2 진입용 userspace startup·하드웨어 관측·CLI/인터넷(H2-a): `PARTIAL`;
+> [부팅·관측 가이드](aios_userspace_boot_hardware_guide_ko.md),
+> [CLI·인터넷 가이드](aios_cli_internet_guide_ko.md)
+>
+> 설치된 기본 CLI 이미지의 온라인·오프라인 반복 부팅과 설정/history 보존:
+> `SUPPORTING/PARTIAL`; [운영 이미지 가이드](aios_operating_image_guide_ko.md)
 
 이 문서는 AIOS가 독자적인 Kernel Room 의미를 유지하면서 Linux-hosted userspace
 service를 의도된 기본 delivery substrate로 구현할 때 사용할 **공식 upstream
@@ -46,8 +53,22 @@ AIOS는 **Linux-hosted userspace service를 의도된 기본 delivery substrate�
 채택하지 않으며 아래 두 실행 경로의 역할을 분리한다.
 
 1. **Linux-hosted backend**는 commodity driver, filesystem, network, process,
-   model-runtime 생태계를 활용하는 기본 delivery 구현 경로다. 실행체와 정규
-   verdict가 아직 없으므로 구현 성숙도는 `PLANNED`다.
+   model-runtime 생태계를 활용하는 기본 delivery 구현 경로다. primary host matrix와 전체
+   H2/H3를 포함한 backend acceptance는 `PLANNED`다. bounded MAIN producer와 별도 hosted
+   authority의 결속·재결속 구현은 [MAIN 가이드](aios_agent_binding_guide_ko.md)의 `DIRECT/PARTIAL`이다.
+   후속 MAIN/backend CPU·RSS 및 unattributed system PSI의 작은 관측 조각은
+   [자원 관측 가이드](aios_resource_observation_guide_ko.md)가 소유한다. 그 결과가
+   process 전체 귀속, principal 또는 resource apply 권한을 만들지는 않는다.
+   [Cell 수명 가이드](aios_cell_lifecycle_guide_ko.md)는 그 관계의 관리 전이와 명시적
+   재결속을 연결한다. Cell active/generation은 AIOS authority가 소유하며 Linux 프로세스
+   종료·cgroup 격리로 재해석하지 않는다. 전체 backend acceptance와 구분한다.
+   별도 unbound bootstrap·CLI·CONSOLE_RUNTIME 수명 관리는
+   `SUPPORTING/PARTIAL`이며 [서비스 가이드](aios_service_lifecycle_guide_ko.md)를 따른다.
+   기본 운영 이미지 `image-07`은 같은 디스크의 세 cold boot와 비특권 CLI·인터넷·정상
+   종료를 검증했다. 이미지 source 35개와 실제 Alpine 기반 패키지 증거는
+   [운영 이미지 가이드](aios_operating_image_guide_ko.md)가 소유한다. 모델 bundle과
+   부팅 간 canonical 상태 복원은 없으며, 이 로컬 실행이 아래 primary exact reference
+   qualification 또는 upstream source import·재배포 승인을 대신하지 않는다.
 2. **AIOS native kernel**은 작은 reference/proof substrate다. x86_64 실경로와
    Kernel Room 불변식을 직접 증명하고 hosted 경로의 conformance 기준을 제공한다.
 3. 두 경로의 제품 정본은 동일한 `Room -> Cell -> Node -> NodeBit` 관리 계약이다.
@@ -69,10 +90,10 @@ kernel module로 바꾸는 계획이 아니다. 첫 제품 경로는 Linux users
 | 승인 upstream resource rows | `CURRENT` source metadata | `host_only=3 interface_only=5 reference_only=4 blocked_import=1`; 다운로드·vendoring·호환·실행 증거가 아님 |
 | Kernel Room K1 hierarchy registry v0 | `CURRENT` | 1024B bootstrap Cell 1, bound Node 1, parent-bound typed NodeBit 2의 management-only proof |
 | Native K2-a semantic oracle | `CURRENT` | 별도 256B snapshot에서 Node 101을 producer-owned SLM MAIN source에 boot-local immutable 결속 |
-| Kernel Room 전체 topology | `PARTIAL` | K2-a 한 native binding만 있으며 lifecycle/reconcile, K3 projection, K4 attribution, K5 authorize는 전체 연결되지 않음 |
+| Kernel Room 전체 topology | `PARTIAL` | native K2-a 한 binding과 별도 hosted MAIN/Cell 1 결속이 있으며 전체 lifecycle/reconcile, K3 projection, K4 ownership, K5 authorize는 미완료 |
 | AI resource ledger / pressure | `CURRENT` | native aggregate read-only 관측; hosted resource나 owner attribution 증거가 아님 |
 | Native resource apply policy | 기존 정본을 따름 | upstream resource policy와 별도다. 이 문서가 native target/action의 성숙도를 바꾸지 않음 |
-| Linux-hosted observation backend | `PLANNED` | daemon, source adapter, binding reconciler, 정규 runtime verdict가 없음 |
+| Linux-hosted observation backend 전체 acceptance | `PLANNED` | primary exact host matrix·workload 귀속·전체 H2/H3 미완료; bounded MAIN 결속·재결속은 별도 DIRECT/PARTIAL, CONSOLE_RUNTIME lifecycle은 SUPPORTING/PARTIAL |
 | Linux-hosted resource apply backend | `PLANNED` | support matrix, privilege separation, before/after proof, rollback verifier가 없음 |
 | Cross-backend conformance lane | `PLANNED` | native/hosted가 같은 lifecycle trace를 통과하는 정규 artifact가 없음 |
 | 다른 microkernel substrate | `RESEARCH` | 필요성과 이식 비용을 별도 실험으로 입증하기 전 제품 약속이 아님 |
@@ -305,7 +326,7 @@ flowchart TB
         NA["native source adapters"]
     end
 
-    subgraph L["Linux-hosted default delivery substrate (PLANNED)"]
+    subgraph L["Linux-hosted default delivery substrate (bounded PARTIAL; full H2/H3 PLANNED)"]
         LC["host collectors"]
         LR["binding reconciler"]
         LB["hosted policy broker"]
@@ -322,8 +343,8 @@ flowchart TB
     NK --> NA
 ```
 
-Manifest/guard의 CURRENT 상태와 점선 아래 hosted runtime의 PLANNED 상태를 합치지
-않는다. Resource catalog는 구현 dependency graph나 package manager가 아니다.
+Manifest/guard의 CURRENT 상태와 점선 아래 hosted runtime의 bounded PARTIAL 및 전체
+H2/H3 PLANNED 상태를 합치지 않는다. Resource catalog는 구현 dependency graph나 package manager가 아니다.
 
 ### 6.1 Canonical plane
 
@@ -392,17 +413,34 @@ substrate와 독립적으로 검증하는 bounded semantic oracle과 conformance
   negative fixture를 고정한다. H1 뒤 native/hosted replay producer가 같은 semantic
   verdict를 소비하게 한다.
 
-### H2. Linux observe-only adapter — `PLANNED`
+### H2. Linux observe-only adapter — bounded `PARTIAL`, 전체 acceptance `PLANNED`
 
 - H1의 공통 lifecycle/generation/reject 계약, negative fixture와 하나의 bounded
   native semantic oracle가 모두 고정된 뒤 시작한다. native oracle은 2026-08-15
   `CURRENT`가 됐고 H1 계약/fixture/parity의 원격 acceptance도 2026-09-03 완료해
-  `CURRENT`다. H2 실행체는 아직 없다. 광범위한 native process/storage
+  `CURRENT`다. H2-a bootstrap 실행체는 시작 로그·Linux-visible 하드웨어 목록을 내는
+  `PARTIAL` 조각으로 추가됐다. 별도 MAIN `AI_SERVICE`의 명시적 결속·재결속과 두 프로세스의
+  CPU/RSS·unattributed system PSI 관측도 `PARTIAL`이다. 전체 workload 귀속·primary exact
+  qualification·H2/H3 acceptance는 미완료다. 광범위한 native process/storage
   확장과 최종 conformance closure는 첫 observe-only slice의 선행조건이 아니다.
 - primary Linux baseline 위에서 한 host instance와 bounded process source를 관측한다.
 - 실제 file/network/compute workload의 resource와 pressure source를 읽는다.
 - canonical ID는 adapter가 받은 binding으로만 사용한다.
 - mutation과 privileged actuator는 포함하지 않는다.
+
+H2-a의 별도 `boot-inventory-v1` 결과는 canonical binding 전의 `source_only` 자료다.
+H1의 native trusted target을 재사용하지 않으며 native ABI·Linux `.ko` 호환·실제
+장치 I/O 증거로 승격하지 않는다. schema v1 resource manifest/guard의 `PLANNED`
+backend 필드와 source 기준선은 이 bootstrap으로 바꾸지 않는다. full H2와 primary
+exact-reference qualification을 위한 기존 gate는 그대로 남는다.
+
+H2-a의 대화형 `aios>` CLI는 사용자 요청 DNS·HTTP(S) GET을 제공하는
+`SUPPORTING` 확장이다. 이 요청은 실제 네트워크 I/O이며 전체 세션을 관측 전용으로
+표시하지 않는다. hardware/net status의 source-only snapshot은 canonical `UNBOUND`이고
+커널 자원 action은 `UNSUPPORTED`다. 별도 MAIN 결속과 Cell 관리 전이의 명시적 명령은
+각 가이드의 `PARTIAL` 범위다. CLI 실행 성공은 전체 bound service/H3 완료나
+범용 OS 설치·primary exact qualification을 대신하지 않는다. 구체 계약과 실행 증거는
+[CLI·인터넷 가이드](aios_cli_internet_guide_ko.md)가 소유한다.
 
 ### H3. Binding reconciliation — `PLANNED`
 
@@ -451,8 +489,8 @@ Linux PSI나 cgroup counter를 읽게 되더라도 이 세 축을 합치지 않�
 ## 9. 4~8주 기본 delivery 구현 계획
 
 Linux-hosted를 기본 delivery로 삼는 제품 방향은 이미 결정됐다. 아래 일정과 게이트는
-채택 여부를 다시 고르는 실험이 아니라, 아직 `PLANNED`인 backend를 정직하게 구현하고
-지원 가능 상태로 승격하기 위한 evidence plan이다.
+채택 여부를 다시 고르는 실험이 아니라, bounded `PARTIAL` 구현에서 전체 H2/H3의
+지원 범위를 검증하기 위한 evidence plan이다.
 
 | 기간 | 구현 조각 | 종료 증거 |
 |---|---|---|

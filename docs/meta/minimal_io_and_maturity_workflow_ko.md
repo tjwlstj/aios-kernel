@@ -1,12 +1,47 @@
 # AIOS 성숙도 우선 작업흐름 가이드 (2026-08-10 재정렬)
 
-최종 갱신: 2026-09-03 (H1 원격 acceptance 완료, H2 observe-only 후속)
+최종 갱신: 2026-09-08 (H1 원격 acceptance·v0.6 이미지 증거 보존, v0.7 정상 모델 이미지·전용 사용자 실행과 별도 recover 재검증)
 
 문서 역할: K/M/C/W/H축의 제품 성숙도와 전역 작업 우선순위 정본. 요청 분류,
 스킬·주제별 정본 선택, 문서 관리와 게시 절차는
 [통합 작업 진입 가이드](integrated_work_guide_ko.md)를 따른다.
 
 문서 관리 연결: 2026-08-21 (마일스톤 성숙도 내용 변경 없음)
+
+2026-09-08 DIRECT 진행: 별도 MAIN producer의 실제 모델·hosted 결속은
+[MAIN 가이드](../os/aios_agent_binding_guide_ko.md), 이후 명시적 MAIN/backend 관계와
+CPU/RSS·system PSI 관측은 [자원 관측 가이드](../os/aios_resource_observation_guide_ko.md)가
+로컬 증거와 `PARTIAL` 경계를 소유한다. [Cell 수명 가이드](../os/aios_cell_lifecycle_guide_ko.md)는
+보존된 v0.5 Cell 관리 전이 증거를, [backend 수명 가이드](../os/aios_backend_lifecycle_guide_ko.md)는
+v0.6의 backend 교체 후 요청 거부·명시적 복구·실제 모델·인터넷·정상 종료와
+당시 소스 재검증을 통과한 `backend-02`의 보존된 소스 증거를 소유한다.
+현재 v0.7/session 7의 동일 CLI `backend recover`는 별도 `recovery-model-02`에서
+감독 프로세스 소실·잔존 자식 정리·새 세대·MAIN 재결속·실제 모델·인터넷·정상 종료를
+실행했다. 현재 CLI source 31개의 일치를 확인한 수정 검증기의 독립 재생은 PASS이며
+원본 FAIL은 보존한다(`PARTIAL`). 별도 운영 이미지 `model-image-05-recovery-02`는 동일 worker가
+보유한 pidfd로 잔존 backend 자식을 정리한 뒤 즉시 exit·root cleanup·정상 종료하는 범위의
+실제 acceptance와 독립 재생을 통과했다(`SUPPORTING/PARTIAL`). 일반 디스크·전원 손실 복구나
+전체 H2/H3·ownership·principal·apply의 완료를 뜻하지 않는다. 아래 축별 나머지 계획은 유지한다.
+
+2026-09-08 SUPPORTING 진행: [기본 운영 이미지](../os/aios_operating_image_guide_ko.md)는
+설치된 같은 4 GiB 디스크의 온라인 두 번·오프라인 한 번 cold boot와 비특권 CLI,
+설정·history 보존·서비스 정리·정상 종료를 `image-07`에서 검증했다(`PARTIAL`).
+검증 원본을 보존하는 사용자 복사본 실행도 확인했다. 당시 v0.6 source 35개에는 CLI source
+31개와 별도 boot module 4개가 있으며 모델 bundle·부팅 간 canonical 상태 복원은 없다.
+이 결과는 native M축, C1 정책/관리 journal 또는 전체 H2/H3의 완료가 아니다.
+별도 모델 profile도 `SUPPORTING/PARTIAL`이다. `model-image-04`는 Linux 이미지 검사
+51개, 같은 디스크의 online·offline 두 cold boot, 실제 warmup·질문 각 2회, 명시적
+재결속·인터넷·정상 종료와 당시 v0.6 source 35개의 독립 재검증을 통과했다.
+`local-model` 사용자 사본의 `.cmd -Agent` 진입·상태 조회·정상 종료도 별도로 검증했다.
+현재 v0.7/session 7/source 35개는 새 `model-image-05`에서 online·offline 두 부팅 45명령,
+실제 warmup·질문 각 2회, 재결속·인터넷·정상 종료와 현재 소스 독립 재생을 통과했다.
+전용 0.7 실행기 (`build/hosted-image-v07/Start-Aios-0.7.cmd`)의 `model-image-05-user` 사본도
+세 명령·정상 종료를 확인했다. 기존 v0.6 디스크·포인터는 유지하며 `SUPPORTING/PARTIAL`이다.
+별도 장애 복사본 02는 같은 worker의 recover·즉시 exit·정상 종료를 실제 검증했다.
+첫 복사본 01의 원본 FAIL은 보존하며 정상 이미지와 장애 시험 증거를 구분한다.
+새 host 기본 이미지 `Selection`·`Select`·`Rollback`은 Windows 로컬에서 0.7·0.6의 실제
+기본 부팅과 최종 0.7 재선택을 통과한 `SUPPORTING/PARTIAL`이다. 저장한 선택을 우선하되 기록이 없으면 기존
+기본 경로를 유지하고, 모든 사용자 디스크·history는 사본별로 보존한다(운영 가이드 §9.8).
 
 **결정 배경:** 2026-07에는 ring3 첫 실행 슬라이스 뒤 "하드웨어 드라이버 확장 vs 기술 성숙도·정밀화" 중 **성숙도 우선**으로 결정했다. 2026-08-10에는 그 실행 M축이 프로젝트 방향을 독점하면서 본래의 Kernel Room 관리 구조가 뒤로 밀린 점을 바로잡았다. 2026-08-12에는 Linux-hosted userspace service를 의도된 기본 delivery substrate로 결정했다. 이 문서는 **Room→Cell→Node→NodeBit 관리축을 backend-neutral 의미 정본**으로 두고, Linux-hosted H축을 기본 delivery 구현축으로, 기존 M1~M5를 native reference/proof substrate 레인으로 유지한다.
 
@@ -79,7 +114,7 @@ bounded native K2-a oracle, 각자 `CURRENT`인 subsystem이 있다. Memory Fabr
 |---|---|---|
 | K0 문서/namespace 재정렬 | 문서 기준선 완료 | 정본 계층과 현재 구현의 간극을 명시한다. 코드 성숙도 `CURRENT` 판정이 아니다. |
 | K1 hierarchy registry v0 | `CURRENT` (2026-08-11) | 1024B snapshot에 Cell 1 + bound Node 1 + parent-bound NodeBit 2를 한 번에 소유·조회한다. |
-| K2 source binding hardening/expansion | `PARTIAL` | native K2-a boot-local immutable binding은 `CURRENT`; lifecycle/reconcile와 hosted source는 미완료다. |
+| K2 source binding hardening/expansion | `PARTIAL` | native K2-a boot-local immutable binding은 `CURRENT`; native adapter의 lifecycle/reconcile 확장은 후속이다. 별도 hosted MAIN·Cell 1 결속과 backend 교체·명시적 복구는 로컬 검증된 `PARTIAL`이며 전체 source coverage와 native/hosted H3 parity는 남아 있다. |
 | K3 legacy NodeBit namespace projection | `PLANNED` | 선택한 legacy NodeBit를 namespace adapter로 canonical NodeBit에 read-only projection한다. |
 | K4 resource/pressure attribution | `PLANNED` | canonical Cell/Node owner에 관측치를 귀속하되 `observation_only=1`을 유지한다. |
 | K5 principal/ownership + Axis Gate | `PLANNED` | 검증된 identity/binding/generation 위에서만 authorize/enforcement를 추가한다. |
@@ -123,8 +158,9 @@ bounded native K2-a oracle, 각자 `CURRENT`인 subsystem이 있다. Memory Fabr
 - **실패 경계:** missing, duplicate, orphan, namespace/kind/role/instance mismatch,
   zero/regressed/stale generation, init-order, schema/overflow/non-zero tail을 거부한다.
   순서는 `entry-AC < K1 management < K2 binding < aggregate ROOM`이다.
-- **남은 K2:** source refresh, exit/recreate, explicit rebind, lease/cross-reboot
-  instance, 여러 source/Node, Linux-hosted producer와 reconciliation은 아직 `PLANNED`다.
+- **남은 K2:** native source refresh, exit/recreate, explicit rebind, lease/cross-reboot
+  instance와 여러 source/Node는 아직 `PLANNED`다. 별도 hosted MAIN의 결속·재결속과
+  Cell 1 관리 전이는 `PARTIAL`이며 전체 H2/H3 acceptance는 후속이다.
   SLM policy generation, timestamp, PID/cgroup을 canonical/source generation으로
   재사용하지 않는다.
 
@@ -262,8 +298,9 @@ SQ/CQ, 자원, authorize, rollback 경계를 제공한다.
 H1의 exact field, lifecycle, reason, fixture와 acceptance 증거는
 [H1 binding trace/replay 작업 준비서](../os/h1_binding_trace_replay_workplan_ko.md)에
 고정한다.
-Linux-hosted userspace service는 의도된 기본 delivery 방향이지만 실행 backend의
-구현 성숙도는 아직 `PLANNED`다. bounded native K2-a oracle은 `CURRENT`이고 H1
+Linux-hosted userspace service는 의도된 기본 delivery 방향이며 bounded bootstrap·MAIN
+결속·자원 관측·Cell 1 관리 전이는 `PARTIAL`, 전체 H2/H3 acceptance는 `PLANNED`다.
+bounded native K2-a oracle은 `CURRENT`이고 H1
 host-only verifier는 [원격 acceptance 증거 (§13.2)](../os/h1_binding_trace_replay_workplan_ko.md#132-2026-09-03-원격-acceptance-완료)로
 `CURRENT`다(2026-09-03).
 Linux PID, cgroup, pidfd, PSI, namespace는
@@ -274,7 +311,7 @@ object에 맞춰 바꾸지 않는다.
 |---|---|---|
 | H0 upstream resource manifest/guard | `CURRENT` | 13개 source row와 `code_import=0`을 검증한다. runtime backend 증거가 아니다. |
 | H1 OS-neutral trace/replay | `CURRENT` (2026-09-03) | bounded native K2-a field/reject proof, lifecycle replay, 12 fixtures와 self-contained Linux/Windows bundle/parity가 동일 run·exact SHA의 원격 세 job terminal·세 artifact 검증을 통과했다. live producer는 없다. |
-| H2 Linux observe-only adapter | `PLANNED` | K2/H1 공통 계약, negative fixture와 bounded native semantic oracle가 고정된 뒤 userspace service로 source-only 관측을 시작한다. 광범위한 native process/storage 확장은 선행조건이 아니다. |
+| H2 Linux observe-only adapter | bootstrap·CLI·MAIN 결속·자원 관측·Cell 1 관리 전이·backend 수명/실행 결속 `PARTIAL`, 전체 H2/H3 `PLANNED` | H2-a가 초기화·Linux-visible inventory·대화형 CLI와 사용자 요청 DNS/HTTP(S)를 제공한다([운영 가이드](../os/aios_cli_internet_guide_ko.md)). 별도 [CONSOLE_RUNTIME lifecycle](../os/aios_service_lifecycle_guide_ko.md)은 SUPPORTING/PARTIAL이다. [MAIN 가이드](../os/aios_agent_binding_guide_ko.md)가 실제 AI_SERVICE producer·hosted authority의 결속·재결속 증거를 소유한다. [자원 관측 가이드](../os/aios_resource_observation_guide_ko.md)는 MAIN/backend 각각의 CPU/RSS와 system PSI의 unattributed 경계를 소유한다. [Cell 수명 가이드](../os/aios_cell_lifecycle_guide_ko.md)의 bounded 관리 전이는 보존된 v0.5 cell-01 소스로 로컬 Linux·실제 모델 검증을 통과했다. backend 수명·실행 결속은 backend-02에서 로컬 Linux·실제 모델·교체 후 요청 거부·명시적 복구·인터넷·정상 종료와 당시 소스 재검증을 통과했다. 이는 보존된 소스의 증거이며 이후 변경된 현재 소스의 실행 검증은 별도다. 전체 source coverage·per-Cell ownership·H3는 후속이며 광범위한 native process/storage 확장은 선행조건이 아니다. |
 | H3 binding reconciliation/parity | `PLANNED` | exit/PID reuse/cgroup recreate/host restart를 구분하고 native와 같은 semantic verdict를 요구한다. |
 | H4 proposal/validation parity | `PLANNED` | K5 action/principal 계약 뒤에만 validate-only로 열며 초기 capability는 전부 `UNSUPPORTED`다. |
 | H5 bounded apply/rollback | `PLANNED` | K5 authorize와 별도 승인 뒤 한 action만 before/after/rollback 증거로 연다. |
@@ -284,9 +321,22 @@ object에 맞춰 바꾸지 않는다.
 1. **SEMANTIC SAFETY 40% — K2/H1:** contract와 fixture 및 exact-SHA
    Linux/Windows/parity remote acceptance가 고정됐다. 작은 native K2 adapter가 Linux
    object의 canonical 의미 유입을 막는 semantic oracle이라는 경계를 유지한다.
-2. **HOSTED DELIVERY 50% — H2/H3:** 검증된 H1 계약 위에서
-   한 Linux userspace service의 observe-only 수직 조각과
-   exit/reuse/recreate/restart/reboot reconciliation을 구현한다.
+2. **HOSTED DELIVERY 50% — H2/H3:** 이전 소스로 로컬 실제 실행을 검증한 MAIN 결속·자원 관측·
+   bounded Cell 1 관리 전이 위에서 [backend 수명·MAIN 실행 결속](../os/aios_backend_lifecycle_guide_ko.md)을
+   `backend-02`에서 로컬 Linux·실제 모델·교체 후 요청 거부·명시적 복구·인터넷·정상 종료까지
+   검증했다. CLI v0.6/schema 6/source 31개, MAIN protocol/run 4/source 24개,
+   receipt 2의 당시 소스 재검증도 통과했으며 `PARTIAL`을 유지한다. 이후 소스 수정의 증거는
+   이 보존 snapshot과 분리한다. v0.7의 동일 CLI가 보유 pidfd로 supervisor 소실 뒤
+   잔존 자식을 정리하는 `recovery-model-02` 실제 기록은 독립 재검증 PASS이며 원본 FAIL을
+   보존한다. 별도 운영 이미지 `model-image-05-recovery-02`의 동일 worker backend 복구·
+   즉시 exit·root cleanup·정상 종료는 실제 acceptance와 독립 재생을 통과했다.
+   일반 디스크·전원 손실 복구와 전체 exit/reuse/recreate/restart/reboot reconciliation은 후속이다.
+   기본 CLI 이미지의 반복 부팅·설정/history 영속성은 별도 SUPPORTING 조각으로 검증했다.
+   모델 포함 운영 이미지는 `model-image-04`의 실제 모델·online/offline 부팅·재결속·정상 종료와
+   당시 v0.6 source 35개 재검증을 통과한 별도 `SUPPORTING/PARTIAL`이며 사용자 사본 실행도 확인했다.
+   현재 v0.7 `model-image-05`도 별도 정상 두 부팅·실제 질문·재결속·종료와 current source 35개
+   독립 재생, 전용 사용자 사본 실행을 통과했다. 정상·장애 이미지 판정을 분리한다.
+   범용 설치/업데이트/복구와 ownership·principal·apply도 별도 검증을 요구한다.
 3. **H0 PROVENANCE + NATIVE CONFORMANCE 10%:** resource guard와 primary artifact
    provenance를 유지하고 native/hosted 동일 verdict를 검증한다. Secondary Linux
    비교는 이 범위 안의 non-blocking `RESEARCH`다.

@@ -1,0 +1,178 @@
+"""Hold a backend execution identity separately from optional resource reads."""
+from __future__ import annotations
+
+import copy
+import os
+import socket
+import time
+
+from aios_resources import ResourceError
+from aios_resources.backend import (MAX_FDS, TCP_LIMIT, attest, listener_proof, validate_descriptor)
+from aios_resources.proc import ProcessReader, decimal, parse_stat, read_bounded
+
+ACCEPT_SECONDS = 1.0
+
+
+def _require(condition, code="backend-changed"):
+    if not condition:
+        raise ResourceError(code)
+
+
+def _address(value):
+    return {"address": value[0], "port": value[1]}
+
+
+def _tcp_address(value):
+    return f"{int.from_bytes(socket.inet_aton(value['address']), 'little'):08X}:{value['port']:04X}"
+
+
+def _connected_row(raw, local, remote, uid, inode=None):
+    try:
+        lines = raw.decode("ascii").splitlines()
+    except UnicodeError as exc:
+        raise ResourceError("backend-recipient") from exc
+    _require(lines and "local_address" in lines[0] and len(lines) <= 4096, "backend-recipient")
+    candidates = []
+    for line in lines[1:]:
+        fields = line.split()
+        _require(len(fields) >= 10, "backend-recipient")
+        if fields[1:4] != [_tcp_address(local), _tcp_address(remote), "01"]:
+            continue
+        if decimal(fields[7]) != uid:
+            raise ResourceError("backend-recipient")
+        number = decimal(fields[9])
+        if number == 0 or inode is not None and number != inode:
+            continue
+        candidates.append((number, line))
+    _require(len(candidates) <= 1, "backend-recipient")
+    return candidates[0] if candidates else None
+
+
+def _owned_fd(reader, inode):
+    target = f"socket:[{inode}]"
+    directory = os.open("fd", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=reader._dirfd)
+    try:
+        names = os.listdir(directory)
+        _require(len(names) <= MAX_FDS, "backend-recipient")
+        matches = []
+        for name in names:
+            number = decimal(name)
+            try:
+                if os.readlink(name, dir_fd=directory) == target:
+                    matches.append(number)
+            except FileNotFoundError:
+                pass
+        if not matches:
+            return None
+        return min(matches), target
+    finally:
+        os.close(directory)
+
+
+class ExecutionBinding:
+    """Authenticated at startup; direct checks do not require the observer socket."""
+
+    def __init__(self, backend_dir, config, capture_kind="live"):
+        self._backend = self._launcher = None
+        self.config = copy.deepcopy(config)
+        self.capture_kind = capture_kind
+        _require(capture_kind in ("live", "fixture"), "backend-capture")
+        self.initial_proof = attest(backend_dir, config)
+        _require(self.initial_proof["capture_kind"] == capture_kind, "backend-capture")
+        self._descriptor = copy.deepcopy(self.initial_proof["descriptor"])
+        self._open()
+
+    @classmethod
+    def from_descriptor(cls, descriptor, config, capture_kind="live"):
+        """Worker receives its supervisor's pinned descriptor over private stdin."""
+        instance = cls.__new__(cls)
+        instance._backend = instance._launcher = None
+        instance.config = copy.deepcopy(config)
+        instance.capture_kind = capture_kind
+        instance.initial_proof = None
+        instance._descriptor = copy.deepcopy(descriptor)
+        _require(capture_kind in ("live", "fixture"), "backend-capture")
+        instance._open()
+        return instance
+
+    @property
+    def descriptor(self):
+        return copy.deepcopy(self._descriptor)
+
+    def _open(self):
+        try:
+            descriptor = validate_descriptor(self._descriptor, self.config)
+            self._backend = ProcessReader(descriptor["process_id"], descriptor["process_start_ticks"], descriptor["host_boot_id"])
+            self._launcher = ProcessReader(descriptor["launcher_process_id"], descriptor["launcher_start_ticks"], descriptor["host_boot_id"])
+            self.check()
+        except BaseException:
+            self.close()
+            raise
+
+    def _participants(self):
+        _require(self._backend is not None and self._launcher is not None)
+        backend, launcher = self._backend.sample(), self._launcher.sample()
+        _require(parse_stat(backend["raw_stat"])["parent_pid"] == launcher["process_id"])
+        _require(backend["uid"] == launcher["uid"] == os.getuid())
+        return backend, launcher
+
+    def check(self):
+        """Revalidate the exact process and listener; never discover replacements."""
+        began = time.monotonic_ns()
+        try:
+            backend, launcher = self._participants()
+            proof = listener_proof(self._backend, self.config)
+            _require(proof["listener_inode"] == self._descriptor["listener_inode"])
+            self._participants()
+            return {"read_start_ns": began, "read_end_ns": time.monotonic_ns(), "backend": backend,
+                    "launcher": launcher, "listener_proof": {key: proof[key] for key in
+                        ("raw_tcp_line", "fd_target", "fd_number")}}
+        except OSError as exc:
+            raise ResourceError("backend-changed") from exc
+
+    def connected(self, connection):
+        """Verify this connected TCP socket's receiver before any HTTP bytes."""
+        began = time.monotonic_ns()
+        local, remote = _address(connection.getsockname()), _address(connection.getpeername())
+        from urllib.parse import urlsplit
+        endpoint = urlsplit(self.config["endpoint"])
+        _require(local["address"] == "127.0.0.1" and remote == {"address": "127.0.0.1", "port": endpoint.port},
+                 "backend-recipient")
+        client_fd = connection.fileno()
+        client_inode = os.fstat(client_fd).st_ino
+        client_target = f"socket:[{client_inode}]"
+        _require(os.readlink(f"/proc/self/fd/{client_fd}") == client_target, "backend-recipient")
+        deadline = time.monotonic() + ACCEPT_SECONDS
+        with ProcessReader(os.getpid()) as client_reader:
+            while True:
+                self._participants()
+                raw = read_bounded("/proc/net/tcp", TCP_LIMIT)
+                server_row = _connected_row(raw, remote, local, os.getuid())
+                client_row = _connected_row(raw, local, remote, os.getuid(), client_inode)
+                owned = _owned_fd(self._backend, server_row[0]) if server_row is not None else None
+                if client_row is not None and server_row is not None and owned is not None:
+                    break
+                _require(time.monotonic() < deadline, "backend-recipient")
+                time.sleep(0.01)
+            backend, launcher = self._participants()
+            client = client_reader.sample()
+            _require(_owned_fd(self._backend, server_row[0]) == owned
+                     and os.readlink(f"/proc/self/fd/{client_fd}") == client_target, "backend-recipient")
+            return {"read_start_ns": began, "read_end_ns": time.monotonic_ns(), "client_address": local,
+                "server_address": remote, "raw_client_tcp_line": client_row[1], "raw_server_tcp_line": server_row[1],
+                "client_fd_number": client_fd, "client_fd_target": client_target,
+                "server_fd_number": owned[0], "server_fd_target": owned[1],
+                "client": client, "backend": backend, "launcher": launcher}
+
+    def close(self):
+        for name in ("_backend", "_launcher"):
+            reader = getattr(self, name, None)
+            if reader is not None:
+                reader.close()
+                setattr(self, name, None)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        self.close()

@@ -3,8 +3,28 @@
 문서 상태: 정본
 전체 토폴로지 성숙도: `PARTIAL` (aggregate substrate, K1 hierarchy, bounded native K2-a oracle `CURRENT`; K2 lifecycle/reconcile `PARTIAL`)
 작성일: 2026-08-10
-최종 갱신: 2026-09-03 (H1 원격 acceptance 완료와 남은 live 경계)
+최종 갱신: 2026-09-07 (hosted Cell 1 관리 전이와 실제 검증 경계)
 적용 범위: `docs/kernel-room/`의 용어, 성숙도, 구현 순서
+
+현재 [CONSOLE_RUNTIME 수명 관리](../os/aios_service_lifecycle_guide_ko.md)는
+SUPPORTING/PARTIAL 실행 기반이다. 서비스 source UUID/generation은 canonical Cell/Node
+ID 또는 binding generation이 아니며 Node 101의 SLM MAIN source로 사용할 수 없다.
+별도 MAIN AI_SERVICE producer와 hosted authority의 명시적 발견·결속·재결속은
+`DIRECT/PARTIAL`로 구현됐다. 실제 모델 실행과 source·binding 검증 결과는
+[MAIN 서비스 가이드](../os/aios_agent_binding_guide_ko.md)를 따른다. authority namespace와
+instance를 포함한 hosted Cell/Node identity를 소유하며 native K1의 동일 인스턴스로
+취급하지 않는다. 기존 hosted Cell 1의 `cell status/activate/deactivate`는 관리 활성
+상태와 세대를 다루는 `PARTIAL` 구현이며 `cell-01`은 보존된 CLI v0.5 소스로 로컬 Linux·실제 모델 검증을 통과했다.
+[Cell 수명 가이드](../os/aios_cell_lifecycle_guide_ko.md)가 계약과 실행 증거를 소유한다.
+비활성화는 MAIN/backend 중지가 아니며 재활성화 뒤 명시적 발견·재결속이 필요하다.
+전체 H2/H3·다중 Cell/native Cell lifecycle·자원 소유권·principal은 후속이다.
+CLI v0.6에서 도입해 현재 v0.7에 유지한 `backend status/start/stop/restart`와 MAIN 실제 요청 대상의 실행 결속은
+`DIRECT/PARTIAL`이다. `backend-02`에서 로컬 Linux·실제 모델·교체 후 요청 거부·명시적
+복구·자원 관측·인터넷·정상 종료와 당시 소스 독립 재검증을 통과했으며
+[backend 수명 가이드](../os/aios_backend_lifecycle_guide_ko.md)가 계약과 증거를 소유한다.
+`backend-02`는 보존된 소스의 증거이며 이후 변경된 현재 소스의 실행 검증을 대신하지 않는다.
+backend 교체는 MAIN source의 readiness·generation과 결속 신뢰에 반영하며, Linux 프로세스
+식별자를 canonical Cell/Node identity로 승격하지 않는다.
 
 ## 문서 권위
 
@@ -145,16 +165,19 @@ ABI, verifier가 없으므로 현재 상태는 `RESEARCH`다. Cell/Node 모델�
 |---|---|---|
 | `kernel_room_snapshot_read()`와 `[ROOM] snapshot`/`[ROOM] gates` | `CURRENT` | aggregate read-only 관측과 정적 gate 요약 |
 | 9개 Axis Gate descriptor | `CURRENT` | syscall range 분류 메타데이터만 해당 |
-| Kernel Room 전체 토폴로지 | `PARTIAL` | aggregate substrate, K1 bootstrap hierarchy, 한 native K2-a 결속은 있으나 live lifecycle/reconcile/attribution은 없음 |
+| Kernel Room 전체 토폴로지 | `PARTIAL` | aggregate substrate, K1 bootstrap hierarchy, native K2-a 결속과 별도 hosted MAIN/Cell 1 관리 전이가 있음. 전체 lifecycle/reconcile/ownership은 후속 |
 | Memory Fabric domain/window | `CURRENT` subsystem, `SCAFFOLD` adapter | Cell source 후보일 뿐 Cell identity가 아님 |
 | SLM agent tree | `CURRENT` subsystem, bounded K2-a source `CURRENT` | exact-one active/persistent MAIN을 producer-owned boot-local instance/generation으로 복사 조회 |
 | runtime NodeBit | `CURRENT` subsystem, `SCAFFOLD` adapter | capability table과 per-node 통계, pipeline gate 범위 |
 | SLM NodeBit catalog | `CURRENT` subsystem, `SCAFFOLD` adapter | API/tool/device action policy view, 별도 namespace |
 | K1 management hierarchy registry v0 | `CURRENT` | schema 1/1024B producer, exact host 계약, strict QEMU/shell 검증 완료 |
 | K2-a native `AI_SERVICE` source binding oracle | `CURRENT` | 별도 schema 1/256B snapshot이 Node 101을 SLM MAIN source에 결속; exact boot/summary/`state binding` 검증 |
-| K2 전체 source lifecycle / reconciliation | `PARTIAL` | boot-local immutable native 결속만 있으며 refresh, exit/recreate, rebind, hosted source는 없음 |
+| K2 전체 source lifecycle / reconciliation | `PARTIAL` | native K2-a는 boot-local immutable 결속만 제공. 별도 hosted MAIN은 명시적 발견/재결속을 제공하지만 전체 source coverage·host reboot reconciliation은 후속 |
 | H1 OS-neutral lifecycle trace/replay | `CURRENT` | H1-a/b/c contract·12 fixtures·artifact/parity가 동일 run·exact SHA의 원격 Linux/Windows/parity 및 세 artifact 검증을 통과; live producer는 없음 |
-| Linux-hosted source adapter | `PLANNED` | 검증된 H1 계약을 소비하며 producer-owned service lifecycle로만 결속할 후속 조각 |
+| Linux-hosted source adapter | `PARTIAL` | 별도 MAIN의 실제 모델·producer lifecycle·명시적 발견/결속/재결속 로컬 증거가 있음. 전체 H2/H3 acceptance는 `PLANNED`; MAIN 가이드가 증거를 소유 |
+| hosted Cell 1 관리 수명 | `PARTIAL` | `cell status/activate/deactivate`가 관리 활성 상태·세대와 결속 신뢰를 다룸. MAIN source/process 수명은 별도이며 cell-01은 보존된 CLI v0.5 소스로 검증; Cell 수명 가이드 참조 |
+| hosted MAIN/backend 자원 관측 | `PARTIAL` | 명시적 관계 아래 각각의 CPU/RSS를 관측. system PSI는 unattributed, ownership은 false이며 resource action은 `UNSUPPORTED` |
+| hosted backend 수명·MAIN 실행 결속 | `PARTIAL` | v0.6의 명시적 supervisor/자식 수명·요청 대상 검증과 v0.7의 동일 CLI 보유 pidfd 복구. backend-02는 당시 v0.6 증거이며 후속 실제 실행·독립 재생은 backend 수명 가이드 참조; CLI 소실·재부팅 뒤 복구는 후속 |
 | legacy management NodeBit projection | `PLANNED` | runtime/SLM source adapter와 generation binding 없음 |
 | per-Cell/per-Node pressure와 resource ownership | `PLANNED` | pressure는 system-to-plane, resource owner는 unattributed |
 | Axis Gate enforcement / authorize / apply | `PLANNED` | management identity와 principal 계약 뒤에만 착수 |
@@ -270,9 +293,15 @@ K2 semantic field/reject 의미는 substrate-neutral을 목표로 한다. 현재
 `CURRENT` 증거는 Node 101 `AI_SERVICE`를 SLM agent-tree MAIN에 묶은 K2-a oracle뿐이며,
 OS-neutral lifecycle trace 계약은 H1 verifier/fixture와 exact-SHA 원격 cross-OS acceptance로
 고정됐다. 근거는 [H1 원격 acceptance 증거 (§13.2)](../os/h1_binding_trace_replay_workplan_ko.md#132-2026-09-03-원격-acceptance-완료)를
-따르며 live producer는 아직 없다. 기본 delivery 경로의 hosted
-source 후보는 producer-owned service instance/generation을 가진 실제 Linux userspace
-service다.
+따른다. H1 자체는 host-only trace/replay 증거이며, 별도 Linux userspace MAIN의
+producer-owned service instance/generation과 hosted authority binding은 `PARTIAL`로
+구현·검증됐다. [MAIN 가이드](../os/aios_agent_binding_guide_ko.md)가 그 실행 증거를 소유한다.
+H2-a의 초기화·하드웨어 inventory 실행체는 `PARTIAL`이다.
+inventory 결과는 `UNBOUND`/`source_only`로 남고 K2나 전체 topology를
+승격하지 않는다. [유저스페이스 작업 가이드](../os/aios_userspace_boot_hardware_guide_ko.md)를 따른다.
+이 실행 환경의 고유 CLI·사용자 요청 DNS/HTTP(S)도 `SUPPORTING/PARTIAL`이다.
+인터넷 I/O 성공과 canonical service binding을 구분하며
+[CLI·인터넷 가이드](../os/aios_cli_internet_guide_ko.md)에 운영·검증 범위를 기록한다.
 native oracle은 전용 producer-owned instance/generation과 copied read API를 사용한다.
 기존 `policy_generation`, timestamp, Memory Fabric domain ID,
 process PID/run generation, Linux PID/pidfd/cgroup/PSI를 편의상 generation이나
