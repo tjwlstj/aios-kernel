@@ -26,6 +26,19 @@ Windows·Linux fixture 결과는 [환경 문맥 가이드](docs/os/aios_space_co
 실제 모델의 정상 답변 1회와 별도 진행 중 Task의 취소·worker 종료·전체 backend 독립 종료 관측을 같은 CLI에서 검증했습니다. source 39개 운영 이미지 acceptance는 아직 없습니다.
 이전 대화·범용 작업 수정·CLI 소실/재부팅을 넘는 자동 재개는 `PLANNED`입니다.
 
+사용자가 승인한 장기 실증은 자기 참조·관측·행동·피드백을 실제 사용으로 연결합니다.
+현재 첫 단계는 같은 pinned Qwen을 Windows CPU에서 쓰는 private sandbox 연구 실험이며
+개발 구현은 `PARTIAL`입니다. 첫 pilot은 귀속 정답의 입력 노출로 중단되어 원본
+FAIL/NOT_EVALUABLE을 보존했습니다. 입력 정정 후 calibration은 실행 무결성 PASS였지만
+모델 두 조건의 확인된 목표 완료는 0입니다. 최종 Windows 검사는 135개 중 133 PASS·
+권한 조건 2 skip이며 실제 grammar 독립 감사도 통과했습니다. 후속 ON은 관측만 반복했고
+OFF는 생성 미완료로 실패했습니다.
+전체 ON/OFF 비교는 NOT_EVALUABLE입니다. 이 체크포인트는 검증된 연구 기반과 실패
+증거를 보존하며, 다음 단계는 관측에서 행동으로 전이하는 공통 prompt 비교입니다.
+[실험 운영 가이드](docs/meta/self_reference_research_workflow_ko.md)는
+반복 연구·검토 절차를, [전역 큐](docs/meta/minimal_io_and_maturity_workflow_ko.md#self-reference-acceptance)는
+전체 다섯 단계 수락 기준을 소유합니다. 첫 pilot의 응용 owner 검사를 native 권한 구현으로 보지 않습니다.
+
 
 ### 시작하기
 

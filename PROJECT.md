@@ -32,6 +32,19 @@ CLI 0.10.0/session 10/source 35개, MAIN protocol/run 6/source 28개, receipt 3�
 이전 대화·범용 작업 수정·CLI 소실/재부팅 뒤 자동 재개는 아직 없다. 기존 source 35개 이미지와
 과거 실제 모델의 PASS를 새 개발 소스에 승계하지 않으며 source 39개 운영 이미지는 아직 생성·검증하지 않았다.
 
+자기 참조·행동 피드백의 장기 실증 절차는 [연구 운영 가이드](docs/meta/self_reference_research_workflow_ko.md),
+다섯 단계의 전체 수락 기준과 순서는 [전역 큐](docs/meta/minimal_io_and_maturity_workflow_ko.md#self-reference-acceptance)가 소유한다.
+첫 Windows CPU private sandbox pilot은 `RESEARCH`이며 개발 구현은 `PARTIAL`이다.
+첫 pilot의 FAIL/NOT_EVALUABLE과 이후 normal 3 episode calibration의 실행 무결성
+PASS·모델 목표 완료 0을 분리해 보존한다. v2의 공개 예측 미확정·고정 grammar,
+Windows 135개 검사(133 PASS·2 skip)와 실제 probe 독립 감사가 검증됐다.
+후속 ON은 모델 두 조건 모두 OBSERVE 반복·목표 0, OFF는 관계 episode 미완료로
+FAIL/NOT_EVALUABLE이며 전체 효과 비교도 NOT_EVALUABLE이다. 검증된 연구 도구와
+모델 행동 실패를 구분하며 다음 한정 prompt 비교·기본 6-case/18-episode 계획과
+전체 장기 목표를 유지한다.
+실험 driver·독립 검증은 `tools/` 책임이며 추후 Linux 제품 Task로 통합할 runtime은
+`hosted/` 책임을 따른다. 응용 owner/version/channel 검사를 canonical K5나 OS ACL로 승격하지 않는다.
+
 
 ---
 

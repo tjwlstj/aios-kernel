@@ -451,12 +451,35 @@ design doc (V0-V5) and the workflow guide (K/M/C/W/H axes).
 ### Current Workflow Plan
 
 Use the [single global queue](docs/meta/minimal_io_and_maturity_workflow_ko.md#agent-consumer-next).
-Its current product slice links accepted Task UUIDs to in-progress status, results and explicit
-cancellation in one CLI. Environment context and the isolated Task runtime are `PARTIAL`; the
-preserved v0.8 context replay and later Windows/Linux fixtures have separate source boundaries.
-Actual-model Task smoke and the new operating image remain unverified. Previous conversation,
-general task edits and continuity across CLI loss/reboot remain `PLANNED`.
-The product canon owns the interaction outcome; the workflow owns ordering and prerequisites.
+The v0.10 baseline links accepted Task UUIDs to status, results and explicit cancellation in one
+CLI and remains `PARTIAL`. Bounded actual-model TaskSmoke and retained-source replay passed;
+the environment-context guide owns their source boundaries. Source 39 operating-image acceptance
+remains unverified. Previous conversation, general edits and continuity across CLI loss/reboot remain
+`PLANNED`.
+The current authorized research slice is a same-pinned-Qwen Windows CPU private-sandbox pilot for
+self reference, pre-action predictions, typed actions and independently observed feedback. Its
+development implementation is `PARTIAL`. The first pilot was explicitly interrupted after derived
+attribution answers were found in its input; its FAIL/NOT_EVALUABLE evidence is retained.
+The corrected-input, three-episode calibration completed with experiment-integrity PASS and
+24 actual-model responses, but neither model arm completed the observed goal. It remains
+NOT_EVALUATED_CALIBRATION. Retained pre-v2 replay passed for all 249 calibration files.
+The public-feedback-prediction-v2 scorer separates unknown forecasts from action and actual-result
+scores. The final frozen Windows suite collected 135 tests: 133 passed and two link-privilege
+tests skipped in 106.369 seconds. The six-response grammar probe's exact-language independent
+audit passed, with wrong attribution and no file actions. Subsequent ON calibration replay passed
+for 250 files, three episodes and 24 model calls, but both model arms only repeated OBSERVE and
+completed no goal. OFF failed at query 22 on the output limit, leaving its relational episode
+incomplete. The entire paired comparison is NOT_EVALUABLE; 479 unchanged raw files and
+diagnostic condition parity do not establish efficacy. The SYSTEM changed after the probe, while
+ON and OFF used the same later source and SYSTEM in fixed ON-then-OFF order. The guide records
+the publication-only trailing-LF source boundary. This checkpoint provides verified research
+infrastructure and retained model failures. The next bounded prompt/action-policy comparison is
+PLANNED; a full 18-episode comparison and the original long-term goal remain incomplete.
+Application-level owner checks are neither canonical
+K5 authorization nor OS ACL enforcement. The [research operating guide](docs/meta/self_reference_research_workflow_ko.md)
+owns experiment and existing-GPT-review procedure; the global queue retains all five long-term
+acceptance stages. A pilot does not complete the original goal. The product canon owns the
+interaction outcome; the workflow owns ordering and prerequisites.
 
 
 The technical K/M/C/W/H axes retain their separate evidence boundaries. K1/native K2-a
