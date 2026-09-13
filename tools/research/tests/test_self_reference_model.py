@@ -101,7 +101,7 @@ class LocalModelTests(unittest.TestCase):
     def test_hidden_windows_launch_uses_exact_limits_and_private_dynamic_port(self):
         with patch.object(model, "IS_WINDOWS", True), self.instance(context_size=1024) as local:
             command = self.popen.call_args.args[0]
-            self.assertEqual(command[0], str(self.cache / model.BACKEND_NAME))
+            self.assertEqual(command[0], str(self.cache.resolve() / model.BACKEND_NAME))
             for flag, value in (("--host", "127.0.0.1"), ("--port", "56789"), ("--gpu", "disable"),
                                 ("-c", "1024"), ("-t", "2"), ("-np", "1"), ("-b", "64"), ("-ub", "64")):
                 self.assertEqual(command[command.index(flag) + 1], value)

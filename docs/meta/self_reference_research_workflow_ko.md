@@ -458,3 +458,49 @@ rules-04는 6 episode·27 decision·80파일·현재 source 5개의 독립 재�
 전체 다섯 단계, 실제 AIOS 증거 보고 Task·Linux Task 통합은 여전히 미완료다.
 가중치 업데이트, native/OS 권한, 의식이나 제품 목표 완료를 주장하지 않으며,
 beta 게시·동일 SHA의 CI terminal 결과는 별도 게시 검증으로 확인해야 한다.
+
+### 6.4 beta ae20 — Windows 경로 별칭 실패와 수정 검증 경계
+
+게시 SHA `ae20a9f56468d63c6c73cf97def1234f33414530`의 CI `34753182531`은
+7개 job 중 6개 성공, Windows matrix 실패로 **terminal FAIL**이다. 연구 unittest는
+Linux 135개 PASS(4.659초), Windows 135개 중 22개 실패(40.417초)다.
+앞선 로컬 135개 검사의 PASS를 이 원격 실패의 성공으로 바꾸지 않는다.
+
+`build/self-reference-beta-ci-audit-01/verification.json`과 같은 디렉터리의
+`supplemental-receipt.json`은 내려받은 ZIP 6개·추출 파일 149개·게시 source 28개의
+무결성 PASS를 기록한다. 원격 artifact 7개는 있지만 Windows의
+`os-tool-artifacts-windows-latest`와 `self-reference-rules-windows-latest`는 없다.
+Ubuntu 규칙 80파일·6 episode·27 decision의 독립 재생은 PASS이며 실제 모델 호출은 0이다.
+ISO는 원격 metadata·제공 digest·업로드 로그만 확인했고 내려받거나 로컬 재생하지 않았다.
+가용 증거 무결성 PASS는 전체 CI FAIL이나 Windows 연구 증거 부재를 해소하지 않는다.
+
+보존 ae20 source를 실제 Windows 8.3 경로 별칭에서 실행한
+`build/self-reference-path-reproduction-01/corrected-selection.json`은 지정한 두 검사의
+예상 실패·exit 1·source hash 불변을 기록한다. backend 경로의 짧은 이름과 긴 이름 비교,
+모델 원문의 독립 재생 실패를 재현했으며 22개 전체의 개별 재실행이나 실제 모델 실험은 아니다.
+
+수정 lab은 artifact root를 만들기 전에 원래 경로의 traversal·파일·symlink/reparse
+ancestor를 거부한 뒤 하나의 정규 경로를 producer와 모델 기록에 전달한다. replay의
+정확한 경로·해시 비교는 유지하며 기록된 경로를 뒤늦게 치환해 통과시키지 않는다.
+이것은 private 단일 process 연구 도구의 경로 계약이며 적대적 동시 변경에 대한 OS 격리를
+구현한 것이 아니다. lab hash는 실제 ON/OFF의 `b30f3943…`에서 수정 후
+`10040b1395b11fe1e9a7278e86e7bee8a5ade1f53894c796442c0bebec4666e3`로 바뀌었다.
+
+`build/self-reference-path-fix-01/report.json`과 `stderr.txt`은 실제 8.3 TEMP의
+9개 검사에서 **8 PASS·Windows link 권한 조건 1 skip, 31.240초, exit 0**과 source
+11개 불변을 기록한다. ae20에서 실패한 두 검사는 수정 source에서 통과했다.
+이어서 `build/self-reference-validation-04/report.json`과 `tests.stderr.txt`은
+실제 8.3 TEMP의 전체 **142개 중 139 PASS·권한 조건 3 skip, 126.210초, exit 0**을
+기록한다. source 11개 불변·AST/공백 검사는 PASS다. 제외된 3개는 디렉터리/객체 symlink를
+만들 권한이 없는 검사이며 8.3 별칭 검사는 실행했다. 실제 모델은 실행하지 않았다.
+
+기존 GPT 연구 대화의 round04 답변은 `build/research-correspondence-04/reply.md`에
+보존한다. 제공된 ae20 발췌에서 새로 확정한 P1/P2는 없고, 앞선 귀속 라벨 노출과 STALE
+예측 credit의 해당 코드 경로가 보완됐다고 검토했다. 알려진 Windows P2와 실행/게시
+source 경계는 남겼다. GPT가 코드 실행·원격 source 조회·해시 재계산·원본 receipt 검증을
+수행한 것은 아니며 수정 후 로컬 검증이나 새 CI 판정을 대신하지 않는다.
+
+위 로컬 검증은 수정 source에 한정된다. 새 SHA의 CI terminal 결과는 아직 대기 중이며
+ae20 원격 FAIL·과거 실제 모델 원본·독립 consumer hash는 보존한다. §6.3의 게시 전
+grammar 끝 LF 정리와 이번 lab 경로 수정은 별개이고, 수정 source에서 실제 모델을
+재실행했거나 이전 ON/OFF 효과 비교를 완료했다고 주장하지 않는다.

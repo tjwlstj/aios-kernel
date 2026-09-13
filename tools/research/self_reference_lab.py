@@ -7,6 +7,7 @@ import hashlib
 import json
 import platform
 from pathlib import Path
+import stat
 import subprocess
 import sys
 import time
@@ -50,6 +51,29 @@ def save(path, value):
     with Path(path).open("xb") as stream:
         stream.write(encoded(value) + b"\n")
         stream.flush()
+
+
+def create_artifact_root(path):
+    """Reject unsafe input ancestors before expanding ordinary Windows 8.3 names.
+
+    This is a private single-process harness, not hostile concurrent OS isolation.
+    Every producer records the same canonical root; replay keeps exact comparisons.
+    """
+    path = Path(path)
+    if ".." in path.parts:
+        raise ValueError("root-traversal")
+    original = path.absolute()
+    for item in reversed((original, *original.parents)):
+        try:
+            info = item.lstat()
+        except FileNotFoundError:
+            continue
+        if (not stat.S_ISDIR(info.st_mode) or stat.S_ISLNK(info.st_mode)
+                or getattr(info, "st_file_attributes", 0) & 0x400):
+            raise ValueError("unsafe-directory")
+    root = original.resolve()
+    root.mkdir(parents=True, exist_ok=False)
+    return root
 
 
 def source_manifest():
@@ -205,8 +229,7 @@ def main(argv=None):
         parser.error("--grammar requires actual-model mode")
     if not 1 <= args.repetitions <= 4 or not args.rules_only and args.cache is None:
         parser.error("repetitions must be 1..4; a pinned cache is required for actual-model trials")
-    root = args.artifacts.absolute()
-    root.mkdir(parents=True, exist_ok=False)
+    root = create_artifact_root(args.artifacts)
     before = source_manifest()
     retain_sources(root, before)
     started = time.monotonic()

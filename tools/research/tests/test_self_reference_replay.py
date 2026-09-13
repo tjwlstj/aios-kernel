@@ -5,8 +5,10 @@ import io
 import json
 from pathlib import Path
 import shutil
+import stat
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
@@ -30,11 +32,87 @@ def hashes(root):
             for path in root.rglob("*") if path.is_file()}
 
 
+def windows_short_alias(path):
+    """Use a real ordinary 8.3 name when the test volume supplies one."""
+    if sys.platform != "win32":
+        return None
+    import ctypes
+    from ctypes import wintypes
+    get_short = ctypes.WinDLL("kernel32", use_last_error=True).GetShortPathNameW
+    get_short.argtypes = (wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD)
+    get_short.restype = wintypes.DWORD
+    output = ctypes.create_unicode_buffer(32768)
+    size = get_short(str(path), output, len(output))
+    if not size or size >= len(output):
+        raise ctypes.WinError(ctypes.get_last_error())
+    alias = Path(output.value)
+    return alias if str(alias).casefold() != str(path.resolve()).casefold() else None
+
+
+class ArtifactRootTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.base = Path(self.temp.name)
+
+    def test_new_nested_root_is_canonical_and_exclusive(self):
+        target = self.base / "new-parent" / "artifacts"
+        root = lab.create_artifact_root(target)
+        self.assertEqual(root, target.resolve())
+        self.assertTrue(root.is_dir())
+        self.assertEqual(list(root.iterdir()), [])
+        with self.assertRaises(FileExistsError):
+            lab.create_artifact_root(target)
+
+    def test_traversal_is_rejected_before_resolution_or_writes(self):
+        with patch.object(Path, "resolve") as resolve:
+            with self.assertRaisesRegex(ValueError, "root-traversal"):
+                lab.main(["--artifacts", str(self.base / "new" / ".." / "artifacts"), "--rules-only"])
+        resolve.assert_not_called()
+        self.assertEqual(list(self.base.iterdir()), [])
+
+    def test_link_ancestor_is_rejected_before_resolution_or_writes(self):
+        target = self.base / "target"
+        target.mkdir()
+        link = self.base / "link"
+        try:
+            link.symlink_to(target, target_is_directory=True)
+        except OSError as exc:
+            self.skipTest("directory symlinks unavailable: " + str(exc))
+        with patch.object(Path, "resolve") as resolve:
+            with self.assertRaisesRegex(ValueError, "unsafe-directory"):
+                lab.main(["--artifacts", str(link / "artifacts"), "--rules-only"])
+        resolve.assert_not_called()
+        self.assertEqual(list(target.iterdir()), [])
+
+    def test_reparse_ancestor_is_rejected_before_resolution_or_writes(self):
+        original = Path.lstat
+
+        def attributes(path):
+            return (SimpleNamespace(st_mode=stat.S_IFDIR, st_file_attributes=0x400)
+                    if path == self.base else original(path))
+
+        with patch.object(Path, "lstat", attributes), patch.object(Path, "resolve") as resolve:
+            with self.assertRaisesRegex(ValueError, "unsafe-directory"):
+                lab.main(["--artifacts", str(self.base / "artifacts"), "--rules-only"])
+        resolve.assert_not_called()
+        self.assertEqual(list(self.base.iterdir()), [])
+
+    def test_file_ancestor_is_rejected_before_writes(self):
+        target = self.base / "file"
+        target.write_bytes(b"retain")
+        with self.assertRaisesRegex(ValueError, "unsafe-directory"):
+            lab.create_artifact_root(target / "artifacts")
+        self.assertEqual(target.read_bytes(), b"retain")
+        self.assertEqual(list(self.base.iterdir()), [target])
+
+
 class ReplayTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.fixture = tempfile.TemporaryDirectory()
-        cls.base = Path(cls.fixture.name)
+        cls.fixture = tempfile.TemporaryDirectory(prefix="self-reference-replay-fixture-")
+        cls.short_alias = windows_short_alias(Path(cls.fixture.name).resolve())
+        cls.base = cls.short_alias or Path(cls.fixture.name)
         cls.rules, cls.actual = cls.base / "rules", cls.base / "actual"
         cls.calibration = cls.base / "calibration"
         cls.grammar = cls.base / "grammar"
@@ -173,6 +251,32 @@ class ReplayTests(unittest.TestCase):
         self.assertEqual(result["model_lifecycle"]["returncode"], 1)
         self.assertEqual(result["model_lifecycle"]["termination_kind"], "host_termination")
         self.assertEqual(before, hashes(self.root))
+
+    def test_windows_short_path_fixture_records_one_canonical_root(self):
+        if self.short_alias is None:
+            self.skipTest("Windows 8.3 alias unavailable on this test volume")
+        self.assertNotEqual(str(self.actual), str(self.actual.resolve()))
+        self.fixture_copy(actual=True)
+        design = read(self.root / "design.json")
+        self.assertEqual(design["artifact_root"], str(self.actual.resolve()))
+        cleanup = read(self.root / "model/cleanup.json")
+        for name, record in cleanup["logs"].items():
+            self.assertEqual(record["path"], str(self.actual.resolve() / "model" / name))
+        query = read(self.root / "model/query-0001/result.json")
+        self.assertEqual(query["query_artifact_dir"], str(self.actual.resolve() / "model/query-0001"))
+        result = replay.verify_artifacts(self.root)
+        self.assertEqual(result["outcome"], "PASS", result)
+
+    def test_cleanup_path_alias_is_not_normalized_by_replay(self):
+        self.fixture_copy(actual=True)
+        path = self.root / "model/cleanup.json"
+        cleanup = read(path)
+        # Even a same-directory lexical alias is not the producer's recorded path.
+        name = "backend-stdout.log"
+        canonical = cleanup["logs"][name]["path"]
+        cleanup["logs"][name]["path"] = str(Path(canonical).parent / ".." / "model" / name)
+        write(path, cleanup)
+        self.reject("model-log-hash")
 
     def test_calibration_has_exact_normal_only_three_episode_plan(self):
         self.fixture_copy(calibration=True)
