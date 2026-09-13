@@ -78,6 +78,42 @@ class InferenceTests(unittest.TestCase):
         with mock.patch.object(inference.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, b"{}", b"")):
             self.assertEqual(inference.infer(config(), "hello")["outcome"], "ERROR")
 
+    def test_context_transport_rejects_missing_truncated_or_changed_prompt_echo(self):
+        request = json.loads(inference.request_body("Context transport fixture"))
+        request["n_predict"] = inference.CONTEXT_RESPONSE_TOKENS
+        body = inference.encoded(request)
+        complete = {"content": "fixture response", "tokens_predicted": 3, "model": "fixture-model",
+                    "prompt": request["prompt"], "truncated": False}
+        response = mock.Mock(status=200)
+        connection = mock.Mock()
+        connection.getresponse.return_value = response
+        with mock.patch.object(inference.http.client, "HTTPConnection", return_value=connection):
+            response.read.return_value = inference.encoded(complete)
+            self.assertEqual(inference.worker(config(), body)["content"], "fixture response")
+            for changed in ({k: v for k, v in complete.items() if k != "truncated"},
+                            {**complete, "truncated": True}, {**complete, "truncated": 0},
+                            {**complete, "prompt": request["prompt"][:-1]}):
+                response.read.return_value = inference.encoded(changed)
+                with self.subTest(changed=changed), self.assertRaisesRegex(ValueError, "backend-prompt-integrity"):
+                    inference.worker(config(), body)
+        self.assertEqual(connection.close.call_count, 5)
+
+    def test_supervisor_also_rejects_context_echo_loss_and_keeps_context_deadline_bounded(self):
+        def worker_reply(*_args, **kwargs):
+            request = json.loads(json.loads(kwargs["input"])["request"])
+            payload = {"content": "fixture response", "tokens_predicted": 3, "model": "fixture-model",
+                       "prompt": request["prompt"][:-1], "truncated": False}
+            output = {"response_body": json.dumps(payload), "content": payload["content"],
+                      "tokens_predicted": 3, "backend_execution": None}
+            return subprocess.CompletedProcess([], 0, inference.encoded(output), b"")
+        with mock.patch("aios_agent.space.prompt_with_context", return_value='{"fixture":true}'), \
+             mock.patch.object(inference.subprocess, "run", side_effect=worker_reply) as execute:
+            receipt = inference.infer(config(), "original question", space_context={})
+        self.assertEqual(receipt["outcome"], "ERROR")
+        self.assertIsNone(receipt["response_sha256"])
+        self.assertEqual(receipt["user_prompt"], "original question")
+        self.assertEqual(execute.call_args.kwargs["timeout"], inference.CONTEXT_TIMEOUT)
+
     def test_local_transport_receipt_and_wrong_model_empty_bool_reject(self):
         class Handler(http.server.BaseHTTPRequestHandler):
             payload = {"content": "fixture response", "tokens_predicted": 3, "model": "fixture-model"}

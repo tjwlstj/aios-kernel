@@ -1,6 +1,6 @@
 ---
 name: aios-linux-substrate-curator
-description: Use when researching, adding, reviewing, or validating Linux substrate references, upstream resource metadata, hosted-backend plans, provenance, SPDX or license boundaries, or proposed Linux code reuse in AIOS. Keep Linux entries source-only, block code import until every license and provenance gate passes, and keep the hosted backend PLANNED until runtime evidence exists.
+description: Use when researching, adding, reviewing, or validating Linux substrate references, upstream resource metadata, hosted-backend plans, provenance, SPDX or license boundaries, or proposed Linux code reuse in AIOS. Keep Linux entries source-only, block code import until every license and provenance gate passes, and distinguish verified bounded hosted runtime from planned full acceptance.
 ---
 
 # AIOS Linux Substrate Curator
@@ -32,7 +32,7 @@ Label the work before changing anything:
 - `SOURCE_CURATION`: add or review URLs, revisions, hashes, license metadata,
   SPDX identifiers, provenance, and intended reference use.
 - `HOSTED_DESIGN`: describe the intended default Linux-hosted userspace-service
-  boundary without claiming that the backend exists.
+  boundary while distinguishing current bounded execution from new planned features.
 - `IMPORT_PROPOSAL`: evaluate copying, vendoring, translating, generating from,
   or patching upstream code. Treat this as blocked until every import gate is
   explicitly satisfied.
@@ -43,17 +43,15 @@ Label the work before changing anything:
 Do not let a source entry automatically authorize a hosted design or code
 import. Do not let a hosted design imply a native-kernel milestone.
 
-For roadmap work, treat the bounded native K2-a semantic oracle as `CURRENT`
-and the wider K2 live lifecycle/reconciliation path as `PARTIAL`. Build H1
-replay semantics as the next independent slice. Start H2 only after the H1
-lifecycle/generation/reject contract, fail-closed fixtures, and Windows/Ubuntu
-replay verdicts pass. Broad native process/storage expansion or full
-conformance completion is not a prerequisite for the first observe-only hosted
-slice. Keep H4/H5 blocked behind K5 principal, ownership,
-authorize, and separate approval. Implementation convenience is not a binding
-rule: PID, cgroup, Memory Fabric domain, and process generation cannot stand in
-for an `AI_SERVICE` Node without a semantic-kind and producer-owned-generation
-gate.
+For roadmap work, read `docs/meta/aios_product_direction_ko.md` and the single
+queue in `docs/meta/minimal_io_and_maturity_workflow_ko.md`. The H1-before-H2
+sequence is a dependency contract; do not keep scheduling H1 once its acceptance
+has been established. Use the current canon and evidence for bounded hosted status.
+Broad native process/storage expansion and full conformance are not prerequisites
+for the first observe-only hosted slice. H4/H5 still require K5 principal,
+ownership, authorization and separate approval. PID, cgroup, Memory Fabric domain
+or process generation cannot substitute for an `AI_SERVICE` identity without the
+semantic-kind and producer-owned-generation contract.
 
 ## Preserve the source-only boundary
 
@@ -116,7 +114,7 @@ For a resource or policy change:
 4. Run the narrow documentation and testkit checks required by the changed
    surface; do not update unrelated baselines.
 5. Report which resources are source-only, which import gates remain open, and
-   that the hosted backend remains `PLANNED` unless separately proven.
+   the exact verified hosted scope and the separately unimplemented acceptance scope.
 
 Use `$aios-doc-impl-sync` when maturity or guide text changes,
 `$aios-verification-tooling-guardian` when the guard or its CI verdict changes,

@@ -1,8 +1,24 @@
 # AIOS Testkit 가이드
 
+> 개발 경계 — 2026-09-13: 환경 문맥·오류 안내에 이어 v0.10은 UUID Task의
+> 접수·조회·결과·동일 CLI 소유 backend의 명시적 취소를 연결한다(`PARTIAL`).
+> 버전·schema·source 수와 보존된 v0.8 실제 소비·v0.10 fixture의 범위는
+> [환경 문맥 가이드](../os/aios_space_context_guide_ko.md)가 소유한다. 실제 모델 Task의 한정 흐름은 PASS이며
+> source 39개 운영 이미지 acceptance는 미완료다. 본문의 과거 계약·실행 기록·source
+> 일치 주장은 각 보존 소스의 당시 범위이며 새 개발 소스의 검증으로 승계하지 않는다.
+> 이번 문서 검토는 외부 자료 재조사나 runtime 재실행 판정이 아니다.
+
 작성일: 2026-04-10
 
 최종 갱신: 2026-09-08 (hosted backend recover와 운영 이미지의 버전별 검증 경계)
+
+보존된 v0.8 동기 문맥 소비는 `SpaceSmoke`/`verify_agent.py --space`의 해당 source
+계약을 따른다. v0.10은 접수 직후 프롬프트로 돌아오므로 기존 고정 명령 배열을 그대로
+실행한 결과가 Task 완료 증거가 되지 않는다. 별도 `TaskSmoke`는 동일 CLI의 COMMAND/seq/UUID,
+정상 첫 답변, 별도 진행 중 질문의 취소·worker 종료·MAIN의 독립 backend 종료 관측을
+연결한다. 현재 진입은 `Start-AiosConsole.ps1 -TaskSmoke`와
+`verify_agent.py <run-directory> --tasks`이며 통합·검증 중이다. 실제 모델 성공은 아직 기록하지 않는다.
+세부 계약과 보존된 Windows 전체·Linux fixture 결과는 [환경 문맥 가이드](../os/aios_space_context_guide_ko.md)를 따른다.
 
 `tools/hosted/Start-AiosConsole.ps1 -ServiceSmoke -GuestTests`는 일반 Linux 사용자 서비스의
 시작→첫 CLI 종료→두 번째 CLI 재접속→재시작→중지/시작→최종 중지를 검증한다.

@@ -2,13 +2,17 @@
 
 > 제품 방향과 책임 경계: 2026-08-12 결정
 >
+> 제품 목적·v0.10 Task 검토: 2026-09-13 (보존된 fixture와 한정 실제 모델 Task PASS·미완료 이미지 acceptance 구분)
+>
 > H2-a userspace startup·하드웨어 inventory·CLI/DNS/HTTP(S): `PARTIAL`
 >
 > bounded MAIN `AI_SERVICE`·hosted 결속·재결속·자원 관측·Cell 1 관리 전이·backend 수명/실행 결속: `PARTIAL`; 전체 H2/H3 acceptance: `PLANNED`
 >
 > 기본 설치 이미지의 반복 부팅·설정/history 보존·비특권 CLI: `SUPPORTING/PARTIAL` (image-07 실제 검증)
 >
-> 별도 모델 이미지: `SUPPORTING/PARTIAL` (현재 v0.7 model-image-05의 실제 모델·두 cold boot·재결속·정상 종료와 전용 사용자 사본 검증; v0.6 model-image-04 보존)
+> 별도 모델 이미지: `SUPPORTING/PARTIAL` (보존된 v0.7 model-image-05의 실제 모델·두 cold boot·재결속·정상 종료와 전용 사용자 사본 검증; v0.6 model-image-04 보존)
+>
+> v0.10의 환경 문맥·UUID 질문 접수/조회/결과/취소: `PARTIAL`; 보존된 실제 소비·fixture·한정 실제 모델 Task PASS와 미완료 운영 이미지 경계는 환경 문맥 가이드가 소유
 >
 > 선행 native K2-a semantic oracle: `CURRENT` (2026-08-15)
 >
@@ -29,6 +33,22 @@ service를 소유하는 제품 도메인이다. 현재 `linux/aios-boot.py`는 �
 Linux는 이 hosted 경로의 하드웨어 특권 커널·드라이버 실행 기반이다.
 `linux/aios-console.py`는 고유 `aios>` 화면에서 반복 명령과 사용자 요청
 DNS·HTTP(S) GET을 제공한다. 이 네트워크 I/O는 resource apply capability와 구분한다.
+
+[제품 방향 정본](../docs/meta/aios_product_direction_ko.md)의 목적은 AI가 자신의 작업
+공간·상태·가능한 행동을 이해하고 로컬에서 효율적으로 활동하며 사용자와 지속적으로
+상호작용하는 것이다. `hosted/`는 이를 실제 사용자 환경으로 전달하는 경로다.
+현재 CLI·모델 요청·결속과 history는 기반이며, 통합 공간 조회와 작업 중 질문·수정·취소가
+연결되는 에이전트 흐름까지 구현했다는 뜻은 아니다. 관리축에서 `SUPPORTING`인 소비·
+상호작용 작업도 제품 결과를 직접 개선할 수 있으며 그 성숙도는 별도로 검증한다.
+게시된 v0.7 MAIN은 고정 system 문구와 이번 prompt만 전달하고 일반 응답을 최대 64 tokens로
+제한했으며, 환경·작업 공간·이전 대화를 자동 주입하지 않았다. 이 체크포인트의 개발 소스 v0.10은 v0.8에서 도입한 명시적 `space`로
+MAIN 실행 디렉터리·CPU 수·총 메모리를 갱신하고, `ask`에 보유 관측 문맥을 함께 전달한다.
+관측이 없을 때만 첫 `ask`가 최초 관측을 만든다. 네트워크·사용자 선택 workspace는 UNKNOWN이며
+v0.10은 UUID 질문의 접수·조회·결과·동일 소유 backend 취소를 연결한 `PARTIAL` 개발 소스다.
+이전 대화·범용 작업 수정·CLI 소실/재부팅 뒤 자동 재개는 없다. 보존된 실제 문맥 소비와
+Task fixture와 한정 실제 모델 Task PASS는 별도 증거이며 새 운영 이미지 acceptance는 미완료다. [환경 문맥 가이드](../docs/os/aios_space_context_guide_ko.md)가
+관측 시점·CURRENT/STALE/UNKNOWN, 실제 입력 bytes, 소비자/모델·응답 연결과 한계를 소유한다.
+CPU·RSS 관측만으로 로컬 효율이 개선됐다고 주장하지 않는다.
 
 ## 책임
 
@@ -64,7 +84,7 @@ artifact 검증을 통과했으며, 이 host-only contract/replay만 `CURRENT`�
 - Linux PID, pidfd, cgroup, namespace, PSI, path는 canonical Cell/Node/NodeBit가 아니라
   `source_only` evidence다.
 
-## 첫 구현 순서
+## 구현 이력과 분야별 후속 경계
 
 1. bounded native K2-a semantic oracle를 고정했다. 이 조각은 boot-local immutable
    source binding만 증명하며 전체 lifecycle 계약 완료가 아니다.
@@ -76,7 +96,7 @@ artifact 검증을 통과했으며, 이 host-only contract/replay만 `CURRENT`�
 4. H2-a 시작·하드웨어 관측 실행체와 별도 boot-inventory-v1 계약/외부 verifier를
    추가했다. 관측은 `UNBOUND`, 관리 action은 모두 `UNSUPPORTED`다.
    고유 CLI와 사용자 요청 DNS·HTTP(S) I/O 및 별도 MAIN producer·hosted 결속을 이어 구현했다.
-5. H3에서 exit, PID reuse, cgroup recreation, collector restart, host reboot를 구분한다.
+5. H3 전체의 exit, PID reuse, cgroup recreation, collector restart, host reboot 구분은 후속이다.
 
 H1은 원격 cross-OS terminal과 artifact 증거를 가진 `CURRENT` host-only 계약이다.
 fixture의 native K2-a projection은 checked-in source tuple의
@@ -84,6 +104,13 @@ self-contained 투영이지 live lifecycle producer가 아니다. H2-a bootstrap
 bounded MAIN 결속·재결속도 `PARTIAL`이며 전체 H2/H3 acceptance는 `PLANNED`다. H4/H5, quota,
 throttle, scheduler migration, privileged actuator와 apply는 K5 principal/ownership/
 authorize 및 별도 승인 전까지 이 도메인의 범위 밖이다.
+
+현재 전역 다음 작업은 [source 39개 이미지의 소유 경계 확인](../docs/meta/minimal_io_and_maturity_workflow_ko.md#agent-consumer-next)이다.
+문맥 전달과 UUID Task는 `PARTIAL`이며, 실제 모델의 정상 첫 답변과 별도 진행 중
+Task의 한 번의 명시적 취소·worker 종료·전체 backend 독립 종료를 한 CLI에서 검증했다. 기존 driver·fixture와
+과거 모델 성공을 새 흐름의 증거로 승계하지 않는다. UI 공간을 NodeBit·Orbit와
+동일시하거나 임의 셸·자원 apply를 먼저 열지 않는다.
+
 
 Upstream 기준선과 `code_import=0` 경계는
 [`docs/os/linux_hosted_substrate_and_resource_policy_ko.md`](../docs/os/linux_hosted_substrate_and_resource_policy_ko.md)를
@@ -127,9 +154,20 @@ private `CONSOLE_RUNTIME`은 계속 실행된다. Windows VM 실행 도구는 �
 별도 `aios-agent.py`와 `aios_agent/`, `aios_management/`는 실제 모델 요청을 처리하는
 MAIN producer 및 hosted authority를 구현한다(`PARTIAL`). `Start-AiosConsole.ps1 -Agent`로
 모델을 준비하고 `agent start`, `room discover`, `room bind`, `ask ...`를 사용한다.
-재시작 뒤에는 새 source의 발견과 `room reconcile`이 필요하다. 현재 CLI v0.7/session
-schema 7은 runtime source 31개를 기록하고 과거 schema 1/2/3/4/5/6의 보존 소스 재생을
-유지한다. MAIN protocol/run schema 4는 source 24개를 기록하며 이전 run schema 1/2/3도 재생한다.
+재시작 뒤에는 새 source의 발견과 `room reconcile`이 필요하다. 게시된 CLI v0.7/session
+schema 7은 runtime source 31개, MAIN protocol/run schema 4는 source 24개를 기록한다.
+이전 세션·run의 보존 소스와 버전 계약은 그대로 유지한다.
+
+이 체크포인트의 개발 소스는 CLI 0.10.0/session 10/source 35개, MAIN protocol/run 6/source 28개다.
+receipt 3·space 1·backend 1은 유지하며 전체 hosted Python은 39개다. `ask`는 Task UUID의
+접수 기록을 저장한 뒤 비동기 worker를 시작하고 프롬프트로 돌아온다.
+`task status|result|cancel <UUID>`는 같은 요청을 조회한다. MAIN 6 직접 동기 `ask`는
+`request-task-required`로 거부한다. `tasks/<uuid>/<revision>.json`과 원본 event/receipt가
+독립 검증 근거이며, Task·PID를 canonical Node identity로 승격하지 않는다.
+[환경 문맥 가이드](../docs/os/aios_space_context_guide_ko.md)가 입력·응답·취소·소유자 경계,
+보존된 Windows 전체·Linux fixture 결과와 별도 TaskSmoke의 한정 실제 모델 PASS 증거를 소유한다.
+기존 `SpaceSmoke`와 운영 이미지 family는 각자의 보존 source 계약을 유지한다.
+
 
 `-AgentSmoke -GuestTests`와 `verify_agent.py --workflow`가 실제 모델 bytes/provenance,
 warmup·질문 원문, 두 CLI의 동일 producer, 재시작·stale·재결속, 서비스/backend/VM의
@@ -161,7 +199,7 @@ v0.6에서 도입한 `backend status/start/stop/restart`는 AIOS 제품 코드�
 DNS·HTTPS·정상 종료를 확인했다. 당시 소스 대조와 독립 재검증도 통과했다.
 `backend-02`는 보존된 소스의 역사적 증거이며 이후 모델 이미지 기록 경로 수정이 있는 현재 소스는 별도 검증한다.
 [backend 수명 가이드](../docs/os/aios_backend_lifecycle_guide_ko.md)의 `-BackendSmoke -GuestTests`를 따른다.
-현재 v0.7의 `backend recover`는 동일 CLI가 생존 중 확보한 child pidfd를 사용한 supervisor
+v0.7에서 도입한 `backend recover`는 동일 CLI가 생존 중 확보한 child pidfd를 사용한 supervisor
 소실 뒤 명시적 정리를 구현한다(`PARTIAL`, 실제 Linux·모델 기록의 별도 독립 재검증 PASS; 원본 FAIL 보존). `RECOVERED`는
 원본 실패 run과 별도이며 MAIN 재시작·재결속은 자동화하지 않는다. 세부 계약은 위 backend
 수명 가이드를 따른다. CLI 소실·재부팅 이후 복구와 범용 설치·업데이트는 남아 있다.
@@ -180,8 +218,8 @@ cold boot, 설정·history 보존, 서비스 cleanup과 정상 종료를 통과�
 재검증을 통과했다. 원본을 보존하는 `local-model` 사용자 사본의 상태 조회·정상 종료도
 실제 `.cmd -Agent` 경로에서 확인했다. basic과 실패한 모델 이미지의 원본은 별도로 보존한다.
 
-현재 v0.7/session 7/source 35개의 `model-image-05`는 online·offline 두 부팅의 45명령,
-실제 warmup·질문 각 2회·명시적 재결속·인터넷·정상 종료와 현재 소스 독립 재검증을 통과했다.
+보존된 v0.7/session 7/source 35개의 `model-image-05`는 online·offline 두 부팅의 45명령,
+실제 warmup·질문 각 2회·명시적 재결속·인터넷·정상 종료와 당시 소스 독립 재검증을 통과했다.
 전용 0.7 실행기 (`build/hosted-image-v07/Start-Aios-0.7.cmd`)는 `model-image-05-user` 사본을
 사용하며 실제 세 명령·정상 종료도 PASS다. 기존 v0.6 사용자 디스크와 포인터는 유지한다.
 별도 장애 복사본 02도 같은 worker의 recover·즉시 exit·정상 종료를 실제 검증했고,
@@ -190,3 +228,7 @@ cold boot, 설정·history 보존, 서비스 cleanup과 정상 종료를 통과�
 선택 기록이 있으면 기본 Run이 따르고, 없으면 기존 경로를 유지한다. 디스크·history는
 사본별로 보존한다. Windows 로컬에서 0.7·0.6의 실제 기본 부팅과 최종 0.7 재선택을
 검증했으며 `SUPPORTING/PARTIAL`이다(운영 가이드 §9.8).
+
+위 이미지·사용자 디스크·history는 v0.10로 갱신하지 않았다. v0.10의 hosted Python
+39개를 포함하는 운영 이미지는 아직 생성·실제 부팅 검증하지 않았다. 기존 image35/36
+family와 새 image39, 보존된 v0.7 이미지 acceptance와 이 체크포인트의 검증을 구분한다.

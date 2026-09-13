@@ -2,7 +2,7 @@
 
 작성일: 2026-04-18
 재정비: 2026-08-10
-최종 갱신: 2026-09-07 (hosted MAIN·자원 관측·Cell 1 관리 전이 경계)
+최종 갱신: 2026-09-13 (v0.10 문맥·Task와 native/hosted 증거 경계 대조)
 
 > 이 가이드는 [AIOS Kernel Room 관리 모델](kernel_room_management_model_ko.md)을
 > 따른다. 정체성, 용어, 성숙도 또는 구현 순서가 충돌하면 정본을 우선한다.
@@ -17,6 +17,11 @@ bounded Cell 1 관리 전이는 이전 v0.5 `cell-01`의 로컬 Linux·실제 �
 
 Kernel Room 작업이 커널 작동 증명이나 enforcement 자체를 목표로 삼지 않고,
 `Room -> Cell -> Node -> NodeBit` 관리 계층을 작은 검증 조각으로 완성하도록 한다.
+그 결과는 AI가 작업 공간·상태·가능한 행동을 파악하고 사용자와 지속적으로
+상호작용하는 데 사용되어야 한다. 로컬 실행 효율도 이 목적의 한 축이며,
+상호작용을 성능 작업 뒤의 화면 꾸미기로 취급하지 않는다.
+[제품 방향 정본](../meta/aios_product_direction_ko.md)이 성공의 의미를,
+[성숙도 작업흐름](../meta/minimal_io_and_maturity_workflow_ko.md#agent-consumer-next)이 전역 다음 작업을 소유한다.
 
 핵심 규칙은 다섯 가지다.
 
@@ -99,7 +104,7 @@ H2-a 초기화 로그·Linux-visible 하드웨어 inventory는 `PARTIAL`로 추�
 [MAIN 서비스 가이드](../os/aios_agent_binding_guide_ko.md)가 실제 모델·수명·결속 증거를 소유한다.
 구현된 관측 조각은 [자원 관측 가이드](../os/aios_resource_observation_guide_ko.md)의
 명시적 MAIN/backend 관계와 개별 CPU/RSS·unattributed system PSI다. 자원 소유권은 별도다.
-현재 CLI v0.7/session schema 7/source 31개, MAIN protocol/run schema 4/source 24개는
+보존된 CLI v0.7/session schema 7/source 31개, MAIN protocol/run schema 4/source 24개는
 `cell status/activate/deactivate`로 기존 Cell 1의 관리 상태를 다룬다(`PARTIAL`).
 MAIN 프로세스를 유지한 채 결속 신뢰를 무효화하며 재활성화 뒤 명시적 발견·재결속이
 필요하다. 이전 v0.5 `cell-01`의 로컬 Linux·실제 모델 검증을 통과했으며 Cell 수명 가이드에서 결과를 확인한다.
@@ -134,7 +139,9 @@ Cell lifecycle·자원 귀속·principal 완료를 대신하지 않는다.
 
 ## 작업 전 분류
 
-Kernel Room 변경을 시작하기 전에 요청을 아래 중 하나로 분류한다.
+Kernel Room 변경을 시작하기 전에 제품 결과, 관리 모델과의 관계
+(`DIRECT`/`SUPPORTING`/`ORTHOGONAL`/`RESEARCH`), 구현 성숙도를 각각 기록한다.
+관리 관계 분류는 제품 가치의 순위가 아니다. 요청의 구현 책임은 아래에서 고른다.
 
 ### A. management model 변경
 
@@ -157,6 +164,21 @@ Kernel Room 입력을 개선할 수 있지만, 그 자체로 관리 모델을 �
 
 관리 registry와 identity 계약 뒤의 단계다. Cell/Node 의미가 정해지지 않았다면 먼저
 enforcement를 구현하지 않는다.
+
+### D. 에이전트·사용자가 관리 계약을 소비하는 경로
+
+- 현재 작업 공간·대상·지원 행동과 관측 시점/유효성의 구조화된 제공
+- 제한된 기존 요청의 전송, 결과 확인, 사용자에게 상태·실패·다음 행동 설명
+- 사용자 중단이나 source 변경 뒤 후속 요청 중지와 명시적 복구 절차 안내
+
+새 관리 record를 만드는 일과 기존 record를 실제로 사용하는 일은 별도 증거다.
+현재 MAIN에는 제한된 환경 관측·문맥 전달과 UUID Task가 있다(`PARTIAL`).
+이전 대화·선택 workspace 자동 문맥과 CLI 소실/재부팅 뒤 재개는 없다. 보존된 실제 소비와
+Task fixture·한정 실제 모델 Task PASS 범위는 [환경 문맥 가이드](../os/aios_space_context_guide_ko.md)를 따른다.
+후속 검증은 AI에 실제 전달한 문맥의 출처·시점·유효성·범위, 소비자 identity/모델,
+입력 관측에 따른 답변/행동을 연결한다. 외부 자동 명령만으로 로컬 AI의 소비를 증명하지 않는다.
+runtime이 필요하면 `hosted/`가 소유하고 `tools/`는 시험 입력·독립 검증을 소유한다.
+NodeBit이나 Orbit를 화면 공간의 데이터 모델로 자동 채택하지 않는다.
 
 ## 관리 record 규칙
 
@@ -341,7 +363,12 @@ source exit/recreate/rebind는 아직 `PLANNED`다. H1 verifier는 같은 field/
 OS-neutral trace와 12개 fixture에 고정했고 원격 exact-SHA acceptance를 통과했다. 광범위한 native
 process/storage 확장은 H2 observe-only userspace service의 선행조건이 아니다.
 
-## 후속 구현 순서
+## 관리 분야의 의존 순서
+
+아래는 분야별 의존 관계이며 전역 실행 큐가 아니다. 현재 다음 조각과 완료 기준은
+[성숙도 작업흐름의 에이전트 소비 흐름](../meta/minimal_io_and_maturity_workflow_ko.md#agent-consumer-next)을 따른다.
+그 흐름은 개발 `PARTIAL`이다. 한정 실제 모델 Task는 PASS이며 새 이미지 acceptance는 미완료다.
+보존된 실제 문맥 소비·Task fixture·후속 소스의 실행 증거를 합치지 않는다. 필요한 좁은 계약부터 검증하고 목록 전체의 확장을 선행조건으로 삼지 않는다.
 
 1. 정본과 typed namespace 대응표
 2. management-only hierarchy registry v0 — `CURRENT` (2026-08-11)
@@ -362,6 +389,12 @@ NodeBit-only의 별도 완성 단계로 해석하지 않는다.
 `snapshot -> gate metadata -> enforcement`를 Kernel Room의 기본 성장 순서로 쓰지 않는다.
 현재 snapshot과 gate는 보존할 substrate이며, 다음 중심 순서는
 `identity -> relation -> state -> observation -> transition -> enforcement`다.
+
+에이전트 소비 흐름에서는 읽은 identity/generation, 요청 ID, 실제 결과와 에이전트가
+사용자에게 설명한 상태를 연결해 확인한다. 오래된 관계·미지원 행동·실패를 입력했을 때
+임의 셸, 자동 재결속, 성공 추정으로 빠져나오면 실패다. 사용자 중단 뒤 새 요청을
+내지 않는 증거와 이미 실행 중인 요청의 실제 취소·완료 여부를 구분한다. 현재 기능이
+취소를 제공하지 않으면 그 한계를 설명하며 취소 완료를 만들지 않는다.
 
 ## Axis Gate 규칙
 

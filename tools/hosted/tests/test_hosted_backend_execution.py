@@ -99,11 +99,11 @@ class ExecutionContractTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_execution(value)
 
-    def test_inference_fixture_schema2_does_not_invent_execution_proof(self):
+    def test_current_inference_receipt_does_not_invent_execution_proof(self):
         from test_hosted_inference import config
         with mock.patch.object(inference.subprocess, "run", side_effect=subprocess.TimeoutExpired("worker", 1)):
             value = inference.infer(config(), "Hello")
-        self.assertEqual(value["schema_version"], 2)
+        self.assertEqual(value["schema_version"], 3)
         self.assertIsNone(value["backend_execution"])
         self.assertIsNone(value["response_body"])
 
@@ -114,7 +114,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
  def do_POST(self):
   data=self.rfile.read(int(self.headers['Content-Length']))
   with Path(sys.argv[2]).open('ab') as out:out.write(data+b'\\n')
-  raw=json.dumps({'model':'fixture-execution','content':'Fixture only.','tokens_predicted':3}).encode()
+  request=json.loads(data)
+  value={'model':'fixture-execution','content':'Fixture only.','tokens_predicted':3}
+  if request.get('n_predict')==192:value.update(prompt=request['prompt'],truncated=False)
+  raw=json.dumps(value).encode()
   self.send_response(200);self.send_header('Content-Length',str(len(raw)));self.end_headers();self.wfile.write(raw)
  def log_message(self,*args):pass
 class Server(http.server.ThreadingHTTPServer):allow_reuse_address=True

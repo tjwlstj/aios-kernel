@@ -8,6 +8,15 @@ description: Use when planning, documenting, reviewing, or implementing AIOS Ker
 Keep Kernel Room work centered on the management model rather than allowing
 kernel mechanisms or syscall enforcement to become the architecture by default.
 
+## Product outcome and canon
+
+Read `docs/meta/aios_product_direction_ko.md` for workspace awareness, reliable local
+activity, and continuous user interaction. Record the product outcome separately
+from the management relationship and implementation maturity. A useful interaction
+slice can consume existing management state without extending the hierarchy.
+The single global queue lives in `docs/meta/minimal_io_and_maturity_workflow_ko.md`;
+this skill's dependency order is not a second queue.
+
 ## Read the canon first
 
 1. Read `docs/kernel-room/kernel_room_management_model_ko.md` completely.
@@ -45,9 +54,12 @@ Before selecting work, label its relationship to the management model:
 - `ORTHOGONAL`: useful maintenance that does not advance the hierarchy.
 - `RESEARCH`: optional exploration with no maturity implication.
 
-Do not present `SUPPORTING` kernel work as the next product milestone by itself.
-If no `DIRECT` management milestone exists, return to the canonical work plan
-before expanding process, scheduler, driver, or enforcement breadth.
+Do not claim management progress from supporting kernel work alone. Select work
+from the product-driven global queue; require a named need before expanding kernel
+or enforcement breadth. Environment/context interfaces and user interaction have
+product value even when their management relationship is `SUPPORTING` or `ORTHOGONAL`.
+Do not identify a visual room or task/session record with a canonical Cell/Node/NodeBit
+without the corresponding adapter contract.
 
 ## Follow the implementation order
 
@@ -76,9 +88,10 @@ and rollback verifier are separately authorized and proven.
 - Treat the current SLM agent tree, runtime NodeBit registry, SLM policy-node
   catalog, and Node-owned pipeline as independent partial or scaffolded sources,
   not one canonical Node graph.
-- Keep Cell registry/lifecycle, canonical Node binding, integrated NodeBit view,
-  per-Cell or per-Node attribution, and Room-wide enforcement `PLANNED` until
-  their exact evidence exists.
+- Read current maturity from the management canon and implementation evidence.
+  Distinguish bounded native bootstrap/oracle, hosted lifecycle/binding, source
+  observation, full ownership and enforcement. Do not reuse an old blanket
+  `PLANNED` label for already verified bounded implementations.
 - Keep Orbit runtime `RESEARCH`.
 
 ## Verify the smallest vertical slice

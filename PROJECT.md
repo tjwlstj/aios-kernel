@@ -10,24 +10,28 @@
 현재 빌드·구현 불변식은 [CLAUDE.md](CLAUDE.md)를 본다. 이 문서는 전역 작업 우선순위나
 세부 구현 성숙도를 단독으로 결정하지 않는다.
 
-제품 구조의 정본은 **Kernel Room → Cell → Node → NodeBit** 관리축이다. 이 계층은
-저장소 디렉터리 구조와 다른 논리 구조다. aggregate substrate가 있어 전체 Kernel Room
-topology 성숙도는 `PARTIAL`이다. `CURRENT` K1은 별도 1024B management-only snapshot에 Cell 1,
-exact-bound Node 1, parent-bound typed NodeBit 2를 함께 둔 bounded bootstrap hierarchy를
-구현했다. `CURRENT`인 bounded native K2-a oracle은 별도 256B snapshot에서 Node 101을
-producer-owned SLM MAIN source에 boot-local immutable하게 결속한다. 현 코드는 Room
-aggregate snapshot과 각자 `CURRENT`인 Memory Fabric domain, SLM agent
-profile/policy catalog, runtime capability NodeBit, pipeline ownership을 제공한다. 새 작업은 이들을
-숫자 ID가 같다는 이유로 결합하지 말고 namespace + explicit binding + generation으로 연결한다.
-K1 bootstrap fixture는 Cell ID 1, Node ID 101, NodeBit ID 1001/1002를 사용하며
-K2 전체 lifecycle/reconcile은 `PARTIAL`이다. H1-a transport, H1-b bounded semantic
-replay와 12개 fixture, H1-c bundle/parity는 동일 run·exact SHA의 원격
-Linux/Windows/parity 및 세 artifact 검증을 통과해 `CURRENT`다(2026-09-03).
-근거는 [H1 원격 acceptance 증거 (§13.2)](docs/os/h1_binding_trace_replay_workplan_ko.md#132-2026-09-03-원격-acceptance-완료)를
-따른다. 별도 MAIN·hosted authority의 bounded binding과
-[Cell 1 관리 전이](docs/os/aios_cell_lifecycle_guide_ko.md)는 `PARTIAL`이며 전체 H2/H3는 후속이다.
-용어와 성숙도 정본은
-[Kernel Room 관리 모델](docs/kernel-room/kernel_room_management_model_ko.md)이다.
+제품 목적은 **AI가 자신의 작업 공간과 상태를 이해하고 로컬에서 효율적으로 활동하며
+사용자와 지속적으로 상호작용하는 운영 환경**이다.
+[제품 목적 정본](docs/meta/aios_product_direction_ko.md)이 경험과 성공 기준을 소유한다.
+
+**Room → Cell → Node → NodeBit**는 이 목적을 위한 관리 구조이며 디렉터리 트리와
+구별한다. ID·부모 관계·세대·source 결속은 [관리 모델](docs/kernel-room/kernel_room_management_model_ko.md)을
+따른다. K1/native K2-a의 bounded proof와 H1 host-only replay는 `CURRENT`, 전체
+관리 topology와 bounded hosted MAIN·Cell 수명은 `PARTIAL`이다. 버전·실행 ID·검증
+수는 해당 계약/운영 가이드에서 관리한다.
+
+문서 내용 검토: 2026-09-13, 이 체크포인트의 개발 소스 v0.10과 보존된 버전별 계약·실행 증거 대조.
+보존된 v0.8 실제 소비의 수정 검증기 재생은 PASS이며, v0.10의 실제 모델 TaskSmoke는 한정 흐름에서 PASS다. source 39개 운영 이미지 acceptance는 미완료다.
+재검토 조건과 세부 근거는 [문서 신선도 원장](docs/meta/document_freshness_registry_ko.md)을 따른다.
+
+이 체크포인트의 개발 소스 v0.10은 환경 문맥 전달과 UUID 질문의 접수·조회·결과·취소를 제공하는 `PARTIAL`이다.
+CLI 0.10.0/session 10/source 35개, MAIN protocol/run 6/source 28개, receipt 3과
+전체 hosted Python source 39개의 계약은 [환경 문맥 가이드](docs/os/aios_space_context_guide_ko.md)가 소유한다.
+제품 runtime은 `hosted/`, 한 CLI의 Task smoke 진행과 독립 시나리오 검증은 `tools/` 책임이다.
+보존된 v0.9 개발·source 사본·기존 beta·운영 이미지의 실행 기록과 이 체크포인트의 검증 범위를 구분한다.
+이전 대화·범용 작업 수정·CLI 소실/재부팅 뒤 자동 재개는 아직 없다. 기존 source 35개 이미지와
+과거 실제 모델의 PASS를 새 개발 소스에 승계하지 않으며 source 39개 운영 이미지는 아직 생성·검증하지 않았다.
+
 
 ---
 
@@ -40,7 +44,7 @@ Linux/Windows/parity 및 세 artifact 검증을 통과해 `CURRENT`다(2026-09-0
 | **`hosted/`** | 의도된 기본 delivery 경로인 Linux-hosted userspace service와 backend-neutral contract | H1 contract/replay `CURRENT`; H2-a startup/inventory/CLI/인터넷·service lifecycle·MAIN binding·자원 관측·Cell 1 관리 전이·backend 수명/실행 결속 `PARTIAL` | `hosted/linux/aios-boot.py`, `aios-console.py`, `aios-agent.py`, `aios-backend.py`; `tools/hosted/Start-AiosConsole.ps1`; 전체 H2/H3는 후속 |
 | **`models/`** | AI/SLM 모델 매니페스트(가중치는 비추적) | `models/manifests/*.json` | — (데이터) |
 | **`store/`** | 부팅 후 온라인 드라이버/프로그램/모델 다운로드 카탈로그 | `store/catalog/*.json` | (예정) 런타임 클라이언트 |
-| **`tools/`** | 테스트·빌드 오케스트레이션과 외부 substrate source 정책 검증 | `tools/testkit/`, `tools/platform/` | testkit + platform guard |
+| **`tools/`** | host 준비·실행·이미지 선택, 테스트·빌드와 외부 source 정책 검증 | `tools/testkit/`, `tools/platform/` | testkit + platform guard |
 | **`docs/`** | 설계 문서 (도메인별 하위 폴더) | `docs/<domain>/*.md` | — (문서) |
 
 ---
@@ -50,7 +54,7 @@ Linux/Windows/parity 및 세 artifact 검증을 통과해 `CURRENT`다(2026-09-0
 화살표는 "참조해도 된다"는 방향이다. **역방향 의존은 금지.**
 
 ```text
-tools/ ──build/test only──> kernel/ · os/ · hosted/ · models/ · store/
+tools/ ──host lifecycle / build / verify──> kernel/ · os/ · hosted/ · models/ · store/
 
 os/ ──consume public ABI──> kernel/
 os/ ──read manifests──────> models/ · store/
@@ -65,8 +69,9 @@ kernel/ · os/ ──X───────> hosted/
   소유한다. `kernel/` private header 또는 `os/` ring3 구현을 import하지 않으며,
   `kernel/`과 `os/`도 `hosted/`에 의존하지 않는다.
 - **`models/` / `store/`** 는 데이터/카탈로그 도메인이다. 코드 의존성을 만들지 않는다.
-- **`tools/`** 는 전부를 빌드/검증하고 외부 source manifest를 검사할 뿐 runtime
-  backend를 제공하지 않는다. 어떤 도메인도 `tools/`에 의존하면 안 된다.
+- **`tools/`** 는 host의 준비·실행·이미지 선택과 빌드·독립 검증, 외부 source
+  manifest 검사를 소유한다. guest의 제품 runtime/backend는 `hosted/`가 소유하며
+  guest runtime이 host 도구를 import하거나 실행 의존성으로 삼지 않는다.
 - **`docs/`** 는 무엇에도 의존하지 않는다.
 
 ---
@@ -84,6 +89,8 @@ kernel/ · os/ ──X───────> hosted/
 | 테스트/빌드 자동화 | `tools/testkit/` |
 | Linux/QEMU/VirtIO upstream source manifest·guard | `tools/platform/` |
 | Linux-hosted 실행 서비스와 backend-neutral binding contract | `hosted/` (`hosted/linux/`, `hosted/contracts/`는 해당 구현·verifier와 함께 생성). `tools/platform/`에 runtime 코드를 넣지 않음 |
+| Linux 위 공간 상태 조회·대화·작업 진행 인터페이스 | guest 제품 runtime은 `hosted/`; `tools/`는 host 준비·실행·선택·독립 검증을 소유. 새 consumer는 기존 공개 계약을 소비하고 새 protocol은 별도 검증 |
+| 제품 목적·전역 큐·문서 관리 | `docs/meta/`의 각 정본; 같은 사실의 새 병렬 roadmap을 만들지 않음 |
 | 설계 노트 | `docs/<domain>/` + `docs/README.md` 인덱스 갱신 |
 | Room/Cell/Node/NodeBit 관리 설계 | `docs/kernel-room/` + 상위 성숙도 문서 동기화 |
 
@@ -125,51 +132,16 @@ Windows: `pwsh -File .\tools\testkit\kernel\build-windows.ps1 -Target test`
 - **Linux substrate identity는 source-only** — PID/cgroup/pidfd/PSI/path를 canonical
   Cell/Node/NodeBit ID로 재사용하지 않는다. H0 manifest/guard `CURRENT`는 hosted runtime,
   license compatibility 또는 code import 승인이 아니며 schema v1은 `code_import=0`이다.
-- **K2-a native semantic oracle은 `CURRENT`, K2 전체는 `PARTIAL`** — 별도
-  256B snapshot이 Node 101을 producer-owned SLM MAIN instance/generation에 결속하고
-  append-only reject reason을 고정한다. refresh/exit/recreate/rebind는 아직 없다.
-  H1 replay/negative fixture와 exact-SHA remote cross-OS acceptance가 고정됐다.
-  H2-a 시작·Linux-visible 하드웨어 관측·CLI/DNS/HTTP(S)는 `PARTIAL`이며 AIOS 자체 관리 계약과
-  native kernel을 유지한다. MAIN producer·hosted authority의 명시적 결속과 재결속은
-  `PARTIAL`이며 [MAIN 서비스 가이드](docs/os/aios_agent_binding_guide_ko.md)의 실제 실행 증거를 따른다.
-  MAIN/backend 각각의 CPU/RSS·system PSI 관측은 [자원 관측 가이드](docs/os/aios_resource_observation_guide_ko.md)를 따른다.
-  현재 CLI v0.7/session schema 7/source 31개와 MAIN protocol/run schema 4/source 24개는
-  `cell status/activate/deactivate`를 지원한다. 기존 Cell 1의 관리 전이는 `PARTIAL`이며
-  이전 v0.5 `cell-01`의 로컬 Linux·실제 모델 검증을 통과했다([Cell 수명 가이드](docs/os/aios_cell_lifecycle_guide_ko.md)).
-  비활성화는 MAIN 프로세스 중지가 아니며 재활성화 뒤 명시적 발견·재결속이 필요하다.
-  v0.5 Cell 실행은 당시 source snapshot의 증거다. 현재 `backend status/start/stop/restart`와
-  receipt schema 2의 실제 요청 대상 결속은 `backend-02`에서 로컬 Linux·실제 모델 검증을
-  완료했다. 교체 후 요청 거부·명시적 복구·자원 관측·DNS/HTTPS·정상 종료와 당시 소스의
-  독립 재검증을 통과했으며 `PARTIAL`을 유지한다([backend 수명 가이드](docs/os/aios_backend_lifecycle_guide_ko.md)).
-  `backend-02`는 보존된 소스의 증거이며 이후 모델 이미지 경로 수정이 있는 현재 소스는 별도 검증한다.
-  현재 `backend recover`는 동일 CLI가 미리 확보한 child pidfd로 supervisor 소실 뒤 정리하는
-  `PARTIAL` 구현이며 실제 Linux·모델 기록의 별도 독립 재검증을 통과했다. 원본 FAIL은
-  보존하며 새 판정은 별도 replay report가 소유한다. 별도 `RECOVERED` 증거와 명시적
-  MAIN 재시작·재결속 계약은 위 backend 수명 가이드를 따른다. CLI 소실·재부팅 이후 복구,
-  전체 H2/H3·자원 소유권은 후속이다. 광범위한 native
-  process/storage 확장은 선행조건이 아니다. H4 validation과 H5 apply는 K5와 별도 승인 전까지
-  `PLANNED`다.
-
-  별도 기본 운영 이미지는 `SUPPORTING/PARTIAL`이다. `image-07`의 설치된 4 GiB 디스크에서
-  온라인 두 번·오프라인 한 번의 cold boot, UID 1000 CLI, 설정·history 보존과 정상 종료를
-  검증했다. `Start-AiosImage.cmd`는 검증 원본을 보존하고 영속 사용자 복사본을 실행한다.
-  보존된 image-07 source 35개는 당시 CLI v0.6/schema 6/source 31개와 boot module 4개다.
-  이 기본 이미지에는 모델 bundle과 부팅 간 canonical 상태 복원이 없으며 범용 설치·업데이트·복구는 후속이다.
-  별도 모델 profile도 `SUPPORTING/PARTIAL`이다. `model-image-04`에서 Linux 이미지 검사
-  51개, 같은 디스크의 online·offline 두 cold boot와 실제 warmup·질문 각 2회, 명시적
-  재결속·인터넷·정상 종료 및 당시 v0.6 source 35개의 독립 재검증을 통과했다.
-  `Start-AiosImage.cmd -Agent`의 `local-model` 사용자 사본 실행·정상 종료도 검증했다.
-  현재 v0.7/session 7/source 35개의 `model-image-05`는 별도 정상 이미지로 online·offline
-  두 부팅 45명령, 실제 질문 2회·재결속·인터넷·정상 종료와 현재 소스 독립 재검증을 통과했다.
-  전용 0.7 실행기 (`build/hosted-image-v07/Start-Aios-0.7.cmd`)의 `model-image-05-user` 사본도
-  세 명령·정상 종료를 검증했다. 기존 v0.6 디스크·포인터는 보존한다. 별도 장애 복사본 02도
-  같은 worker의 recover·즉시 exit·정상 종료를 실제 검증했고, 첫 복사본 01의 원본 FAIL은
-  보존한다. 성숙도는 `SUPPORTING/PARTIAL`이다.
-  기본 실행의 `Selection`·`Select`·`Rollback`은 별도 host 선택 기능으로 구현했으며
-  Windows 로컬의 실제 0.7·0.6 기본 부팅과 최종 0.7 재선택 PASS로 `SUPPORTING/PARTIAL`이다.
-  선택 기록이 없을 때는 기존 기본 경로를 유지하고 각 사용자 디스크와 history는 보존한다.
-  [운영 이미지 가이드](docs/os/aios_operating_image_guide_ko.md)가 계약과 실제 증거를 소유한다.
-- **process snapshot/journal은 증거 전용** — descriptor-owned 176B snapshot은 ISR 시점 owner/CR3/TSS `rsp0`/IF=0 검증과 `resume_ready=0`을 유지한다. per-boot process event journal v1의 schema/kind/reason/outcome 숫자 ID는 append-only이며, capacity 8 안에서 여섯 lifecycle/capture record를 덮어쓰지 않는다. journal은 `evidence_only=1 switch_events=0 resume_ready=0`이고 `0→1→0→2→0` 순차 bootstrap owner lifecycle만 증명한다. resumable saved context와 runnable-state 결속, live continuation/switch, 실제 A→B→A가 별도로 검증되기 전에는 snapshot이나 journal을 schedulable state 또는 CPU-switch trace로 해석하지 않는다.
+- **K2/H1과 hosted 실행은 다른 증거 범위** — native K2-a의 boot-local immutable
+  결속, H1 host-only replay, hosted MAIN·Cell·backend 수명을 합쳐 전체 지원으로
+  표현하지 않는다. [관리 모델](docs/kernel-room/kernel_room_management_model_ko.md)이
+  의미를, [hosted 도메인](hosted/README.md)과 분야별 가이드가 실행 범위를 소유한다.
+- **상호작용 기록과 관리 identity를 구분한다** — 작업·세션·결과물·사용자 선택을
+  canonical Cell/Node/NodeBit로 자동 승격하지 않는다. UI와 에이전트의 상태 인터페이스는
+  같은 유효성·결과를 소비하고, 표시를 위한 추론으로 관리 원본을 덮지 않는다.
+- **영속성의 대상과 경계를 명시한다** — 설정/history 보존, 모델 결과, 작업 연속성,
+  부팅 간 canonical 상태 복원은 별개다. 이미지·source snapshot·실행 증거의 사실은
+  [운영 이미지 가이드](docs/os/aios_operating_image_guide_ko.md)가 소유한다.
 - **ring3 entry AC 계약은 saved/live를 분리한다** — 현재 QEMU bootstrap pair의 CPL3 `#BP` 2회와 `int 0x80` 6회에서 saved user RFLAGS는 불변이고 entry live AC는 항상 0이어야 한다. SMAP active는 `clac`, 비활성·미지원은 `pushfq/btr/popfq` fallback을 사용하며 `default`/`max-smap` CPU profile과 exact marker/`state sec` mirror가 분기를 고정한다. 이 계약을 future ring3 IRQ/NMI/IST, 실기기, resumable context 또는 process switch 증거로 확장 해석하지 않는다.
 
 ---

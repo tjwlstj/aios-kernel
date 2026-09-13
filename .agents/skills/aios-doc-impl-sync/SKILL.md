@@ -12,6 +12,15 @@ exists to stop: commit a03b3c2 (2026-08-02) shipped `SYS_INFO_RESOURCE` and
 `state resource`, updated `PROJECT.md` and `docs/`, but left `CLAUDE.md` and
 `README.md` claiming neither existed.
 
+## Product purpose and freshness
+
+Use `docs/meta/aios_product_direction_ko.md` for product purpose,
+`docs/meta/minimal_io_and_maturity_workflow_ko.md` for the single global queue,
+and `docs/meta/document_freshness_registry_ko.md` for review scope, evidence dates,
+and recheck triggers. Content review and runtime verification are separate events.
+Record only the scope actually checked; preserve original source snapshots and
+historical verdicts. Update the affected registry row with the owning guide.
+
 ## Establish the source of truth
 
 1. Inspect `git status --short --branch` and preserve unrelated changes.
@@ -37,6 +46,7 @@ update every mirror in the same patch:
 | Syscall existence and maturity | `kernel/include/runtime/ai_syscall.h` · the subsystem bullet in `CLAUDE.md` · `PROJECT.md` §5 invariants · `README.md` "Current Status" · the nearest design doc |
 | Boot markers / selftest PASS lines | kernel source emitting the line · `CLAUDE.md` "Smoke Test Checkpoints" · testkit anchors (`boot_log.py`, `shell_lane.py`, `EXACT_REQUIRED_RECORDS`) |
 | Kernel Room gate ranges | `kernel/core/kernel_room.c` · the gate-coverage bullets in `CLAUDE.md` and `PROJECT.md` |
+| Product purpose and interaction outcomes | product direction canon · global workflow · agent operating contract · README/PROJECT/CLAUDE · relevant domain hubs |
 | Kernel Room hierarchy and direction | `docs/kernel-room/kernel_room_management_model_ko.md` · `docs/kernel-room/development_guide_ko.md` · `CLAUDE.md` · `README.md` · `PROJECT.md` · handoff/current roadmap |
 | Maturity labels (`CURRENT`/`PARTIAL`/`SCAFFOLD`/`PLANNED`) | `README.md` · `PROJECT.md` · `CLAUDE.md` · design docs must agree for the same feature |
 

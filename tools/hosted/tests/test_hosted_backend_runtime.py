@@ -44,7 +44,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
         deadline=time.process_time()+0.03
         while time.process_time()<deadline:
             pass
-        raw=json.dumps({'content':'Explicit backend fixture.','tokens_predicted':4,'model':'fixture-backend'}).encode()
+        value={'content':'Explicit backend fixture.','tokens_predicted':4,'model':'fixture-backend'}
+        if request.get('n_predict')==192:
+            value.update(prompt=request['prompt'],truncated=False)
+        raw=json.dumps(value).encode()
         self.send_response(200)
         self.send_header('Content-Length',str(len(raw)))
         self.end_headers()

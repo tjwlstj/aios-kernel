@@ -25,6 +25,11 @@ from verify_agent import RESOURCE_COMMANDS, CELL_COMMANDS, BACKEND_COMMANDS
 SMOKE_COMMANDS = ["about", "status", "hardware", "net status", "resolve example.com",
                   "fetch https://example.com/", "no-such-command", "help", "exit"]
 SERIAL_LIMIT = 32 * 1024 * 1024
+AGENT_PROMPT_SECONDS = 2450
+# The full hosted suite includes process lifecycles and retained-image replay.
+# On TCG it outgrew the original 400-second setup checkpoint.
+GUEST_TEST_SECONDS = 1200
+TASK_SMOKE_SECONDS = 6000
 PROMPT_PATTERN = rb"(?:^|\r?\n)aios> "
 SERVICE_DIR = "/tmp/aios-runtime"
 SERVICE_FIRST = ["service status", "about", "resolve example.com", "fetch https://example.com/", "exit"]
@@ -91,7 +96,65 @@ def control_guest(guest, action: str, output: Path) -> dict:
     return verify_control(output, action)
 
 
-def run_session(guest, output: Path, retained: Path, commands: list[str] | None, guest_name: str, *, agent: bool = False) -> dict:
+def run_task_smoke_guest(guest, output: Path, retained: Path) -> dict:
+    """Run one owned CLI scenario and preserve a failed driver before shutdown."""
+    driver_error = None
+    try:
+        guest.step("Testing real model Task answer and cancellation in one CLI",
+                   "su aios -s /bin/sh -c 'PYTHONDONTWRITEBYTECODE=1 python3 "
+                   "/mnt/aios/tools/hosted/task_smoke_guest.py /tmp/aios-task-smoke'",
+                   TASK_SMOKE_SECONDS)
+    except RuntimeError as exc:
+        # A completed driver may fail its scenario; still export evidence and
+        # let the normal MAIN/backend/service cleanup and VM poweroff run.
+        driver_error = str(exc)
+    export_guest(guest, "/tmp/aios-task-smoke", output)
+    if driver_error is not None:
+        verdict = {"outcome": "FAIL", "reasons": ["task_smoke_driver", driver_error]}
+    else:
+        verdict = verify_execution(output, source_root=retained, require_live=True, require_internet=True)
+    save_json(output / "verdict.json", verdict)
+    return verdict
+
+
+class SpaceSmokeScript:
+    """Send one fixed scenario with one intentional observation-expiry pause.
+
+    The host pause does not establish freshness. The guest's observation and
+    request evidence must independently establish the TTL transition.
+    """
+    def __init__(self, commands: list[str] | None):
+        from space_output_contract import SPACE_COMMANDS, SPACE_STALE_COMMAND_INDEX, SPACE_STALE_WAIT_SECONDS
+        if commands != SPACE_COMMANDS:
+            raise ValueError("SpaceSmoke requires its exact command plan")
+        if (type(SPACE_STALE_COMMAND_INDEX) is not int or not 0 < SPACE_STALE_COMMAND_INDEX < len(SPACE_COMMANDS)
+                or SPACE_COMMANDS[SPACE_STALE_COMMAND_INDEX - 1] != 'space'
+                or not SPACE_COMMANDS[SPACE_STALE_COMMAND_INDEX].startswith('ask ')
+                or type(SPACE_STALE_WAIT_SECONDS) is not int or SPACE_STALE_WAIT_SECONDS != 31):
+            raise ValueError("SpaceSmoke observation-expiry plan is invalid")
+        self.commands = tuple(SPACE_COMMANDS)
+        self.wait_index = SPACE_STALE_COMMAND_INDEX
+        self.wait_seconds = SPACE_STALE_WAIT_SECONDS
+        self.position = 0
+
+    def before_send(self, line: str) -> None:
+        if self.position >= len(self.commands) or line != self.commands[self.position]:
+            raise ValueError("SpaceSmoke command order changed")
+        if self.position == self.wait_index:
+            print("[AIOS] Waiting 31 seconds for the saved space observation to become stale...", flush=True)
+            time.sleep(self.wait_seconds)
+        self.position += 1
+
+    def complete(self) -> None:
+        if self.position != len(self.commands):
+            raise RuntimeError("CLI exited before the SpaceSmoke command plan completed")
+
+
+def run_session(guest, output: Path, retained: Path, commands: list[str] | None, guest_name: str, *,
+                agent: bool = False, space_smoke: bool = False) -> dict:
+    if space_smoke and not agent:
+        raise ValueError("SpaceSmoke requires the model-enabled console")
+    space_script = SpaceSmokeScript(commands) if space_smoke else None
     output.mkdir(parents=True, exist_ok=True)
     nonce = uuid.uuid4().hex
     begin_marker, end_marker = "__AIOS_CONSOLE_START_" + nonce + "__", "__AIOS_CONSOLE_EXIT_" + nonce + "_"
@@ -107,8 +170,10 @@ def run_session(guest, output: Path, retained: Path, commands: list[str] | None,
     end_pattern = rb"\r?\n" + end_marker.encode() + rb"([0-9]+)__\r?\n"
     script = iter(commands or [])
     while True:
-        match, base = guest.wait(end_pattern + rb"|" + PROMPT_PATTERN, 650 if agent else 60)
+        match, base = guest.wait(end_pattern + rb"|" + PROMPT_PATTERN, AGENT_PROMPT_SECONDS if agent else 60)
         if match.group(1) is not None:
+            if space_script is not None:
+                space_script.complete()
             finish = base + match.start()
             display(bytes(guest.transcript[printed:finish]))
             process_exit = int(match.group(1))
@@ -129,6 +194,8 @@ def run_session(guest, output: Path, retained: Path, commands: list[str] | None,
         if len(line) > 2048 or any(not c.isprintable() for c in line):
             print("[AIOS] Enter one printable command of at most 2048 characters.", flush=True)
             line = "help"
+        if space_script is not None:
+            space_script.before_send(line)
         guest.send(line)
     stdout = bytes(guest.transcript[start:finish]).replace(b"\r\n", b"\n")
     (output / "stdout.log").write_bytes(stdout)
@@ -141,7 +208,7 @@ def run_session(guest, output: Path, retained: Path, commands: list[str] | None,
               "stderr_sha256": hashlib.sha256((output / "stderr.log").read_bytes()).hexdigest(),
               "requested_commands": commands})
     verdict = verify_execution(output, source_root=retained, require_live=True,
-                               require_internet=commands in (SMOKE_COMMANDS, SERVICE_FIRST, RESOURCE_COMMANDS, CELL_COMMANDS, BACKEND_COMMANDS))
+                               require_internet=space_smoke or commands in (SMOKE_COMMANDS, SERVICE_FIRST, RESOURCE_COMMANDS, CELL_COMMANDS, BACKEND_COMMANDS))
     save_json(output / "verdict.json", verdict)
     return verdict
 
@@ -158,6 +225,46 @@ def control_backend_guest(guest, action: str, output: Path) -> None:
     save_json(output / 'execution.json', {'schema_version': 1, 'action': action, 'process_exit_code': 0,
               'stdout_sha256': hashlib.sha256((output / 'stdout.log').read_bytes()).hexdigest(),
               'stderr_sha256': hashlib.sha256((output / 'stderr.log').read_bytes()).hexdigest()})
+
+
+def task_stop_guest(guest, component: str, state_dir: str, output: Path) -> int:
+    """Retain a Task attempt's real stop exit even when the service failed."""
+    if component not in ('agent', 'backend'):
+        raise ValueError('unknown Task cleanup component')
+    marker = '__AIOS_TASK_STOP_' + uuid.uuid4().hex + '_'
+    stem = '/tmp/task-' + component + '-stop'
+    guest.send("su aios -s /bin/sh -c 'PYTHONDONTWRITEBYTECODE=1 python3 "
+               '/mnt/aios/hosted/linux/aios-' + component + '.py stop --state-dir ' + state_dir +
+               "' >" + stem + '.stdout 2>' + stem + ".stderr; printf '\\n" + marker + "%s__\\n' \"$?\"")
+    match, _ = guest.wait(rb'\r?\n' + marker.encode() + rb'([0-9]+)__\r?\n', 240)
+    code = int(match.group(1))
+    names = ['task-' + component + '-stop.stdout', 'task-' + component + '-stop.stderr']
+    export_guest(guest, '/tmp', output, names)
+    for name, target in zip(names, ('stdout.log', 'stderr.log')):
+        (output / name).rename(output / target)
+    save_json(output / 'execution.json', {'schema_version': 1, 'action': 'stop', 'process_exit_code': code,
+              'stdout_sha256': hashlib.sha256((output / 'stdout.log').read_bytes()).hexdigest(),
+              'stderr_sha256': hashlib.sha256((output / 'stderr.log').read_bytes()).hexdigest()})
+    return code
+
+
+def cleanup_task_model(guest, output: Path) -> list[str]:
+    """Try both owned guest service stops and exports after a failed scenario."""
+    issues = []
+    for component, state_dir, destination in (('agent', AGENT_DIR, 'agent'),
+            ('backend', '/tmp/aios-model-backend', 'model-backend')):
+        try:
+            code = task_stop_guest(guest, component, state_dir, output / (component + '-stop'))
+            if code != 0:
+                issues.append(component + '_stop_exit_' + str(code))
+        except (OSError, ValueError, RuntimeError, TimeoutError) as exc:
+            issues.append(component + '_stop:' + str(exc))
+        try:
+            export_guest(guest, state_dir, output / destination)
+        except (OSError, ValueError, RuntimeError, TimeoutError) as exc:
+            issues.append(component + '_export:' + str(exc))
+    save_json(output / 'task-cleanup.json', {'outcome': 'FAIL' if issues else 'PASS', 'reasons': issues})
+    return issues
 
 
 def display(data: bytes) -> None:
@@ -272,16 +379,23 @@ def main() -> int:
     parser.add_argument('--cell-smoke', action='store_true', help='Verify Cell lifecycle and explicit rebind with a real model request.')
     parser.add_argument('--backend-smoke', action='store_true', help='Verify owned backend replacement, MAIN rejection and explicit recovery.')
     parser.add_argument('--recovery-smoke', action='store_true', help='Inject supervisor loss and verify same-CLI recovery with the real model.')
+    parser.add_argument('--space-smoke', action='store_true', help='Verify actual model consumption of fresh and stale space observations, target rejection and recovery.')
+    parser.add_argument("--task-smoke", action="store_true", help="Verify one real model answer and an explicitly cancelled second Task in the same CLI.")
     parser.add_argument("--inference-cache", type=Path,
                         default=Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "AIOS/hosted-inference")
     args = parser.parse_args()
     if re.fullmatch(r"test_hosted[a-zA-Z0-9_*]*\.py", args.guest_test_pattern) is None:
         parser.error("Invalid guest test filename pattern")
-    if sum((args.smoke, args.service_smoke, args.agent_smoke, args.resource_smoke, args.cell_smoke, args.backend_smoke, args.recovery_smoke)) > 1:
+    if sum((args.smoke, args.service_smoke, args.agent_smoke, args.resource_smoke, args.cell_smoke, args.backend_smoke, args.recovery_smoke, args.space_smoke, args.task_smoke)) > 1:
         parser.error("Choose one smoke workflow")
     if args.agent and (args.smoke or args.service_smoke):
         parser.error("Choose one console workflow with the MAIN model")
-    use_agent = args.agent or args.agent_smoke or args.resource_smoke or args.cell_smoke or args.backend_smoke or args.recovery_smoke
+    space_commands = None
+    if args.space_smoke:
+        from space_output_contract import SPACE_COMMANDS
+        space_commands = list(SPACE_COMMANDS)
+        SpaceSmokeScript(space_commands)
+    use_agent = args.agent or args.agent_smoke or args.resource_smoke or args.cell_smoke or args.backend_smoke or args.recovery_smoke or args.space_smoke or args.task_smoke
     root = Path(__file__).resolve().parents[2]
     output = args.artifact_dir.resolve()
     output.mkdir(parents=True, exist_ok=False)
@@ -337,7 +451,7 @@ def main() -> int:
                       "model_sha256": MODEL_SHA, "backend_sha256": BACKEND_SHA, "verification": "host-read-complete"})
         retained = output / "runtime-source"
         shutil.copytree(share / "hosted/linux", retained)
-        if args.recovery_smoke:
+        if args.recovery_smoke or args.space_smoke or args.task_smoke:
             shutil.copytree(share / "tools/hosted", output / "verification-source")
         command = [str(args.qemu), "-machine", "q35", "-accel", "tcg", "-m", "3072" if use_agent else "768", "-smp", "2",
                    "-kernel", str(args.kernel), "-initrd", str(args.initramfs),
@@ -348,7 +462,7 @@ def main() -> int:
         if use_agent:
             command += ["-cpu", "max", "-drive", "file=" + str(model_disk) + ",format=raw,if=virtio,readonly=on"]
         def git(*parts):
-            return subprocess.run(["git", "--no-optional-locks", *parts], cwd=root, capture_output=True, text=True, check=True).stdout.strip()
+            return subprocess.run(["git", "-c", "safe.directory=" + root.as_posix(), "--no-optional-locks", *parts], cwd=root, capture_output=True, text=True, check=True).stdout.strip()
         environment = {"schema_version": 1, "purpose": "aios-userspace-console-development-guest",
                        "physical_host_inventory": False, "persistence": "ephemeral", "guest_user": "aios",
                        "git_head": git("rev-parse", "HEAD"), "git_status": git("status", "--porcelain").splitlines(),
@@ -357,9 +471,15 @@ def main() -> int:
                        "qemu_version": subprocess.run([str(args.qemu), "--version"], capture_output=True, text=True, check=True).stdout.strip(),
                        "network": "QEMU user NAT; no host forwarding", "guest_tests": args.guest_tests,
                        "guest_test_pattern": args.guest_test_pattern if args.guest_tests else None,
+                       "guest_test_timeout_seconds": GUEST_TEST_SECONDS if args.guest_tests else None,
                        "service_smoke": args.service_smoke, "agent": use_agent, "agent_smoke": args.agent_smoke,
                        'resource_smoke': args.resource_smoke, 'cell_smoke': args.cell_smoke,
                        'backend_smoke': args.backend_smoke, 'recovery_smoke': args.recovery_smoke, "command": command}
+        if args.space_smoke:
+            environment['space_smoke'] = True
+        if args.task_smoke:
+            environment['task_smoke'] = True
+            environment['task_smoke_timeout_seconds'] = TASK_SMOKE_SECONDS
         (output / "environment.json").write_text(json.dumps(environment, indent=2) + "\n", encoding="utf-8")
         try:
             print("[AIOS] Starting the Linux hardware layer...", flush=True)
@@ -377,18 +497,22 @@ def main() -> int:
             # from the read-only source share and exported console artifacts.
             guest.step("Preparing the private service directory", "mkdir -m 700 " + SERVICE_DIR + " && chown aios:aios " + SERVICE_DIR)
             if args.guest_tests:
-                guest.step("Running Linux console tests as the AIOS user", "su aios -s /bin/sh -c 'cd /mnt/aios && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tools/hosted/tests -p \"" + args.guest_test_pattern + "\" -v'", 400)
+                guest.step("Running Linux console tests as the AIOS user", "su aios -s /bin/sh -c 'cd /mnt/aios && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tools/hosted/tests -p \"" + args.guest_test_pattern + "\" -v'", GUEST_TEST_SECONDS)
             if use_agent:
                 guest.step("Loading the pinned local model", "python3 /mnt/aios/tools/hosted/model_backend.py prepare && "
                            "chmod 755 /tmp/aios-model && cp /mnt/aios/inference/agent-config.json " + AGENT_CONFIG, 120)
                 export_guest(guest, "/tmp/aios-model", output / "model-integrity", ["integrity.json"])
-                if not args.recovery_smoke:
+                if not (args.recovery_smoke or args.task_smoke):
                     control_backend_guest(guest, 'start', output / 'backend-start')
             if args.service_smoke:
                 print("[AIOS] Starting the private runtime service...", flush=True)
                 control_guest(guest, "start", output / "service-start")
             commands = BACKEND_COMMANDS if args.backend_smoke else CELL_COMMANDS if args.cell_smoke else RESOURCE_COMMANDS if args.resource_smoke else AGENT_FIRST if args.agent_smoke else SERVICE_FIRST if args.service_smoke else SMOKE_COMMANDS if args.smoke else None
-            if args.recovery_smoke:
+            if args.space_smoke:
+                commands = space_commands
+            if args.task_smoke:
+                verdict = run_task_smoke_guest(guest, output, retained)
+            elif args.recovery_smoke:
                 try:
                     guest.step("Testing explicit model recovery in the same CLI", "su aios -s /bin/sh -c 'PYTHONDONTWRITEBYTECODE=1 python3 /mnt/aios/tools/hosted/backend_recovery_guest.py /tmp/aios-recovery'", 1800)
                 except RuntimeError:
@@ -401,7 +525,8 @@ def main() -> int:
                 verdict = verify_execution(output, source_root=retained, require_live=True, require_internet=True)
                 save_json(output / "verdict.json", verdict)
             else:
-                verdict = run_session(guest, output, retained, commands, "aios-session", agent=use_agent)
+                verdict = run_session(guest, output, retained, commands, "aios-session", agent=use_agent,
+                                      space_smoke=args.space_smoke)
             if args.service_smoke:
                 print("[AIOS] Reopening the console while the service stays alive...", flush=True)
                 second = run_session(guest, output / "second-console", retained, SERVICE_SECOND, "aios-second")
@@ -412,23 +537,29 @@ def main() -> int:
                 if second["outcome"] != "PASS":
                     verdict = second
             if use_agent:
-                guest.step("Stopping the MAIN agent", "su aios -s /bin/sh -c 'PYTHONDONTWRITEBYTECODE=1 python3 "
-                           "/mnt/aios/hosted/linux/aios-agent.py stop --state-dir " + AGENT_DIR +
-                           "' >/tmp/agent-stop.stdout 2>/tmp/agent-stop.stderr", 120)
-                export_guest(guest, "/tmp", output / "agent-stop", ["agent-stop.stdout", "agent-stop.stderr"])
-                (output / "agent-stop/agent-stop.stdout").rename(output / "agent-stop/stdout.log")
-                (output / "agent-stop/agent-stop.stderr").rename(output / "agent-stop/stderr.log")
-                save_json(output / "agent-stop/execution.json", {"schema_version": 1, "action": "stop", "process_exit_code": 0,
-                          "stdout_sha256": hashlib.sha256((output / "agent-stop/stdout.log").read_bytes()).hexdigest(),
-                          "stderr_sha256": hashlib.sha256((output / "agent-stop/stderr.log").read_bytes()).hexdigest()})
-                export_guest(guest, AGENT_DIR, output / "agent")
-                control_backend_guest(guest, 'stop', output / 'backend-stop')
-                export_guest(guest, "/tmp/aios-model-backend", output / "model-backend")
+                if args.task_smoke:
+                    cleanup_issues = cleanup_task_model(guest, output)
+                    if cleanup_issues:
+                        verdict = {"outcome": "FAIL", "reasons": ["task_cleanup", cleanup_issues, verdict]}
+                else:
+                    guest.step("Stopping the MAIN agent", "su aios -s /bin/sh -c 'PYTHONDONTWRITEBYTECODE=1 python3 "
+                               "/mnt/aios/hosted/linux/aios-agent.py stop --state-dir " + AGENT_DIR +
+                               "' >/tmp/agent-stop.stdout 2>/tmp/agent-stop.stderr", 120)
+                    export_guest(guest, "/tmp", output / "agent-stop", ["agent-stop.stdout", "agent-stop.stderr"])
+                    (output / "agent-stop/agent-stop.stdout").rename(output / "agent-stop/stdout.log")
+                    (output / "agent-stop/agent-stop.stderr").rename(output / "agent-stop/stderr.log")
+                    save_json(output / "agent-stop/execution.json", {"schema_version": 1, "action": "stop", "process_exit_code": 0,
+                              "stdout_sha256": hashlib.sha256((output / "agent-stop/stdout.log").read_bytes()).hexdigest(),
+                              "stderr_sha256": hashlib.sha256((output / "agent-stop/stderr.log").read_bytes()).hexdigest()})
+                    export_guest(guest, AGENT_DIR, output / "agent")
+                    control_backend_guest(guest, 'stop', output / 'backend-stop')
+                    export_guest(guest, "/tmp/aios-model-backend", output / "model-backend")
                 from verify_agent import verify_workflow as verify_agent_workflow, verify_interactive
                 agent_verdict = (verify_agent_workflow(output, require_shutdown=False) if args.agent_smoke else
                                  verify_interactive(output, source_root=retained, require_shutdown=False,
                                                     resource_smoke=args.resource_smoke, cell_smoke=args.cell_smoke,
-                                                    backend_smoke=args.backend_smoke, recovery_smoke=args.recovery_smoke))
+                                                    backend_smoke=args.backend_smoke, recovery_smoke=args.recovery_smoke,
+                                                    space_smoke=args.space_smoke, task_smoke=args.task_smoke))
                 save_json(output / "agent-verdict.json", agent_verdict)
                 if agent_verdict["outcome"] != "PASS":
                     verdict = agent_verdict
@@ -466,7 +597,7 @@ def main() -> int:
                 from verify_agent import verify_workflow as verify_agent_workflow, verify_interactive
                 final_agent = (verify_agent_workflow(output) if args.agent_smoke else verify_interactive(output,
                     resource_smoke=args.resource_smoke, cell_smoke=args.cell_smoke, backend_smoke=args.backend_smoke,
-                    recovery_smoke=args.recovery_smoke))
+                    recovery_smoke=args.recovery_smoke, space_smoke=args.space_smoke, task_smoke=args.task_smoke))
                 save_json(output / "agent-verdict.json", final_agent)
                 if final_agent["outcome"] != "PASS":
                     verdict = {**verdict, "outcome": "FAIL", "reasons": ["agent_final_verification", final_agent]}

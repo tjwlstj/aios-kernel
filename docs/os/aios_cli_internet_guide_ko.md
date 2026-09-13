@@ -1,5 +1,13 @@
 # AIOS CLI와 기본 인터넷 사용 가이드
 
+> 개발 경계 — 2026-09-13: 환경 문맥·오류 안내에 이어 v0.10은 UUID Task의
+> 접수·조회·결과·동일 CLI 소유 backend의 명시적 취소를 연결한다(`PARTIAL`).
+> 버전·schema·source 수와 보존된 v0.8 실제 소비·v0.10 fixture의 범위는
+> [환경 문맥 가이드](aios_space_context_guide_ko.md)가 소유한다. 실제 모델 Task의 한정 흐름은 PASS이며
+> source 39개 운영 이미지 acceptance는 미완료다. 본문의 과거 계약·실행 기록·source
+> 일치 주장은 각 보존 소스의 당시 범위이며 새 개발 소스의 검증으로 승계하지 않는다.
+> 이번 문서 검토는 외부 자료 재조사나 runtime 재실행 판정이 아니다.
+
 > 문서 역할: Linux-hosted AIOS 대화형 사용자 환경의 작업·운영 가이드
 >
 > 상위 정본: [Linux substrate 정책](linux_hosted_substrate_and_resource_policy_ko.md),
@@ -118,6 +126,11 @@ aios> exit
 설치된 모델을 쓰려면 Windows에서 `Start-AiosImage.cmd -Agent`로 부팅한 뒤
 `backend start`, `agent start`, `room discover`, `room bind`, `ask ...`를 사용한다.
 별도 개발 VM을 준비할 때는 `Start-AiosConsole.ps1 -Agent`를 사용한다.
+v0.10의 `ask`는 UUID 접수 뒤 프롬프트로 돌아온다. 같은 CLI에서
+`task status <UUID>`, `task result <UUID>`, `task cancel <UUID>`로 진행·결과·명시적 취소를
+연결한다. 취소는 같은 CLI가 시작해 소유한 backend에 한정하며 접수와 실제 종료를 구분한다.
+기존 동기 `SpaceSmoke`와 별도 TaskSmoke의 한정 실제 모델 PASS·미완료 이미지 범위는
+[환경 문맥 가이드](aios_space_context_guide_ko.md)를 따른다. 기존 운영 이미지의 버전은 별도다.
 현재 CLI v0.7/session schema 7은 runtime source 31개, MAIN protocol/run schema 4는
 source 24개를 기록한다. [MAIN 가이드](aios_agent_binding_guide_ko.md),
 [자원 관측 가이드](aios_resource_observation_guide_ko.md),

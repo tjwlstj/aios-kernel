@@ -18,6 +18,26 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > commands, implementation status mirrors, and low-level invariants; the
 > integrated guide does not replace those details.
 
+## Product purpose and documentation authority
+
+AIOS aims to let AI understand its working environment and current state, operate
+reliably and efficiently on local resources, and interact continuously with the user.
+Read the [product direction canon](docs/meta/aios_product_direction_ko.md) before
+selecting work. Environment awareness and user interaction are product outcomes in
+their own right; each change also records its relationship to the Kernel Room model
+and its implementation maturity separately.
+
+The [workflow](docs/meta/minimal_io_and_maturity_workflow_ko.md) owns the single global
+queue. The [freshness registry](docs/meta/document_freshness_registry_ko.md) records
+review scope, evidence boundaries, and recheck triggers. Content review: 2026-09-13
+against this checkpoint's v0.10 development sources. The 2026-09-09 review and v0.8/v0.9
+source/run records remain historical evidence tied to their original snapshots.
+Windows host and Linux process-fixture results are recorded separately from the bounded
+actual-model TaskSmoke PASS: one answer, another running Task cancelled, worker exit, and independently observed whole-backend exit. Image39 acceptance remains incomplete; this mirror update is not an execution verdict.
+Historical image runs below retain their original source snapshots and verdicts.
+They do not validate later source edits; the [image publication boundary](docs/os/aios_operating_image_guide_ko.md)
+owns the exact distinction (section 11).
+
 ## Build & Test Commands
 
 Builds run from the **repository root**; the root `Makefile` delegates to `kernel/Makefile`.
@@ -97,9 +117,31 @@ runs two consoles, real requests, stale rejection and explicit rebind. `verify_a
 independently checks model provenance, request/source/binding records and actual shutdown.
 This hosted authority is not the native K1 instance. Full H2/H3 and resource actions remain `PLANNED`.
 
-Current CLI v0.7/session schema 7 records 31 runtime source files; MAIN protocol/run schema 4
+Published CLI v0.7/session schema 7 records 31 runtime source files; MAIN protocol/run schema 4
 records 24. Archived CLI schemas 1/2/3/4/5/6 and MAIN run schemas 1/2/3 remain replayable with their
-retained sources. Explicit `resources link/status/sample` and per-request process observations
+retained sources. These preserved contracts do not validate this checkpoint's development sources.
+
+Development CLI 0.10.0/session schema 10 records 35 runtime source files; MAIN protocol/run
+schema 6 records 28. Receipt schema 3 and space/backend schema 1 stay unchanged. The whole
+hosted Python runtime has 39 files. `space` refreshes MAIN's observed environment; `ask` records
+a UUID Task before dispatch and returns to the prompt. `task status|result|cancel UUID` refers to
+the same accepted request. Direct legacy MAIN6 `ask` IPC is rejected as `request-task-required`.
+
+This checkpoint's v0.10 implementation is `PARTIAL`: preserved Windows and real Linux process-fixture checks establish
+their recorded scope. The actual-model TaskSmoke passed its bounded same-CLI workflow and normal VM shutdown; 39-source image acceptance remains incomplete.
+The retained v0.8 actual context-consumption replay passed with a corrected verifier; its original
+FAIL remains preserved. None of those records validate later source edits. See the
+[space context guide](docs/os/aios_space_context_guide_ko.md) for exact source/evidence boundaries.
+
+A Task cancellation stops only the backend instance owned by the same CLI's retained lease/child
+handles. Cancellation receipt, worker exit and MAIN's independent observation of backend exit
+are separate evidence; this is not a per-request model cancellation API. UNKNOWN is not success
+or proof of nonexecution. Previous conversation, general task edits and automatic resume after
+CLI loss/reboot are unimplemented. The separate TaskSmoke integration must retain same-session
+COMMAND/seq/UUID evidence and failure logs; no live success is implied by its implementation.
+
+
+Explicit `resources link/status/sample` and per-request process observations
 were introduced in v0.4. See [resource observation guide](docs/os/aios_resource_observation_guide_ko.md)
 for current evidence. MAIN and backend CPU/RSS stay separate; system PSI is unattributed.
 Read failure never changes model readiness. No ownership, quota or scheduler authority follows.
@@ -110,7 +152,7 @@ processes remain running. Reactivation requires explicit `room discover`, `room 
 `resources link`. The [Cell lifecycle guide](docs/os/aios_cell_lifecycle_guide_ko.md) owns this
 contract and `-CellSmoke -GuestTests` / `verify_agent.py --cells` evidence; the local Linux and
 actual-model scenario passed with the retained v0.5 sources in `cell-01`. This historical run does
-not validate the current v0.7 source. Full H2/H3 and native Cell lifecycle remain future work.
+not validate the development v0.10 source. Full H2/H3 and native Cell lifecycle remain future work.
 The separate model operating image profile has the partial implementation described below.
 
 `backend status/start/stop/restart` now manages a separate model supervisor and its owned child.
@@ -123,7 +165,7 @@ actual Linux/model validation, rejection after backend replacement, explicit rec
 observation, DNS/HTTPS and normal shutdown. Independent replay matched the sources at that time.
 This is retained-source evidence; the subsequent model-image record-path fix changes the current
 runtime bytes and requires separate verification. The maturity remains `PARTIAL`.
-Current v0.7 adds explicit `backend recover` using a child pidfd retained by the same CLI
+V0.7 introduced explicit `backend recover` using a child pidfd retained by the same CLI
 before supervisor loss (`PARTIAL`; actual Linux/model evidence passed separate independent replay).
 The original recovery-model-02 verdict remains FAIL; the corrected replay report owns the new acceptance. Its separate
 `RECOVERED` receipt never replaces the original failed run with a normal stop; MAIN restart
@@ -146,8 +188,10 @@ At that v0.6 milestone, `Start-AiosImage.cmd -Agent` ran a persistent `local-mod
 queries and normal exit also passed separately. The operating image guide owns these results and
 preserved failures. This bounded image does not qualify full H2/H3, native execution or a release.
 
-The current CLI v0.7/session 7 model image is `model-image-05`, with all 35 current product sources
-matching its installed manifest and retained snapshot. Its separate normal acceptance passed two
+The retained CLI v0.7/session 7 image is `model-image-05`; its 35-file installed manifest
+matched the 2026-09-08 source snapshot at that verification. Publication later normalized four
+files (different bytes, identical AST); section 11 of the operating image guide owns that boundary.
+The image acceptance was not rerun after normalization. Its separate normal acceptance passed two
 online/offline cold boots, 45 commands, two warmups and two actual user requests, explicit rebind,
 Internet access and normal shutdown; independent replay matched the original verdict and preserved
 all original files. Start-Aios-0.7.cmd (`build/hosted-image-v07/Start-Aios-0.7.cmd`) selects the separate
@@ -405,45 +449,31 @@ verification or hardening work so it stays deduplicated against the verdict
 design doc (V0-V5) and the workflow guide (K/M/C/W/H axes).
 
 ### Current Workflow Plan
-The project has one canonical management lane and one primary hosted-delivery
-lane, plus supporting M/C/W axes, in
-`docs/meta/minimal_io_and_maturity_workflow_ko.md`. The preferred management
-lane builds K1 full hierarchy registry v0 (Cell 1 + bound Node 1 + parent-bound
-NodeBit 2 in one proof) → bounded native K2-a oracle (implemented) → K2 lifecycle/reconcile expansion → K3 legacy
-NodeBit namespace projection → K4 observation-only attribution → K5
-principal/ownership and Axis Gate authorization. The M1-M5 sequence
-(uaccess/ELF/process/storage/disk loading)
-remains the execution substrate lane and may advance when it unlocks a concrete
-binding, but it does not automatically own the next task. The process-owned
-evidence snapshot and process event journal v1 are complete; live
-continuation/switch remains `PLANNED`. Before that high-risk execution slice,
-apply the entry gate in
-`docs/tools/verification_tooling_evolution_design_ko.md`.
 
-The Linux-hosted H axis is the intended default delivery implementation lane.
-H0 upstream manifest/guard and the bounded native K2-a oracle are `CURRENT`.
-H1-a transport, bounded H1-b lifecycle replay, the exact 12-fixture matrix,
-native K2-a projection, and H1-c self-contained bundle/independent parity CLI
-were implemented locally (2026-08-31). The dedicated Ubuntu, Windows, and parity
-jobs passed same-run, exact-SHA acceptance with all three artifacts (2026-09-03),
-so H1 contract/replay is `CURRENT`. H2-a startup/hardware observation and CLI/Internet are `PARTIAL`.
-The bounded MAIN producer/hosted binding, separate CPU/RSS observations and Cell 1 management
-transitions are `PARTIAL`; full H2/H3 and ownership remain `PLANNED`. Broad native
-process/storage expansion and final conformance closure are not prerequisites for
-the first observe-only hosted slice. H4/H5 require K5
-principal/ownership/authorize and separate approval. The
-canonical upstream pins and import boundary live in
-`docs/os/linux_hosted_substrate_and_resource_policy_ko.md`.
+Use the [single global queue](docs/meta/minimal_io_and_maturity_workflow_ko.md#agent-consumer-next).
+Its current product slice links accepted Task UUIDs to in-progress status, results and explicit
+cancellation in one CLI. Environment context and the isolated Task runtime are `PARTIAL`; the
+preserved v0.8 context replay and later Windows/Linux fixtures have separate source boundaries.
+Actual-model Task smoke and the new operating image remain unverified. Previous conversation,
+general task edits and continuity across CLI loss/reboot remain `PLANNED`.
+The product canon owns the interaction outcome; the workflow owns ordering and prerequisites.
+
+
+The technical K/M/C/W/H axes retain their separate evidence boundaries. K1/native K2-a
+and H1 host-only replay are `CURRENT`; bounded hosted runtime/management is `PARTIAL`.
+Resource ownership, broad authorization, reboot reconciliation and full conformance
+remain future work. Source IDs stay distinct from canonical identity. Live native
+continuation/switching still requires its own verification entry gate.
 
 ### Browser / Runtime Engine Roadmap
-The browser-facing W1-W5 axis is defined in
-`docs/os/browser_console_and_runtime_engine_roadmap_ko.md`. W1 is a planned
-host-side COM1/WebSocket console and does not imply a kernel TCP/IP or HTTP
-server. The long-term native runtime engine belongs in AIOS userspace after the
-required K1-K5 management bindings and M3-M5 process/storage/disk-ELF substrate
-foundations.
-Browser-local x86 execution remains an optional research track, not a claimed
-replacement for QEMU or the normal verification path.
+
+The [browser roadmap](docs/os/browser_console_and_runtime_engine_roadmap_ko.md)
+contains delivery candidates, including a host-side COM1/WebSocket console. A browser
+UI is one way to express the [interaction requirements](docs/meta/aios_product_direction_ko.md);
+it is not a prerequisite for the first CLI/structured agent-consumption slice.
+W1-W5 and native runtime prerequisites belong to that document's bounded domain;
+they do not supersede the global queue. Browser-local x86 execution remains research,
+and a UI does not establish Kernel Room identity, native networking, or OS isolation.
 
 ## Directory Map (domains)
 

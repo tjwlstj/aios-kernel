@@ -1,12 +1,22 @@
-# AIOS 성숙도 우선 작업흐름 가이드 (2026-08-10 재정렬)
+# AIOS 제품 성숙도와 전역 작업흐름
 
-최종 갱신: 2026-09-08 (H1 원격 acceptance·v0.6 이미지 증거 보존, v0.7 정상 모델 이미지·전용 사용자 실행과 별도 recover 재검증)
+최종 갱신: 2026-09-13 (v0.10 Task와 전체 검사·한정 실제 모델 Task PASS 범위 정렬)
 
 문서 역할: K/M/C/W/H축의 제품 성숙도와 전역 작업 우선순위 정본. 요청 분류,
 스킬·주제별 정본 선택, 문서 관리와 게시 절차는
 [통합 작업 진입 가이드](integrated_work_guide_ko.md)를 따른다.
+[제품 방향 정본](aios_product_direction_ko.md)이 공간·상태 인지, 로컬 효율과 사용자와의
+지속 상호작용이라는 목적과 성공의 의미를 소유한다. 이 문서는 그 목적에 따라 지금
+실행할 조각과 선행조건을 정한다. 분야별 K/H/M/C/W 목록은 아래 전역 큐를 대신하지 않는다.
 
 문서 관리 연결: 2026-08-21 (마일스톤 성숙도 내용 변경 없음)
+
+2026-09-13 개발 상태: 이 체크포인트의 개발 소스는 v0.10이다. v0.8/v0.9와 격리 개발·검사 과정은 보존된 이력으로 구분한다.
+v0.10은 질문 접수·조회·결과·명시적 취소를 연결한 `PARTIAL`이며 한정 실제 모델 TaskSmoke는
+PASS다. source 39개 운영 이미지 acceptance는 미완료다. [환경 문맥 가이드](../os/aios_space_context_guide_ko.md)가
+source·계약과 보존된 Windows 전체/Linux 프로세스 fixture 결과를 소유한다. 아래 과거
+기록의 "현재 소스"는 각 실행 당시 snapshot이며 후속 개발 소스의 검증으로 승계하지 않는다.
+
 
 2026-09-08 DIRECT 진행: 별도 MAIN producer의 실제 모델·hosted 결속은
 [MAIN 가이드](../os/aios_agent_binding_guide_ko.md), 이후 명시적 MAIN/backend 관계와
@@ -61,10 +71,11 @@ v0.6의 backend 교체 후 요청 거부·명시적 복구·실제 모델·인�
 
 **시사점:** "부팅 후 디스크에서 무언가를 읽는다"가 현재 커널이 못 하는 가장 기초적인 I/O다. 이것이 ELF 로더(디스크에서 유저 프로그램 적재)와 store/ 카탈로그(온라인 다운로드 후 저장) 비전의 공통 전제 조건이므로, 드라이버 작업의 올바른 재진입점은 **storage read 단 하나**다.
 
-## 2. 최신 기술 조사 요약 (2026-07)
+## 2. 당시 기술 조사 요약 (2026-07 역사 기록)
 
-이 절도 당시 substrate 선택 근거다. 실제 드라이버 착수 전에는 현재 스펙과 QEMU
-지원 상태를 다시 확인한다.
+이 절은 당시 substrate 선택 근거와 제안을 보존한다. 아래의 권장·우선·구현 지시는
+2026-07 당시 판단이며 현재 전역 큐를 정하지 않는다. 실제 드라이버 착수 전에는
+사용할 주장에 한해 현재 공식 스펙과 QEMU 지원 상태를 다시 확인한다.
 
 ### 2.1 스토리지 데이터 경로: virtio-blk 우선 (권장)
 
@@ -101,6 +112,93 @@ native reference/proof, 지속성 C축과 브라우저 W축은 각각 명시된 
 지지한다. Hosted 구현 결과가 K축 maturity를 자동 승격시키지는 않으며, 반대로
 native substrate backlog가 기본 delivery 우선순위를 다시 독점하지 않는다.
 
+<a id="agent-consumer-next"></a>
+
+### 3-0. 현재 전역 작업 — 공간 문맥 소비에서 작업 중 상호작용으로 (`PARTIAL`, 2026-09-13)
+
+기존 CLI·모델·관리 결속·이미지 사용의 증거 위에서, 실제 에이전트가 자기 작업 공간과
+현재 상태를 읽고 제한된 기존 요청의 결과를 사용자에게 전달하는 첫 장면을 검증했다.
+지금까지의 수동 CLI와 시험 driver가 명령을 수행했다는 증거를 에이전트의 계약 소비
+증거로 바꾸어 부르지 않는다. 세부 인터페이스 요구는
+[에이전트 운용 계약](../autonomy/agent_operating_contract_ko.md)이 소유한다.
+
+출발점인 v0.7은 고정 system 문구와 이번 사용자 prompt만 전달했다. v0.8 개발 경로는
+제한된 MAIN 환경의 원본·시점·현재/STALE/UNKNOWN 판정을 실제 요청 문맥에 연결한다.
+`space`로 관측을 갱신하고 `ask`는 보유 관측을 사용하며 기존 관리 결속을 다시 검사한다.
+새 전달 경로는 `PARTIAL`이다. 보존된 v0.8 실제 모델 실행은 빈 export 디렉터리를 요구한
+원본 검증기에서 FAIL이었고, 수정 검증기의 독립 재생은 실제 문맥 소비·대상 거부·통신·
+정상 종료를 PASS로 확인했다. 원본 FAIL과 수정 재생을 함께 보존하며 새 v0.9 실행이나
+임의 질문의 일반 능력으로 확대하지 않는다. 정확한 증거는 환경 문맥 가이드 §6이 소유한다.
+이전 대화·사용자 작업 선택의 자동 문맥은 아직 없다. v0.10의 실행 중 조회·취소 기능는
+아래 큐의 `PARTIAL` 범위이며 실제 모델 사용 흐름은 별도로 검증한다. CLI 표시와 실제
+모델의 소비는 별도로 증명한다. CPU·RSS만으로 효율 개선을 선언하지 않으며 같은
+작업·모델·하드웨어 조건의 비교 측정으로 확인한다.
+
+작업 기록은 다음 세 축을 분리한다.
+
+| 축 | 기록할 내용 |
+|---|---|
+| 제품 결과 | AI가 무엇을 관측하고 어떤 추측을 줄였는지, 사용자가 행동·진행·결과·실패를 어떻게 이해했는지 |
+| 관리 모델과의 관계 | 기존 계약 소비는 `SUPPORTING`일 수 있고, identity/binding/validity 계약을 직접 검증·변경하는 부분은 `DIRECT`로 별도 명시 |
+| 구현 성숙도 | 환경 문맥·v0.10 Task는 `PARTIAL`; 보존된 v0.8 실제 소비의 수정 재생과 Task fixture는 별도. v0.10의 한정 실제 모델 TaskSmoke는 PASS이며 운영 이미지는 미완료 |
+
+`SUPPORTING`은 제품 가치를 낮추거나 작업 후보에서 배제하는 표지가 아니다. 상호작용과
+공간 인지 자체가 제품 목적에 기여한다. 반대로 제품 목적에 중요하다는 이유로 K/H축의
+관리·권한 성숙도가 올라가는 것은 아니다.
+
+**첫 조각의 범위와 완료 기준:**
+
+1. 에이전트 하나가 현재 실행 환경·연결된 대상·관측 시점·유효성·지원되는 행동과
+   모르는 부분을 구조화된 계약으로 읽는다. Linux PID를 canonical identity로 쓰거나
+   NodeBit의 capability 표시를 권한 부여로 해석하지 않는다.
+   검증 대상 AI에 실제 전달한 명시적 환경/작업 공간 문맥의 원문과 출처·시점·유효성·
+   범위, 소비자 identity·실행 위치·모델과 요청을 기록한다. 외부 에이전트가 CLI 명령을
+   자동 실행한 것만으로 로컬 AI의 문맥 소비를 통과시킬 수 없다.
+2. 사용자가 허용한 좁은 기존 모델 요청 하나를 실제 서비스에 보내고 결과를 확인한다.
+   요청 전후의 실행 대상, 적용되는 결속·관계 세대, 요청 ID와 응답 증거를 연결한다.
+   전체 세션을 observation-only라고 표시하지 않으며 커널 자원 apply는 열지 않는다.
+3. 에이전트의 설명이 확인된 결과와 일치한다. 관측 원본·정규화된 상태·에이전트 입력과
+   선택·실제 요청/응답·사용자에게 한 설명·독립 verdict를 구분해 보존한다.
+   입력 관측이 실제 모델 문맥에 포함됐는지와 그 관측에 따른 답변/행동을 연결한다.
+   현재·미관측·STALE인 입력을 구별해 응답하는지 확인하고, 문맥 전달이나 이해를
+   주장하는 모델의 자기 설명만으로 성공 판정을 만들지 않는다.
+4. 관계를 사용하던 대상의 세대 변경이나 실행기 소실을 하나의 반례로 넣어 후속 요청을
+   멈추고, 실패 이유와 필요한 명시적 복구를 설명하는지 확인한다. 자동 재결속·임의 셸·
+   저장된 PID 채택으로 우회하면 실패다. 기존 recover는 동일 CLI 보유 lease 범위를 유지한다.
+   실행 대상을 사용할 수 없어 MAIN 요청이 차단된 경우에는 운용 계층이 구조화된 거부
+   증거로 이유를 설명한다. 차단된 모델의 추가 응답을 요구하거나 그 설명을 모델 생성으로
+   표시하지 않는다. 유효한 대상에서 오래된 관측 입력을 해석하는 경우와 대상 결속 자체가
+   무효여서 추론을 시작할 수 없는 경우를 구분한다.
+5. 미지원·미관측·결과 불명을 성공이나 값 0으로 축약하지 않는다. 사용자 중단을 받으면
+   새 요청을 내지 않고 이미 실행 중인 요청의 완료·실제 취소·미확정을 구분해 설명한다.
+   현재 요청 경로에 취소 기능이 없다면 그 한계를 그대로 보이며 취소 완료를 꾸미지 않는다.
+
+정상 경로의 실제 에이전트 문맥 소비와 위 실패 경계의 요청 차단·근거 있는 설명을 각각
+입증해야 이 조각을 완료로 판정한다. fixture·문서·adapter 작성만으로 완료하지 않는다. 새 privileged action,
+전체 H3, 다중 Cell, native process/storage 확장, UI 공간이나 Orbit runtime은 선행조건이 아니다.
+
+**최근 완료한 작은 범위와 지금 수행할 전역 큐:**
+
+1. **실행 중 질문 조회·취소의 첫 통합 — 한정 실제 모델 TaskSmoke PASS, 제품 성숙도 `PARTIAL`:**
+   이 체크포인트의 v0.10은 같은 CLI에서 정상 모델 답변 1회와 별도 진행 중 Task의
+   취소·worker 종료·전체 backend 독립 종료 관측, DNS/HTTPS와 정상 VM 종료를 확인했다.
+   source별 Windows 전체·Linux fixture·실제 모델 및 보존 source 독립 재생 결과는 환경 문맥 가이드 §6.3이 소유한다.
+   §6.1·§6.2의 원본 FAIL과 과거 재생·fixture 기록은 보존한다. 이 PASS는 두 번째 요청이
+   모델 서버에 도달하거나 토큰을 생성하던 중 멈췄다는 증거가 아니며 개별 slot 취소도 아니다.
+2. **다음 작은 범위 — source 39개 운영 이미지의 backend 소유 경계 확인:**
+   이미지 부팅 시 backend를 시작하는 주체와 같은 CLI의 lease/child handle 보유 여부를
+   먼저 대조한다. 기존 image35/36의 시작·정상 종료 계약을 보존하고, 확인한 소유 경계에
+   맞는 이미지 Task 경로와 검증 범위를 정한다. 새 이미지 생성·두 부팅·실제 모델 Task
+   acceptance는 아직 완료하지 않았다. 외부 init의 backend를 CLI 소유로 자동 간주하지 않는다.
+3. **사용 중 드러난 연속성·효율 공백 — 아직 선택하지 않은 후속:** 재접속/작업 기록,
+   관측 비용·로컬 자원 효율 또는 필요한 source coverage 중 실제 사용 흐름이 보여 준
+   한 공백만 다음 조각으로 고른다. 대화 기록·범용 수정·재시작 후 자동 재개를 완료했다고
+   보지 않으며 C1/C2 전체, K3/K4 전체 또는 범용 자동 복구를 선행조건으로 묶지 않는다.
+
+
+소유권·권한이 필요한 새 행동은 K5 principal/ownership/authorize와 별도 action·rollback
+증거를 먼저 갖춘다. 상호작용을 개선한다는 이유로 이 의존 순서를 건너뛰지 않는다.
+
 ## 3-A. Kernel Room 관리축 (K0~K5) — 우선 정본
 
 목표 계층은 **Room → Cell → Node → NodeBit**다. 현재 코드에는 Room의 aggregate
@@ -123,8 +221,9 @@ bounded native K2-a oracle, 각자 `CURRENT`인 subsystem이 있다. Memory Fabr
 
 - Kernel Room에는 aggregate snapshot + 9개 syscall-range 분류 descriptor와 별도 K1
   bootstrap hierarchy registry가 있다.
-- K1 밖에는 한 SLM MAIN native binding만 있으며 Cell/Node/NodeBit 전체 source
-  lifecycle/reconciliation, hosted source, principal/ownership는 없다.
+- native K1 밖의 bounded source는 한 SLM MAIN binding이다. 별도 hosted MAIN·Cell 1·
+  backend의 결속/수명과 개별 CPU·RSS 관측은 `PARTIAL`이며, 전체 source lifecycle/
+  reconciliation과 principal/ownership는 없다.
 - `SYS_SLM_NODEBIT_LOOKUP`는 `slm_orchestrator.c`의 SLM policy catalog를 읽는다.
   `runtime/nodebit.c`의 별도 syscall은 `SYS_NODEBIT_REGISTER/UPDATE/STATS`다.
 
@@ -316,7 +415,12 @@ object에 맞춰 바꾸지 않는다.
 | H4 proposal/validation parity | `PLANNED` | K5 action/principal 계약 뒤에만 validate-only로 열며 초기 capability는 전부 `UNSUPPORTED`다. |
 | H5 bounded apply/rollback | `PLANNED` | K5 authorize와 별도 승인 뒤 한 action만 before/after/rollback 증거로 연다. |
 
-### 4~8주 통합 우선순위
+### 이전 4~8주 통합 전략 — 역사 기록
+
+아래 40/50/10 배분과 실행 기록은 기존 delivery 전략의 이력이다. 2026-09-09 이후
+전역 큐나 고정 작업 비율로 사용하지 않는다. 현재 순서는
+[에이전트 소비 흐름과 상호작용](#agent-consumer-next)이 소유하며, 아래 완료 증거와
+남은 분야별 gate는 그대로 보존한다.
 
 1. **SEMANTIC SAFETY 40% — K2/H1:** contract와 fixture 및 exact-SHA
    Linux/Windows/parity remote acceptance가 고정됐다. 작은 native K2 adapter가 Linux
@@ -349,18 +453,28 @@ Hosted에서는 실제 userspace service가 producer-owned service instance/gene
 제공해야 하며 PID/cgroup을 `AI_SERVICE` Node 101로 재사용하지 않는다. K1 1024B ABI는
 그대로 보존한다.
 
-## 4. 작업 규약 (모든 단계 공통 — 이번 세션에서 확립)
+## 4. 변경 범위에 따른 작업 규약
 
-1. **셀프테스트 우선:** 새 경로는 부팅 셀프테스트로 왕복 검증하고 `[XXX] ... PASS` 마커를 남긴다.
-2. **스모크 필수화:** shared manifest 도입 전에는 마커를 `tools/testkit/lib/kernel_lane.py`와 `build-windows.ps1` 필수 패턴에 함께 추가한다.
-3. **관측 연결:** 런타임 상태는 `state <topic>` 셸 토픽(한 줄 key=value) + 필요 시 시스콜 미러로 노출하고, shell 레인 `DEFAULT_EXCHANGES`에 교환을 등록한다.
-4. **고정밀 계측:** 시간이 걸리는 경로는 TSC 모노토닉 ns로 계측해 관측에 포함한다.
-5. **정적 분석 클린 유지:** cppcheck exit 0.
-6. **검증 세트:** host unit test를 먼저 통과시키고 스모크 3종(full/minimal/storage-only) + shell 레인 + (구조 변경 시) boot-inventory를 실행한다. normal verdict는 전체 로그 fatal, stable health, terminal 순서·중복을 fail-closed로 판정한다.
-7. **ABI 불변식:** 시스콜 번호는 추가만, 재번호 금지. Kernel Room 게이트 수 = enum 크기.
-8. **관리 계층 불변식:** canonical child는 정확히 하나의 parent와 generation을 가진다. 독립 namespace의 같은 숫자를 binding으로 해석하지 않는다.
-9. **관리와 집행 분리:** K1~K4는 `management_only`/`observation_only`다. principal/ownership와 stale-token 증거 전에는 scheduler, quota, dispatcher, actuator에 apply edge를 만들지 않는다.
-10. **Orbit 상태:** bounded 연구 artifact와 K축 연결 증거 전에는 항상 `RESEARCH`로 표기한다.
+공통 절차와 검증 선택의 소유자는 [통합 작업 진입 가이드 §7](integrated_work_guide_ko.md#7-변경-표면별-검증-선택)이다.
+각 조각은 바뀐 계약과 주장에 필요한 증거를 선택한다. 문서 정비에는 링크·정본·신선도
+대조를, hosted 소비 흐름에는 해당 runtime·모델·상호작용 계약의 검증을 적용한다.
+native 부팅 규약을 모든 제품 작업의 필수 경로로 확대하지 않는다.
+
+모든 관련 작업에서 다음 불변식을 유지한다.
+
+1. **증거와 판정:** 관측 원본과 독립 verdict를 구분하고, 실패·누락·오래된 결과를 성공으로 해석하지 않는다.
+2. **계약 안정성:** 숫자·schema·공개 표면을 바꾸면 producer·consumer·verifier·문서를 함께 맞춘다. native 시스콜은 재번호하지 않는다.
+3. **관리 계층:** canonical child는 정확히 하나의 parent와 generation을 가진다. 독립 namespace의 같은 숫자를 binding으로 해석하지 않는다.
+4. **관리와 집행:** K1~K4는 `management_only`/`observation_only`다. principal/ownership와 stale-token 증거 전에는 scheduler, quota, dispatcher, actuator에 새 apply edge를 만들지 않는다.
+5. **성숙도:** 검증한 범위와 남은 한계를 기록한다. Orbit은 별도 연구 artifact와 관리 계약 연결 증거 전까지 `RESEARCH`다.
+
+**native 커널·부트 표면을 바꾸는 경우**에는 추가로 다음 규약을 적용한다.
+
+1. 새 실행 경로는 해당 부팅 셀프테스트로 왕복을 검증한다. 추가한 `[XXX] ... PASS` 마커는 Python·PowerShell 판정 소비자를 함께 맞춘다.
+2. 노출한 상태는 해당 `state <topic>`과 필요한 시스콜 미러를 맞추고 shell lane의 교환에 등록한다.
+3. 고정밀 성능 증거가 필요한 native 경로는 TSC 기반 모노토닉 ns 규약을 따른다. hosted 경로에는 해당 runtime의 시계·단위·관측 계약을 사용한다.
+4. 정적 분석과 host 검사를 먼저 수행한 뒤 영향받는 정규 boot profile·strict shell·필요한 boot-inventory를 검증한다. 세 profile에 공통인 부트 계약을 바꾸면 full/minimal/storage-only 모두를 확인한다.
+5. 정상 verdict의 전체 로그 fatal·stable health·terminal 순서·중복 검사와 Kernel Room 게이트 수/enum 불변식을 보존한다.
 
 ## Sources
 - [Implementing a virtio-blk driver in my own operating system — Stephen Brennan](https://brennan.io/2020/03/22/sos-block-device/)

@@ -3,7 +3,7 @@
 문서 상태: 정본
 전체 토폴로지 성숙도: `PARTIAL` (aggregate substrate, K1 hierarchy, bounded native K2-a oracle `CURRENT`; K2 lifecycle/reconcile `PARTIAL`)
 작성일: 2026-08-10
-최종 갱신: 2026-09-07 (hosted Cell 1 관리 전이와 실제 검증 경계)
+최종 갱신: 2026-09-13 (환경 문맥·Task와 보존된 실행 증거의 범위 동기화; native 계약 변경 없음)
 적용 범위: `docs/kernel-room/`의 용어, 성숙도, 구현 순서
 
 현재 [CONSOLE_RUNTIME 수명 관리](../os/aios_service_lifecycle_guide_ko.md)는
@@ -28,8 +28,12 @@ backend 교체는 MAIN source의 readiness·generation과 결속 신뢰에 반�
 
 ## 문서 권위
 
-이 문서는 AIOS `Kernel Room`의 정체성과 다음 구현 순서를 정하는 정본이다.
+이 문서는 AIOS `Kernel Room`의 관리 의미, 불변식과 분야별 구현 의존 순서를 정하는 정본이다.
 같은 디렉터리의 문서가 이 문서와 충돌하면 이 문서를 우선한다.
+제품 목적과 사용자·AI 상호작용의 성공 기준은
+[제품 방향 정본](../meta/aios_product_direction_ko.md)이, 전역 다음 작업은
+[성숙도 작업흐름](../meta/minimal_io_and_maturity_workflow_ko.md#agent-consumer-next)이 소유한다.
+관리 계층의 확장 순서를 모든 제품 작업의 우선순위로 해석하지 않는다.
 
 현재 코드의 read-only room snapshot과 Axis Gate descriptor는 보존해야 할
 기반이지만, 그 둘만으로 Kernel Room의 관리 모델이 구현됐다고 보지 않는다.
@@ -55,6 +59,16 @@ Orbit     : 위 상태로부터 계산할 수 있는 배치·거리 관점
 여기서 `관리`는 곧바로 스케줄링, 할당, 권한 변경을 수행한다는 뜻이 아니다.
 첫 단계의 관리는 안정된 ID와 관계를 등록하고, 읽기 전용 상태를 같은 세대의
 계층으로 조회할 수 있게 한다는 뜻이다.
+
+이 관리 뷰는 AI가 자신의 작업 공간, 현재 대상과 상태, 사용할 수 있는 행동과 실패
+이유를 구조적으로 파악하는 기반이다. 공간 인지는 실행 환경을 이해하고 행동에
+사용한다는 제품 의미이며 의식의 주장이 아니다. 로컬 자원 효율과 사용자와의 지속
+상호작용은 함께 추구하는 제품 결과다. 관리 record가 존재한다는 사실만으로 에이전트가
+그 record를 소비하거나 사용자의 중단·복구 요청을 처리했다고 판정하지 않는다.
+현재 MAIN의 제한된 환경 문맥 전달과 v0.10 Task는 `PARTIAL`이다. 이전 대화나
+사용자 선택 workspace의 자동 문맥은 없다. [환경 문맥 가이드](../os/aios_space_context_guide_ko.md)가
+보존된 v0.8 실제 소비 재생, v0.10 fixture와 한정 실제 모델 Task PASS를 구분한다.
+각 실행은 관측 문맥의 출처·시점·유효성·범위와 소비자/모델, 답변/행동을 함께 증명한다. 상태 출력이나 CPU·RSS 관측만으로 공간 인지 또는 효율 개선을 판정하지 않는다.
 
 ## 관리 권위와 원본 상태
 
@@ -134,6 +148,9 @@ Node에 속한 가장 작은 관리 상태 단위다. NodeBit은 하나의 의�
 pressure score와 gate eligibility는 계속 별도 축으로 둔다. 현재 runtime NodeBit과 SLM
 NodeBit은 각각 유효한 subsystem 표면이지만, Kernel Room 관리 NodeBit의 동일 원본으로
 간주하지 않는다. 후속 binding과 generation 계약을 통해 adapter로 연결한다.
+화면의 공간·아이콘·도구 목록을 NodeBit 자체로 정의하지 않는다. UI나 에이전트가
+표시하는 가능한 행동은 source validity와 현재 지원 범위를 반영해야 하며,
+capability 표시는 principal·ownership·authorize 증거를 대신하지 않는다.
 
 ### Axis Gate
 
@@ -158,6 +175,8 @@ gate enforcement -> 나중에 principal / Cell / Node 의미를 끼워 맞춤
 Orbit는 권한, 위험, 지연, 자원 거리로부터 계산되는 배치 관점이다. 명시적인 runtime,
 ABI, verifier가 없으므로 현재 상태는 `RESEARCH`다. Cell/Node 모델의 필수 저장 단위로
 두거나 scheduler의 다른 이름으로 사용하지 않는다.
+사용자와 AI가 공유하는 작업 공간을 설계한다는 이유만으로 Orbit runtime을 요구하거나
+화면의 거리·위치를 Orbit 또는 canonical Cell/Node identity로 채택하지 않는다.
 
 ## 현재 구현과 성숙도
 
@@ -178,6 +197,7 @@ ABI, verifier가 없으므로 현재 상태는 `RESEARCH`다. Cell/Node 모델�
 | hosted Cell 1 관리 수명 | `PARTIAL` | `cell status/activate/deactivate`가 관리 활성 상태·세대와 결속 신뢰를 다룸. MAIN source/process 수명은 별도이며 cell-01은 보존된 CLI v0.5 소스로 검증; Cell 수명 가이드 참조 |
 | hosted MAIN/backend 자원 관측 | `PARTIAL` | 명시적 관계 아래 각각의 CPU/RSS를 관측. system PSI는 unattributed, ownership은 false이며 resource action은 `UNSUPPORTED` |
 | hosted backend 수명·MAIN 실행 결속 | `PARTIAL` | v0.6의 명시적 supervisor/자식 수명·요청 대상 검증과 v0.7의 동일 CLI 보유 pidfd 복구. backend-02는 당시 v0.6 증거이며 후속 실제 실행·독립 재생은 backend 수명 가이드 참조; CLI 소실·재부팅 뒤 복구는 후속 |
+| 에이전트가 소비하는 작업 공간·행동·결과 흐름 | `PARTIAL` | 제한된 환경 문맥 전달과 UUID Task 접수·조회·결과·동일 소유 backend 취소 기능. 보존된 실제 문맥 소비·Task fixture와 한정 실제 모델 Task PASS는 별도 증거이며 이미지는 미완료 |
 | legacy management NodeBit projection | `PLANNED` | runtime/SLM source adapter와 generation binding 없음 |
 | per-Cell/per-Node pressure와 resource ownership | `PLANNED` | pressure는 system-to-plane, resource owner는 unattributed |
 | Axis Gate enforcement / authorize / apply | `PLANNED` | management identity와 principal 계약 뒤에만 착수 |
@@ -272,13 +292,18 @@ fail-closed로 거부해야 한다. 기존 `[ROOM] snapshot`과 `[ROOM] gates`�
 exit/recreate, explicit rebind, lease, cross-reboot uniqueness, Linux service,
 resource attribution, authorize/apply는 증명하지 않으므로 K2 전체는 `PARTIAL`이다.
 
-## 후속 순서
+## 관리 분야의 의존 순서
+
+아래는 관리 기능 사이의 의존 관계와 완료 이력이다. 현재 전역 다음 작업은
+[실제 에이전트 소비 흐름](../meta/minimal_io_and_maturity_workflow_ko.md#agent-consumer-next)이며
+이 목록의 미완료 항목 전체를 먼저 끝내야 하는 것은 아니다. 제품 상호작용을 개선하는
+작업이 관리축에서 `SUPPORTING`이어도 제품 결과의 우선순위에서 배제하지 않는다.
 
 1. 관리 정본과 namespace 대응표 고정 — 완료
 2. management-only read-only hierarchy registry v0 — `CURRENT` (2026-08-11)
 3. bounded native K2-a semantic oracle — `CURRENT` (2026-08-15)
 4. H1 OS-neutral lifecycle trace/replay와 stable reason fixture — `CURRENT` (2026-09-03)
-5. Linux-hosted observe-only source adapter와 explicit reconcile
+5. Linux-hosted observe-only source adapter와 explicit reconcile — bounded MAIN·Cell 1·backend `PARTIAL`, 전체 coverage 후속
 6. legacy NodeBit typed projection과 source generation 결속
 7. per-Cell/per-Node pressure·resource attribution 관측
 8. principal과 상태 전이 계약

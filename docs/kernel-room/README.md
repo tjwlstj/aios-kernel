@@ -1,11 +1,14 @@
 # Kernel Room 문서 모음
 
-최종 갱신: 2026-09-03 (H1 원격 acceptance 완료와 남은 live 경계)
+최종 갱신: 2026-09-13 (환경 문맥·Task의 한정 실제 모델 PASS 경계 동기화)
 
 ## 정본
 
-Kernel Room의 정체성, 용어, 성숙도, 구현 순서는
+Kernel Room의 관리 의미, 용어, 성숙도, 분야별 구현 의존 순서는
 [AIOS Kernel Room 관리 모델](kernel_room_management_model_ko.md)이 정본이다.
+AI가 작업 공간·상태·가능한 행동을 이해하고 사용자와 지속 상호작용한다는 목적은
+[제품 방향 정본](../meta/aios_product_direction_ko.md)을 따른다. 이 목적에서 로컬 자원 효율과
+상호작용은 함께 평가하며, 관리축의 `DIRECT` 여부가 제품 가치의 우선순위를 대신하지 않는다.
 
 한 줄로 말하면 Kernel Room은 단순한 커널 상태 계기판이나 시스콜 방화벽이 아니라,
 `Room -> Cell -> Node -> NodeBit` 계층의 식별자, 관계, 상태, 유효성, 세대를 관리하는
@@ -20,6 +23,7 @@ Room
 
 `Axis Gate`는 이 상태를 바꾸려는 요청의 후속 전이·보안 경계다. `Orbit`는 현재
 구현 약속이 아닌 `RESEARCH` 관점이다.
+사용자에게 보이는 공간·아이콘·거리와 NodeBit·Orbit를 자동으로 동일시하지 않는다.
 
 ## 현재 정확한 범위
 
@@ -47,7 +51,12 @@ Room
 
 - Kernel Room 전체 토폴로지
   - aggregate substrate, K1 bootstrap hierarchy v0, bounded native K2-a oracle은 존재
-  - K2 live lifecycle/reconciliation, hosted source, attribution은 없음
+  - 별도 hosted MAIN의 실제 모델·명시적 결속/재결속, Cell 1 관리 전이와 backend 수명/실행 결속이 있음
+  - MAIN/backend CPU·RSS는 명시적 관계 아래 관측하지만 system PSI는 unattributed, ownership은 없음
+  - native live lifecycle, 전체 source coverage·H2/H3 및 부팅 간 canonical 상태 복원은 미완료
+- MAIN의 제한된 환경 문맥·UUID Task 접수/조회/결과/취소 기능
+  - 보존된 v0.8 실제 문맥 소비 재생과 v0.10 프로세스 fixture는 별도 증거
+  - 실제 모델 Task의 한정 흐름은 PASS; source 39개 운영 이미지 acceptance는 미완료
 
 ### `SCAFFOLD`
 
@@ -62,6 +71,11 @@ Room
 - K3 runtime/SLM NodeBit namespace projection
 - per-Cell/per-Node pressure와 resource attribution
 - principal과 Axis Gate authorize/enforcement
+- 이전 대화·범용 작업 수정·CLI 소실/재부팅 뒤 자동 재개
+
+현재 MAIN의 환경 문맥·Task는 [환경 문맥 가이드](../os/aios_space_context_guide_ko.md)가
+계약과 증거를 소유한다. 이전 대화·선택 workspace 자동 문맥은 없다. 실제 전달 문맥·
+소비자/모델·답변/행동은 각 source의 실행으로 연결하며 fixture만으로 완료하지 않는다. 자원 관측은 효율 개선의 비교 증거와 구분한다.
 
 ### `RESEARCH`
 
@@ -77,10 +91,14 @@ Room
   - 정본을 설명하는 개념·토폴로지 뷰
 - [development_guide_ko.md](development_guide_ko.md)
   - 실제 작업 순서, 파일 경계, 검증과 문서 동기화 규칙
+- [제품 방향 정본](../meta/aios_product_direction_ko.md)
+  - AI의 작업 공간 이해, 로컬 효율, 사용자와의 지속 상호작용이라는 제품 결과
+- [성숙도 작업흐름](../meta/minimal_io_and_maturity_workflow_ko.md#agent-consumer-next)
+  - 전역 다음 작업과 완료 기준. 관리 분야의 확장 목록과 구분
 - [orbit_cell_node_feasibility_ko.md](orbit_cell_node_feasibility_ko.md)
   - `REVIEW`: 2026-04 탐색 기록. 현재 구현 지침으로 사용하지 않는다.
 
-## K1, native K2-a와 H1 구현 범위, 다음 조각
+## K1, native K2-a와 H1 구현 범위
 
 K1 `management_only read-only hierarchy registry v0`는 다음 고정 계약을 구현한다.
 
@@ -98,8 +116,11 @@ source에 명시적으로 bind한다. canonical, binding, source generation을 �
 producer-owned copied snapshot, boot-order, malformed/duplicate/orphan/mismatch/zero/
 rollback/stale/tail 거부를 검증한다. 이 oracle은 boot-local immutable proof일 뿐 live
 refresh/reconcile이나 hosted source는 아니다. 같은 semantic field와 reject 의미는
-OS-neutral H1 trace/replay로 옮겨 원격 cross-OS acceptance까지 통과했고, 남은 직접
-조각은 live K2/H2 producer/reconcile이다. aggregate snapshot의
+OS-neutral H1 trace/replay로 옮겨 원격 cross-OS acceptance까지 통과했다. 별도 hosted
+MAIN/Cell/backend의 bounded 실행 증거는 관리 모델과 각 운영 가이드가 소유한다.
+전체 native/hosted lifecycle·reconciliation은 후속이며, 전역 다음 조각은
+[에이전트 소비 흐름](../meta/minimal_io_and_maturity_workflow_ko.md#agent-consumer-next)이다.
+aggregate snapshot의
 `domains`, `nodes`, `nodebit_active` count는 여전히 canonical hierarchy나 binding
 증거가 아니다.
 

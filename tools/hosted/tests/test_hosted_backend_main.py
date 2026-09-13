@@ -2,13 +2,16 @@
 from __future__ import annotations
 
 import hashlib
+import copy
 import json
 import os
 import platform
 import socket
 import sys
 import tempfile
+import time
 import unittest
+import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -75,11 +78,77 @@ class BackendMainTests(unittest.TestCase):
         self.assertEqual(value["outcome"], "OK", value)
         return value
 
+    def admit(self, prompt):
+        """Return the unchanged MAIN6 admission or refusal for an external UUID."""
+        request_id = str(uuid.uuid4())
+        value = main_client.control(self.main, "ask-start", prompt=prompt, request_id=request_id)
+        self.assertEqual(value["schema_version"], 6)
+        self.assertEqual(value["request_id"], request_id)
+        self.assertIsNone(value["inference_receipt"])
+        self.assertIsNone(value["resource_result"])
+        if value["outcome"] == "OK":
+            self.assertEqual(value["capture_kind"], "fixture")
+            self.assertEqual(value["task"]["phase"], "ACCEPTED")
+            self.assertEqual(value["task"]["request_id"], request_id)
+            self.assertEqual(value["task"]["user_prompt"], prompt)
+        else:
+            self.assertIsNone(value["task"])
+        return value
+
+    def finish(self, admitted, *, model_outcome="ANSWERED"):
+        """Query the same UUID for at most 15 seconds; never resubmit its prompt."""
+        self.assertEqual(admitted["outcome"], "OK", admitted)
+        request_id = admitted["request_id"]
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            value = self.okay("task-result", request_id=request_id)
+            self.assertEqual(value["request_id"], request_id)
+            self.assertIsNone(value["inference_receipt"])
+            self.assertIsNone(value["resource_result"])
+            if value["task"]["phase"] == "FINISHED":
+                self.assertEqual(value["task"]["model_outcome"], model_outcome, value)
+                return value
+            time.sleep(0.03)
+        self.fail("fixture Task did not reach FINISHED within 15 seconds")
+
+    def request_evidence(self, result):
+        """Join a Task's receipt to its saved finalizer and optional resource file."""
+        task = result["task"]
+        self.assertEqual(task["phase"], "FINISHED")
+        request_id = task["request_id"]
+        self.assertEqual(result["request_id"], request_id)
+        self.assertIsNone(result["inference_receipt"])
+        self.assertIsNone(result["resource_result"])
+        run = self.main / "runs" / task["source_before"]["source_instance"]
+        receipt_name = "requests/" + request_id + ".json"
+        saved = json.loads((run / receipt_name).read_bytes())
+        links = {"source_before", "source_after", "authority_instance", "binding_generation"}
+        self.assertEqual({key: value for key, value in saved.items() if key not in links}, task["inference_receipt"])
+        self.assertEqual(saved["source_before"], task["source_before"])
+        self.assertEqual(saved["authority_instance"], task["management_before"]["authority_instance"])
+        self.assertEqual(saved["binding_generation"], task["management_before"]["binding"]["generation"])
+        events = [json.loads(line) for line in (run / "events.jsonl").read_bytes().splitlines()]
+        finals = [row for row in events if row["event"] == "REQUEST_RESULT" and row["receipt_file"] == receipt_name]
+        self.assertEqual(len(finals), 1)
+        final = finals[0]
+        self.assertEqual(final["source_record"], saved["source_after"])
+        self.assertEqual((final["outcome"], final["error"]), (saved["outcome"], saved["error"]))
+        resources = None
+        if final["resource_file"] is not None:
+            self.assertEqual(final["resource_file"], "resources/" + request_id + ".json")
+            resources = json.loads((run / final["resource_file"]).read_bytes())
+            from resource_output_contract import validate_resource_result
+            validate_resource_result(resources, source=final["source_record"], snapshot=final["management_snapshot"],
+                                     receipt=saved, config=self.config, require_live=False)
+            self.assertEqual(resources["action"], "request")
+        return saved, resources
+
     def measured_request(self, descriptor, prompt):
-        value = self.okay("ask", prompt=prompt)
-        receipt, resources = value["inference_receipt"], value["resource_result"]
-        self.assertEqual(receipt["schema_version"], 2)
+        value = self.finish(self.admit(prompt))
+        receipt, resources = self.request_evidence(value)
+        self.assertEqual(receipt["schema_version"], 3)
         validate_execution(receipt["backend_execution"], self.config, descriptor=descriptor)
+        self.assertIsNotNone(resources)
         self.assertEqual(resources["outcome"], "OK", resources)
         self.assertEqual(resources["observation"]["request_id"], receipt["request_id"])
         self.assertEqual(resources["relation"]["backend_proof"]["descriptor"], descriptor)
@@ -91,6 +160,7 @@ class BackendMainTests(unittest.TestCase):
         for path in (run / "warmup.json", *sorted((run / "requests").iterdir())):
             with self.subTest(receipt=path.relative_to(run).as_posix()):
                 original = path.read_bytes()
+                task_originals = {}
                 try:
                     value = json.loads(original)
                     worker = value["backend_execution"]["send"]["client"]
@@ -102,6 +172,24 @@ class BackendMainTests(unittest.TestCase):
                     path.write_bytes(changed)
                     manifest = json.loads(original_manifest)
                     manifest["files"][path.relative_to(run).as_posix()] = hashlib.sha256(changed).hexdigest()
+                    if path.parent.name == "requests":
+                        # Keep every Task/worker/result copy consistent so the
+                        # independent ownership check sees the foreign parent.
+                        links = {"source_before", "source_after", "authority_instance", "binding_generation"}
+                        public_receipt = {key: item for key, item in value.items() if key not in links}
+                        for task_path in sorted((run / "tasks" / value["request_id"]).iterdir()):
+                            task_raw = task_path.read_bytes()
+                            envelope = json.loads(task_raw)
+                            touched = False
+                            for container, field in (("request_state", "inference_receipt"), ("worker_progress", "receipt")):
+                                if envelope[container] is not None and envelope[container][field] is not None:
+                                    envelope[container][field] = copy.deepcopy(public_receipt)
+                                    touched = True
+                            if touched:
+                                task_originals[task_path] = task_raw
+                                raw = json.dumps(envelope, sort_keys=True, separators=(",", ":")).encode() + b"\n"
+                                task_path.write_bytes(raw)
+                                manifest["files"][task_path.relative_to(run).as_posix()] = hashlib.sha256(raw).hexdigest()
                     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
                     verified = verify_agent_runs(self.main, require_live=False)
                     self.assertEqual(verified["outcome"], "FAIL", verified)
@@ -109,6 +197,8 @@ class BackendMainTests(unittest.TestCase):
                                         for reason in verified["reasons"]), verified)
                 finally:
                     path.write_bytes(original)
+                    for task_path, raw in task_originals.items():
+                        task_path.write_bytes(raw)
                     manifest_path.write_bytes(original_manifest)
         verified = verify_agent_runs(self.main, require_live=False)
         self.assertEqual(verified["outcome"], "PASS", verified)
@@ -142,13 +232,15 @@ class BackendMainTests(unittest.TestCase):
             self.assertEqual(main_reader.sample()["process_id"], source["process_id"])
             self.assertFalse(invalidated["management_snapshot"]["binding_current"])
             self.assertEqual(self.okay("status")["source_record"], expected)
-            rejected = main_client.control(self.main, "ask", prompt="Do not deliver to the replacement.")
+            task_files = sorted(path.relative_to(run).as_posix() for path in (run / "tasks").rglob("*.json"))
+            rejected = self.admit("Do not deliver to the replacement.")
             self.assertEqual(rejected["outcome"], "ERROR", rejected)
             self.assertEqual(rejected["error"], "model-not-ready")
             self.assertIsNone(rejected["inference_receipt"])
             self.assertEqual(rejected["source_record"], expected)
             self.assertEqual(self.request_log.read_bytes(), request_bytes)
             self.assertEqual(sorted(path.name for path in (run / "requests").iterdir()), request_files)
+            self.assertEqual(sorted(path.relative_to(run).as_posix() for path in (run / "tasks").rglob("*.json")), task_files)
             events = [json.loads(line) for line in (run / "events.jsonl").read_bytes().splitlines()]
             invalidations = [row for row in events if row["event"] == "BACKEND_INVALIDATED"]
             self.assertEqual(len(invalidations), 1)
@@ -161,8 +253,9 @@ class BackendMainTests(unittest.TestCase):
         self.assertNotEqual(resumed["source_record"]["source_instance"], started["source_record"]["source_instance"])
         self.assertEqual(resumed["source_record"]["service_start_generation"], 2)
         self.assertTrue(resumed["source_record"]["model_ready"])
-        denied = main_client.control(self.main, "ask", prompt="Explicit reconciliation is still required.")
+        denied = self.admit("Explicit reconciliation is still required.")
         self.assertEqual(denied["outcome"], "ERROR", denied)
+        self.assertEqual(denied["error"], "stale", denied)
         self.assertIsNone(denied["inference_receipt"])
         self.okay("room-discover")
         rebound = self.okay("room-reconcile")

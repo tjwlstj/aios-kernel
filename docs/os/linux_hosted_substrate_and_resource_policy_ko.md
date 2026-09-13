@@ -2,7 +2,7 @@
 
 > 기준일: 2026-08-23
 >
-> 최종 갱신: 2026-09-08 (기본 운영 이미지의 로컬 반복 부팅 범위 동기화;
+> 최종 갱신: 2026-09-13 (환경 문맥·Task의 구현 경계 정비;
 > upstream exact reference 재검토일은 2026-08-23 유지)
 >
 > 문서 상태: 설계·resource 선정 정본
@@ -26,6 +26,9 @@
 service를 의도된 기본 delivery substrate로 구현할 때 사용할 **공식 upstream
 기준선과 source-only 경계**를 정한다. 이 제품 방향 결정은 hosted backend의 구현
 성숙도를 승격하지 않는다.
+AI가 작업 공간·상태·가능한 행동을 파악하고 로컬 자원을 효율적으로 사용하며 사용자와
+지속 상호작용한다는 목적은 [제품 방향 정본](../meta/aios_product_direction_ko.md)을 따른다.
+Linux 생태계는 그 목적의 실행 기반이며 자원 성능만이 제품 성공의 기준은 아니다.
 
 - 사람용 정책 정본: 이 문서
 - 기계 판독 resource set 정본:
@@ -39,8 +42,9 @@ checked-in 계약으로 검사한다는
 뜻이다. Linux-hosted daemon, adapter, kernel module, resource actuator가 구현됐다는
 뜻이 아니며, upstream 코드의 복사·수정·배포를 허가한다는 뜻도 아니다.
 
-Kernel Room의 식별자와 구현 순서는
+Kernel Room의 식별자와 관리 기능의 의존 순서는
 [Kernel Room 관리 모델](../kernel-room/kernel_room_management_model_ko.md)이 우선한다.
+전역 다음 작업은 [성숙도 작업흐름](../meta/minimal_io_and_maturity_workflow_ko.md#agent-consumer-next)이 소유한다.
 AIOS native resource ledger와 runtime policy의 구현 상태는
 [AI 친화 리소스 관리 개발 계획](../autonomy/ai_resource_management_development_plan_ko.md)이
 우선한다. 이 문서는 두 정본을 대체하지 않고 **외부 substrate 선정과 결속 경계**만
@@ -296,8 +300,9 @@ observed_at
 validity_flags
 ```
 
-이것은 hosted runtime의 계획 계약이며 schema v1 upstream resource manifest의 row
-형식이 아니다. runtime wire schema와 public numeric ID는 아직 `PLANNED`다.
+이것은 전체 hosted adapter 확장의 계획 의미이며 schema v1 upstream resource manifest의 row
+형식이 아니다. bounded MAIN/backend의 구현된 wire 계약은 각각의 운영 가이드가 소유하고,
+이 절의 전체 source coverage와 공통 runtime wire 확장은 아직 `PLANNED`다.
 
 | Linux 후보 | 허용되는 의미 | 금지되는 해석 |
 |---|---|---|
@@ -381,6 +386,15 @@ substrate와 독립적으로 검증하는 bounded semantic oracle과 conformance
   verdict의 단일 원본이 아니다.
 - 특정 init system, container runtime, 배포판의 내부 ID를 canonical ABI로 넣지
   않는다.
+
+에이전트가 이 상태를 읽는 소비 경로는 kernel module이나 resource actuator가 아니다.
+제한된 MAIN 환경 문맥과 v0.10 UUID Task는 `PARTIAL`이며, 실제 모델 Task 사용자
+흐름이 현재 전역 검증 대상이다. [환경 문맥 가이드](aios_space_context_guide_ko.md)가
+보존된 실제 문맥 소비, Task 프로세스 fixture, 한정 실제 모델 Task PASS·미완료 이미지 범위를 소유한다.
+이전 대화·선택 workspace 자동 문맥과 재부팅 뒤 작업 연속성은 아직 없다. 문맥과 Task가
+생겼다고 principal/ownership/authorize가 생기지는 않으며 CPU·RSS·PSI 관측은 효율
+개선의 비교 증거와 별개다.
+
 
 ## 7. Hosted 구현 단계
 
@@ -486,11 +500,14 @@ Pressure, eligibility, action policy는 계속 분리한다.
 낮은 pressure를 authorize로, 높은 pressure를 자동 throttle로 해석하지 않는다.
 Linux PSI나 cgroup counter를 읽게 되더라도 이 세 축을 합치지 않는다.
 
-## 9. 4~8주 기본 delivery 구현 계획
+## 9. 기본 delivery의 분야별 검증 계획과 이전 일정
 
 Linux-hosted를 기본 delivery로 삼는 제품 방향은 이미 결정됐다. 아래 일정과 게이트는
 채택 여부를 다시 고르는 실험이 아니라, bounded `PARTIAL` 구현에서 전체 H2/H3의
-지원 범위를 검증하기 위한 evidence plan이다.
+지원 범위를 검증하기 위한 분야별 evidence plan이다. 아래 주차와 용량 배분은 이전
+전략의 역사 기록이며 현재 전역 다음 작업이 아니다. 현재 우선순위와 완료 기준은
+[성숙도 작업흐름](../meta/minimal_io_and_maturity_workflow_ko.md#agent-consumer-next)을 따른다.
+새 에이전트 소비·상호작용 흐름의 제품 가치를 관리축의 `SUPPORTING` 분류로 배제하지 않는다.
 
 | 기간 | 구현 조각 | 종료 증거 |
 |---|---|---|
@@ -501,9 +518,10 @@ Linux-hosted를 기본 delivery로 삼는 제품 방향은 이미 결정됐다. 
 | 4~6주차 | H3 reconciliation과 parity | exit/PID reuse/cgroup recreate/collector restart/host reboot 구분, 명시적 rebind, backend ID leakage 없음 |
 | 6~8주차 | delivery acceptance와 native conformance | service startup/restart/remove, 실제 storage/network/model workload, exact kernel/config/package/hash provenance, 정규 host matrix와 cross-backend verdict |
 
-기본 작업 용량은 `SEMANTIC SAFETY K2/H1 40%`, `HOSTED DELIVERY H2/H3 50%`,
-`H0 PROVENANCE + NATIVE CONFORMANCE 10%`로 둔다. Secondary Linux나 새 API 비교는
-마지막 10% 안의 non-blocking research로만 다루며 primary baseline을 바꾸지 않는다.
+이전 기본 작업 용량은 `SEMANTIC SAFETY K2/H1 40%`, `HOSTED DELIVERY H2/H3 50%`,
+`H0 PROVENANCE + NATIVE CONFORMANCE 10%`였다. 이 고정 비율은 현재 전역 큐를
+제약하지 않는다. Secondary Linux나 새 API 비교는 별도 non-blocking `RESEARCH`이며
+primary baseline을 바꾸지 않는다.
 어느 단계든 종료 증거가 실패하면 다음 단계나 maturity 승격을 중단하고 해당 계약으로
 되돌아간다.
 

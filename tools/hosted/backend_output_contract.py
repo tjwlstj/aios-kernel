@@ -144,8 +144,8 @@ def backend_result(command, schema, *, require_live=False):
     if command["name"] != "backend":
         return
     args = command["args"]
-    allowed = ACTIONS if schema == 7 else ACTIONS - {"recover"}
-    if schema not in (6, 7) or len(args) != 1 or args[0] not in allowed:
+    allowed = ACTIONS if schema in (7, 8, 9, 10) else ACTIONS - {"recover"}
+    if schema not in (6, 7, 8, 9, 10) or len(args) != 1 or args[0] not in allowed:
         require(command["outcome"] == "ERROR", "command_arguments")
         return
     validate_backend_result(command["result"], action=args[0], require_live=require_live)

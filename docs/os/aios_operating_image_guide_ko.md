@@ -1,5 +1,13 @@
 # AIOS 반복 부팅 운영 이미지 가이드
 
+> 개발 경계 — 2026-09-13: 환경 문맥·오류 안내에 이어 v0.10은 UUID Task의
+> 접수·조회·결과·동일 CLI 소유 backend의 명시적 취소를 연결한다(`PARTIAL`).
+> 버전·schema·source 수와 보존된 v0.8 실제 소비·v0.10 fixture의 범위는
+> [환경 문맥 가이드](aios_space_context_guide_ko.md)가 소유한다. 실제 모델 Task의 한정 흐름은 PASS이며
+> source 39개 운영 이미지 acceptance는 미완료다. 본문의 과거 계약·실행 기록·source
+> 일치 주장은 각 보존 소스의 당시 범위이며 새 개발 소스의 검증으로 승계하지 않는다.
+> 이번 문서 검토는 외부 자료 재조사나 runtime 재실행 판정이 아니다.
+
 > 문서 역할: Linux-hosted AIOS 기본 운영 이미지 v0와 후속 모델 profile의 설계·acceptance 정본
 >
 > 방향: `SUPPORTING` — 검증된 AIOS CLI와 hosted 관리 서비스를 반복 부팅 가능한 사용자 환경에 연결한다.
@@ -494,6 +502,8 @@ MAIN readiness·사용자 질문 성공을 대신하지 않는다.
 
 모델 로딩·CPU 추론에는 시간이 걸린다는 것을 표시한다. 기존 profile의 420초 요청
 상한과 짧은 응답 계약을 유지하며, 기다리는 동안 정적 성공 문구를 내지 않는다.
+이 상한은 보존된 운영 profile의 계약이며, v0.8 문맥 요청의 별도 상한과 개발 VM 진입은
+[환경 문맥 가이드](aios_space_context_guide_ko.md)를 따른다.
 hash 불일치·모델 시작 실패·warmup 실패·backend 교체를 명확한 오류로 돌려주고
 일반 CLI의 상태·인터넷 조회와 종료 경로를 보존한다. 임의 backend 인수·모델 교체,
 자동 재결속이나 resource action을 추가하지 않는다.

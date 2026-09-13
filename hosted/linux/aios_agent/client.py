@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import copy
 import os
 import select
 import signal
@@ -14,12 +15,14 @@ from pathlib import Path
 
 from aios_management.binding import Authority, validate_source
 from aios_service.lifecycle import (ServiceError, atomic_json, lock_directory,
-    peer_credentials, prepare_directory, read_json, regular_file, supported)
+    is_uuid, peer_credentials, prepare_directory, read_json, regular_file, supported)
 from . import protocol
 from .daemon import IDENTITY_KEYS, MAX_STARTS, code_for, registry_at
 
 START_SECONDS = 600
 RPC_SECONDS = 435
+CONTEXT_RPC_SECONDS = 2415
+TASK_RPC_SECONDS = 5.0
 STOP_SECONDS = 8
 _CHILDREN = {}
 
@@ -73,13 +76,13 @@ def _status(directory):
             result = read_json(run / "result.json")
             expected = {"schema_version", *IDENTITY_KEYS, "state", "exit_code", "error", "completed_at",
                         "capture_kind", "source_record", "management_snapshot", "files"}
-            if (set(result) != expected or type(result["schema_version"]) is not int or result["schema_version"] != 4
+            if (set(result) != expected or type(result["schema_version"]) is not int or result["schema_version"] != 6
                     or any(result[key] != identity[key] for key in IDENTITY_KEYS)
                     or result["state"] != latest["state"] or result["error"] != latest["error"]
                     or result["source_record"] != latest["source_record"]
                     or result["management_snapshot"] != latest["management_snapshot"]
                     or result["capture_kind"] != latest["capture_kind"]
-                    or type(result["files"]) is not dict or not 4 <= len(result["files"]) <= 137
+                    or type(result["files"]) is not dict or not 4 <= len(result["files"]) <= 256
                     or type(result["exit_code"]) is not int
                     or result["exit_code"] != (0 if latest["state"] == "STOPPED" else 1)):
                 raise ValueError("state-corrupt")
@@ -90,10 +93,12 @@ def _status(directory):
                 if path.is_absolute() or ".." in path.parts or "\\" in name:
                     raise ValueError("state-corrupt")
                 if name not in ("start.json", "config.json", "warmup.json", "source.json", "management.json", "events.jsonl", "backend-binding.json"):
-                    if len(path.parts) != 2 or path.parts[0] not in ("requests", "resources") or path.suffix != ".json":
-                        raise ValueError("state-corrupt")
-                    if str(uuid.UUID(path.stem)) != path.stem:
-                        raise ValueError("state-corrupt")
+                    if len(path.parts) == 3 and path.parts[0] == 'tasks':
+                        if not protocol.valid_request_id(path.parts[1]) or path.name not in tuple(f'{n:02d}.json' for n in range(1, 9)):
+                            raise ValueError('state-corrupt')
+                    elif (len(path.parts) != 2 or path.parts[0] not in ("requests", "resources", "spaces")
+                            or path.suffix != '.json' or not is_uuid(path.stem)):
+                        raise ValueError('state-corrupt')
                 regular_file(run / path)
                 if (run / path).stat().st_size > 1024 * 1024 or hashlib.sha256((run / path).read_bytes()).hexdigest() != digest:
                     raise ValueError("state-corrupt")
@@ -106,11 +111,20 @@ def _status(directory):
                 "management_snapshot": authority.snapshot()}
 
 
-def _rpc(directory, action, prompt=None, backend_dir=None):
+def _rpc(directory, action, prompt=None, backend_dir=None, request_id=None):
+    task_action = action in protocol.TASK_ACTIONS
+    deadline = time.monotonic() + TASK_RPC_SECONDS
+
+    def seconds():
+        remaining = deadline - time.monotonic() if task_action else RPC_SECONDS
+        if remaining <= 0:
+            raise ValueError('rpc-timeout')
+        return remaining
+
     identity = registry_at(directory)
     if identity is None:
-        return protocol.reply(action, "ABSENT", error="process-not-running")
-    connection, current, pid = protocol.connect(directory, identity["source_instance"], seconds=RPC_SECONDS)
+        return protocol.reply(action, "ABSENT", error="process-not-running", request_id=request_id)
+    connection, current, pid = protocol.connect(directory, identity["source_instance"], seconds=seconds())
     handle = None
     try:
         if action == "status":
@@ -121,18 +135,26 @@ def _rpc(directory, action, prompt=None, backend_dir=None):
             handle = os.pidfd_open(pid)
         connection.close()
         connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        connection.settimeout(RPC_SECONDS)
+        connection.settimeout(seconds())
         connection.connect(str(protocol.socket_path(directory)))
         new_pid, uid, _gid = peer_credentials(connection)
         if (new_pid, uid) != (pid, os.getuid()):
             raise ValueError("peer-mismatch")
-        protocol.send(connection, {"schema_version": 4, "action": action,
+        connection.settimeout(seconds())
+        protocol.send(connection, {"schema_version": 6, "action": action,
                                    "source_instance": identity["source_instance"], "prompt": prompt,
-                                   "backend_dir": str(backend_dir) if backend_dir is not None else None})
-        value = protocol.validate_reply(protocol.receive(connection, RPC_SECONDS), action)
+                                   "backend_dir": str(backend_dir) if action == 'resources-link' and backend_dir is not None else None,
+                                   "request_id": request_id})
+        value = protocol.validate_reply(protocol.receive(connection,
+            seconds() if task_action else CONTEXT_RPC_SECONDS if action == "ask" else RPC_SECONDS), action)
+        if task_action and (value['request_id'] != request_id
+                or value['task_control'] is not None and value['task_control']['backend_stop_attempt'] is not None):
+            raise ValueError('protocol-error')
         source = validate_source(value["source_record"])
         if any(source[key] != identity[key] for key in IDENTITY_KEYS) or source["process_id"] != pid:
             raise ValueError("peer-mismatch")
+        if task_action:
+            seconds()
         if action != "stop" or value["outcome"] != "OK":
             return value
         if value["state"] != "STOPPING":
@@ -152,6 +174,37 @@ def _rpc(directory, action, prompt=None, backend_dir=None):
         connection.close()
         if handle is not None:
             os.close(handle)
+
+
+def _cancel_backend(directory, value, backend_dir, request_id):
+    """The same CLI owns the backend lease; the daemon independently observes stop."""
+    if (value['outcome'] != 'OK' or value['task_control']['cancel_outcome'] != 'ACCEPTED'
+            or value['task']['phase'] == 'FINISHED' and value['task']['model_outcome'] in ('ANSWERED', 'NOT_STARTED')):
+        return value
+    from aios_backend.client import stop_bound
+    from aios_backend.protocol import reply as backend_reply, validate_reply as validate_backend_reply
+    expected = copy.deepcopy(value['task']['backend_expected'])
+    if backend_dir is None:
+        attempt = backend_reply('stop', 'FAILED', error='stop-owner-required', capture_kind=expected['capture_kind'])
+    else:
+        try:
+            attempt = validate_backend_reply(stop_bound(backend_dir, expected), 'stop')
+        except (OSError, ValueError, RuntimeError):
+            attempt = backend_reply('stop', 'FAILED', error='stop-failed', capture_kind=expected['capture_kind'])
+    try:
+        refreshed = _rpc(directory, 'task-status', request_id=request_id)
+        if (refreshed['outcome'] != 'OK' or refreshed['task'] is None
+                or any(refreshed['source_record'][key] != value['source_record'][key] for key in IDENTITY_KEYS)
+                or refreshed['task']['backend_expected'] != expected):
+            raise ValueError('task-refresh-failed')
+    except (OSError, ValueError, TypeError, KeyError, RuntimeError):
+        refreshed = {**value, 'outcome': 'ERROR', 'error': 'task-refresh-failed'}
+    else:
+        if attempt['outcome'] != 'OK':
+            refreshed = {**refreshed, 'outcome': 'ERROR', 'error': 'task-backend-stop-unconfirmed'}
+    return {**refreshed, 'action': 'task-cancel', 'request_id': request_id,
+            'task_control': {'cancel_outcome': value['task_control']['cancel_outcome'],
+                             'backend_stop_attempt': copy.deepcopy(attempt)}}
 
 
 def _start(directory, config, fixture_backend, backend_dir=None):
@@ -239,17 +292,29 @@ def _finish_failed_start(child):
         child.wait(timeout=3)
 
 
-def control(state_dir: Path, action: str, config=None, prompt=None, *, fixture_backend=False, backend_dir=None) -> dict:
+def control(state_dir: Path, action: str, config=None, prompt=None, *, fixture_backend=False, backend_dir=None,
+            request_id=None) -> dict:
     """Run an explicit action; cached data never restores live binding validity."""
+    if action == 'ask-start' and request_id is None:
+        request_id = str(uuid.uuid4())
+    if action in protocol.TASK_ACTIONS:
+        if not protocol.valid_request_id(request_id):
+            return protocol.reply('status', 'FAILED', error='task-request-id')
+    elif request_id is not None:
+        return protocol.reply('status', 'FAILED', error='task-request-id')
     if not supported():
-        return protocol.reply(action, "UNSUPPORTED", error="unsupported-platform")
+        return protocol.reply(action, "UNSUPPORTED", error="unsupported-platform", request_id=request_id)
     if action not in protocol.ACTIONS:
         return protocol.reply("status", "FAILED", error="invalid-action")
     try:
         try:
             directory = prepare_directory(Path(state_dir), create=action in ("start", "restart"), control_root=True)
         except FileNotFoundError:
-            return protocol.reply(action, "ABSENT", error=None if action in ("status", "stop") else "process-not-running")
+            return protocol.reply(action, "ABSENT", error=None if action in ("status", "stop") else "process-not-running",
+                                  request_id=request_id)
+        if action in protocol.TASK_ACTIONS:
+            value = _rpc(directory, action, prompt, request_id=request_id)
+            return _cancel_backend(directory, value, backend_dir, request_id) if action == 'task-cancel' else value
         if action == "status":
             return _status(directory)
         if action == "start":
@@ -270,4 +335,4 @@ def control(state_dir: Path, action: str, config=None, prompt=None, *, fixture_b
             return {**before, "action": action, "outcome": "ERROR", "error": before["error"] or "process-not-running"}
         return _rpc(directory, action, prompt, backend_dir)
     except (OSError, ValueError, TypeError, RuntimeError) as exc:
-        return protocol.reply(action, "FAILED", error=code_for(exc))
+        return protocol.reply(action, "FAILED", error=code_for(exc), request_id=request_id)

@@ -581,10 +581,12 @@ def _start(directory, config, fixture_backend):
             _finish_failed_start(child)
 
 
-def _stop(directory, before):
+def _stop(directory, before, *, before_send=None):
     record = before["service_record"]
     identity = {k: record[k] for k in IDENTITY_KEYS}
     parent, child = record["supervisor_identity"], record["child_identity"]
+    retained_lease = _LEASES.get(record["instance_id"])
+    owned_supervisor = _CHILDREN.get(record["instance_id"])
     parent_handle = child_handle = None
     try:
         with ProcessReader(parent["process_id"], parent["process_start_ticks"], parent["host_boot_id"]) as reader:
@@ -604,6 +606,11 @@ def _stop(directory, before):
                 if pid != parent["process_id"] or uid != parent["uid"]:
                     raise BackendError("peer-mismatch")
                 reader.sample()
+                if before_send is not None:
+                    # This connection already occupies the daemon's single IPC
+                    # loop. The guard must not issue another status RPC here.
+                    before_send()
+                    reader.sample()
                 protocol.send(connection, {"schema_version": 1, "action": "stop", **identity})
                 value = protocol.validate_reply(protocol.receive(connection), "stop")
                 if value["outcome"] != "OK":
@@ -615,20 +622,94 @@ def _stop(directory, before):
             return {**value, "outcome": "ERROR", "error": "stop-timeout"}
         if child_handle is not None and not select.select([child_handle], [], [], 0)[0]:
             raise BackendError("stop-failed")
-        owned_supervisor = _CHILDREN.pop(record["instance_id"], None)
+        if _CHILDREN.get(record["instance_id"]) is not owned_supervisor:
+            raise BackendError("stop-failed")
+        _CHILDREN.pop(record["instance_id"], None)
         if owned_supervisor is not None:
             owned_supervisor.wait(timeout=1)
         terminal = _status(directory)
         if terminal["state"] != "STOPPED" or terminal["outcome"] != "OK":
             return {**terminal, "action": "stop", "outcome": "ERROR", "error": terminal["error"] or "stop-failed"}
+        if (terminal["service_record"] is None or any(not _same(terminal["service_record"][key], record[key])
+                for key in (*IDENTITY_KEYS, "supervisor_identity", "child_identity"))):
+            raise BackendError("stop-failed")
         if owned_supervisor is not None and owned_supervisor.returncode != 0:
             raise BackendError("stop-failed")
         return {**terminal, "action": "stop"}
     finally:
-        _close_lease(record["instance_id"])
+        if _LEASES.get(record["instance_id"]) is retained_lease:
+            _close_lease(record["instance_id"])
+        elif retained_lease is not None:
+            for name in ("supervisor_reader", "child_reader"):
+                retained_lease[name].close()
         for handle in (parent_handle, child_handle):
             if handle is not None:
                 os.close(handle)
+
+
+def _bound_fence(directory, expected, lease, owned):
+    """Recheck only local capabilities; safe while a stop IPC is connected."""
+    record, descriptor = expected["service_record"], expected["descriptor"]
+    instance, proof = record["instance_id"], lease["proof"]
+    _require(_LEASES.get(instance) is lease and _CHILDREN.get(instance) is owned, "stop-owner-required")
+    _require(lease["directory"] == str(directory)
+        and _same(proof["state_directory"], _stamp(directory.stat())), "stop-target-mismatch")
+    _require(_same(proof["service_record"], record) and _same(proof["descriptor"], descriptor), "stop-target-mismatch")
+    with ProcessReader(os.getpid()) as owner:
+        _require(_same(owner.identity, {key: proof["owner"][key] for key in owner.identity}), "stop-owner-required")
+        owner.sample()
+    parent, child = record["supervisor_identity"], record["child_identity"]
+    _require(owned.pid == parent["process_id"] and owned.poll() is None, "stop-owner-required")
+    parent_reader, child_reader = lease["supervisor_reader"], lease["child_reader"]
+    _require(_same(parent_reader.identity, parent) and _same(child_reader.identity, child), "stop-target-mismatch")
+    parent_sample, child_sample = parent_reader.sample(), child_reader.sample()
+    _require(parse_stat(parent_sample["raw_stat"])["parent_pid"] == os.getpid()
+        and parse_stat(child_sample["raw_stat"])["parent_pid"] == owned.pid, "stop-owner-required")
+    for name in SOCKET_NAMES:
+        _require(_same(_socket_stamp(directory, name), proof["sockets"][name]), "stop-target-mismatch")
+    identity = registry_at(directory)
+    _require(identity is not None and all(_same(identity[key], record[key]) for key in IDENTITY_KEYS),
+        "stop-target-mismatch")
+    latest = _latest(directory, identity)
+    _require(latest["state"] == "RUNNING" and latest["outcome"] == "OK"
+        and _same(latest["service_record"], record) and _same(latest["descriptor"], descriptor), "stop-target-mismatch")
+
+
+def stop_bound(state_dir, expected):
+    """Stop this CLI's exact live backend, using a job's saved RUNNING reply.
+
+    This internal entry point stops the entire local executor. It does not
+    prove whether that job was sent, answered, or interrupted by this stop.
+    A missing owner, changed target, or already terminal backend is an error;
+    no latest-instance fallback or retry is performed.
+    """
+    if not protocol.supported():
+        return protocol.reply("stop", "UNSUPPORTED", error="unsupported-platform")
+    capture_kind = "live"
+    try:
+        _require(type(expected) is dict and type(expected.get("action")) is str, "stop-target-mismatch")
+        expected = copy.deepcopy(expected)
+        protocol.validate_reply(expected, expected["action"])
+        _require(expected["state"] == "RUNNING" and expected["outcome"] == "OK", "stop-target-mismatch")
+        capture_kind = expected["capture_kind"]
+        directory = prepare_directory(Path(state_dir), control_root=True)
+        record, descriptor = expected["service_record"], expected["descriptor"]
+        instance = record["instance_id"]
+        lease, owned = _LEASES.get(instance), _CHILDREN.get(instance)
+        _require(lease is not None and owned is not None, "stop-owner-required")
+        config = read_json(directory / "config.json")
+        validate_descriptor(descriptor, config)
+        _require(hashlib.sha256(encoded(config) + b"\n").hexdigest() == record["config_sha256"], "stop-target-mismatch")
+        _bound_fence(directory, expected, lease, owned)
+        before = protocol.validate_reply(_status(directory), "status")
+        _require(before["state"] == "RUNNING" and before["outcome"] == "OK"
+            and _same(before["service_record"], record) and _same(before["descriptor"], descriptor), "stop-target-mismatch")
+        return _stop(directory, before, before_send=lambda: _bound_fence(directory, expected, lease, owned))
+    except (OSError, ValueError, RuntimeError) as exc:
+        code = getattr(exc, "code", None)
+        if code not in ("stop-owner-required", "stop-target-mismatch"):
+            code = code_for(exc)
+        return protocol.reply("stop", "FAILED", error=code, capture_kind=capture_kind)
 
 
 def control(state_dir, action, config=None, *, fixture_backend=False):

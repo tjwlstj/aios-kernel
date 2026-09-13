@@ -27,6 +27,7 @@ class ConsoleRecoveryTests(unittest.TestCase):
     run_session = console_fixtures.ConsoleVerifierTests.run_session
     events = console_fixtures.ConsoleVerifierTests.events
     rehash = console_fixtures.ConsoleVerifierTests.rehash
+    verify_session = console_fixtures.ConsoleVerifierTests.verify_session
 
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
@@ -41,41 +42,26 @@ class ConsoleRecoveryTests(unittest.TestCase):
         self.session = self.root / ("session-" + str(self.serial))
         options = {} if replies is None else {"backend_control": mock.Mock(side_effect=replies)}
         self.run_session(self.session, commands, **options)
-        verdict = verifier.verify_session(self.session, expected_commands=commands)
+        verdict = self.verify_session(self.session, expected_commands=commands)
         self.assertEqual(verdict["outcome"], "PASS", verdict)
         return self.events()
 
     def assert_rejected(self, reason):
-        verdict = verifier.verify_session(self.session)
+        verdict = self.verify_session(self.session)
         self.assertEqual(verdict["outcome"], "FAIL", verdict)
         self.assertIn(reason, str(verdict["reasons"]))
         self.assertNotIn("artifact_hash:", str(verdict["reasons"]))
 
     def relabel_v06(self):
-        """Construct historical schema/render input, not a historical source claim.
+        """Construct historical schema6 input with its own literal source pin.
 
-        The source hashes intentionally still identify current fixture producers.
-        Actual retained artifacts require their separately retained runtime source.
+        It is a synthetic format fixture, not an executed historical capture.
+        Subsequent rehash calls never repair mutated semantics.
         """
-        events = self.events()
-        for event in events:
-            event["schema_version"] = 6
-            if event["event"] == "COMMAND":
-                command = event["data"]
-                if command["name"] == "about":
-                    command["result"]["version"] = "0.6.0"
-                if command["name"] == "help":
-                    command["result"]["commands"] = [
-                        row.replace("backend status|start|stop|restart|recover",
-                                    "backend status|start|stop|restart")
-                        for row in command["result"]["commands"]]
-        events[0]["data"].update(runtime_version="0.6.0")
-        events[0]["data"].pop("source_process")
-        console = self.session / "console.log"
-        console.write_bytes(console.read_bytes().replace(b"AIOS Console 0.7.0", b"AIOS Console 0.6.0")
-                            .replace(b"backend status|start|stop|restart|recover",
-                                     b"backend status|start|stop|restart"))
-        self.rehash(events, lambda result: result.update(schema_version=6))
+        sources = console_fixtures.rewrite_historical_session(self.session, 6)
+        if not hasattr(self, 'history_sources'):
+            self.history_sources = {}
+        self.history_sources[self.session] = sources
 
     def claim_live_owner(self):
         """Build synthetic claimed-live inputs for raw-sample parser tests only.
@@ -98,7 +84,7 @@ class ConsoleRecoveryTests(unittest.TestCase):
                  "process_id": 101, "process_start_ticks": 50, "uid": 1000}
         events[0]["data"].update(capture_kind="live", source_process=sample(owner, 1, 1400))
         self.rehash(events, lambda result: result.update(capture_kind="live"))
-        verdict = verifier.verify_session(self.session, require_live=True)
+        verdict = self.verify_session(self.session, require_live=True)
         self.assertEqual(verdict["outcome"], "PASS", verdict)
         return self.events()
 
@@ -108,14 +94,14 @@ class ConsoleRecoveryTests(unittest.TestCase):
                    backend("recover", state="STALE", error="recovery-owner-required")]
         events = self.make_session(["backend recover", "backend status", "backend recover",
                                     "backend recover", "help", "exit"], replies)
-        self.assertEqual(events[0]["schema_version"], 7)
+        self.assertEqual(events[0]["schema_version"], 10)
         self.assertIsNone(events[0]["data"]["source_process"])
         output = (self.session / "console.log").read_text(encoding="utf-8")
         self.assertEqual(output.count("AIOS model backend: RECOVERED; backend not ready\n"), 2)
         self.assertIn("Backend recover failed: supervisor-running.\n", output)
         self.assertIn("Backend recover failed: recovery-owner-required.\n", output)
         self.assertIn("backend status|start|stop|restart|recover", output)
-        self.assertEqual(verifier.verify_session(self.session, require_live=True)["outcome"], "FAIL")
+        self.assertEqual(self.verify_session(self.session, require_live=True)["outcome"], "FAIL")
 
     def test_recovered_cannot_render_as_ready_even_with_rehashed_transcript(self):
         self.make_session(["backend recover", "exit"], [backend("recover", state="RECOVERED")])
@@ -137,15 +123,20 @@ class ConsoleRecoveryTests(unittest.TestCase):
     def test_rehashed_v06_sessions_reject_new_recovery_action_and_state(self):
         for action, reason in (("recover", "command_arguments"), ("status", "recovery_schema")):
             with self.subTest(action=action):
-                self.make_session(["backend " + action, "exit"], [backend(action, state="RECOVERED")])
+                self.make_session(["backend status", "exit"], [backend("status", state="RECOVERED")])
                 self.relabel_v06()
+                if action == 'recover':
+                    events = self.events()
+                    events[1]['data']['args'] = ['recover']
+                    events[1]['data']['result']['action'] = 'recover'
+                    self.rehash(events)
                 self.assert_rejected("backend_contract:" + reason)
 
     def test_historical_v06_help_about_and_ordinary_backend_still_replay(self):
         commands = ["help", "about", "backend status", "backend start", "backend stop", "exit"]
         self.make_session(commands, [backend(state="ABSENT"), backend("start"), backend("stop", state="STOPPED")])
         self.relabel_v06()
-        verdict = verifier.verify_session(self.session, expected_commands=commands)
+        verdict = self.verify_session(self.session, expected_commands=commands)
         self.assertEqual(verdict["outcome"], "PASS", verdict)
         output = (self.session / "console.log").read_text(encoding="utf-8")
         self.assertIn("AIOS Console 0.6.0", output)

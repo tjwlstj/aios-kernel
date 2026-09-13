@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import unicodedata
 
-from newagent_output_contract import render_agent
+from newagent_output_contract import canonical_task_id, render_agent
 from backend_output_contract import render_backend
 
 _SECTIONS = ("cpu", "memory", "pci", "usb", "block", "net")
@@ -38,6 +38,11 @@ _AGENT_HELP = ["agent status|start|stop|restart",
                "room status|discover|bind|reconcile",
                "                             Inspect and explicitly bind the MAIN service",
                "ask PROMPT                   Ask the bound MAIN model (text only)"]
+_SPACE_HELP = [*_AGENT_HELP[:-1], "space                        Refresh MAIN's observed environment",
+               "ask PROMPT                   Ask MAIN using its observed environment"]
+_TASK_HELP = [*_SPACE_HELP[:-1], "ask PROMPT                   Submit one MAIN task and return to the prompt",
+              "task status|result|cancel UUID",
+              "                             Inspect, read or explicitly cancel that task"]
 _RESOURCE_HELP = ["resources link|status|sample",
                   "                             Link and observe MAIN/backend CPU, RSS and system PSI"]
 _CELL_HELP = ["cell status|activate|deactivate",
@@ -118,13 +123,16 @@ def _hardware(inventory: dict, selection: str) -> str:
 
 def _response(command: dict, inventory: dict, start: dict, completed: int) -> str:
     name, args, result = command["name"], command["args"], command["result"]
-    current = start["runtime_version"] in ("0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.7.0")
-    agent = start["runtime_version"] in ("0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.7.0")
-    resources = start["runtime_version"] in ("0.4.0", "0.5.0", "0.6.0", "0.7.0")
-    cell = start["runtime_version"] in ("0.5.0", "0.6.0", "0.7.0")
-    backend = start["runtime_version"] in ("0.6.0", "0.7.0")
-    recovery = start["runtime_version"] == "0.7.0"
-    help_rows = ([*_HELP[:-2], *_SERVICE_HELP, *(_RECOVERY_HELP if recovery else _BACKEND_HELP if backend else []), *(_AGENT_HELP if agent else []),
+    current = start["runtime_version"] in ("0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.7.0", "0.8.0", "0.9.0", "0.10.0")
+    agent = start["runtime_version"] in ("0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.7.0", "0.8.0", "0.9.0", "0.10.0")
+    resources = start["runtime_version"] in ("0.4.0", "0.5.0", "0.6.0", "0.7.0", "0.8.0", "0.9.0", "0.10.0")
+    cell = start["runtime_version"] in ("0.5.0", "0.6.0", "0.7.0", "0.8.0", "0.9.0", "0.10.0")
+    backend = start["runtime_version"] in ("0.6.0", "0.7.0", "0.8.0", "0.9.0", "0.10.0")
+    recovery = start["runtime_version"] in ("0.7.0", "0.8.0", "0.9.0", "0.10.0")
+    space = start["runtime_version"] in ("0.8.0", "0.9.0", "0.10.0")
+    task = start["runtime_version"] == "0.10.0"
+    help_rows = ([*_HELP[:-2], *_SERVICE_HELP, *(_RECOVERY_HELP if recovery else _BACKEND_HELP if backend else []),
+                  *(_TASK_HELP if task else _SPACE_HELP if space else _AGENT_HELP if agent else []),
                   *(_CELL_HELP if cell else []), *(_RESOURCE_HELP if resources else []), *_HELP[-2:]]
                  if current else _HELP)
 
@@ -190,8 +198,11 @@ def _response(command: dict, inventory: dict, start: dict, completed: int) -> st
                   or name == "room" and len(args) == 1 and args[0] in ("status", "discover", "bind", "reconcile")
                   or cell and name == "cell" and len(args) == 1 and args[0] in ("status", "activate", "deactivate")
                   or resources and name == "resources" and len(args) == 1 and args[0] in ("link", "status", "sample")
-                  or name == "ask" and bool(args)):
-        return render_agent(command)
+                  or name == "ask" and bool(args)
+                  or space and name == "space" and not args
+                  or task and name == "task" and len(args) == 2 and args[0] in ("status", "result", "cancel")
+                     and canonical_task_id(args[1])):
+        return render_agent(command, console_version=start["runtime_version"])
     if name in ("resolve", "fetch") and len(args) == 1:
         _require(result.get("operation") == name and result.get("outcome") == command["outcome"], name + "_operation")
         _require(type(result.get("elapsed_ms")) is int and result["elapsed_ms"] >= 0, name + "_duration")
@@ -221,8 +232,14 @@ def _response(command: dict, inventory: dict, start: dict, completed: int) -> st
         return success({"cleared": True}, "\x1b[2J\x1b[H\n") if command["outcome"] == "OK" else error("not_a_terminal")
     if name == "exit" and not args:
         return success({"closing": True}, "AIOS session closed.\n")
+    if task and name == "task" and len(args) == 2 and args[0] in ("status", "result", "cancel"):
+        message = "Task requires a canonical nonzero UUID."
+        _require(not canonical_task_id(args[1]) and command["outcome"] == "ERROR"
+                 and _same(result, {"error": "invalid_arguments", "message": message}), "task_uuid_error")
+        return "Error: " + message + "\n"
     known = (name in _KNOWN or current and name == "service" or agent and name in ("agent", "room", "ask")
-             or resources and name == "resources" or cell and name == "cell" or backend and name == "backend")
+             or resources and name == "resources" or cell and name == "cell" or backend and name == "backend"
+             or space and name == "space" or task and name == "task")
     return error("invalid_arguments" if known else "unknown_command")
 
 
@@ -240,7 +257,7 @@ def validate_output(events: list[dict], inventory: dict, raw_console: bytes) -> 
         _require([event["event"] for event in events] == ["START", *["COMMAND"] * (len(events) - 2), "STOP"], "event_order")
         start, stop = events[0]["data"], events[-1]["data"]
         version = start["runtime_version"]
-        _require(start["boot_state"] == "READY" and version in ("0.1.0", "0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.7.0"), "startup")
+        _require(start["boot_state"] == "READY" and version in ("0.1.0", "0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.7.0", "0.8.0", "0.9.0", "0.10.0"), "startup")
         _require(stop.get("reason") in ("exit", "eof") and _same(stop, {"state": "CLOSED", "exit_code": 0, "reason": stop["reason"]}), "stop")
         output = [_BANNER.replace("0.1.0", version), "  Linux-backed userspace preview | type help to begin\n",
                   f"  Startup READY | {inventory['cpu']['data']['logical_count']} CPUs | RAM {_size(inventory['memory']['data']['total_bytes'])}\n",

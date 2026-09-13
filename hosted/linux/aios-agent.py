@@ -11,12 +11,14 @@ from aios_agent.inference import encoded
 
 def main():
     parser = argparse.ArgumentParser(description="AIOS MAIN agent")
-    parser.add_argument("action", nargs="?", default="status", choices=("status", "start", "stop", "restart", "ask",
+    parser.add_argument("action", nargs="?", default="status", choices=("status", "start", "stop", "restart", "ask", "space",
+        "ask-start", "task-status", "task-result", "task-cancel",
         "room-status", "room-discover", "room-bind", "room-reconcile", "resources-link", "resources-status", "resources-sample",
         "cell-status", "cell-activate", "cell-deactivate"))
     parser.add_argument("--state-dir", type=Path, required=True)
     parser.add_argument("--config", type=Path)
     parser.add_argument("--prompt")
+    parser.add_argument("--request-id")
     parser.add_argument("--backend-dir", type=Path)
     parser.add_argument("--serve", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--fixture-backend", action="store_true", help=argparse.SUPPRESS)
@@ -27,7 +29,7 @@ def main():
         return serve(args.state_dir, args.config, fixture_backend=args.fixture_backend,
                      backend_dir=args.backend_dir)
     result = control(args.state_dir, args.action, args.config, args.prompt, fixture_backend=args.fixture_backend,
-                     backend_dir=args.backend_dir)
+                     backend_dir=args.backend_dir, request_id=args.request_id)
     sys.stdout.buffer.write(encoded(result) + b"\n")
     return 0 if result["outcome"] == "OK" else 3 if result["state"] == "UNSUPPORTED" else 1
 

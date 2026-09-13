@@ -1,128 +1,69 @@
 # AIOS - AI-Native Operating System
 
 <p align="center">
-  <strong>Room → Cell → Node → NodeBit 관리 모델을 위한 AI-native 관리·런타임 프로젝트</strong>
+  <strong>AI가 자신의 작업 공간을 이해하고 사용자와 함께 활동하는 AI-native 운영 환경</strong>
 </p>
 
 ---
 
 ## Overview
 
-AIOS(AI-Native Operating System)는 AI 워크로드를 **1급 시민(First-class citizen)**으로
-취급하고 **Kernel Room → Cell → Node → NodeBit** 관리 모델을 중심에 둔 AI-native
-관리·런타임 프로젝트입니다. 의도된 기본 delivery substrate는 Linux-hosted userspace
-service입니다. 현재 저장소는 x86_64 native reference/proof kernel과 Linux 유저스페이스
-실행체를 포함하며, H2-a 시작·하드웨어 관측·대화형 CLI는 `PARTIAL`입니다.
-전체 H2 결속 서비스는 `PLANNED`, H0 upstream source policy는 `CURRENT`입니다. 현재 베타에는 부팅 가능한 native kernel,
-텐서 지향 메모리 메타데이터, 메모리 패브릭, 헬스/SLM 스냅샷, 서로 독립적인 SLM
-policy catalog와 runtime capability NodeBit, 관측 전용 AI pressure tracker와 resource
-ledger, 제한된 AI 시스콜 표면이 있습니다. `CURRENT`인 K1은 1KiB 고정 snapshot에
-bootstrap Cell 1개, 그 Cell에 명시적으로 bound된 Node 1개, 그 Node를 부모로 하는
-typed NodeBit 2개를 함께 보존하는 management-only hierarchy v0입니다. 기존 subsystem을
-이 계층으로 투영하는 첫 bounded native K2-a oracle도 `CURRENT`입니다. 별도 256B
-snapshot이 Node 101을 producer-owned SLM MAIN source에 boot-local immutable하게
-결속합니다. K2 전체 lifecycle/reconciliation은 `PARTIAL`입니다. H1은 H1-a transport,
-H1-b bounded lifecycle replay와 12개 fixture, H1-c self-contained bundle/parity CLI 및
-전용 양 OS CI를 구현했고, 동일 run·exact SHA의 원격 Linux/Windows/parity와 세 artifact
-검증을 통과해 `CURRENT`입니다(2026-09-03). 근거는
-[H1 원격 acceptance 증거 (§13.2)](docs/os/h1_binding_trace_replay_workplan_ko.md#132-2026-09-03-원격-acceptance-완료)에 있습니다.
-H2-a는 독립된 AIOS 초기화 로그와 CPU·메모리·PCI·USB·block·network의 Linux-visible
-관측을 제공합니다. `aios>` 콘솔에서는 상태 조회와 사용자 요청 DNS·HTTP(S) GET을
-실행할 수 있습니다. 실제 하드웨어 특권 커널은 Linux이며, `kernel/`의 자체 x86_64
-커널과 AIOS의 관리 계약은 독립적으로 유지합니다. Linux 배포판 fork나 `.ko` 호환층을
-만드는 기능은 아닙니다. 별도 MAIN `AI_SERVICE`와 hosted 관리 결속 구현은 `PARTIAL`이며,
-실제 모델·재결속 검증 범위는 [MAIN 서비스 가이드](docs/os/aios_agent_binding_guide_ko.md)를 따릅니다.
-[유저스페이스 부팅·하드웨어 가이드](docs/os/aios_userspace_boot_hardware_guide_ko.md)에
-실행 방법, 실제 검증 범위와 다음 단계가 있습니다.
+AIOS는 **AI가 자신의 작업 공간과 상태를 이해하고, 로컬 자원을 효율적으로 사용하며,
+사용자와 지속적으로 상호작용하는 운영 환경**을 만듭니다. 공간 인지, 편안하고 안정적인
+실행, 작업 중 사용자 개입을 제품의 중심 가치로 둡니다.
+[제품 목적 정본](docs/meta/aios_product_direction_ko.md)이 의미와 성공 기준을 소유합니다.
 
-아래 실행 결과와 `build/`의 보고서·전용 실행기, 사용자 캐시의 이미지·모델·선택 상태는
-로컬 검증 호스트의 기록이며 Git checkout에 포함되지 않습니다. 새 환경에서는 설치된
-QEMU·Python 3.11 이상·Windows `tar.exe`를 준비하고 [운영 이미지 가이드](docs/os/aios_operating_image_guide_ko.md)의
-§7(basic) 또는 §9.2(모델)에서 새 이미지를 Build·Smoke한 뒤 Run합니다. 생성 단계에는
-외부 패키지·모델 다운로드가 필요하며, 검증 호스트의 과거 PASS가 새 이미지에 승계되지는 않습니다.
+관리 핵심은 **Room → Cell → Node → NodeBit**입니다. 현재 Linux-hosted userspace가
+기본 제품 실행 경로이고 자체 x86_64 커널은 별도의 reference/proof 경로로 유지합니다.
+현재 운영 이미지의 하드웨어 특권 커널과 드라이버 실행 주체는 Linux입니다.
+자체 관리 모델, 자체 native 커널, Linux 위에서의 제품 실행 성과를 구분합니다.
 
-이미지가 준비된 Windows에서 [Start-AiosImage.cmd](tools/hosted/Start-AiosImage.cmd)를 실행하면
-사용자 디스크로 AIOS CLI에 들어갑니다. `image-07`의 같은 4 GiB 디스크에서 온라인 두 번과
-오프라인 한 번의 cold boot, 설정·실행 기록 보존, 서비스 정리와 정상 종료를 검증했습니다.
-검증 원본을 보존하고 사용자 복사본을 계속 사용하는 기본 이미지이며 `SUPPORTING/PARTIAL`입니다.
-AI 모델은 포함하지 않습니다. 생성·검증·사용법과 정확한 경계는
-[반복 부팅 운영 이미지 가이드](docs/os/aios_operating_image_guide_ko.md)를 따릅니다.
-별도 `-Agent` 모델 profile도 `SUPPORTING/PARTIAL`입니다. `model-image-04`에서 같은
-설치 디스크로 online·offline 두 cold boot, 실제 warmup·질문 각 2회, 명시적 재결속,
-DNS·HTTPS·정상 종료와 당시 v0.6 source 35개의 독립 재검증을 통과했습니다.
-당시 `Start-AiosImage.cmd -Agent`는 원본을 보존한 `local-model` 사용자 디스크를 실행했고,
-이 실제 진입 경로의 상태 조회·정상 종료도 확인했습니다. 상세 증거와 실패 이력은 위 가이드를 따릅니다.
+현재 제공하는 범위는 고유 `aios>` CLI, Linux-visible 환경 관측, DNS·HTTP(S), 실제
+MAIN 모델 요청, 제한된 서비스·Cell·backend 수명과 명시적 결속입니다(`PARTIAL`).
+이 체크포인트의 개발 소스 v0.10은 MAIN 환경 문맥 전달과 질문 UUID의 접수·조회·결과·명시적 취소를
+연결했습니다(`PARTIAL`). 보존된 v0.8 실제 문맥 소비의 수정 검증기 재생과 이 개발 소스의
+Windows·Linux fixture 결과는 [환경 문맥 가이드](docs/os/aios_space_context_guide_ko.md)가 소유합니다.
+실제 모델의 정상 답변 1회와 별도 진행 중 Task의 취소·worker 종료·전체 backend 독립 종료 관측을 같은 CLI에서 검증했습니다. source 39개 운영 이미지 acceptance는 아직 없습니다.
+이전 대화·범용 작업 수정·CLI 소실/재부팅을 넘는 자동 재개는 `PLANNED`입니다.
 
-검증 호스트에서 사용한 CLI 0.7 전용 실행기는 `build/hosted-image-v07/Start-Aios-0.7.cmd`입니다.
-새 `model-image-05`는 현재 source 35개로 online·offline 두 부팅의 45명령, 실제 warmup·질문
-각 2회, 재결속·인터넷·정상 종료와 독립 재검증을 통과했습니다. 전용 실행기의
-`model-image-05-user` 사본에서도 버전 확인·네트워크 상태·종료 세 명령을 실제 검증했습니다.
-기존 v0.6 `local-model`과 포인터를 보존합니다. 별도 장애 복사본 02도 같은 worker의
-recover·즉시 exit와 정상 종료를 실제 검증했으며, 첫 복사본 01의 원본 FAIL은 보존합니다.
-이 정상·장애 이미지의 성숙도는 `SUPPORTING/PARTIAL`입니다.
-기본 실행에는 `Selection`·`Select`·`Rollback` host 명령을 추가했습니다. 기존 디스크와
-history를 보존하며 선택 기록을 따르고, 기록이 없으면 기존 기본 경로를 유지합니다.
-Windows 로컬에서 0.7 선택·기본 부팅, 0.6 Rollback·기본 부팅, 최종 0.7 재선택을 검증했습니다.
-검증 호스트에서 현재 `Start-AiosImage.cmd -Agent`의 기본 선택은 0.7입니다. 이 범위는 `SUPPORTING/PARTIAL`이며
-운영 이미지 가이드 §9.8이 사용법·실패 이력·증거 범위를 소유합니다.
 
-별도 [Start-AiosConsole.cmd](tools/hosted/Start-AiosConsole.cmd)를 실행하면
-Linux 개발 VM 준비 뒤 AIOS 고유 콘솔로 진입합니다. `help`, `hardware`,
-`resolve example.com`, `fetch https://example.com/`, `exit`를 사용할 수 있습니다.
-[CLI·인터넷 가이드](docs/os/aios_cli_internet_guide_ko.md)는 실행·검증과 영속성 한계를 설명합니다.
-CLI는 `service status/start/stop/restart`를 제공합니다. CLI와 분리된
-`CONSOLE_RUNTIME`의 수명·재접속·세대 관리는 `SUPPORTING/PARTIAL`이며,
-[서비스 운영 가이드](docs/os/aios_service_lifecycle_guide_ko.md)를 따릅니다.
-`Start-AiosConsole.ps1 -Agent`는 로컬 모델을 준비하고 `backend`, `agent`, `room`, `ask`, `cell`, `resources` 명령을
-제공합니다. MAIN source와 hosted authority가 별도로 소유하는 결속·재결속은 `PARTIAL`이며
-전체 H2/H3와 resource action은 후속입니다. 모델 포함 운영 이미지의 별도 구현과
-실제 acceptance와 한계는 위 운영 이미지 가이드에서 관리합니다.
+### 시작하기
 
-현재 CLI v0.7/session schema 7은 runtime source 31개를 기록하며, MAIN protocol/run
-schema 4는 source 24개를 기록합니다. `resources link/status/sample`과 실제 요청 전후
-CPU·RSS 관측은 MAIN과 모델 backend를 별도로 표시하고 system PSI는 특정 Node에
-귀속하지 않습니다. 검증 범위는 [자원 관측 가이드](docs/os/aios_resource_observation_guide_ko.md)를 따릅니다.
-`cell status/activate/deactivate`는 기존 Cell 1의 관리 상태와 세대를 다루는 `PARTIAL`
-구현입니다. 비활성화해도 MAIN 프로세스는 계속 실행되며, 다시 활성화한 뒤 명시적
-발견·재결속이 필요합니다. 이전 v0.5 `cell-01`의 로컬 Linux·실제 모델 검증을 통과했으며 결과와 `-CellSmoke` 실행법은
-[Cell 수명 가이드](docs/os/aios_cell_lifecycle_guide_ko.md)를 따릅니다. 이 기록은 당시 v0.5 소스의 증거입니다.
-v0.6에서 도입한 `backend status/start/stop/restart`는 별도 모델 프로세스 수명을 관리하고,
-MAIN receipt schema 2는 실제 요청 대상의 실행 증거를 기록합니다. 새 backend 관리·실행
-결속은 `backend-02`에서 로컬 Linux·실제 모델 검증을 완료했으며 `PARTIAL`을 유지합니다.
-backend 교체 후 요청 거부, 명시적 복구, 자원 관측, DNS·HTTPS와 정상 종료를 확인했고
-당시 소스 대조와 독립 재검증도 통과했습니다. 이 증거는 보존된 `backend-02` 소스에
-적용되며, 이후 모델 이미지의 긴 기록 경로 수정이 반영된 현재 소스의 검증을 대신하지 않습니다.
-[backend 수명 가이드](docs/os/aios_backend_lifecycle_guide_ko.md)가 계약과 `-BackendSmoke` 실행법을 소유합니다.
-현재 v0.7의 `backend recover`는 같은 CLI가 생존 중 확보한 자식 pidfd로 supervisor 소실 뒤
-명시적 정리를 수행합니다(`PARTIAL`, 실제 Linux·모델 기록의 별도 독립 재검증 PASS; 원본 FAIL 보존). 별도 `RECOVERED` 기록을
-남기고 MAIN 재시작·재결속을 요구하며, 세부 계약은 위 backend 수명 가이드를 따릅니다.
-CLI 소실·재부팅 이후 복구, 전체 H2/H3·native Cell lifecycle과 범용 설치·업데이트는 후속입니다.
-기본 운영 이미지는 기존 CLI source 31개에 부팅 모듈 4개를 더한 source 35개를 기록하며,
-이 `backend-02`의 실제 모델 증거와 별도입니다.
+| 목적 | 진입점 |
+|---|---|
+| 제품 목적과 사용자·AI 경험 이해 | [제품 목적 정본](docs/meta/aios_product_direction_ko.md) |
+| 새 작업에서 읽을 문서·검증 경로 선택 | [통합 작업 진입 가이드](docs/meta/integrated_work_guide_ko.md) |
+| 다음 개발 조각 확인 | [전역 작업흐름](docs/meta/minimal_io_and_maturity_workflow_ko.md) |
+| 문서의 검토 범위와 재검토 필요 확인 | [문서 신선도 원장](docs/meta/document_freshness_registry_ko.md) |
+| 운영 이미지 생성·검증·실행 | [운영 이미지 가이드](docs/os/aios_operating_image_guide_ko.md) |
+| 개발 VM과 CLI·인터넷 사용 | [CLI 가이드](docs/os/aios_cli_internet_guide_ko.md) |
+| 실제 모델·관리 관계·복구 사용 | [MAIN 가이드](docs/os/aios_agent_binding_guide_ko.md), [backend 가이드](docs/os/aios_backend_lifecycle_guide_ko.md) |
+| MAIN이 실제로 받는 환경 문맥·현재/미관측/오래된 정보 | [환경 문맥 가이드](docs/os/aios_space_context_guide_ko.md) |
 
-장기 방향은 embodied AI OS입니다. LLM/SLM 에이전트는 유저스페이스에서 단기 기억과 장기 기억을 분리해 유지하고, 세션을 넘어 연속성을 보존하며, 하드웨어에는 커널이 중재하는 정책 경계를 통해 접근합니다.
+준비된 Windows 환경에서는 [Start-AiosImage.cmd](tools/hosted/Start-AiosImage.cmd)로
+사용자 디스크를 실행하고, 모델 profile은 `-Agent`로 선택합니다.
+[Start-AiosConsole.cmd](tools/hosted/Start-AiosConsole.cmd)는 별도 임시 개발 VM입니다.
+`build/`의 이미지·전용 실행기·과거 보고서와 사용자 캐시는 Git checkout에 포함되지
+않습니다. 새 환경의 의존성 준비와 Build·Smoke·Run은 운영 이미지 가이드를 따릅니다.
 
-이 저장소는 아직 범용 상용 OS가 아닙니다. 다만 bounded ring3 실행 조각은 동작합니다. 두 정적 bootstrap process descriptor가 각자 private CR3와 16KiB ring0 entry stack을 소유하고, PID 1/slot 0 다음 PID 2/slot 1이 커널 내장 static ELF64 데모를 각자의 주소공간에서 순차 실행해 `int 0x80` 관측 시스콜과 `exit(42)`를 왕복합니다. 각 descriptor는 ISR에서 검증된 176B trap evidence snapshot을 소유하며, per-boot process event journal v1은 이 두 실행의 acquire/capture/release 증거 6개를 덮어쓰지 않고 기록합니다. 둘 다 재개 가능한 실행 상태가 아니며 journal은 `evidence_only=1 switch_events=0 resume_ready=0`입니다. native 장기 실행 유저스페이스 서비스, live continuation/switch, 실제 A→B→A, 두 process의 타이머 선점, 동적 주소공간/PMM, 디스크 프로그램, 영속 기억 런타임, 실시간 학습 승격 루프는 후속 영역입니다.
-
-AI 작업자는 루트 [`AGENTS.md`](AGENTS.md)의 저장소 규칙과
-[`.agents/README.md`](.agents/README.md)의 프로젝트 스킬 색인을 먼저
-확인한 뒤 [통합 작업 진입 가이드](docs/meta/integrated_work_guide_ko.md)에서
-요청 유형, 주제별 정본과 검증 경로를 고릅니다. 체크포인트는 `beta`에서 검증하고
-승인된 동일 SHA만 `main`으로 fast-forward합니다.
+이미지 선택, 이전 버전, 실패 원본, source snapshot 및 게시 시점 차이는 운영 이미지
+가이드가 소유합니다. 과거 이미지의 PASS와 문서 검토일은 현재 checkout의 새 실행
+검증을 대신하지 않습니다. 2026-09-09 목적·문서 개정 뒤의 v0.10 변경은 별도로 검증하며,
+보존된 v0.7 운영 이미지의 PASS를 새 코드의 실행 검증으로 사용하지 않습니다.
 
 ## GitHub Description
 
 Suggested repository description:
 
-> AI-native management/runtime project centered on Room → Cell → Node → NodeBit, with Linux-hosted userspace as the intended delivery path and a native proof kernel.
+> AI-native environment for grounded workspace awareness, efficient local execution, and continuous human–agent interaction, with an independent management model, Linux-hosted runtime, and native proof kernel.
 
-## Current Status (2026-09-03)
+## Current Status
 
-- **Current beta:** `v0.2.0-beta.6` (`0.2.0-beta.6 "Genesis"` boot banner).
+- **Native boot banner:** `v0.2.0-beta.6` (`0.2.0-beta.6 "Genesis"`). 이 표기는 native banner이며 hosted CLI 버전이나 최신 beta commit을 뜻하지 않습니다.
 - **Boot path:** x86_64 Multiboot2 커널, GDT/IDT/TSS, 페이징, PIT IRQ0 scheduler tick bootstrap, QEMU 스모크 테스트 기반.
 - **Hardening:** stack protector, NX/W^X 2MB identity-map marking, SMEP/UMIP/SMAP 감지/활성화 경로, uaccess STAC/CLAC fence, 검증된 CPL3 `#BP`/`int 0x80` entry AC 제거, #PF CR2 dump, #DF IST1, cppcheck CI.
 - **Memory:** 물리/가상 할당 기반, 텐서 메모리 메타데이터, 수명 프로파일링, 메모리 패브릭 노드, 공유 영역 스캐폴딩.
-- **Kernel Room topology maturity:** 전체 topology는 계속 `PARTIAL`이다. 기존 aggregate와 9개 syscall-range descriptor, `CURRENT` K1 schema 1/1024B hierarchy에 더해 bounded native K2-a가 `CURRENT`다. K2-a는 K1 ABI를 바꾸지 않고 schema 1/256B snapshot에서 Node 101/Cell 1 generation과 SLM MAIN의 typed namespace, semantic kind/role, producer-owned boot-local instance/generation을 결속한다. exact boot marker, structured `kernel_room_binding`, `state binding`으로 검증된다. source refresh/exit/recreate/rebind, Linux source, resource attribution, principal/ownership는 아직 없다.
+- **Kernel Room topology maturity:** 전체 topology는 계속 `PARTIAL`이다. 기존 aggregate와 9개 syscall-range descriptor, `CURRENT` K1 schema 1/1024B hierarchy에 더해 bounded native K2-a가 `CURRENT`다. K2-a는 K1 ABI를 바꾸지 않고 schema 1/256B snapshot에서 Node 101/Cell 1 generation과 SLM MAIN의 typed namespace, semantic kind/role, producer-owned boot-local instance/generation을 결속한다. exact boot marker, structured `kernel_room_binding`, `state binding`으로 검증된다. 이 native oracle에는 source refresh/exit/recreate/rebind, Linux source, resource attribution, principal/ownership가 없다. 별도 hosted MAIN 결속·Cell 관리 수명은 `PARTIAL`이며 관리 모델 정본의 범위를 따른다.
 - **Identity boundary:** Memory Fabric `domain_id`, SLM `agent_tree.node_id`, SLM policy `slm_nodebit_id`, 런타임 capability `node_id`, pipeline `owner_node`, scheduler task/PID/ring ID는 독립 네임스페이스다. 숫자가 같아도 같은 주체가 아니며, 명시적 namespace/binding/generation 없이 결합하지 않는다.
 - **Linux delivery direction:** Linux-hosted userspace service는 의도된 기본 delivery
   경로로 결정됐다. schema v1의 13개 upstream source row와 fail-closed guard는
@@ -143,24 +84,18 @@ Suggested repository description:
 
 ## Project Direction
 
-AIOS의 우선 방향은 커널 기능을 더 많이 나열하는 것이 아니라, Kernel Room이 살아 있는 AI 구조를 **관리 가능한 계층**으로 다루게 만드는 것입니다.
+[제품 목적](docs/meta/aios_product_direction_ko.md)은 AI의 공간·상태 인지, 로컬 효율,
+안정적인 활동, 사용자와의 상호작용을 함께 평가합니다. [Kernel Room 관리 모델](docs/kernel-room/kernel_room_management_model_ko.md)은
+그 경험에 필요한 정체성·관계·세대·유효성을 소유합니다.
 
-- **Room:** 전체 Cell inventory, 상태 요약, lifecycle/reconciliation의 정본 소유자. K1은 bounded bootstrap hierarchy만 소유하며 live lifecycle/reconciliation은 아직 없다.
-- **Cell:** 격리·수명·자원·건강 상태를 함께 관리하는 bounded 단위. K1은 Cell ID 1 + 그 안에 bound된 Node ID 101 + parent-bound NodeBit ID 1001/1002를 하나의 management-only hierarchy proof로 고정했다. 이는 Cell-only 성공이 아니라 전체 최소 계층 증거다.
-- **Node:** Cell 안에서 역할을 가진 agent/service/runtime 단위. 기존 여러 `node_id`는 canonical Node가 아니라 입력 스캐폴드이므로 명시적으로 bind한다.
-- **NodeBit:** Node 안의 가장 작은 capability/policy/resource projection. 기존 SLM policy node와 runtime capability node를 곧바로 동일시하지 않고 namespace가 있는 adapter로 연결한다.
-- **Execution substrate:** ring3 process, scheduler, memory, storage, network, HAL은 위 관리 모델이 실제 일을 수행하도록 받치는 기반이다. M3~M5의 완성도는 계속 높이되 방향 선택을 독점하지 않는다.
-- **Hosted substrate:** Linux-hosted userspace service는 의도된 기본 delivery
-  구현축이다. H0 source policy는 `CURRENT`이고 H1-a/H1-b/H1-c의 host-only contract,
-  lifecycle replay, fixture bundle/parity는 전용 Ubuntu/Windows/parity CI와 artifact의
-  exact-SHA acceptance를 통과해 `CURRENT`다. bounded native K2-a semantic oracle도
-  `CURRENT`이며 H2-a 초기화·하드웨어 관측·CLI/인터넷은 `PARTIAL`이다. H2 MAIN producer와
-  별도 hosted authority의 명시적 결속·재결속도 `PARTIAL`이며 실행 증거는 MAIN 가이드를 따른다.
-  광범위한 native process/storage
-  확장은 선행조건이 아니다. H4 validation과 H5 apply는 K5와 별도 승인 전까지
-  열지 않는다.
-- **Policy boundary:** Axis Gate의 실제 authorize/enforcement는 canonical identity, parent binding, generation, principal과 ownership이 생긴 뒤의 `PLANNED` 단계다. 현재 9개 descriptor는 분류 메타데이터다.
-- **Orbit:** Cell/Node placement와 분산 배치를 탐구하는 `RESEARCH` 축이다. Cell 관리 기반과 검증 증거 없이 지원 기능으로 선언하지 않는다.
+다음 작업과 선행조건은 [전역 작업흐름](docs/meta/minimal_io_and_maturity_workflow_ko.md#agent-consumer-next)에서
+한 번만 정합니다. 각 변경은 제품 경험에 주는 효과와 관리 모델의 `DIRECT`/`SUPPORTING`/
+`ORTHOGONAL`/`RESEARCH` 관계, 구현 성숙도를 따로 기록합니다. 상호작용 개선도 제품 성과이며,
+관리 계층 수정이나 커널 기능 확장을 동반해야만 가치가 생기는 것은 아닙니다.
+
+자체 native 커널의 실행 책임은 별도 증거로 넓혀 갑니다. Linux가 제공하는 드라이버 지원을
+자체 커널의 직접 호환으로 표현하지 않습니다. 공간 UI를 Cell 또는 Orbit runtime의
+구현으로 해석하지 않으며, 권한·자원 적용에는 해당 계약과 검증이 필요합니다.
 
 ## Architecture
 
@@ -213,7 +148,7 @@ resource/pressure observation · scheduler · ring3 · drivers · H0 source poli
 - limit/used는 5종 모두 유효하지만 source-native high-water는 tensor 1종만 유효하고 denial counter는 아직 없음
 - owner 필드는 future attribution을 위해 존재하지만 현재 모든 row는 `NONE/UNATTRIBUTED`
 - exact required boot selftest와 structured `resource` boot summary로 검증
-- syscall, shell topic, reserve/release/throttle, allocator/scheduler policy 변경은 아직 없음
+- read-only `SYS_INFO_RESOURCE`(0x706)와 `state resource`는 `CURRENT`; owner attribution, quota, reserve/release/throttle, allocator/scheduler policy apply는 후속
 
 ### Kernel Room Management Hierarchy v0
 - `kernel_room_management_snapshot_t`는 schema 1의 bounded 1024B read-only snapshot

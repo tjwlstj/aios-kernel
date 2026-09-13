@@ -20,6 +20,16 @@
 | `aios-workspace-recovery` | `Z:`·cwd·권한·프로필 오류 | 로컬 상태를 모른 채 원격을 변경 |
 | `aios-beta-checkpoint-release` | commit, checkpoint, push | beta 미검증 main 반영과 SHA 분기 |
 
+## 제품 목적과 사실 소유자
+
+[제품 목적 정본](../docs/meta/aios_product_direction_ko.md)은 공간·상태 인지, 로컬 효율과
+안정적인 활동, 사용자와의 지속 상호작용을 함께 다룬다. 스킬은 이 목적을 실현하는
+작업 절차이며 제품 목적이나 현재 구현 상태의 독립 정본이 아니다.
+[전역 작업흐름](../docs/meta/minimal_io_and_maturity_workflow_ko.md)이 작업 큐를,
+[문서 신선도 원장](../docs/meta/document_freshness_registry_ko.md)이 검토 범위와 재검토
+조건을 소유한다. 스킬의 과거 성숙도 예시가 현재 정본·코드·증거와 충돌하면 후자를
+확인하고 예시도 함께 정비한다. 실제 불변식과 검증 요구는 그대로 적용한다.
+
 ## 공통 흐름
 
 1. `AGENTS.md`에서 요청에 맞는 최소 스킬을 고른다.

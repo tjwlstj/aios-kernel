@@ -1,107 +1,37 @@
-# Codex 작업 핸드오프 팁 (2026-07-15)
+# Codex 작업 핸드오프 팁
 
-최종 갱신: 2026-09-08 (backend 수명·MAIN 실행 결속의 로컬 실제 검증 완료와 이전 실행 증거 보존)
+> 문서 역할: native 커널의 실전 지뢰와 디버깅 이유를 보존하는 참고 runbook
+> 문서 수명주기: 활성 runbook + 날짜별 역사 기록
+> 내용 검토일: 2026-09-13 — v0.10 Task·증거 정본 진입 갱신. 2026-09-09의 역할 정비와 아래 native·hosted 역사 기록은 보존하며 커널 재실행 검증이 아님.
 
-문서 역할: 커널 작업의 실전 지뢰와 디버깅 이유를 보존하는 참고 runbook.
-준비된 운영 이미지의 사용자 진입점은 `tools/hosted/Start-AiosImage.cmd`이며 모델 profile은
-`-Agent`로 선택한다. 새 환경의 Build·Smoke·Run은 [운영 이미지 가이드](../os/aios_operating_image_guide_ko.md)를 따른다.
-`tools/hosted/Start-AiosConsole.ps1` 또는 같은 위치의 `.cmd`는 임시 개발 VM이다.
-두 경로 모두 실제 Linux에서 AIOS banner·`aios>`·DNS/HTTP(S) GET을 제공한다.
-CLI는 `PARTIAL`; source-only inventory와 사용자가 요청한 실제 network I/O를
-구별한다. 세션·정상 종료·실행 증거와 남는 범위는
-[CLI·인터넷 가이드](../os/aios_cli_internet_guide_ko.md)를 따른다.
-현재 H2 진입점: `hosted/linux/aios-boot.py`의 초기화·Linux-visible 하드웨어 inventory는
-`PARTIAL`이다. [유저스페이스 가이드](../os/aios_userspace_boot_hardware_guide_ko.md)의
-새 디렉터리·동일 run·외부 verifier 계약을 따른다. H1 native trusted target에 Linux
-장치를 끼워 넣지 않으며 전체 H2/H3는 `PLANNED`다. 당시 로컬 `qemu-07`은 AIOS READY와
-정상 종료를 확인했고, 166개 hosted 테스트(Windows 1 skip)·Linux H2-a 25개 테스트를
-통과했다. 정확한 run identity와 증거는 가이드 §8을 따른다. 아래 과거 완료 이력과 구분한다.
-저장소 전체 작업 분류와 문서 관리는
-[통합 작업 진입 가이드](integrated_work_guide_ko.md), 현재 빌드·구현 불변식은
-[CLAUDE.md](../../CLAUDE.md)가 소유한다. 이 문서는 둘을 대체하지 않고 “왜 그런지”와
-“어떻게 디버깅했는지”를 보완한다.
+제품 목적은 [공간 인지·활동·사용자 상호작용 정본](aios_product_direction_ko.md),
+새 작업의 분류와 검증 범위는 [통합 작업 진입](integrated_work_guide_ko.md), 전역 큐는
+[성숙도 작업흐름](minimal_io_and_maturity_workflow_ko.md)이 소유한다.
+[문서 신선도 원장](document_freshness_registry_ko.md)에서 검토 범위와 재검토 조건을 확인한다.
 
-M3-b-3a부터 M3-b-3b2b까지(주소공간 전환 → private leaf → process-owned 동기 runner) 작업은 우리 규약을 정확히 따랐다(셀프테스트 마커 + `state` 노출 + 스모크 3곳 + shell 레인 + 문서). 이 형식을 계속 유지하면 된다.
+현재 사용자 진입은 [운영 이미지 가이드](../os/aios_operating_image_guide_ko.md)를 따른다.
+`Start-AiosImage.cmd`는 준비된 영속 이미지, `Start-AiosConsole.cmd`는 임시 개발 VM이다.
+모델·서비스·결속·복구의 현재 범위는 [MAIN](../os/aios_agent_binding_guide_ko.md),
+[backend](../os/aios_backend_lifecycle_guide_ko.md) 가이드가 소유한다(`PARTIAL`).
+CLI 소실·재부팅을 넘는 복구와 통합된 공간 인지·지속 상호작용은 후속이다.
+2026-09-09의 v0.9 로컬 통합은 v0.8의 MAIN 환경 문맥 전달과 요청 오류 안내를 포함한
+보존 이력이다. 이 체크포인트의 개발 소스 v0.10은 UUID 질문의 접수·조회·결과·같은 CLI가 소유한
+backend의 명시적 정지를 연결한다(`PARTIAL`). 정확한 관측 범위·버전·실행 판정은
+[환경 문맥 가이드](../os/aios_space_context_guide_ko.md)가 소유한다.
+해당 가이드 §6.1·§6.2의 원본 v0.9·후보 source·검사 snapshot은 보존하며, §6.3의 새
+Windows 전체·Linux Task fixture 결과와 한정 실제 모델 TaskSmoke PASS를 구분한다.
+TaskSmoke는 정상 답변·진행 중 Task 취소·worker/전체 backend 종료와 정상 VM 종료를 확인했으며 새 운영 이미지 acceptance는 미완료다. 기존 동기
+smoke나 fixture PASS를 새 실제 모델 Task 완료 검증으로 재사용하지 않는다.
 
----
+이 문서의 날짜별 실행 ID·테스트 수·당시 다음 작업은 역사적 맥락이다. §5와 §6의
+“현재”는 각 기록 시점을 가리키며 최신 전역 큐나 현재 소스 검증을 대신하지 않는다.
+이전에 상단에 누적했던 hosted 진행 기록은 §6에 원문을 보존했다.
 
-CLI v0.2/schema 2는 source 12개를 기록하며 `service status/start/stop/restart`를 제공했다.
-[서비스 수명주기 가이드](../os/aios_service_lifecycle_guide_ko.md)의 CONSOLE_RUNTIME은
-SUPPORTING/PARTIAL이다. CLI exit와 daemon exit를 구분하며 `-ServiceSmoke -GuestTests`로
-두 CLI 사이 생존·세대 증가·정상 종료를 검증한다. 과거 schema 1 증거는 당시 source 8개로
-재생한다. Node 101/SLM MAIN에 관측 daemon을 임의 결속하지 않는다.
-최종 service-04는 일반 사용자 Linux 147 tests, 두 CLI 사이 생존, 세대 1→2→3,
-실제 DNS/HTTPS와 정상 서비스·VM 종료를 통과했다. Windows는 279 tests 중
-Linux 전용·symlink 17개 skip, 나머지 통과다. service-01/02 실패와 수정 근거는
-서비스 가이드에 보존했다. CLI v0.3/schema 3은 source 20개와 별도 MAIN producer,
-hosted authority의 `agent`·`room`·`ask`를 구현했다(`DIRECT/PARTIAL`). `-Agent`로 외부 모델
-cache를 준비하고 대화형 VM을 시작한다. `-AgentSmoke -GuestTests`가 실제 warmup·질문,
-CLI 재접속·restart·stale·명시적 reconcile과 종료를 검사한다. 결과·실패 이력·정확한
-잔여는 [MAIN 가이드](../os/aios_agent_binding_guide_ko.md) §8을 따른다. 전체 H2/H3,
-자원 귀속·principal·apply와 범용 설치·복구 완료를 자동으로 주장하지 않는다.
-`build/hosted-agent/agent-02`는 실제 warmup 2회·질문 3회·binding 1→2·정상 종료를 수행했다.
-원래 종료 parser가 shell prompt 접두사를 놓친 FAIL 판정은 보존했고, 좁힌 수정과 반례
-검증 뒤 별도 `agent-replay-verdict.json`이 PASS다. 당시 runtime source 20개 snapshot으로 재생한다.
-`interactive-03`은 v0.3의 실제 DNS/HTTPS와 MAIN 미시작 ABSENT 종료까지 최종 PASS다.
-v0.4의 DIRECT/PARTIAL 조각은 유효 binding 아래 MAIN/backend의 CPU/RSS와 system PSI 관측이다.
-명시적 관계를 canonical ownership이나 resource apply 권한으로 추론하지 않는다.
-v0.4/schema 4/source 25는 `resources link/status/sample`과 요청 전후 관측을 도입했다.
-당시 공개 MAIN 응답·per-run 형식을 schema 2로 올리고 이전 형식을 보존했다.
-관계·두 프로세스·system PSI 경계 및 실행 acceptance는
-[자원 관측 가이드](../os/aios_resource_observation_guide_ko.md)를 따른다.
-최종 `build/hosted-resources/resource-02`는 당시 v0.4 source 25개 snapshot과 일치하며 Linux 312개
-검사·실제 warmup/질문 각 1회·CPU/RSS 표본 2개·system PSI 세 종류·DNS/HTTPS·정상 종료
-모두 PASS다. 당시 Windows 전체 444개 중 38개 skip, 실행 406개 통과다. resource-01은 PSI
-기본 비활성 상태의 첫 성공 증거로 보존했다.
-v0.5/session schema 5/source 25개, MAIN protocol/run schema 3/source 18개는
-`cell status/activate/deactivate`를 제공한다. 기존 Cell 1 관리 전이는 `DIRECT/PARTIAL`이며
-이전 v0.5 `cell-01`의 로컬 Linux·실제 모델 검증을 통과했다([Cell 수명 가이드](../os/aios_cell_lifecycle_guide_ko.md)).
-비활성화해도 MAIN/backend는 계속 실행되며 재활성화 뒤 명시적 발견·재결속이 필요하다.
-`build/hosted-cells/cell-01`은 26개 CLI 명령에서 Cell 세대 1→2→3, binding과 resource
-relation 세대 1→2, 실제 Qwen warmup·질문 각 1회, DNS/인증서 검증 HTTPS와 정상
-MAIN/backend/VM 종료를 통과했다. 최종 Windows·Linux 테스트 수와 정확한 실행 identity는
-Cell 수명 가이드에 보존한다. 이전 agent-02/resource-02는 당시 단계의 증거로 유지한다.
-이 Cell 실행은 당시 v0.5 snapshot으로 재생하며 현재 v0.7 소스의 검증 완료를 뜻하지 않는다.
-현재 CLI v0.7/session schema 7/source 31개와 MAIN protocol/run schema 4/source 24개는
-v0.6에서 도입한 `backend status/start/stop/restart`를 유지한다. receipt schema 2의 `backend_execution`이
-실제 MAIN 요청 대상의 연속성을 검사한다. 이 DIRECT/PARTIAL 확장은 `backend-02`에서
-로컬 Linux·실제 모델·교체 후 요청 거부·명시적 복구·자원 관측·DNS/HTTPS·정상 종료를
-검증했다. 원본 verdict를 보존한 당시 소스 독립 재검증도 통과했으며 상세 증거는
-[backend 수명 가이드](../os/aios_backend_lifecycle_guide_ko.md)를 따른다.
-`backend-02`의 보존된 소스 증거를 이후 모델 이미지 기록 경로 수정이 반영된 현재 소스와 혼합하지 않는다.
-현재 v0.7의 `backend recover`는 동일 CLI가 미리 확보한 child pidfd로 supervisor 소실 뒤
-명시적 정리를 수행한다(`PARTIAL`, 실제 Linux·모델 기록의 별도 독립 재검증 PASS; 원본 FAIL 보존). 별도 `RECOVERED` 증거와
-MAIN 재시작·재결속 계약은 위 backend 수명 가이드를 따른다. CLI 소실·재부팅 이후 복구와
-필요한 worker·cgroup의 명시적 읽기 관계, 전체 H2/H3·native Cell
-lifecycle·ownership·principal·apply와 범용 설치/복구는 후속이다.
+## 1. native 커널·ABI·부트 증거 변경의 작업 사이클
 
-별도 기본 운영 이미지는 `image-07`의 같은 4 GiB 디스크로 온라인 두 번·오프라인 한 번의
-cold boot, UID 1000 CLI, 설정·history 보존과 정상 종료를 검증했다(`SUPPORTING/PARTIAL`).
-현재 checkout에서는 `Start-AiosImage.cmd`로 검증 원본에서 만든 영속 사용자 복사본을
-바로 실행한다. 보존된 image-07의 source 35개와 당시 CLI v0.6/session 6/source 31개를 구분하며,
-모델 bundle·부팅 간 canonical 상태 복원은 없다. 실제 UUID·판정·실패 이력과 사용법은
-[운영 이미지 가이드](../os/aios_operating_image_guide_ko.md)를 따른다. 기존 `backend-02`의
-모델 증거를 기본 이미지의 모델 기능으로 해석하지 않는다.
-
-모델을 포함하는 별도 `-Agent` profile도 `SUPPORTING/PARTIAL`이다. `model-image-04`에서
-Linux 이미지 검사 51개, 같은 디스크의 online·offline 두 cold boot, 실제 warmup·질문 각
-2회, 명시적 재결속·인터넷·정상 종료와 당시 v0.6 source 35개의 독립 재검증을 통과했다.
-`local-model` 사용자 사본의 실제 `.cmd -Agent` 진입·상태 조회·정상 종료도 확인했다.
-실패한 model-image-01~03과 basic image-07·backend-02의 역사적 원본은 별도로 보존한다.
-
-현재 v0.7/session 7/source 35개의 정상 모델 이미지는 `model-image-05`다. online·offline
-두 부팅 45명령, 실제 warmup·질문 각 2회·재결속·인터넷·정상 종료와 현재 소스 독립 재생이
-PASS이며 원본 verdict와 전체 파일을 보존했다. 전용 0.7 실행기 (`build/hosted-image-v07/Start-Aios-0.7.cmd`)의
-`model-image-05-user` 사본에서도 세 명령·정상 종료를 확인했다. 기존 `local-model`·v0.6 원본·
-기본 포인터는 유지한다. 별도 장애 복사본 02는 같은 worker의 recover·즉시 exit·정상 종료를
-실제 검증했으며, 첫 복사본 01의 원본 FAIL은 보존한다. 정상 이미지와 장애 증거를 구분하며
-정확한 결과는 운영 이미지 가이드 §9.7에 있다.
-기본 실행에 `Selection`·`Select`·`Rollback`을 추가한 host 경로는 §9.8을 따른다.
-기존 0.6 기본 실행은 역사적 증거이며 이제 저장한 선택을 우선한다. 각 디스크·history와
-legacy 포인터는 보존한다. Windows 로컬에서 0.7·0.6의 실제 기본 부팅과 최종 0.7 재선택을
-통과했으며 현재 기본은 0.7이다. 이 선택 경로의 성숙도는 `SUPPORTING/PARTIAL`이다.
-
-## 1. 작업 사이클 (매 변경 공통) — 이대로만 하면 회귀 없음
+이 절은 native 커널 실행이나 ABI·부트 증거를 바꾸는 경우에 적용한다. 문서·인덱스
+정비는 링크·신선도·충돌 검사를, hosted 인터랙션 변경은 해당 runtime·host 검증을
+선택한다. 범위 선택은 통합 진입 가이드 §7을 따르며 검증 실행 수가 무회귀를 보장하지 않는다.
 
 1. **셀프테스트 우선.** 새 경로는 부팅 셀프테스트로 왕복 검증하고 `[XXX] ... PASS key=value` 한 줄 마커를 남긴다. 실패도 `[XXX] ... FAIL ...`로 한 줄.
 2. **스모크 마커 필수화 (현재는 두 곳 동시!).** shared manifest가 도입되기 전까지 마커를 반드시 **둘 다** 추가한다:
@@ -113,7 +43,7 @@ legacy 포인터는 보존한다. Windows 로컬에서 0.7·0.6의 실제 기본
    required record를 함께 추가한다. Resource/pressure처럼 `observation_only=1`인
    레코드는 정본 뒤 상충 필드도 허용하지 않는다.
 4. **고정밀 계측.** 시간이 걸리는 경로는 `kernel_time_monotonic_ns()`(TSC 기반)로 재서 관측에 ns로 포함.
-5. **검증 세트 (커밋 전 전부):**
+5. **native 변경의 검증 후보 (영향 범위와 정규 gate에 맞춰 선택):**
    ```
    py -3 -m unittest discover -s tools/testkit/tests -t tools/testkit -p "test_*.py" -v
    cppcheck --std=c11 --platform=unix64 --enable=warning,performance,portability \
@@ -130,13 +60,15 @@ legacy 포인터는 보존한다. Windows 로컬에서 0.7·0.6의 실제 기본
    판정한다. shell PASS에는 같은 response record, 전체 transcript verdict, reader drain,
    reboot acknowledgement와 QEMU exit code 0도 필요하다. 최신 계약은
    `docs/tools/verification_tooling_evolution_design_ko.md`를 따른다.
-   Linux substrate resource 문서나 manifest를 바꾸면 아래 두 host 계약도 같은
-   커밋 전에 실행한다.
+   Linux substrate의 resource schema·pin·manifest·guard 계약을 바꾸면 아래 두
+   host 계약을 실행한다. 제품 목적 링크·문서 역할만 바꾸는 경우에는 그 계약을
+   변경한 것으로 해석하지 않는다.
    ```
    py -3 tools/platform/linux_resource_guard.py
    py -3 -m unittest discover -s tools/platform/tests -p "test_*.py" -v
    ```
-6. **작업 브랜치는 `beta`.** main으로의 병합/PR은 사람이 결정한다.
+6. **작업 브랜치는 `beta`.** 게시 요청이 있을 때 체크포인트를 만든다. main 이동은
+   명시 승인과 해당 beta SHA의 정규 검증 성공 뒤 같은 SHA의 fast-forward만 허용한다.
 
 ---
 
@@ -405,3 +337,112 @@ continuation/switch이고, bounded 실제 A→B→A를 증명한 뒤 timer preem
   live K2 reconciliation, apply 또는 Linux qemu-mcp 실제 E2E를 포함하지 않는다.
 - maturity metadata와 mirror를 맞춘 최종 커밋은 새 exact SHA로 beta CI와 H1 artifacts를
   다시 검증한 뒤에만 main으로 fast-forward한다. H2 실행 코드는 이번 게시에 추가하지 않는다.
+
+
+## 6. 2026-09-08까지의 hosted 진행 기록 (역사 보존)
+
+> 이 절은 개정 전 상단 기록을 보존한다. 문서 안의 현재·기본·소스 일치는 각 당시
+> 환경의 표현이다. 게시 시 제품 35개 중 4개의 형식 bytes가 달라졌으며 AST는 같았다.
+> 보존 이미지의 실행과 현재 소스의 차이는 운영 이미지 가이드 §11을 따른다.
+> 이 기록의 날짜나 판정을 이번 문서 정비로 갱신하지 않는다.
+
+최종 갱신: 2026-09-08 (backend 수명·MAIN 실행 결속의 로컬 실제 검증 완료와 이전 실행 증거 보존)
+
+문서 역할: 커널 작업의 실전 지뢰와 디버깅 이유를 보존하는 참고 runbook.
+준비된 운영 이미지의 사용자 진입점은 `tools/hosted/Start-AiosImage.cmd`이며 모델 profile은
+`-Agent`로 선택한다. 새 환경의 Build·Smoke·Run은 [운영 이미지 가이드](../os/aios_operating_image_guide_ko.md)를 따른다.
+`tools/hosted/Start-AiosConsole.ps1` 또는 같은 위치의 `.cmd`는 임시 개발 VM이다.
+두 경로 모두 실제 Linux에서 AIOS banner·`aios>`·DNS/HTTP(S) GET을 제공한다.
+CLI는 `PARTIAL`; source-only inventory와 사용자가 요청한 실제 network I/O를
+구별한다. 세션·정상 종료·실행 증거와 남는 범위는
+[CLI·인터넷 가이드](../os/aios_cli_internet_guide_ko.md)를 따른다.
+현재 H2 진입점: `hosted/linux/aios-boot.py`의 초기화·Linux-visible 하드웨어 inventory는
+`PARTIAL`이다. [유저스페이스 가이드](../os/aios_userspace_boot_hardware_guide_ko.md)의
+새 디렉터리·동일 run·외부 verifier 계약을 따른다. H1 native trusted target에 Linux
+장치를 끼워 넣지 않으며 전체 H2/H3는 `PLANNED`다. 당시 로컬 `qemu-07`은 AIOS READY와
+정상 종료를 확인했고, 166개 hosted 테스트(Windows 1 skip)·Linux H2-a 25개 테스트를
+통과했다. 정확한 run identity와 증거는 가이드 §8을 따른다. 아래 과거 완료 이력과 구분한다.
+저장소 전체 작업 분류와 문서 관리는
+[통합 작업 진입 가이드](integrated_work_guide_ko.md), 현재 빌드·구현 불변식은
+[CLAUDE.md](../../CLAUDE.md)가 소유한다. 이 문서는 둘을 대체하지 않고 “왜 그런지”와
+“어떻게 디버깅했는지”를 보완한다.
+
+M3-b-3a부터 M3-b-3b2b까지(주소공간 전환 → private leaf → process-owned 동기 runner) 작업은 우리 규약을 정확히 따랐다(셀프테스트 마커 + `state` 노출 + 스모크 3곳 + shell 레인 + 문서). 이 형식을 계속 유지하면 된다.
+
+---
+
+CLI v0.2/schema 2는 source 12개를 기록하며 `service status/start/stop/restart`를 제공했다.
+[서비스 수명주기 가이드](../os/aios_service_lifecycle_guide_ko.md)의 CONSOLE_RUNTIME은
+SUPPORTING/PARTIAL이다. CLI exit와 daemon exit를 구분하며 `-ServiceSmoke -GuestTests`로
+두 CLI 사이 생존·세대 증가·정상 종료를 검증한다. 과거 schema 1 증거는 당시 source 8개로
+재생한다. Node 101/SLM MAIN에 관측 daemon을 임의 결속하지 않는다.
+최종 service-04는 일반 사용자 Linux 147 tests, 두 CLI 사이 생존, 세대 1→2→3,
+실제 DNS/HTTPS와 정상 서비스·VM 종료를 통과했다. Windows는 279 tests 중
+Linux 전용·symlink 17개 skip, 나머지 통과다. service-01/02 실패와 수정 근거는
+서비스 가이드에 보존했다. CLI v0.3/schema 3은 source 20개와 별도 MAIN producer,
+hosted authority의 `agent`·`room`·`ask`를 구현했다(`DIRECT/PARTIAL`). `-Agent`로 외부 모델
+cache를 준비하고 대화형 VM을 시작한다. `-AgentSmoke -GuestTests`가 실제 warmup·질문,
+CLI 재접속·restart·stale·명시적 reconcile과 종료를 검사한다. 결과·실패 이력·정확한
+잔여는 [MAIN 가이드](../os/aios_agent_binding_guide_ko.md) §8을 따른다. 전체 H2/H3,
+자원 귀속·principal·apply와 범용 설치·복구 완료를 자동으로 주장하지 않는다.
+`build/hosted-agent/agent-02`는 실제 warmup 2회·질문 3회·binding 1→2·정상 종료를 수행했다.
+원래 종료 parser가 shell prompt 접두사를 놓친 FAIL 판정은 보존했고, 좁힌 수정과 반례
+검증 뒤 별도 `agent-replay-verdict.json`이 PASS다. 당시 runtime source 20개 snapshot으로 재생한다.
+`interactive-03`은 v0.3의 실제 DNS/HTTPS와 MAIN 미시작 ABSENT 종료까지 최종 PASS다.
+v0.4의 DIRECT/PARTIAL 조각은 유효 binding 아래 MAIN/backend의 CPU/RSS와 system PSI 관측이다.
+명시적 관계를 canonical ownership이나 resource apply 권한으로 추론하지 않는다.
+v0.4/schema 4/source 25는 `resources link/status/sample`과 요청 전후 관측을 도입했다.
+당시 공개 MAIN 응답·per-run 형식을 schema 2로 올리고 이전 형식을 보존했다.
+관계·두 프로세스·system PSI 경계 및 실행 acceptance는
+[자원 관측 가이드](../os/aios_resource_observation_guide_ko.md)를 따른다.
+최종 `build/hosted-resources/resource-02`는 당시 v0.4 source 25개 snapshot과 일치하며 Linux 312개
+검사·실제 warmup/질문 각 1회·CPU/RSS 표본 2개·system PSI 세 종류·DNS/HTTPS·정상 종료
+모두 PASS다. 당시 Windows 전체 444개 중 38개 skip, 실행 406개 통과다. resource-01은 PSI
+기본 비활성 상태의 첫 성공 증거로 보존했다.
+v0.5/session schema 5/source 25개, MAIN protocol/run schema 3/source 18개는
+`cell status/activate/deactivate`를 제공한다. 기존 Cell 1 관리 전이는 `DIRECT/PARTIAL`이며
+이전 v0.5 `cell-01`의 로컬 Linux·실제 모델 검증을 통과했다([Cell 수명 가이드](../os/aios_cell_lifecycle_guide_ko.md)).
+비활성화해도 MAIN/backend는 계속 실행되며 재활성화 뒤 명시적 발견·재결속이 필요하다.
+`build/hosted-cells/cell-01`은 26개 CLI 명령에서 Cell 세대 1→2→3, binding과 resource
+relation 세대 1→2, 실제 Qwen warmup·질문 각 1회, DNS/인증서 검증 HTTPS와 정상
+MAIN/backend/VM 종료를 통과했다. 최종 Windows·Linux 테스트 수와 정확한 실행 identity는
+Cell 수명 가이드에 보존한다. 이전 agent-02/resource-02는 당시 단계의 증거로 유지한다.
+이 Cell 실행은 당시 v0.5 snapshot으로 재생하며 현재 v0.7 소스의 검증 완료를 뜻하지 않는다.
+현재 CLI v0.7/session schema 7/source 31개와 MAIN protocol/run schema 4/source 24개는
+v0.6에서 도입한 `backend status/start/stop/restart`를 유지한다. receipt schema 2의 `backend_execution`이
+실제 MAIN 요청 대상의 연속성을 검사한다. 이 DIRECT/PARTIAL 확장은 `backend-02`에서
+로컬 Linux·실제 모델·교체 후 요청 거부·명시적 복구·자원 관측·DNS/HTTPS·정상 종료를
+검증했다. 원본 verdict를 보존한 당시 소스 독립 재검증도 통과했으며 상세 증거는
+[backend 수명 가이드](../os/aios_backend_lifecycle_guide_ko.md)를 따른다.
+`backend-02`의 보존된 소스 증거를 이후 모델 이미지 기록 경로 수정이 반영된 현재 소스와 혼합하지 않는다.
+현재 v0.7의 `backend recover`는 동일 CLI가 미리 확보한 child pidfd로 supervisor 소실 뒤
+명시적 정리를 수행한다(`PARTIAL`, 실제 Linux·모델 기록의 별도 독립 재검증 PASS; 원본 FAIL 보존). 별도 `RECOVERED` 증거와
+MAIN 재시작·재결속 계약은 위 backend 수명 가이드를 따른다. CLI 소실·재부팅 이후 복구와
+필요한 worker·cgroup의 명시적 읽기 관계, 전체 H2/H3·native Cell
+lifecycle·ownership·principal·apply와 범용 설치/복구는 후속이다.
+
+별도 기본 운영 이미지는 `image-07`의 같은 4 GiB 디스크로 온라인 두 번·오프라인 한 번의
+cold boot, UID 1000 CLI, 설정·history 보존과 정상 종료를 검증했다(`SUPPORTING/PARTIAL`).
+현재 checkout에서는 `Start-AiosImage.cmd`로 검증 원본에서 만든 영속 사용자 복사본을
+바로 실행한다. 보존된 image-07의 source 35개와 당시 CLI v0.6/session 6/source 31개를 구분하며,
+모델 bundle·부팅 간 canonical 상태 복원은 없다. 실제 UUID·판정·실패 이력과 사용법은
+[운영 이미지 가이드](../os/aios_operating_image_guide_ko.md)를 따른다. 기존 `backend-02`의
+모델 증거를 기본 이미지의 모델 기능으로 해석하지 않는다.
+
+모델을 포함하는 별도 `-Agent` profile도 `SUPPORTING/PARTIAL`이다. `model-image-04`에서
+Linux 이미지 검사 51개, 같은 디스크의 online·offline 두 cold boot, 실제 warmup·질문 각
+2회, 명시적 재결속·인터넷·정상 종료와 당시 v0.6 source 35개의 독립 재검증을 통과했다.
+`local-model` 사용자 사본의 실제 `.cmd -Agent` 진입·상태 조회·정상 종료도 확인했다.
+실패한 model-image-01~03과 basic image-07·backend-02의 역사적 원본은 별도로 보존한다.
+
+현재 v0.7/session 7/source 35개의 정상 모델 이미지는 `model-image-05`다. online·offline
+두 부팅 45명령, 실제 warmup·질문 각 2회·재결속·인터넷·정상 종료와 현재 소스 독립 재생이
+PASS이며 원본 verdict와 전체 파일을 보존했다. 전용 0.7 실행기 (`build/hosted-image-v07/Start-Aios-0.7.cmd`)의
+`model-image-05-user` 사본에서도 세 명령·정상 종료를 확인했다. 기존 `local-model`·v0.6 원본·
+기본 포인터는 유지한다. 별도 장애 복사본 02는 같은 worker의 recover·즉시 exit·정상 종료를
+실제 검증했으며, 첫 복사본 01의 원본 FAIL은 보존한다. 정상 이미지와 장애 증거를 구분하며
+정확한 결과는 운영 이미지 가이드 §9.7에 있다.
+기본 실행에 `Selection`·`Select`·`Rollback`을 추가한 host 경로는 §9.8을 따른다.
+기존 0.6 기본 실행은 역사적 증거이며 이제 저장한 선택을 우선한다. 각 디스크·history와
+legacy 포인터는 보존한다. Windows 로컬에서 0.7·0.6의 실제 기본 부팅과 최종 0.7 재선택을
+통과했으며 현재 기본은 0.7이다. 이 선택 경로의 성숙도는 `SUPPORTING/PARTIAL`이다.

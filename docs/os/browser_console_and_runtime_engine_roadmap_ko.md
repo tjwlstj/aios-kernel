@@ -2,13 +2,21 @@
 
 > 기준일: 2026-07-25
 > 관리축 재정렬: 2026-08-10
-> 최종 갱신: 2026-08-15 (native K2-a 관측면과 W축 정렬)
+> 내용 검토일: 2026-09-13 — v0.10 Task와 브라우저 요구의 범위 대조; 브라우저 구현 검증 아님
 >
-> 상태: 설계 정본. 아래 기능은 별도 표시가 없는 한 `PLANNED` 또는 `RESEARCH`다.
+> 문서 역할: W축 브라우저 전달 방식의 분야별 설계 가이드
+> 문서 수명주기: 활성
+> 아래 브라우저 기능은 별도 표시가 없는 한 `PLANNED` 또는 `RESEARCH`다. 전역 작업 큐를 소유하지 않는다.
 
-Kernel Room의 관리 의미와 구현 순서는 [관리 모델](../kernel-room/kernel_room_management_model_ko.md)과
-[성숙도 작업흐름](../meta/minimal_io_and_maturity_workflow_ko.md)을 우선한다. 이 문서의
-W축은 별도 제품 표면이며 K축 성숙도를 대신하지 않는다.
+[제품 목적](../meta/aios_product_direction_ko.md)은 AI가 자신의 공간·상태를 이해하고
+효율적으로 활동하며 사용자와 지속적으로 상호작용하는 경험이다. 브라우저는 이 경험을
+표현하는 선택지다. 기존 CLI와 구조화된 표면을 통한 첫 agent 소비·상호작용도 제품
+개발이며, W1 구현을 그 선행조건으로 두지 않는다.
+
+Kernel Room의 관리 의미는 [관리 모델](../kernel-room/kernel_room_management_model_ko.md),
+전역 큐는 [작업흐름](../meta/minimal_io_and_maturity_workflow_ko.md#agent-consumer-next)을
+따른다. W축의 완료가 K축이나 H축의 성숙도를 대신하지 않는다.
+[신선도 원장](../meta/document_freshness_registry_ko.md)에서 내용·외부자료 검토 범위를 구분한다.
 
 이 문서의 `Hosted Web Console`과 `Host Session Runtime`은 QEMU 세션을 중계·격리하는
 W축이다. Linux 위에서 Kernel Room source adapter와 resource policy backend를 실행하는
@@ -23,12 +31,15 @@ AIOS를 브라우저에서 관찰하고 제어하는 가까운 경로와, 장기
 오케스트레이터에 의존하지 않고 AIOS 안의 유저스페이스 런타임이 서비스를
 제공하는 경로를 분리해 정의한다.
 
-이 문서에서 말하는 **자체 런타임 엔진**은 커널 안에 LLM을 넣거나 모델이
+이 문서의 W4에서 말하는 **native 자체 런타임 엔진**은 커널 안에 LLM을 넣거나 모델이
 레지스터·포인터를 직접 생성하게 하는 기능이 아니다. 프로세스, AI flow,
 모델 런타임, 정책 확인, 비동기 큐, 세션 복구를 묶는 AIOS 유저스페이스
 서비스 계층을 뜻한다. 커널은 계속 결정론적 자원·권한·복구 경계를 담당한다.
 
 ## 2. 현재 출발점
+
+아래 native 행과 별도 hosted 행은 실행 기반을 구분한다. 현재 Linux-hosted MAIN·
+backend·CLI는 이미 제한적으로 동작하며, W4 native 서비스 모델의 부재와 혼동하지 않는다.
 
 | 항목 | 상태 | 실제 범위 |
 |---|---|---|
@@ -39,16 +50,27 @@ AIOS를 브라우저에서 관찰하고 제어하는 가까운 경로와, 장기
 | Kernel Room native K2-a 결속 | `CURRENT` | 별도 256B snapshot에서 Node 101과 producer-owned SLM MAIN source 결속; exact boot/summary/`state binding` 검증 |
 | 셸 종료 판정 | `CURRENT` | reader drain, reboot ack, clean QEMU exit를 검증한다 |
 | 커널 네트워크 | `PARTIAL` | e1000 bootstrap/smoke는 있으나 TCP/IP·소켓·HTTP 서버는 없다 |
-| 장기 실행 유저스페이스 | `PLANNED` | 현재 ring3는 PID 1→PID 2 정적 ELF의 bounded 순차 동기 실행이며, 선점 서비스 모델은 아니다 |
+| native 장기 실행 유저스페이스 | `PLANNED` | 현재 ring3는 PID 1→PID 2 정적 ELF의 bounded 순차 동기 실행이며, 선점 서비스 모델은 아니다 |
 | 브라우저 콘솔·게이트웨이 | `PLANNED` | 아직 구현 파일이나 정규 검증 경로가 없다 |
-| AIOS 자체 런타임 엔진 | `PLANNED` | K1과 bounded native K2-a는 완료됐으며, 남은 K2 lifecycle·K3~K5 관리·권한, M3~M5 실행·I/O, C1/C2 영속 기반 이후의 기능이다 |
+| W4 native 자체 런타임 엔진 | `PLANNED` | K1과 bounded native K2-a는 완료됐으며, 남은 K2 lifecycle·K3~K5 관리·권한, M3~M5 실행·I/O, C1/C2 영속 기반 이후의 기능이다 |
 
-따라서 첫 브라우저 표면은 커널 네트워크 서버가 아니라 기존 COM1 계약을
-호스트에서 WebSocket으로 중계하는 방식이 맞다.
+Linux-hosted의 실제 MAIN·CLI·backend 수명은 `PARTIAL`이며 [hosted 도메인](../../hosted/README.md)과
+[에이전트 운용 계약](../autonomy/agent_operating_contract_ko.md)을 따른다. 게시된 v0.7 단문 모델
+질의에는 환경·이전 대화가 자동 주입되지 않았다. 현재 v0.10은 제한된 환경 문맥과
+질문 UUID의 접수·조회·결과·명시적 취소를 연결한다(`PARTIAL`). 정확한 버전·source와
+보존된 실제 문맥 소비·Task fixture 결과는 [환경 문맥 가이드](aios_space_context_guide_ko.md)를 따른다.
+이전 대화·범용 작업 수정·CLI 소실/재부팅 뒤 자동 재개는 없다. 이 변경은 W1/W4
+브라우저 기능의 완료 증거가 아니다. 실제 모델 Task의 한정 흐름은 PASS이며 source 39개 운영 이미지의
+acceptance는 미완료다. 기존 운영 이미지와 이 개발 소스의 실행 범위를 구분한다.
+
+
+native 커널을 브라우저에서 관찰할 경우에는 COM1 중계를 후보로 사용할 수 있다.
+hosted 사용자 상호작용은 기존 제품 runtime의 공개 상태·요청 계약을 소비하는 별도
+경로로 설계할 수 있다. 어느 경로도 이 문서의 존재만으로 다음 필수 구현이 되지 않는다.
 
 ## 3. 실행 모드
 
-### 3.1 Hosted Web Console — 가까운 목표
+### 3.1 Hosted Web Console — native 관찰용 전달 후보
 
 ```mermaid
 flowchart LR
@@ -119,7 +141,7 @@ flowchart LR
 - 부팅·중지·재부팅 상태 머신
 - 브라우저 터미널과 `state` 카드
 - 세션별 transcript, boot verdict, 종료 이유 보존
-- read-only 명령 allowlist와 세션 인증
+- 조회 명령 allowlist와 세션 인증; 소유 세션의 명시적 부팅·중지·재부팅 제어는 별도 상태 변경으로 구분
 
 완료 조건:
 
@@ -168,6 +190,9 @@ flowchart LR
 
 ### W4. AIOS Native Runtime Engine — `PLANNED`
 
+이 절의 선행 조건은 native 커널 위에서 동작하는 W4에 적용한다. Linux-hosted의
+대화·환경 문맥·작업 진행 인터페이스 전체의 시작 조건으로 확대하지 않는다.
+
 선행 조건:
 
 - K1~K4 canonical Cell/Node/NodeBit hierarchy, source binding, read-only attribution
@@ -204,7 +229,7 @@ flowchart LR
 
 1. 브라우저에 host shell, filesystem path, QEMU monitor를 직접 노출하지 않는다.
 2. raw serial 문자열을 권한 증거로 신뢰하지 않는다.
-3. W1 기본 명령은 read-only이며, 향후 action은 principal authorize와 policy generation을 요구한다.
+3. W1은 조회 명령과 소유 세션의 명시적 부팅·중지·재부팅 제어를 구분한다. `reboot`는 read-only가 아니다. 세션 인증·소유 확인은 향후 커널 자원 action의 principal authorize나 policy generation을 대신하지 않는다.
 4. 인스턴스별 CPU·RAM·시간·로그 크기 상한을 둔다.
 5. WebSocket 연결과 AIOS principal을 같은 신원으로 간주하지 않는다.
 6. 커널에 자유형 자연어, raw pointer, register, MMIO 주소를 전달하지 않는다.

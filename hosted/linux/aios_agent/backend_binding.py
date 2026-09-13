@@ -2,15 +2,19 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import os
+import select
 import socket
 import time
+from pathlib import Path
 
 from aios_resources import ResourceError
 from aios_resources.backend import (MAX_FDS, TCP_LIMIT, attest, listener_proof, validate_descriptor)
 from aios_resources.proc import ProcessReader, decimal, parse_stat, read_bounded
 
 ACCEPT_SECONDS = 1.0
+TERMINAL_FILE_LIMIT = 2 * 1024 * 1024
 
 
 def _require(condition, code="backend-changed"):
@@ -20,6 +24,23 @@ def _require(condition, code="backend-changed"):
 
 def _address(value):
     return {"address": value[0], "port": value[1]}
+
+
+def _stamp(info):
+    return {key: getattr(info, key) for key in ('st_dev', 'st_ino', 'st_uid', 'st_mode')}
+
+
+def _terminal_bytes(path):
+    from aios_service.lifecycle import regular_file
+    regular_file(path)
+    raw = read_bounded(path, TERMINAL_FILE_LIMIT)
+    regular_file(path)
+    return raw
+
+
+def _terminal_file(path):
+    raw = _terminal_bytes(path)
+    return {'sha256': hashlib.sha256(raw).hexdigest(), 'bytes': len(raw)}
 
 
 def _tcp_address(value):
@@ -74,6 +95,8 @@ class ExecutionBinding:
 
     def __init__(self, backend_dir, config, capture_kind="live"):
         self._backend = self._launcher = None
+        self._backend_dir = Path(backend_dir).absolute()
+        self._terminal_dirfd = self._terminal_target = None
         self.config = copy.deepcopy(config)
         self.capture_kind = capture_kind
         _require(capture_kind in ("live", "fixture"), "backend-capture")
@@ -87,6 +110,8 @@ class ExecutionBinding:
         """Worker receives its supervisor's pinned descriptor over private stdin."""
         instance = cls.__new__(cls)
         instance._backend = instance._launcher = None
+        instance._backend_dir = None
+        instance._terminal_dirfd = instance._terminal_target = None
         instance.config = copy.deepcopy(config)
         instance.capture_kind = capture_kind
         instance.initial_proof = None
@@ -164,12 +189,158 @@ class ExecutionBinding:
                 "server_fd_number": owned[0], "server_fd_target": owned[1],
                 "client": client, "backend": backend, "launcher": launcher}
 
+    def bind_terminal(self, expected):
+        """Pin an authenticated admission target without acquiring stop authority.
+
+Only a path-backed daemon binding can do this. The descriptor-only inference
+worker never adopts a backend state directory or another process lifetime.
+"""
+        from aios_backend import IDENTITY_KEYS
+        from aios_backend import protocol as backend_protocol
+        from aios_backend.client import registry_at
+        from aios_service.lifecycle import prepare_directory
+        from .inference import encoded
+        _require(self._backend_dir is not None, 'backend-terminal-unsupported')
+        _require(self._terminal_target is None, 'backend-terminal-already-bound')
+        held = None
+        try:
+            expected = copy.deepcopy(expected)
+            backend_protocol.validate_reply(expected, 'status')
+            _require(expected['outcome'] == 'OK' and expected['state'] == 'RUNNING'
+                     and expected['capture_kind'] == self.capture_kind
+                     and expected['descriptor'] == self._descriptor, 'backend-terminal-target')
+            record = expected['service_record']
+            self.check()
+            _require(self._backend.identity == record['child_identity']
+                     and self._launcher.identity == record['supervisor_identity'], 'backend-terminal-target')
+            directory = prepare_directory(self._backend_dir, control_root=True)
+            held = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            stamp = _stamp(os.fstat(held))
+            _require(_stamp(directory.lstat()) == stamp, 'backend-terminal-directory')
+            registry = registry_at(directory)
+            _require(registry is not None and all(registry[key] == record[key] for key in IDENTITY_KEYS),
+                     'backend-terminal-registry')
+            registry_file = _terminal_file(directory / 'registry.json')
+            registry_stamp = _stamp((directory / 'registry.json').lstat())
+            connection, authenticated, peer = backend_protocol.connect(directory, registry)
+            try:
+                _require(encoded(authenticated) == encoded(expected)
+                         and peer == record['supervisor_identity']['process_id'], 'backend-terminal-target')
+            finally:
+                connection.close()
+            run = prepare_directory(directory / 'runs' / registry['instance_id'])
+            _require(not (run / 'result.json').exists(), 'backend-terminal-target')
+            fixed_files = {name: _terminal_file(run / name) for name in ('start.json', 'config.json')}
+            _require(fixed_files['config.json']['sha256'] == record['config_sha256']
+                     and hashlib.sha256(encoded(self.config) + b'\n').hexdigest() == record['config_sha256'],
+                     'backend-terminal-config')
+            self.check()
+            _require(_stamp(directory.lstat()) == stamp and registry_at(directory) == registry
+                     and _terminal_file(directory / 'registry.json') == registry_file
+                     and _stamp((directory / 'registry.json').lstat()) == registry_stamp,
+                     'backend-terminal-registry')
+            self._terminal_target = {'expected': expected, 'registry': registry,
+                'registry_file': registry_file, 'registry_stamp': registry_stamp,
+                'state_directory': stamp, 'run_directory': _stamp(run.lstat()), 'fixed_files': fixed_files,
+                'backend_reader': self._backend, 'launcher_reader': self._launcher,
+                'backend_pidfd': self._backend._pidfd, 'launcher_pidfd': self._launcher._pidfd}
+            self._terminal_dirfd, held = held, None
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            if isinstance(exc, ResourceError):
+                raise
+            raise ResourceError('backend-terminal-target') from exc
+        finally:
+            if held is not None:
+                os.close(held)
+
+    def _terminal_lifetimes(self):
+        target = self._terminal_target
+        _require(target is not None and self._terminal_dirfd is not None, 'backend-terminal-unbound')
+        observations = {}
+        for name, reader, identity in (
+                ('backend', self._backend, target['expected']['service_record']['child_identity']),
+                ('launcher', self._launcher, target['expected']['service_record']['supervisor_identity'])):
+            _require(reader is not None and reader is target[name + '_reader']
+                     and reader.identity == identity and reader._pidfd is not None
+                     and reader._pidfd == target[name + '_pidfd'] and reader._dirfd is not None,
+                     'backend-terminal-lifetime')
+            _require(select.select([reader._pidfd], [], [], 0)[0] == [reader._pidfd],
+                     'backend-terminal-live')
+            observations[name] = {'identity': copy.deepcopy(identity), 'exited': True,
+                                  'observed_monotonic_ns': time.monotonic_ns()}
+        return observations
+
+    def verify_stopped(self):
+        """Observe both retained deaths and this target's normal terminal files.
+
+No IPC stop, PID adoption, waiting, model-success inference or caller-supplied
+STOPPED reply is involved. A later state-directory/registry replacement fails.
+"""
+        from aios_backend import protocol as backend_protocol
+        from aios_backend.client import _terminal, registry_at
+        from aios_service.lifecycle import prepare_directory, strict_json
+        _require(self._backend_dir is not None, 'backend-terminal-unsupported')
+        began = time.monotonic_ns()
+        try:
+            lifetimes = self._terminal_lifetimes()
+            target = self._terminal_target
+            directory = prepare_directory(self._backend_dir, control_root=True)
+            _require(_stamp(os.fstat(self._terminal_dirfd)) == target['state_directory']
+                     and _stamp(directory.lstat()) == target['state_directory'], 'backend-terminal-directory')
+            registry = registry_at(directory)
+            _require(registry == target['registry']
+                     and _stamp((directory / 'registry.json').lstat()) == target['registry_stamp']
+                     and _terminal_file(directory / 'registry.json') == target['registry_file'],
+                     'backend-terminal-registry')
+            # Hash exactly the bytes parsed here, before any later file read.
+            latest_bytes = _terminal_bytes(directory / 'latest.json')
+            latest = backend_protocol.validate_reply(strict_json(latest_bytes), 'status')
+            expected_record = target['expected']['service_record']
+            terminal_record = {**expected_record, 'lifecycle_state': 'exited', 'backend_ready': False}
+            _require(latest['state'] == 'STOPPED' and latest['outcome'] == 'OK'
+                     and latest['error'] is None and latest['descriptor'] is None
+                     and latest['capture_kind'] == self.capture_kind
+                     and latest['service_record'] == terminal_record, 'backend-terminal-result')
+            run = prepare_directory(directory / 'runs' / registry['instance_id'])
+            _require(_stamp(run.lstat()) == target['run_directory'], 'backend-terminal-directory')
+            before = {'registry.json': _terminal_file(directory / 'registry.json'),
+                      'latest.json': {'sha256': hashlib.sha256(latest_bytes).hexdigest(), 'bytes': len(latest_bytes)}}
+            before['result.json'] = _terminal_file(run / 'result.json')
+            result = _terminal(directory, registry, latest)
+            _require(result['descriptor'] == target['expected']['descriptor'], 'backend-terminal-result')
+            artifacts = {name: _terminal_file(run / name) for name in result['files']}
+            _require(all(artifacts[name]['sha256'] == digest for name, digest in result['files'].items())
+                     and all(artifacts[name] == value for name, value in target['fixed_files'].items()),
+                     'backend-terminal-artifact')
+            after = {name: _terminal_file(directory / name) for name in ('registry.json', 'latest.json')}
+            after['result.json'] = _terminal_file(run / 'result.json')
+            _require(before == after and registry_at(directory) == target['registry']
+                     and _stamp((directory / 'registry.json').lstat()) == target['registry_stamp']
+                     and _stamp(directory.lstat()) == target['state_directory']
+                     and _stamp(run.lstat()) == target['run_directory'], 'backend-terminal-artifact')
+            self._terminal_lifetimes()
+            stopped = {**latest, 'action': 'stop'}
+            backend_protocol.validate_reply(stopped, 'stop')
+            return {'backend_stop': copy.deepcopy(stopped), 'evidence': {
+                'schema_version': 1, 'expected': copy.deepcopy(target['expected']),
+                'read_start_ns': began, 'read_end_ns': time.monotonic_ns(),
+                'lifetimes': lifetimes, 'state_directory': copy.deepcopy(target['state_directory']),
+                'registry': copy.deepcopy(registry), 'terminal_files': before, 'artifacts': artifacts}}
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            if isinstance(exc, ResourceError):
+                raise
+            raise ResourceError('backend-terminal-result') from exc
+
     def close(self):
         for name in ("_backend", "_launcher"):
             reader = getattr(self, name, None)
             if reader is not None:
                 reader.close()
                 setattr(self, name, None)
+        descriptor = getattr(self, '_terminal_dirfd', None)
+        if descriptor is not None:
+            os.close(descriptor)
+            self._terminal_dirfd = None
 
     def __enter__(self):
         return self

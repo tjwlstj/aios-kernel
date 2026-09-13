@@ -1,5 +1,20 @@
 # AI 에이전트 자율 OS를 위한 커널 요구사항 정리
 
+> 문서 수명주기: `REVIEW` — 과거 native 자율 제어 요구를 보존한 검토 자료이며 현재 제품 정본이 아니다.
+> 분류·내용 검토일: **2026-09-09**. 원문의 작성 기준일과 전체 구현 대조 시점은 확인되지 않았다.
+> 이 날짜는 외부 조사나 아래 요구사항 전체의 재검증 날짜가 아니다.
+>
+> 아래의 “현재”, 구현 부재, 코드 경로, Tier 순서는 당시 native 커널 관점의 관측과 제안이다.
+> 이전 디렉터리 경로와 이후 추가된 제한적 mapping·관측 기능을 반영하지 않는 설명이 남아 있으며,
+> Linux-hosted CLI·로컬 MAIN·인터넷·영속 실행 경로의 현재 상태를 나타내지 않는다.
+> 원문을 보존하므로 이 문서만으로 구현 부재, 제품 우선순위 또는 작업 선행조건을 판정하지 않는다.
+
+현재 목적과 성공 조건은 [AIOS 제품 방향 정본](../meta/aios_product_direction_ko.md),
+작업 순서는 [전역 작업 큐](../meta/minimal_io_and_maturity_workflow_ko.md)를 따른다.
+현재 실행 표면은 [에이전트 운영 계약](../autonomy/agent_operating_contract_ko.md)과
+[운영 이미지 가이드](aios_operating_image_guide_ko.md)에서 확인한다.
+이 문서의 재검토 범위와 역할은 [문서 최신성 원장](../meta/document_freshness_registry_ko.md)에 기록한다.
+
 ## 1. 목적 재정의
 
 AIOS의 장기 목표가 단순한 "AI 워크로드 최적화 커널"을 넘어서

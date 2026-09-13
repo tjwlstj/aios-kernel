@@ -20,6 +20,7 @@ sys.path.insert(0, str(ROOT / 'hosted/linux'))
 sys.path.insert(0, str(ROOT / 'tools/hosted'))
 from aios_console import shell
 from test_hosted_console import agent, backend, dns, fetch, service
+from test_hosted_console_verifier import historical_console_session, rewrite_historical_session
 import test_hosted_service_verifier as service_fixtures
 import verify_image as verifier
 
@@ -87,6 +88,9 @@ class ImageVerifierTests(unittest.TestCase):
             target = self.runtime / name
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(source.read_bytes() if source.exists() else b'# explicit image source fixture\n')
+        # This existing family deliberately exercises retained CLI7/MAIN4.
+        # Its sources are labelled fixture bytes, never an executed historical build.
+        (self.runtime / 'aios_console/__init__.py').write_bytes(b'VERSION = "0.7.0"\n')
         hashes = {name: verifier.digest((self.runtime / name).read_bytes()) for name in sorted(verifier.IMAGE_SOURCES)}
         self.config = {'schema_version': 1, 'profile': 'basic', 'model_config': None}
         install = self.root / 'installation-files'
@@ -124,7 +128,8 @@ class ImageVerifierTests(unittest.TestCase):
         running = {**terminal, 'state': 'RUNNING', 'observation_sequence': 1, 'heartbeat_monotonic_ns': 200}
         responses = iter([service('ABSENT'), running, running])
         commands = commands if commands is not None else verifier.OFFLINE_COMMANDS if offline else verifier.ONLINE_COMMANDS
-        code = shell.run_console(archive / 'session', input_stream=io.StringIO('\n'.join(commands) + '\n'),
+        code, _ = historical_console_session(archive / 'session', commands, schema=7, source_root=self.runtime,
+            input_stream=io.StringIO('\n'.join(commands) + '\n'),
             output_stream=io.StringIO(), proc_root=helper.proc, sys_root=helper.sysfs, test_system='Linux',
             resolver=dns, fetcher=fetch, service_control=lambda _directory, _action: next(responses),
             agent_control=lambda _directory, action, **_kwargs: agent(action, state='ABSENT', error='process-not-running', protocol=4))
@@ -155,6 +160,7 @@ class ImageVerifierTests(unittest.TestCase):
         put(archive / 'root-result.json', result)
         put(archive / 'poweroff.json', {'schema_version': 1, 'boot_id': boot_id, 'command': ['/sbin/poweroff'],
             'root_uid': 0, 'root_euid': 0, 'source_only': True})
+        self.rewrite_console_family(path, 7)
         self.seal(path)
         network = 'offline' if offline else 'online'
         put(path / 'launch.json', {'schema_version': 1, 'qemu_argv': ['/usr/bin/qemu-system-x86_64',
@@ -171,7 +177,12 @@ class ImageVerifierTests(unittest.TestCase):
         self.boots.append(path)
         return path
 
+    def rewrite_console_family(self, path, schema):
+        """Explicit historical fixture construction, not hostile resealing."""
+        rewrite_historical_session(path / 'archive/session', schema, source_root=self.runtime)
+
     def seal(self, path):
+        """Hash and export the supplied bytes without repairing their semantics."""
         archive = path / 'archive'
         files = {p.relative_to(archive).as_posix(): p.read_bytes() for p in archive.rglob('*') if p.is_file() and p.name != 'archive-manifest.json'}
         boot = get(archive / 'boot.json')
@@ -321,6 +332,193 @@ class ImageVerifierTests(unittest.TestCase):
         tree = ast.parse((ROOT / 'tools/hosted/verify_image.py').read_text())
         imports = [node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)]
         self.assertFalse(any(name and name.startswith('aios_') for name in imports))
+
+
+class SpaceImageVerifierTests(unittest.TestCase):
+    """The new basic image family is fixture replay, never model or VM evidence."""
+
+    def setUp(self):
+        self.base = ImageVerifierTests()
+        self.addCleanup(self.base.doCleanups)
+        self.base.setUp()
+        self.root, self.runtime = self.base.root, self.base.runtime
+
+    def console_family(self, path, schema):
+        session = path / 'archive/session'
+        events = [json.loads(line) for line in (session / 'session.events.jsonl').read_bytes().splitlines()]
+        for event in events:
+            if event['event'] == 'COMMAND' and event['data']['name'] in ('room', 'ask', 'agent'):
+                response = event['data']['result']
+                self.assertIsNone(response['source_record'])
+                self.assertIsNone(response['inference_receipt'])
+                response['schema_version'] = 5 if schema in (8, 9) else 4
+                if schema in (8, 9):
+                    response['space_context'] = None
+                else:
+                    response.pop('space_context', None)
+        (session / 'session.events.jsonl').write_bytes(b''.join(encoded(row) for row in events))
+        self.base.rewrite_console_family(path, schema)
+
+    def cleanup_protocol(self, path, protocol):
+        worker_path = path / 'archive/worker-result.json'
+        worker = get(worker_path)
+        worker['cleanup'][0]['response'] = agent('stop', state='ABSENT', protocol=protocol)
+        put(worker_path, worker)
+
+    def rehash_all_pins(self):
+        """Reseal source, installation, archive and history hashes, not contracts."""
+        manifest = self.base.manifest
+        manifest['runtime_files'] = {name: verifier.digest((self.runtime / name).read_bytes())
+                                     for name in sorted(manifest['runtime_files'])}
+        installed = self.root / 'installation-files/installed-runtime.json'
+        put(installed, manifest['runtime_files'])
+        manifest['installation_files']['installed-runtime.json'] = verifier.digest(installed.read_bytes())
+        put(self.root / 'image-manifest.json', manifest)
+        previous = {}
+        for path in self.base.boots:
+            archive = path / 'archive'
+            boot = get(archive / 'boot.json')
+            boot.update(runtime_files=manifest['runtime_files'], installation_files=manifest['installation_files'],
+                        image_manifest_sha256=verifier.digest(encoded(manifest)), previous_boots=copy.deepcopy(previous))
+            put(archive / 'boot.json', boot)
+            put(archive / 'image.json', manifest)
+            session = archive / 'session'
+            result = get(session / 'session-result.json')
+            result['source_hashes'] = {name: verifier.digest((self.runtime / name).read_bytes())
+                                      for name in result['source_hashes']}
+            result['files'] = {name: verifier.digest((session / name).read_bytes()) for name in result['files']}
+            put(session / 'session-result.json', result)
+            root_result = get(archive / 'root-result.json')
+            root_result['worker_result_sha256'] = verifier.digest((archive / 'worker-result.json').read_bytes())
+            put(archive / 'root-result.json', root_result)
+            self.base.seal(path)
+            previous[boot['boot_id']] = {
+                'archive_manifest_sha256': verifier.digest((archive / 'archive-manifest.json').read_bytes()),
+                'root_result_sha256': verifier.digest((archive / 'root-result.json').read_bytes())}
+        self.base.previous = previous
+
+    def migrate_to_space(self, schema=8):
+        version = {8: '0.8.0', 9: '0.9.0'}[schema]
+        for name in verifier.SPACE_IMAGE_SOURCES - verifier.IMAGE_SOURCES:
+            target = self.runtime / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes((ROOT / 'hosted/linux' / name).read_bytes())
+        (self.runtime / 'aios_console/__init__.py').write_bytes(f'VERSION = "{version}"\n'.encode())
+        self.base.manifest['runtime_files'] = dict.fromkeys(verifier.SPACE_IMAGE_SOURCES)
+        for path in self.base.boots:
+            self.console_family(path, schema)
+            self.cleanup_protocol(path, 5)
+        self.rehash_all_pins()
+
+    def assert_rejected(self, reason):
+        for value in (verifier.verify_image(self.root, require_live=False),
+                      verifier.verify_operating_boot(self.root, self.base.boots[-1], require_live=False)):
+            self.assertEqual(value['outcome'], 'FAIL', value)
+            self.assertIn(reason, str(value['reasons']))
+
+    def test_complete_space_image_and_generic_boot_replay_remain_fixture_only(self):
+        self.migrate_to_space()
+        self.assertEqual(len(self.base.manifest['runtime_files']), 36)
+        value = verifier.verify_image(self.root, require_live=False)
+        self.assertEqual(value['outcome'], 'PASS', value)
+        self.assertEqual(value['cold_boots'], 2)
+        self.assertFalse(value['model_bundled'])
+        generic = verifier.verify_operating_boot(self.root, self.base.boots[-1], require_live=False)
+        self.assertEqual(generic['outcome'], 'PASS', generic)
+        for name in ('main', 'backend'):
+            self.assertFalse((self.base.boots[-1] / 'archive' / name).exists())
+        self.assertEqual(verifier.verify_image(self.root)['outcome'], 'FAIL')
+
+    def test_space_help_about_exit_boot_uses_main5_absent_cleanup(self):
+        path = self.base.make_boot(3, commands=['help', 'about', 'exit'], use_service=False)
+        self.migrate_to_space()
+        value = verifier.verify_operating_boot(self.root, path, require_live=False)
+        self.assertEqual(value['outcome'], 'PASS', value)
+        self.assertEqual(value['service_runs'], 0)
+        self.assertEqual(get(path / 'archive/session/session-result.json')['schema_version'], 8)
+        self.assertEqual(get(path / 'archive/worker-result.json')['cleanup'][0]['response']['schema_version'], 5)
+
+    def test_cli9_complete_and_generic_replay_preserve_main5_and_new_guidance(self):
+        self.migrate_to_space(9)
+        value = verifier.verify_image(self.root, require_live=False)
+        self.assertEqual(value['outcome'], 'PASS', value)
+        self.assertEqual(value['cold_boots'], 2)
+        for path in self.base.boots:
+            generic = verifier.verify_operating_boot(self.root, path, require_live=False)
+            self.assertEqual(generic['outcome'], 'PASS', generic)
+            session = path / 'archive/session'
+            self.assertEqual(get(session / 'session-result.json')['schema_version'], 9)
+            self.assertIn('MAIN service is not running', (session / 'console.log').read_text())
+            self.assertEqual(get(path / 'archive/worker-result.json')['cleanup'][0]['response']['schema_version'], 5)
+        self.assertEqual(len(self.base.manifest['runtime_files']), 36)
+        self.assertEqual(verifier.verify_image(self.root)['outcome'], 'FAIL')
+
+    def test_fully_resealed_cli8_cli9_session_and_literal_crossovers_reject(self):
+        for source_schema, session_schema in ((8, 9), (9, 8)):
+            with self.subTest(source_schema=source_schema, session_schema=session_schema):
+                self.migrate_to_space(source_schema)
+                for path in self.base.boots:
+                    self.console_family(path, session_schema)
+                self.rehash_all_pins()
+                self.assert_rejected('image_session_source_version')
+
+    def test_rehashed_omitted_space_manifest_entry_cannot_claim_session9(self):
+        self.migrate_to_space(9)
+        del self.base.manifest['runtime_files']['aios_agent/space.py']
+        for path in self.base.boots:
+            self.cleanup_protocol(path, 4)
+        self.rehash_all_pins()
+        self.assert_rejected('image_session_source_version')
+
+    def test_rehashed_wrong_expression_nested_or_malformed_version_rejects(self):
+        self.migrate_to_space()
+        for content in (b'VERSION = "0.7.0"\n# VERSION = "0.8.0"\n',
+                        b'VERSION = "0." + "8.0"\n',
+                        b'VERSION = "0.8.0"\nif True:\n    VERSION = "0.7.0"\n',
+                        b'VERSION = "0.8.0"\nif (\n',
+                        b'VERSION = "0.10.0"\n', b'VERSION = True\n',
+                        b'VERSION = "0." + "9.0"\n',
+                        b'VERSION = "0.9.0"\nif True:\n    VERSION = "0.8.0"\n',
+                        b'VERSION = "0.9.0"\nfrom x import y as VERSION\n',
+                        b'VERSION = "0.9.0"\nexec("VERSION = \'0.8.0\'")\n'):
+            with self.subTest(content=content):
+                (self.runtime / 'aios_console/__init__.py').write_bytes(content)
+                self.rehash_all_pins()
+                self.assert_rejected('space_runtime_version')
+
+    def test_rehashed_legacy_session_cannot_claim_space_image(self):
+        self.migrate_to_space()
+        for path in self.base.boots:
+            self.console_family(path, 7)
+        self.rehash_all_pins()
+        self.assert_rejected('image_session_source_version')
+
+    def test_rehashed_omitted_space_manifest_entry_cannot_claim_session8(self):
+        self.migrate_to_space()
+        # An unlisted extra source file must not silently upgrade the pinned set.
+        del self.base.manifest['runtime_files']['aios_agent/space.py']
+        for path in self.base.boots:
+            self.cleanup_protocol(path, 4)
+        self.rehash_all_pins()
+        self.assert_rejected('image_session_source_version')
+
+    def test_rehashed_old_main_cleanup_cannot_pass_space_image(self):
+        self.migrate_to_space()
+        for path in self.base.boots:
+            self.cleanup_protocol(path, 4)
+        self.rehash_all_pins()
+        self.assert_rejected('agent_contract:reply_keys')
+
+    def test_hostile_reseal_does_not_repair_session_schema(self):
+        path = self.base.boots[-1]
+        session_result = path / 'archive/session/session-result.json'
+        changed = get(session_result)
+        changed['schema_version'] = 8
+        put(session_result, changed)
+        before = session_result.read_bytes()
+        self.base.seal(path)
+        self.assertEqual(session_result.read_bytes(), before)
+        self.assert_rejected('sources')
 
 
 class ModelImageVerifierTests(unittest.TestCase):
@@ -516,7 +714,8 @@ class ModelImageVerifierTests(unittest.TestCase):
         assert self.root.resolve() in session.resolve().parents
         shutil.rmtree(session)
         commands = verifier.MODEL_OFFLINE_COMMANDS if offline else verifier.MODEL_ONLINE_COMMANDS
-        code = shell.run_console(session, input_stream=io.StringIO('\n'.join(commands) + '\n'), output_stream=io.StringIO(),
+        code, _ = historical_console_session(session, commands, schema=7, source_root=self.base.runtime,
+            input_stream=io.StringIO('\n'.join(commands) + '\n'), output_stream=io.StringIO(),
             proc_root=helper.proc, sys_root=helper.sysfs, test_system='Linux', resolver=dns, fetcher=fetch,
             service_control=lambda *_args: next(services), agent_control=control, backend_control=backend_control)
         self.assertEqual(code, 0)
@@ -538,6 +737,7 @@ class ModelImageVerifierTests(unittest.TestCase):
         argv = launch['qemu_argv']; argv[argv.index('-m') + 1] = '3072'
         argv[argv.index('-nic') + 1] = 'none' if offline else 'user,model=e1000'
         put(path / 'launch.json', launch)
+        self.base.rewrite_console_family(path, 7)
         self.base.seal(path)
         self.previous[boot_id] = {'archive_manifest_sha256': verifier.digest((a / 'archive-manifest.json').read_bytes()),
             'root_result_sha256': verifier.digest((a / 'root-result.json').read_bytes())}
@@ -687,9 +887,9 @@ class ModelImageVerifierTests(unittest.TestCase):
         helper = service_fixtures.ServiceVerifierTests(); helper.setUp(); self.addCleanup(helper.doCleanups)
         def control(_directory, action, **_kwargs):
             return {**(latest if action == 'start' else recovered), 'action': action}
-        self.assertEqual(shell.run_console(archive / 'session',
+        self.assertEqual(historical_console_session(archive / 'session', commands, schema=7, source_root=self.base.runtime,
             input_stream=io.StringIO('\n'.join(commands) + '\n'), output_stream=io.StringIO(),
-            proc_root=helper.proc, sys_root=helper.sysfs, test_system='Linux', backend_control=control), 0)
+            proc_root=helper.proc, sys_root=helper.sysfs, test_system='Linux', backend_control=control)[0], 0)
         session = archive / 'session'
         session_events = [json.loads(line) for line in (session / 'session.events.jsonl').read_bytes().splitlines()]
         session_events[0]['data']['source_process'] = sample(owner, 1, 900)
@@ -708,6 +908,7 @@ class ModelImageVerifierTests(unittest.TestCase):
         put(archive / 'root-result.json', result)
         launch = get(path / 'launch.json'); launch['stdin_commands'] = commands
         put(path / 'launch.json', launch)
+        self.base.rewrite_console_family(path, 7)
         self.base.seal(path)
         return path, {'outcome': 'PASS', 'command_count': len(commands), 'dns_observed': False, 'https_observed': False}
 

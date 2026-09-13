@@ -4,6 +4,14 @@
 
 - 매 턴 `chesi-persona-codex` 스킬이 설치되어 있으면 사용을 권장한다.
 - 새 작업 전에 현재 브랜치, 작업 트리, 최근 커밋을 확인한다.
+- 제품 목적과 사용자 경험은 `docs/meta/aios_product_direction_ko.md`를 먼저 따른다.
+  AI의 공간·상태 인지, 로컬 효율·안정적인 활동, 사용자와의 지속 상호작용을 함께 평가한다.
+  제품 효과와 Kernel Room의 DIRECT/SUPPORTING 관계, 구현 성숙도를 따로 기록한다.
+- 현재 전역 작업 순서는 `docs/meta/minimal_io_and_maturity_workflow_ko.md` 한 곳에서
+  선택한다. 참고 문서·스킬의 과거 다음 작업이나 고정 시간 배분을 현재 큐로 사용하지 않는다.
+- 문서 내용 검토일·증거 범위·재검토 조건은
+  `docs/meta/document_freshness_registry_ko.md`에서 확인한다. 문서 날짜 갱신과 runtime
+  검증은 별개다. 변경된 사실의 정본·필수 mirror·신선도 원장을 같은 변경에서 맞춘다.
 - `CLAUDE.md`, `PROJECT.md`, `docs/meta/codex_handoff_tips_ko.md`와 관련
   설계 문서를 현재 구현과 함께 읽는다.
 - 작업 유형, 질문별 정본, 검증 경로와 문서 수명주기는

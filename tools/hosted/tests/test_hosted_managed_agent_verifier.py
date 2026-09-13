@@ -52,7 +52,7 @@ class ManagedAgentVerifierTests(unittest.TestCase):
     def test_legacy_success_receipt_cannot_replace_v4_execution(self):
         self.fixture.warmup['schema_version'] = 1
         self.fixture.warmup.pop('backend_execution')
-        self.rejected('execution_receipt_schema')
+        self.rejected('warmup_receipt_version')
 
     def test_receipt_execution_field_is_mandatory_even_for_fixture(self):
         self.fixture.user.pop('backend_execution')

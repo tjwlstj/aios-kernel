@@ -5,14 +5,12 @@ import hashlib
 import json
 import os
 import platform
-import select
 import socket
-import subprocess
 import sys
 import tempfile
-import threading
 import time
 import unittest
+import uuid
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -20,9 +18,40 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "hosted" / "linux"))
 sys.path.insert(0, str(ROOT / "tools" / "hosted"))
 from aios_agent import client
-from aios_resources.backend import BackendAttester
+from aios_backend import client as backend_client
+from resource_output_contract import validate_resource_result
 from aios_resources.proc import ProcessReader, ResourceError
 from verify_agent import verify_agent_runs
+
+
+FIXTURE_BACKEND = '''import http.server,json,sys,time
+from pathlib import Path
+class Handler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        raw=b'{"status":"ok"}'
+        self.send_response(200)
+        self.send_header('Content-Length',str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+    def do_POST(self):
+        request=json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+        with Path(__file__).with_suffix('.requests').open('ab') as log:
+            log.write(b'request\\n')
+        deadline=time.process_time()+0.04
+        while time.process_time()<deadline:
+            pass
+        value={'content':'Explicit Cell/resource fixture completion.','tokens_predicted':4,'model':'fixture-cell-main'}
+        if request.get('n_predict')==192:
+            value.update(prompt=request['prompt'],truncated=False)
+        raw=json.dumps(value).encode()
+        self.send_response(200)
+        self.send_header('Content-Length',str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+    def log_message(self,*args):
+        pass
+http.server.HTTPServer(('127.0.0.1',int(sys.argv[1])),Handler).serve_forever()
+'''
 
 
 @unittest.skipUnless(platform.system() == "Linux" and hasattr(os, "pidfd_open")
@@ -31,94 +60,57 @@ from verify_agent import verify_agent_runs
 class CellRuntimeTests(unittest.TestCase):
     @contextmanager
     def backend(self):
+        # Task admission authenticates a managed backend generation. The model
+        # and HTTP replies remain explicit fixtures, never actual AI evidence.
         with tempfile.TemporaryDirectory(prefix="aios-cell-") as temporary:
             base = Path(temporary)
             self.state, self.output = base / "main", base / "backend"
-            self.output.mkdir(mode=0o700)
-            self.request_log = base / "requests.log"
-            self.request_log.write_bytes(b"")
+            children_before = {owner: set(owner._CHILDREN) for owner in (client, backend_client)}
             script = base / "fixture_backend.py"
-            script.write_text('''import http.server,json,sys,time
-class Handler(http.server.BaseHTTPRequestHandler):
-    def do_POST(self):
-        json.loads(self.rfile.read(int(self.headers['Content-Length'])))
-        with open(sys.argv[1],'ab') as log:
-            log.write(b'request\\n')
-        deadline=time.process_time()+0.04
-        while time.process_time()<deadline:
-            pass
-        value={'content':'Explicit Cell fixture completion.','tokens_predicted':4,'model':'fixture-cell-main'}
-        raw=json.dumps(value).encode()
-        self.send_response(200)
-        self.send_header('Content-Length',str(len(raw)))
-        self.end_headers()
-        self.wfile.write(raw)
-    def log_message(self,*args):
-        pass
-server=http.server.HTTPServer(('127.0.0.1',0),Handler)
-print(server.server_port,flush=True)
-server.serve_forever()
-''', encoding="utf-8")
+            self.request_log = script.with_suffix(".requests")
+            self.request_log.write_bytes(b"")
+            script.write_text(FIXTURE_BACKEND, encoding="utf-8")
             model = base / "fixture.model"
-            model.write_bytes(b"explicit Cell lifecycle fixture model")
-            child = subprocess.Popen([sys.executable, str(script), str(self.request_log)],
-                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                text=True, start_new_session=True)
-            attester = thread = None
-            stopping = threading.Event()
-            errors = []
+            model.write_bytes(b"explicit Cell/resource lifecycle fixture model")
+            with socket.socket() as reserve:
+                reserve.bind(("127.0.0.1", 0))
+                port = reserve.getsockname()[1]
+            self.backend_config = {"schema_version": 1, "endpoint": f"http://127.0.0.1:{port}",
+                "model_id": "fixture-cell-main", "model_path": str(model),
+                "model_sha256": hashlib.sha256(model.read_bytes()).hexdigest(),
+                "backend_path": str(script), "backend_sha256": hashlib.sha256(script.read_bytes()).hexdigest(),
+                "provenance_sha256": "c" * 64}
+            self.config = base / "config.json"
+            self.config.write_text(json.dumps(self.backend_config), encoding="utf-8")
+
+            def reap(owner):
+                for instance, owned in list(owner._CHILDREN.items()):
+                    if instance not in children_before[owner]:
+                        owner._finish_failed_start(owned)
+                        owner._CHILDREN.pop(instance, None)
+
             try:
-                self.assertTrue(select.select([child.stdout], [], [], 10)[0], "backend did not listen")
-                port = int(child.stdout.readline())
-                config = {"schema_version": 1, "endpoint": f"http://127.0.0.1:{port}",
-                    "model_id": "fixture-cell-main", "model_path": str(model),
-                    "model_sha256": hashlib.sha256(model.read_bytes()).hexdigest(),
-                    "backend_path": str(script), "backend_sha256": hashlib.sha256(script.read_bytes()).hexdigest(),
-                    "provenance_sha256": "c" * 64}
-                self.config = base / "config.json"
-                self.config.write_text(json.dumps(config), encoding="utf-8")
-                attester = BackendAttester(self.output, child, config, capture_kind="fixture")
-
-                def poll():
-                    try:
-                        while not stopping.is_set():
-                            attester.poll()
-                            time.sleep(0.01)
-                    except Exception as exc:
-                        errors.append(exc)
-
-                thread = threading.Thread(target=poll, daemon=True)
-                thread.start()
+                started = backend_client.control(self.output, "start", self.config, fixture_backend=True)
+                self.assertEqual((started["outcome"], started["state"]), ("OK", "RUNNING"), started)
+                self.assertEqual(started["capture_kind"], "fixture")
                 yield
-                self.assertFalse(errors, errors)
             finally:
-                # Stop only processes launched by this fixture. Observer cleanup
-                # must not prevent cleanup of the separately owned backend.
+                # Even a failed assertion with an active Task only reaps this
+                # fixture's owned MAIN/worker before its owned backend.
                 try:
                     client.control(self.state, "stop")
                 finally:
-                    stopping.set()
-                    if thread is not None:
-                        thread.join(timeout=5)
                     try:
-                        if attester is not None:
-                            attester.close()
+                        reap(client)
                     finally:
-                        if child.poll() is None:
-                            child.terminate()
-                            try:
-                                child.wait(timeout=5)
-                            except subprocess.TimeoutExpired:
-                                child.kill()
-                                child.wait(timeout=5)
-                        if child.stdout is not None:
-                            child.stdout.close()
-                        for instance, owned in list(client._CHILDREN.items()):
-                            if owned.poll() is None:
-                                client._finish_failed_start(owned)
-                            client._CHILDREN.pop(instance, None)
+                        try:
+                            backend_client.control(self.output, "stop", fixture_backend=True)
+                        finally:
+                            reap(backend_client)
 
     def command(self, action, **kwargs):
+        if action in {"start", "restart"}:
+            kwargs.setdefault("backend_dir", self.output)
         return client.control(self.state, action, **kwargs)
 
     def okay(self, action, **kwargs):
@@ -136,11 +128,72 @@ server.serve_forever()
         self.measured_request("Before the Cell lifecycle change.")
         return self.okay("status")
 
+    def admit(self, prompt):
+        request_id = str(uuid.uuid4())
+        value = self.command("ask-start", prompt=prompt, request_id=request_id)
+        self.assertEqual(value["schema_version"], 6)
+        self.assertEqual(value["request_id"], request_id)
+        for name in ("inference_receipt", "resource_result", "space_context", "management_outcome"):
+            self.assertIsNone(value[name])
+        if value["outcome"] == "OK":
+            self.assertEqual(value["task"]["phase"], "ACCEPTED")
+            self.assertEqual(value["task"]["request_id"], request_id)
+            self.assertEqual(value["task"]["user_prompt"], prompt)
+        else:
+            self.assertIsNone(value["task"])
+        return value
+
+    def finish(self, admitted):
+        self.assertEqual(admitted["outcome"], "OK", admitted)
+        request_id = admitted["request_id"]
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            value = self.okay("task-result", request_id=request_id)
+            self.assertEqual(value["request_id"], request_id)
+            self.assertIsNone(value["inference_receipt"])
+            self.assertIsNone(value["resource_result"])
+            if value["task"]["phase"] == "FINISHED":
+                self.assertEqual(value["task"]["model_outcome"], "ANSWERED", value)
+                return value
+            time.sleep(0.03)
+        self.fail("fixture Task did not reach FINISHED within 15 seconds")
+
+    def request_evidence(self, result):
+        # The public Task response stays intact. Receipt/resource results are
+        # read from their UUID files and joined to the producer's final event.
+        task = result["task"]
+        self.assertEqual(task["phase"], "FINISHED")
+        request_id = task["request_id"]
+        self.assertEqual(result["request_id"], request_id)
+        self.assertIsNone(result["inference_receipt"])
+        self.assertIsNone(result["resource_result"])
+        run = self.state / "runs" / task["source_before"]["source_instance"]
+        receipt_name = "requests/" + request_id + ".json"
+        receipt = json.loads((run / receipt_name).read_bytes())
+        links = {"source_before", "source_after", "authority_instance", "binding_generation"}
+        self.assertEqual({key: value for key, value in receipt.items() if key not in links}, task["inference_receipt"])
+        self.assertEqual(receipt["source_before"], task["source_before"])
+        self.assertEqual(receipt["authority_instance"], task["management_before"]["authority_instance"])
+        self.assertEqual(receipt["binding_generation"], task["management_before"]["binding"]["generation"])
+        events = [json.loads(line) for line in (run / "events.jsonl").read_bytes().splitlines()]
+        finals = [row for row in events if row["event"] == "REQUEST_RESULT" and row["receipt_file"] == receipt_name]
+        self.assertEqual(len(finals), 1)
+        final = finals[0]
+        self.assertEqual(final["source_record"], receipt["source_after"])
+        self.assertEqual(result["source_record"], receipt["source_after"])
+        self.assertEqual((final["outcome"], final["error"]), (receipt["outcome"], receipt["error"]))
+        self.assertEqual(final["resource_file"], "resources/" + request_id + ".json")
+        resources = json.loads((run / final["resource_file"]).read_bytes())
+        validate_resource_result(resources, source=final["source_record"], snapshot=final["management_snapshot"],
+                                 receipt=receipt, config=self.backend_config, require_live=False)
+        self.assertEqual(resources["action"], "request")
+        return receipt, resources
+
     def measured_request(self, prompt):
         sampled = self.okay("resources-sample")
         self.assertEqual(sampled["resource_result"]["observation"]["kind"], "sample")
-        value = self.okay("ask", prompt=prompt)
-        receipt, resources = value["inference_receipt"], value["resource_result"]
+        value = self.finish(self.admit(prompt))
+        receipt, resources = self.request_evidence(value)
         self.assertEqual(receipt["outcome"], "OK")
         self.assertEqual(resources["outcome"], "OK", resources)
         self.assertTrue(resources["relation_current"])
@@ -185,10 +238,10 @@ server.serve_forever()
 
     def rejected_request(self, reason, source):
         actual_requests = self.request_log.read_bytes()
-        value = self.command("ask", prompt="This request must not reach the fixture backend.")
+        value = self.admit("This request must not reach the fixture backend.")
         self.assertEqual(value["outcome"], "ERROR", value)
         self.assertEqual(value["error"], reason)
-        self.assertEqual(value["management_outcome"], "rejected")
+        self.assertIsNone(value["management_outcome"])
         self.assertIsNone(value["inference_receipt"])
         self.assertIsNone(value["resource_result"])
         self.assertEqual(value["source_record"], source)

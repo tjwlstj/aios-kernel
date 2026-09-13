@@ -399,6 +399,9 @@ class AgentInteractiveVerifierTests(unittest.TestCase):
         self.assertFalse(result["vm_shutdown_verified"])
 
     def test_stopped_reply_requires_service_run_acceptance_and_matching_source(self):
+        # This aggregation seam uses the retained MAIN1 / CLI3 family.
+        session = self.root / 'session/session.events.jsonl'
+        session.write_bytes(encoded({'schema_version': 3, 'event': 'START', 'data': {}}) + session.read_bytes())
         active = source(model_sha256=MODEL_SHA)
         authority = Authority()
         authority.initialize()

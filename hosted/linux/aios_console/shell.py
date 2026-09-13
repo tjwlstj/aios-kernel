@@ -57,7 +57,10 @@ HELP = (
     "                             Manage the MAIN AI service",
     "room status|discover|bind|reconcile",
     "                             Inspect and explicitly bind the MAIN service",
-    "ask PROMPT                   Ask the bound MAIN model (text only)",
+    "space                        Refresh MAIN's observed environment",
+    "ask PROMPT                   Submit one MAIN task and return to the prompt",
+    "task status|result|cancel UUID",
+    "                             Inspect, read or explicitly cancel that task",
     "cell status|activate|deactivate",
     "                             Inspect or change Cell 1's management activity",
     "resources link|status|sample",
@@ -86,7 +89,8 @@ def source_hashes() -> dict[str, str]:
              "aios_management/resources.py", "aios_resources/__init__.py",
              "aios_resources/proc.py", "aios_resources/backend.py", "aios_resources/runtime.py",
              "aios-backend.py", "aios_backend/__init__.py", "aios_backend/protocol.py",
-             "aios_backend/client.py", "aios_backend/daemon.py", "aios_agent/backend_binding.py")
+             "aios_backend/client.py", "aios_backend/daemon.py", "aios_agent/backend_binding.py", "aios_agent/space.py",
+             "aios_agent/async_inference.py", "aios_agent/request_state.py", "aios_agent/request_runtime.py")
     return {name: hashlib.sha256((root / name).read_bytes()).hexdigest() for name in sorted(files)}
 
 
@@ -94,6 +98,84 @@ def _size(value: int | None) -> str:
     if value is None:
         return "unavailable"
     return f"{value / (1024 * 1024):.2f} MiB"
+
+
+def _task_lines(result: dict, *, show_answer: bool = False) -> tuple[str, ...]:
+    identity = safe_text(result['request_id'], 36)
+    task = result['task']
+    if task is None:
+        return (f'Task {identity}: no authenticated task state is available.',
+                '  Query this UUID before deciding whether to submit another question.')
+    rows = [f"AIOS task {identity}: {safe_text(task['phase'], 24)}.",
+            f"  Model outcome: {safe_text(task['model_outcome'] or 'PENDING', 24)}."]
+    rows.append('  Cancellation requested: ' + ('yes.' if task['cancel_requested_ns'] is not None else 'no.'))
+    code = task['worker_exit_code']
+    rows.append('  Worker exit: not confirmed.' if code is None else f'  Worker exit: observed (code {code}).')
+    stopped = task['backend_stop']
+    confirmed = type(stopped) is dict and stopped.get('state') == 'STOPPED' and stopped.get('outcome') == 'OK'
+    rows.append('  Backend stop: independently confirmed.' if confirmed else '  Backend stop: not independently confirmed.')
+    control = result['task_control']
+    if control is not None:
+        rows.append(f"  Cancel request: {safe_text(control['cancel_outcome'], 24)}.")
+        attempt = control['backend_stop_attempt']
+        if attempt is not None:
+            rows.append(f"  Console backend stop attempt: {safe_text(attempt['outcome'], 16)}"
+                        + (f" ({safe_text(attempt['error'], 64)})." if attempt['error'] else '.'))
+    if show_answer:
+        receipt = task['inference_receipt']
+        if (result['outcome'] == 'OK' and task['phase'] == 'FINISHED' and task['model_outcome'] == 'ANSWERED'
+                and type(receipt) is dict and receipt.get('outcome') == 'OK' and type(receipt.get('content')) is str):
+            rows.extend(('MAIN answer:', '  ' + safe_text(receipt['content'], 4096)))
+        elif task['model_outcome'] == 'NOT_STARTED':
+            rows.append('  This task was not dispatched to the model worker.')
+        elif task['model_outcome'] == 'UNKNOWN':
+            rows.append('  The model result is unknown; worker exit or backend stop does not prove an answer.')
+        else:
+            rows.append('  No verified answer is available; query this UUID again when needed.')
+    return tuple(rows)
+
+
+def _ask_failure_lines(result: dict) -> tuple[str, ...]:
+    """Explain known pre-inference refusals without guessing a transport outcome."""
+    error = result["error"]
+    receipt = result["inference_receipt"]
+    # Only these explicit refusal paths precede infer(). A missing receipt
+    # alone cannot prove that a failed RPC or persistence operation sent no work.
+    if receipt is None:
+        if error == 'request-busy':
+            return ('The MAIN service already has an active task.',
+                    'Inspect that task using its saved UUID before submitting another question.')
+        if error == "prompt-invalid":
+            return ("The question was rejected before model execution.",
+                    "Revise the question to fit the input limit and use supported text.")
+        if error == "space-budget":
+            return ("The question and observed context exceed the input budget; model execution was not started.",
+                    "Shorten the question before asking again.")
+        if error in ("space-invalid", "space-overflow", "space-future"):
+            return ("Environment context was rejected before model execution.",
+                    "Run space to refresh observations and inspect its result before asking again.")
+        if error == "space-source-mismatch":
+            return ("Environment context does not match the current MAIN source or binding; model execution was not started.",
+                    "Check agent status and room status; after resolving the mismatch, run space.")
+        if error == "orphan":
+            return ("The request was refused before model execution because its parent Cell is inactive.",
+                    "Check cell status and room status before choosing an explicit management action.")
+        if error in ("unbound", "stale", "model-not-ready", "source-exited", "retired-instance"):
+            return ("The request was refused before model execution because the MAIN target or binding is not current and ready.",
+                    "Check backend status, agent status and room status before choosing an explicit recovery action.")
+        if error == "process-not-running":
+            return ("The request was refused because the MAIN service is not running.",
+                    "Check backend status and agent status before choosing an explicit start action.")
+        if error == "request-limit":
+            return ("The request was refused before model execution because this MAIN session reached its request limit.",
+                    "Check agent status before deciding whether to start a new service session.")
+        if error == "unsupported-platform":
+            return ("Model execution is unavailable on this platform; use the Linux-hosted runtime.",)
+    return ("No verified answer is available; the request outcome is unknown.",
+            "An inference receipt was returned, but it does not confirm that backend work finished or stopped."
+            if receipt is not None else
+            "No inference receipt was returned; this does not prove that the model request was never sent.",
+            "Check backend status, agent status and room status before deciding whether to ask again.")
 
 
 def _resource_lines(value: dict) -> list[str]:
@@ -223,7 +305,7 @@ def run_console(destination: Path, *, input_stream: TextIO | None = None,
         nonlocal event_bytes
         if len(events) >= MAX_EVENTS:
             raise RuntimeError("session_event_capacity")
-        event = {"schema_version": 7, "session_id": session_id, "sequence": len(events) + 1,
+        event = {"schema_version": 10, "session_id": session_id, "sequence": len(events) + 1,
                  "elapsed_ns": time.monotonic_ns() - started, "event": name, "data": data}
         raw = encoded(event)
         limit = MAX_SESSION_BYTES if name == "STOP" else MAX_SESSION_BYTES - 1024
@@ -357,25 +439,60 @@ def run_console(destination: Path, *, input_stream: TextIO | None = None,
                 or name == "room" and len(args) == 1 and args[0] in ("status", "discover", "bind", "reconcile")
                 or name == "cell" and len(args) == 1 and args[0] in ("status", "activate", "deactivate")
                 or name == "resources" and len(args) == 1 and args[0] in ("link", "status", "sample")
-                or name == "ask" and bool(args)):
+                or name == "ask" and bool(args)
+                or name == 'task' and len(args) == 2 and args[0] in ('status', 'result', 'cancel')
+                or name == "space" and not args):
             controller = agent_control
             if controller is None:
                 from aios_agent.client import control
                 controller = control
-            action = "ask" if name == "ask" else name + "-" + args[0] if name in ("room", "cell", "resources") else args[0]
+            if name == 'task':
+                try:
+                    identity = uuid.UUID(args[1])
+                    if str(identity) != args[1] or identity.int == 0:
+                        raise ValueError('task UUID')
+                except (ValueError, AttributeError):
+                    return error('Task requires a canonical nonzero UUID.', 'invalid_arguments')
+            action = 'ask-start' if name == 'ask' else name if name == 'space' else name + '-' + args[0] if name in ('room', 'cell', 'resources', 'task') else args[0]
             prompt = " ".join(args) if name == "ask" else None
             options = {"backend_dir": backend_dir} if action in ("resources-link", "start", "restart") else {}
+            if name == 'ask':
+                options['request_id'] = str(uuid.uuid4())
+            elif name == 'task':
+                options['request_id'] = args[1]
+                if args[0] == 'cancel':
+                    transcript.line('Cancel scope: stop the entire local model executor owned by this console.')
+                    options['backend_dir'] = backend_dir
             result = controller(agent_dir, action, config=agent_config, prompt=prompt, **options)
             if result["outcome"] == "ERROR" and name not in ("cell", "resources"):
                 transcript.line(f"MAIN {action} failed: {safe_text(result['error'], 64)}.")
             if name == "ask":
-                receipt = result["inference_receipt"]
                 if result["outcome"] == "OK":
-                    transcript.line("MAIN answer:")
-                    transcript.line("  " + safe_text(receipt["content"], 4096))
-                if result.get("resource_result") is not None:
-                    for row in _resource_lines(result["resource_result"]):
-                        transcript.line(row)
+                    transcript.line(f"Task accepted: {safe_text(result['request_id'], 36)}.")
+                else:
+                    for row in _ask_failure_lines(result):
+                        transcript.line("  " + row)
+                identity = safe_text(result['request_id'], 36)
+                transcript.line(f'Use task status {identity}, task result {identity}, or task cancel {identity}.')
+            elif name == 'task':
+                for row in _task_lines(result, show_answer=args[0] == 'result'):
+                    transcript.line(row)
+            elif name == "space":
+                context = result.get("space_context")
+                if context is None:
+                    transcript.line("AIOS space: unavailable; the MAIN service must be running.")
+                else:
+                    from aios_agent.space import context_for_model
+                    facts = context_for_model(context)["facts"]
+                    management = context["management"]
+                    valid = context["validity"]
+                    transcript.line(f"AIOS space: Linux-hosted MAIN; observations {valid}.")
+                    directory, cpus, memory = (facts[key] for key in ("working_directory", "logical_cpu_count", "memory_total_bytes"))
+                    transcript.line("  Runtime directory: " + (safe_text(directory["value"], 512) if directory["status"] == "CURRENT" else directory["status"]))
+                    transcript.line(f"  CPUs: {cpus['value'] if cpus['status'] == 'CURRENT' else cpus['status']}; RAM: {_size(memory['value']) if memory['status'] == 'CURRENT' else memory['status']}.")
+                    transcript.line("  Network reachability: UNKNOWN; selected workspace: UNKNOWN.")
+                    transcript.line(f"  Management: {management['state']}; Cell {management['cell_id']} -> Node {management['node_id']}; binding current: {'yes' if management['binding_current'] else 'no'}.")
+                    transcript.line("  Run space to refresh observations; ask uses this context.")
             elif name == "resources":
                 if result["resource_result"] is None:
                     transcript.line(f"Resources {args[0]} failed: {safe_text(result['error'], 64)}.")
@@ -421,7 +538,7 @@ def run_console(destination: Path, *, input_stream: TextIO | None = None,
         if name == "exit" and not args:
             transcript.line("AIOS session closed.")
             return "OK", {"closing": True}
-        if name in ("help", "about", "status", "hardware", "net", "resolve", "fetch", "service", "backend", "agent", "room", "cell", "ask", "resources", "clear", "exit"):
+        if name in ("help", "about", "status", "hardware", "net", "resolve", "fetch", "service", "backend", "agent", "room", "cell", "ask", "space", "task", "resources", "clear", "exit"):
             return error("Invalid arguments. Type help for command syntax.", "invalid_arguments")
         return error("Unknown command. Type help to see AIOS commands.", "unknown_command")
 
@@ -474,7 +591,7 @@ def run_console(destination: Path, *, input_stream: TextIO | None = None,
             transcript.line("AIOS session failed: " + type(exc).__name__)
             state, exit_code, reason = "FAILED", 1, "runtime_error"
     emit("STOP", {"state": state, "exit_code": exit_code, "reason": reason})
-    result = {"schema_version": 7, "session_id": session_id, "capture_kind": capture_kind,
+    result = {"schema_version": 10, "session_id": session_id, "capture_kind": capture_kind,
               "state": state, "exit_code": exit_code, "boot_run_id": boot["run_id"],
               "source_hashes": source_hashes(),
               "files": {name: hashlib.sha256((destination / name).read_bytes()).hexdigest()

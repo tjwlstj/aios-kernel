@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import ipaddress
 import json
@@ -29,8 +30,11 @@ SOURCES = (*AGENT_SOURCES, 'aios_resources/__init__.py', 'aios_resources/proc.py
            'aios_resources/backend.py', 'aios_resources/runtime.py', 'aios_management/resources.py')
 MANAGED_SOURCES = (*SOURCES, "aios-backend.py", "aios_backend/__init__.py", "aios_backend/protocol.py",
                    "aios_backend/client.py", "aios_backend/daemon.py", "aios_agent/backend_binding.py")
-VERSIONS = {1: "0.1.0", 2: "0.2.0", 3: "0.3.0", 4: "0.4.0", 5: "0.5.0", 6: "0.6.0", 7: "0.7.0"}
-SCHEMA_SOURCES = {1: LEGACY_SOURCES, 2: SERVICE_SOURCES, 3: AGENT_SOURCES, 4: SOURCES, 5: SOURCES, 6: MANAGED_SOURCES, 7: MANAGED_SOURCES}
+SPACE_SOURCES = (*MANAGED_SOURCES, "aios_agent/space.py")
+TASK_SOURCES = (*SPACE_SOURCES, "aios_agent/async_inference.py", "aios_agent/request_state.py",
+                "aios_agent/request_runtime.py")
+VERSIONS = {1: "0.1.0", 2: "0.2.0", 3: "0.3.0", 4: "0.4.0", 5: "0.5.0", 6: "0.6.0", 7: "0.7.0", 8: "0.8.0", 9: "0.9.0", 10: "0.10.0"}
+SCHEMA_SOURCES = {1: LEGACY_SOURCES, 2: SERVICE_SOURCES, 3: AGENT_SOURCES, 4: SOURCES, 5: SOURCES, 6: MANAGED_SOURCES, 7: MANAGED_SOURCES, 8: SPACE_SOURCES, 9: SPACE_SOURCES, 10: TASK_SOURCES}
 FILES = ("console.log", "session.events.jsonl", "boot/result.json")
 NETWORK_ERRORS = {"invalid_host", "invalid_url", "unsupported_protocol", "invalid_timeout",
                   "invalid_max_bytes", "dns_failed", "timeout", "tls_certificate", "tls_failed",
@@ -52,6 +56,23 @@ def read(path: Path) -> bytes:
 
 def digest(raw: bytes) -> str:
     return hashlib.sha256(raw).hexdigest()
+
+
+def source_version(raw: bytes) -> str:
+    """Accept only an optional module docstring and one literal VERSION assignment."""
+    try:
+        tree = ast.parse(raw.decode("utf-8"))
+    except (SyntaxError, UnicodeError) as exc:
+        raise ValueError("console_source_version") from exc
+    body = tree.body
+    if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant) \
+            and type(body[0].value.value) is str:
+        body = body[1:]
+    require(len(body) == 1 and isinstance(body[0], ast.Assign) and len(body[0].targets) == 1
+            and isinstance(body[0].targets[0], ast.Name) and body[0].targets[0].id == "VERSION"
+            and isinstance(body[0].value, ast.Constant) and type(body[0].value.value) is str,
+            "console_source_version")
+    return body[0].value.value
 
 
 def printable(value: object, maximum: int = 2048) -> bool:
@@ -236,7 +257,10 @@ def verify_session(directory: Path, *, source_root: Path | None = None, require_
         sources = SCHEMA_SOURCES[schema]
         keys(result["source_hashes"], set(sources), "sources")
         for name in sources:
-            require(digest(read(root / name)) == result["source_hashes"][name], "source_hash:" + name)
+            source_raw = read(root / name)
+            require(digest(source_raw) == result["source_hashes"][name], "source_hash:" + name)
+            if schema in (8, 9, 10) and name == "aios_console/__init__.py":
+                require(source_version(source_raw) == VERSIONS[schema], "console_source_version")
         keys(result["files"], set(FILES), "files")
         raw = {name: read(directory / name) for name in FILES}
         for name in FILES:
@@ -287,6 +311,12 @@ def verify_session(directory: Path, *, source_root: Path | None = None, require_
             # A real boot cannot turn a fixture model response into a live
             # console claim. Explicit callback sessions are already fixtures.
             agent_result(command, schema, require_live=require_live or result["capture_kind"] == "live")
+            if schema == 10 and command['result'].get('task') is not None:
+                owner = start['source_process']
+                if owner is not None:
+                    from newagent_output_contract import same
+                    require(same(command['result']['task']['owner'], {key: owner[key] for key in
+                            ('host_boot_id', 'process_id', 'process_start_ticks', 'uid')}), 'task_console_owner')
             backend_result(command, schema, require_live=require_live or result["capture_kind"] == "live")
             observed_dns, observed_https = network_result(command)
             dns, https = dns or observed_dns, https or observed_https

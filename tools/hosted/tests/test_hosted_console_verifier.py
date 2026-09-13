@@ -22,6 +22,84 @@ import newagent_output_contract as agent_contract
 import backend_output_contract as backend_contract
 
 
+def rewrite_historical_session(destination, schema, *, source_root=None):
+    """Construct old format fixtures explicitly, never relabel captured evidence.
+
+    Current shell parsing/boot fixtures seed these tests, but old MAIN wire,
+    help, answer rendering and source VERSION are separately retained below.
+    Mutation tests call their hash-only sealers after this construction step.
+    """
+    from console_output_contract import (_response, _HELP, _SERVICE_HELP, _BACKEND_HELP,
+        _RECOVERY_HELP, _AGENT_HELP, _SPACE_HELP, _RESOURCE_HELP, _CELL_HELP)
+    destination = Path(destination)
+    version = {6:'0.6.0',7:'0.7.0',8:'0.8.0',9:'0.9.0'}[schema]
+    sources = Path(source_root) if source_root is not None else destination.parent / (destination.name+'-history-source')
+    if source_root is None:
+        for name in verifier.SCHEMA_SOURCES[schema]:
+            target=sources/name
+            target.parent.mkdir(parents=True,exist_ok=True)
+            target.write_bytes((ROOT/'hosted/linux'/name).read_bytes())
+        (sources/'aios_console/__init__.py').write_text('VERSION = '+repr(version)+'\n',encoding='utf-8')
+    path=destination/'session.events.jsonl'
+    events=[json.loads(line) for line in path.read_bytes().splitlines()]
+    old_version=events[0]['data']['runtime_version']
+    for event in events:
+        event['schema_version']=schema
+        if event['event']!='COMMAND':continue
+        command=event['data']
+        if command['name']=='about':command['result']['version']=version
+        if command['name']=='help' and not command['args']:
+            command['result']['commands']=[*_HELP[:-2],*_SERVICE_HELP,
+                *(_RECOVERY_HELP if schema>=7 else _BACKEND_HELP),
+                *(_SPACE_HELP if schema>=8 else _AGENT_HELP),*_CELL_HELP,*_RESOURCE_HELP,*_HELP[-2:]]
+    events[0]['data']['runtime_version']=version
+    if schema<7:events[0]['data'].pop('source_process',None)
+    path.write_bytes(b''.join((json.dumps(row,sort_keys=True,separators=(',',':'))+'\n').encode() for row in events))
+    console=destination/'console.log'
+    startup=console.read_bytes().split(b'aios> ',1)[0].replace(old_version.encode(),version.encode())
+    inventory=json.loads((destination/'boot/inventory.json').read_bytes())['inventory']
+    console.write_bytes(startup+''.join('aios> '+_response(row['data'],inventory,events[0]['data'],index)
+        for index,row in enumerate(events[1:-1])).encode())
+    result_path=destination/'session-result.json'
+    result=json.loads(result_path.read_bytes())
+    result.update(schema_version=schema,source_hashes={name:hashlib.sha256((sources/name).read_bytes()).hexdigest()
+        for name in verifier.SCHEMA_SOURCES[schema]})
+    result['files']={name:hashlib.sha256((destination/name).read_bytes()).hexdigest() for name in result['files']}
+    result_path.write_text(json.dumps(result),encoding='utf-8')
+    return sources
+
+
+def historical_console_session(destination, commands, *, schema=9, source_root=None, **kwargs):
+    """Parser/boot seed plus explicitly reconstructed historical response fixture."""
+    params=dict(kwargs)
+    original=params.get('agent_control')
+    asked=[]
+    if original is not None:
+        def controller(directory,action,**options):
+            if action=='ask-start':
+                action='ask'
+                identity=options.pop('request_id')
+                response=original(directory,action,**options)
+                asked.append(copy.deepcopy(response))
+                # Let the current parser finish its synthetic command; the
+                # historical response below has no Task fields or UUID claim.
+                return {**response,'request_id':identity}
+            return original(directory,action,**options)
+        params['agent_control']=controller
+    params.setdefault('input_stream',io.StringIO('\n'.join(commands)+'\n'))
+    code=shell.run_console(destination,**params)
+    if asked:
+        path=Path(destination)/'session.events.jsonl'
+        events=[json.loads(line) for line in path.read_bytes().splitlines()]
+        old=iter(asked)
+        for event in events:
+            if event['event']=='COMMAND' and event['data']['name']=='ask' and event['data']['args']:
+                event['data']['result']=next(old)
+        path.write_bytes(b''.join((json.dumps(row)+'\n').encode() for row in events))
+    sources=rewrite_historical_session(destination,schema,source_root=source_root)
+    return code,sources
+
+
 class ConsoleVerifierTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -39,12 +117,23 @@ class ConsoleVerifierTests(unittest.TestCase):
         (self.outer / "stderr.log").write_bytes(b"")
         self.save_execution()
 
-    def run_session(self, destination, commands, **kwargs):
+    def run_session(self, destination, commands, *, historical_schema=None, **kwargs):
         params = {"input_stream": io.StringIO("\n".join(commands) + ("\n" if commands else "")),
                   "output_stream": self.output, "proc_root": self.proc, "sys_root": self.sysfs,
                   "test_system": "Linux", "resolver": dns, "fetcher": fetch}
         params.update(kwargs)
+        if historical_schema is not None:
+            code,sources=historical_console_session(destination,commands,schema=historical_schema,**params)
+            if not hasattr(self,'history_sources'):self.history_sources={}
+            self.history_sources[Path(destination)]=sources
+            self.assertEqual(code,0)
+            return
         self.assertEqual(shell.run_console(destination, **params), 0)
+
+    def verify_session(self, destination, **kwargs):
+        sources=getattr(self,'history_sources',{}).get(Path(destination))
+        if sources is not None:kwargs.setdefault('source_root',sources)
+        return verifier.verify_session(destination,**kwargs)
 
     def save_execution(self):
         for name in ("stdout", "stderr"):
@@ -69,6 +158,41 @@ class ConsoleVerifierTests(unittest.TestCase):
         self.assertEqual(verifier.verify_execution(self.outer, require_internet=True)["outcome"], "PASS")
         self.assertEqual(verifier.verify_execution(self.outer, require_live=True)["outcome"], "FAIL")
 
+    def test_retained_main5_space_and_refused_ask_have_exact_cli9_output(self):
+        self.session = self.root / 'space-lookup'
+        control = mock.Mock(side_effect=[agent('space'), agent('ask', error='not-discovered')])
+        commands = ['space', 'ask hello', 'space bad', 'help', 'exit']
+        self.run_session(self.session, commands, historical_schema=9, agent_control=control)
+        value = self.verify_session(self.session, expected_commands=commands)
+        self.assertEqual(value['outcome'], 'PASS', value)
+        self.assertEqual(control.call_count, 2)
+        output = (self.session / 'console.log').read_text(encoding='utf-8')
+        self.assertIn('Runtime directory: /fixture/runtime', output)
+        self.assertIn('Network reachability: UNKNOWN; selected workspace: UNKNOWN.', output)
+        self.assertIn('No verified answer is available; the request outcome is unknown.', output)
+        self.assertIn('No inference receipt was returned; this does not prove that the model request was never sent.', output)
+        self.assertEqual(self.verify_session(self.session, require_live=True)['outcome'], 'FAIL')
+
+    def test_rehashed_space_display_cannot_invent_network_reachability(self):
+        self.session = self.root / 'space-display'
+        self.run_session(self.session, ['space', 'exit'], historical_schema=9, agent_control=mock.Mock(return_value=agent('space')))
+        path = self.session / 'console.log'
+        path.write_bytes(path.read_bytes().replace(b'Network reachability: UNKNOWN', b'Network reachability: CURRENT'))
+        self.rehash()
+        value = self.verify_session(self.session)
+        self.assertEqual(value['outcome'], 'FAIL', value)
+        self.assertIn('transcript_mismatch', str(value))
+
+    def test_rehashed_space_packet_cannot_name_a_different_main_instance(self):
+        self.session = self.root / 'space-source'
+        self.run_session(self.session, ['space', 'exit'], historical_schema=9, agent_control=mock.Mock(return_value=agent('space')))
+        events = self.events()
+        events[1]['data']['result']['space_context']['consumer']['source_instance'] = '00000000-0000-4000-8000-000000000099'
+        self.rehash(events)
+        value = self.verify_session(self.session)
+        self.assertEqual(value['outcome'], 'FAIL', value)
+        self.assertIn('source_join', str(value))
+
     def test_expected_identity_and_process_exit(self):
         identity = json.loads((self.session / "session-result.json").read_bytes())["session_id"]
         self.assertEqual(verifier.verify_execution(self.outer, expected_session_id=identity)["outcome"], "PASS")
@@ -91,7 +215,7 @@ class ConsoleVerifierTests(unittest.TestCase):
         path = self.session / "console.log"
         path.write_bytes(path.read_bytes().replace(b"startup: READY", b"startup: FAILED"))
         self.rehash()
-        self.assertEqual(verifier.verify_session(self.session)["outcome"], "FAIL")
+        self.assertEqual(self.verify_session(self.session)["outcome"], "FAIL")
 
     def test_stdout_stderr_and_script_mismatch(self):
         (self.outer / "stderr.log").write_bytes(b"unexpected failure")
@@ -108,7 +232,7 @@ class ConsoleVerifierTests(unittest.TestCase):
 
     def test_source_hash_mismatch(self):
         self.rehash(result_change=lambda r: r["source_hashes"].update({"aios-console.py": "0" * 64}))
-        self.assertEqual(verifier.verify_session(self.session)["outcome"], "FAIL")
+        self.assertEqual(self.verify_session(self.session)["outcome"], "FAIL")
 
     def test_event_order_and_negative_time_are_rejected(self):
         original = self.events()
@@ -120,7 +244,7 @@ class ConsoleVerifierTests(unittest.TestCase):
                 events = json.loads(json.dumps(original))
                 mutate(events)
                 self.rehash(events)
-                self.assertEqual(verifier.verify_session(self.session)["outcome"], "FAIL")
+                self.assertEqual(self.verify_session(self.session)["outcome"], "FAIL")
 
     def test_boundary_hardware_and_command_result_mutations(self):
         original = self.events()
@@ -133,7 +257,7 @@ class ConsoleVerifierTests(unittest.TestCase):
                 events = json.loads(json.dumps(original))
                 mutate(events[index]["data"])
                 self.rehash(events)
-                self.assertEqual(verifier.verify_session(self.session)["outcome"], "FAIL")
+                self.assertEqual(self.verify_session(self.session)["outcome"], "FAIL")
 
     def test_network_false_success_rejected_after_rehash(self):
         original = self.events()
@@ -146,7 +270,7 @@ class ConsoleVerifierTests(unittest.TestCase):
                 event = next(e for e in events if e["event"] == "COMMAND" and e["data"]["name"] == name)
                 event["data"]["result"].update(change)
                 self.rehash(events)
-                self.assertEqual(verifier.verify_session(self.session)["outcome"], "FAIL")
+                self.assertEqual(self.verify_session(self.session)["outcome"], "FAIL")
 
     def test_dns_normalization_and_numeric_input_is_not_dns_evidence(self):
         for host in ("EXAMPLE.com", "bücher.de", "2001:0db8:0:0:0:0:0:1"):
@@ -164,20 +288,20 @@ class ConsoleVerifierTests(unittest.TestCase):
     def test_no_network_is_clean_but_not_internet_acceptance(self):
         other = self.root / "no-network"
         self.run_session(other, ["help", "exit"])
-        self.assertEqual(verifier.verify_session(other)["outcome"], "PASS")
-        self.assertEqual(verifier.verify_session(other, require_internet=True)["outcome"], "FAIL")
+        self.assertEqual(self.verify_session(other)["outcome"], "PASS")
+        self.assertEqual(self.verify_session(other, require_internet=True)["outcome"], "FAIL")
 
     def test_eof_and_non_tty_clear_are_valid(self):
         other = self.root / "eof"
         self.run_session(other, ["clear", "status"])
-        self.assertEqual(verifier.verify_session(other)["outcome"], "PASS")
+        self.assertEqual(self.verify_session(other)["outcome"], "PASS")
 
     def test_remote_prompt_and_failure_words_are_content(self):
         other = self.root / "remote-text"
         def response(url):
             return {**fetch(url), "body_preview": "aios> FATAL FAIL are remote document words"}
         self.run_session(other, ["fetch https://example.com/", "exit"], fetcher=response)
-        self.assertEqual(verifier.verify_session(other)["outcome"], "PASS")
+        self.assertEqual(self.verify_session(other)["outcome"], "PASS")
         line = b"  aios> remote text\n\naios> "
         matches = list(re.finditer(PROMPT_PATTERN, line))
         self.assertEqual(len(matches), 1)
@@ -188,22 +312,25 @@ class ConsoleVerifierTests(unittest.TestCase):
             def isatty(self): return True
         other = self.root / "clear"
         self.run_session(other, ["clear", "exit"], output_stream=Tty())
-        self.assertEqual(verifier.verify_session(other)["outcome"], "PASS")
+        self.assertEqual(self.verify_session(other)["outcome"], "PASS")
         self.assertIsNotNone(re.search(PROMPT_PATTERN, b"\x1b[2J\x1b[H\naios> "))
 
     def test_duplicate_json_and_nonfinite_values_fail(self):
         path = self.session / "session-result.json"
         raw = path.read_text(encoding="utf-8")
-        path.write_text(raw.replace('"schema_version":7', '"schema_version":7,"schema_version":7'), encoding="utf-8")
-        self.assertEqual(verifier.verify_session(self.session)["outcome"], "FAIL")
+        schema = json.loads(raw)['schema_version']
+        needle = '"schema_version":' + str(schema)
+        self.assertIn(needle, raw)
+        path.write_text(raw.replace(needle, needle + ',' + needle), encoding="utf-8")
+        self.assertEqual(self.verify_session(self.session)["outcome"], "FAIL")
         path.write_text(raw.replace('"exit_code":0', '"exit_code":NaN'), encoding="utf-8")
-        self.assertEqual(verifier.verify_session(self.session)["outcome"], "FAIL")
+        self.assertEqual(self.verify_session(self.session)["outcome"], "FAIL")
 
     def test_many_invalid_arguments_and_uppercase_command_match_actual_parser(self):
         other = self.root / "many-arguments"
         commands = ["HELP " + "a " * 300, "ABOUT", "exit"]
         self.run_session(other, commands)
-        self.assertEqual(verifier.verify_session(other, expected_commands=commands)["outcome"], "PASS")
+        self.assertEqual(self.verify_session(other, expected_commands=commands)["outcome"], "PASS")
 
     def test_service_session_exact_output_errors_and_source_contract(self):
         other = self.root / "service-session"
@@ -212,13 +339,13 @@ class ConsoleVerifierTests(unittest.TestCase):
         commands = ["service status", "service start", "service start", "service stop",
                     "service restart", "service status", "service invalid", "service", "exit"]
         self.run_session(other, commands, service_control=mock.Mock(side_effect=responses))
-        verdict = verifier.verify_session(other, expected_commands=commands)
+        verdict = self.verify_session(other, expected_commands=commands)
         self.assertEqual(verdict["outcome"], "PASS", verdict)
-        self.assertEqual(verifier.verify_session(other, require_live=True)["outcome"], "FAIL")
+        self.assertEqual(self.verify_session(other, require_live=True)["outcome"], "FAIL")
         result = json.loads((other / "session-result.json").read_bytes())
-        self.assertEqual(set(result["source_hashes"]), set(verifier.MANAGED_SOURCES))
-        self.assertEqual(len(result["source_hashes"]), 31)
-        self.assertEqual(result["schema_version"], 7)
+        self.assertEqual(set(result["source_hashes"]), set(verifier.TASK_SOURCES))
+        self.assertEqual(len(result["source_hashes"]), 35)
+        self.assertEqual(result["schema_version"], 10)
 
     def test_service_corrupt_claims_fail_after_artifact_hashes_recomputed(self):
         changes = [
@@ -238,7 +365,7 @@ class ConsoleVerifierTests(unittest.TestCase):
                                  service_control=lambda *_: {**service(), **change})
                 # The producer writes hashes from these altered objects. A
                 # hash-only verifier would accept the false semantic claim.
-                self.assertEqual(verifier.verify_session(other)["outcome"], "FAIL")
+                self.assertEqual(self.verify_session(other)["outcome"], "FAIL")
 
     def test_service_transient_and_terminal_observations_remain_distinct(self):
         accepted = [
@@ -274,13 +401,13 @@ class ConsoleVerifierTests(unittest.TestCase):
         transcript = self.session / "console.log"
         transcript.write_bytes(transcript.read_bytes().replace(b"generation 1;", b"generation 2;"))
         self.rehash()
-        verdict = verifier.verify_session(self.session)
+        verdict = self.verify_session(self.session)
         self.assertEqual(verdict["outcome"], "FAIL")
         self.assertIn("transcript_mismatch", str(verdict))
 
     def test_schema_version_cannot_be_relabeled_without_its_contract(self):
         self.rehash(result_change=lambda result: result.update(schema_version=1))
-        verdict = verifier.verify_session(self.session)
+        verdict = self.verify_session(self.session)
         self.assertEqual(verdict["outcome"], "FAIL")
         self.assertIn("sources", str(verdict))
 
@@ -292,23 +419,23 @@ class ConsoleVerifierTests(unittest.TestCase):
                      agent("room-reconcile", bound=True), agent("stop", state="STOPPED")]
         commands = ["agent status", "agent start", "room discover", "room bind", "room status",
                     "ask Describe AIOS", "agent restart", "room reconcile", "agent stop", "room invalid", "ask", "help", "about", "exit"]
-        self.run_session(other, commands, agent_control=mock.Mock(side_effect=responses))
-        verdict = verifier.verify_session(other, expected_commands=commands)
+        self.run_session(other, commands, historical_schema=9, agent_control=mock.Mock(side_effect=responses))
+        verdict = self.verify_session(other, expected_commands=commands)
         self.assertEqual(verdict["outcome"], "PASS", verdict)
-        self.assertEqual(verifier.verify_session(other, require_live=True)["outcome"], "FAIL")
+        self.assertEqual(self.verify_session(other, require_live=True)["outcome"], "FAIL")
 
     def test_main_errors_keep_clean_session_and_no_receipt_claim(self):
         other = self.root / "main-errors"
         responses = [agent("ask", error="unbound"), agent("start", state="UNSUPPORTED", error="unsupported-platform")]
         commands = ["ask hello", "agent start", "status", "exit"]
-        self.run_session(other, commands, agent_control=mock.Mock(side_effect=responses))
-        verdict = verifier.verify_session(other, expected_commands=commands)
+        self.run_session(other, commands, historical_schema=9, agent_control=mock.Mock(side_effect=responses))
+        verdict = self.verify_session(other, expected_commands=commands)
         self.assertEqual(verdict["outcome"], "PASS", verdict)
 
     def test_main_receipt_forgery_rejected_even_with_recomputed_artifact_hashes(self):
         self.session = self.root / "receipt-forgery"
         self.run_session(self.session, ["ask hello", "exit"],
-                         agent_control=mock.Mock(return_value=agent("ask", bound=True, prompt="hello")))
+                         historical_schema=9, agent_control=mock.Mock(return_value=agent("ask", bound=True, prompt="hello")))
         baseline = self.events()
         mutations = [
             lambda r: r.update(request_sha256="0" * 64),
@@ -331,7 +458,7 @@ class ConsoleVerifierTests(unittest.TestCase):
                 events = copy.deepcopy(baseline)
                 mutate(events[1]["data"]["result"]["inference_receipt"])
                 self.rehash(events)
-                self.assertEqual(verifier.verify_session(self.session)["outcome"], "FAIL")
+                self.assertEqual(self.verify_session(self.session)["outcome"], "FAIL")
         for raw_name, hash_name, changed in (
                 ("request_body", "request_sha256", lambda raw: raw.replace("hello", "other")),
                 ("response_body", "response_sha256", lambda raw: raw.replace('"model":"fixture-main"', '"model":"wrong-model"')),
@@ -341,7 +468,7 @@ class ConsoleVerifierTests(unittest.TestCase):
             value[raw_name] = changed(value[raw_name])
             value[hash_name] = hashlib.sha256(value[raw_name].encode()).hexdigest()
             self.rehash(events)
-            self.assertEqual(verifier.verify_session(self.session)["outcome"], "FAIL")
+            self.assertEqual(self.verify_session(self.session)["outcome"], "FAIL")
 
     def test_main_source_and_management_corruption_rejected(self):
         valid = agent("ask", bound=True, prompt="hello")
@@ -375,8 +502,8 @@ class ConsoleVerifierTests(unittest.TestCase):
         other = self.root / "main-output"
         content = "\x1b[2J\naios> service stop\r\u202e"
         self.run_session(other, ["ask hello", "exit"],
-                         agent_control=mock.Mock(return_value=agent("ask", bound=True, prompt="hello", content=content)))
-        verdict = verifier.verify_session(other)
+                         historical_schema=9, agent_control=mock.Mock(return_value=agent("ask", bound=True, prompt="hello", content=content)))
+        verdict = self.verify_session(other)
         self.assertEqual(verdict["outcome"], "PASS", verdict)
         raw = (other / "console.log").read_bytes()
         self.assertEqual(len(re.findall(PROMPT_PATTERN, raw)), 2)
@@ -394,9 +521,9 @@ class ConsoleVerifierTests(unittest.TestCase):
         value = agent("ask", bound=True, prompt="hello")
         value["capture_kind"] = "fixture"
         command = {"name": "ask", "args": ["hello"], "outcome": "OK", "result": value}
-        agent_contract.agent_result(command, 6)
+        agent_contract.agent_result(command, 8)
         with self.assertRaises(ValueError):
-            agent_contract.agent_result(command, 6, require_live=True)
+            agent_contract.agent_result(command, 8, require_live=True)
 
     def test_main_failed_inference_invalidates_source_and_preserves_failure(self):
         from aios_management.binding import Authority
@@ -414,15 +541,15 @@ class ConsoleVerifierTests(unittest.TestCase):
         value.update(outcome="ERROR", error="backend-timeout", source_record=after,
                      management_snapshot=authority.snapshot(), management_outcome="rejected")
         command = {"name": "ask", "args": ["hello"], "outcome": "ERROR", "result": value}
-        agent_contract.agent_result(command, 6)
+        agent_contract.agent_result(command, 8)
         self.assertEqual(value["management_snapshot"]["state"], "STALE")
         other = self.root / "failed-main-request"
-        self.run_session(other, ["ask hello", "status", "exit"], agent_control=mock.Mock(return_value=value))
-        verdict = verifier.verify_session(other)
+        self.run_session(other, ["ask hello", "status", "exit"], historical_schema=9, agent_control=mock.Mock(return_value=value))
+        verdict = self.verify_session(other)
         self.assertEqual(verdict["outcome"], "PASS", verdict)
         value["error"] = "backend-failed"
         with self.assertRaises(ValueError):
-            agent_contract.agent_result(command, 6)
+            agent_contract.agent_result(command, 8)
 
     def test_resource_errors_and_transport_failure_preserve_exact_console_output(self):
         other = self.root / "resource-errors"
@@ -432,10 +559,10 @@ class ConsoleVerifierTests(unittest.TestCase):
         asked = {**agent("ask", bound=True, prompt="hello"), "capture_kind": "fixture",
                  "resource_result": resource_error("request", "process-exited")}
         commands = ["resources status", "resources sample", "ask hello", "resources bad", "help", "about", "exit"]
-        self.run_session(other, commands, agent_control=mock.Mock(side_effect=[absent, unlinked, asked]))
-        result = verifier.verify_session(other, expected_commands=commands)
+        self.run_session(other, commands, historical_schema=9, agent_control=mock.Mock(side_effect=[absent, unlinked, asked]))
+        result = self.verify_session(other, expected_commands=commands)
         self.assertEqual(result["outcome"], "PASS", result)
-        self.assertEqual(verifier.verify_session(other, require_live=True)["outcome"], "FAIL")
+        self.assertEqual(self.verify_session(other, require_live=True)["outcome"], "FAIL")
 
     @staticmethod
     def resource_reply(kind="sample"):
@@ -446,7 +573,21 @@ class ConsoleVerifierTests(unittest.TestCase):
                  "management_snapshot": data["snapshot"], "resource_result": data["result"],
                  "capture_kind": "fixture"}
         if kind == "request":
-            value.update(inference_receipt={**receipt_fixture(data), "schema_version": 2, "backend_execution": None}, management_outcome="accepted")
+            from aios_agent.space import build_observation, build_packet
+            from aios_agent.inference import request_body
+            evidence = {**receipt_fixture(data), 'schema_version': 3, 'backend_execution': None, 'user_prompt': 'Say hello.'}
+            before = evidence['source_before']
+            observation = build_observation(host_boot_id=before['host_boot_id'], process_id=before['process_id'],
+                observed_monotonic_ns=100, working_directory='/fixture', logical_cpu_count=2, mem_total_line='MemTotal: 4096 kB')
+            context = build_packet(observation, source_record=before, management_snapshot=data['snapshot'],
+                checked_monotonic_ns=101, model_id=evidence['model_id'])
+            body = request_body('Say hello.', space_context=context).decode()
+            response = json.loads(evidence['response_body'])
+            response.update(prompt=json.loads(body)['prompt'], truncated=False)
+            raw_response = json.dumps(response)
+            evidence.update(space_context=context, request_body=body, request_sha256=hashlib.sha256(body.encode()).hexdigest(),
+                response_body=raw_response, response_sha256=hashlib.sha256(raw_response.encode()).hexdigest())
+            value.update(inference_receipt=evidence, management_outcome='accepted')
         return value
 
     def test_resource_sample_request_and_cached_status_full_evidence_and_output(self):
@@ -458,10 +599,10 @@ class ConsoleVerifierTests(unittest.TestCase):
                 cached.update(action="resources-status", inference_receipt=None, management_outcome=None)
                 cached["resource_result"]["action"] = "status"
                 commands = ["ask Say hello." if kind == "request" else "resources sample", "resources status", "exit"]
-                self.run_session(other, commands, agent_control=mock.Mock(side_effect=[value, cached]))
-                result = verifier.verify_session(other, expected_commands=commands)
+                self.run_session(other, commands, historical_schema=9, agent_control=mock.Mock(side_effect=[value, cached]))
+                result = self.verify_session(other, expected_commands=commands)
                 self.assertEqual(result["outcome"], "PASS", result)
-                self.assertEqual(verifier.verify_session(other, require_live=True)["outcome"], "FAIL")
+                self.assertEqual(self.verify_session(other, require_live=True)["outcome"], "FAIL")
                 text = (other / "console.log").read_text(encoding="utf-8")
                 self.assertIn("Observed process window", text)
                 self.assertIn("Last observation (cached)", text)
@@ -471,7 +612,7 @@ class ConsoleVerifierTests(unittest.TestCase):
     def test_resource_forgery_rejected_after_artifact_hashes_recomputed(self):
         self.session = self.root / "resource-forgery"
         self.run_session(self.session, ["ask Say hello.", "exit"],
-                         agent_control=mock.Mock(return_value=self.resource_reply("request")))
+                         historical_schema=9, agent_control=mock.Mock(return_value=self.resource_reply("request")))
         baseline = self.events()
         changes = (
             lambda r: r["observation"]["cpu"]["backend"].update(cpu_time_ns=1),
@@ -487,7 +628,7 @@ class ConsoleVerifierTests(unittest.TestCase):
             events = copy.deepcopy(baseline)
             mutation(events[1]["data"]["result"]["resource_result"])
             self.rehash(events)
-            result = verifier.verify_session(self.session)
+            result = self.verify_session(self.session)
             with self.subTest(mutation=mutation):
                 self.assertEqual(result["outcome"], "FAIL", result)
                 self.assertIn("resource_contract:", str(result))
@@ -498,10 +639,10 @@ class ConsoleVerifierTests(unittest.TestCase):
                    cell("activate"), cell("deactivate", active=False)]
         commands = ["cell status", "cell deactivate", "cell status", "cell activate", "cell activate",
                     "cell deactivate", "cell stop", "help", "about", "exit"]
-        self.run_session(other, commands, agent_control=mock.Mock(side_effect=replies))
-        result = verifier.verify_session(other, expected_commands=commands)
+        self.run_session(other, commands, historical_schema=9, agent_control=mock.Mock(side_effect=replies))
+        result = self.verify_session(other, expected_commands=commands)
         self.assertEqual(result["outcome"], "PASS", result)
-        self.assertEqual(verifier.verify_session(other, require_live=True)["outcome"], "FAIL")
+        self.assertEqual(self.verify_session(other, require_live=True)["outcome"], "FAIL")
         text = (other / "console.log").read_text(encoding="utf-8")
         self.assertIn("AIOS Cell 1: inactive; generation 2", text)
         self.assertIn("AIOS Cell 1: active; generation 3", text)
@@ -514,9 +655,9 @@ class ConsoleVerifierTests(unittest.TestCase):
         commands = ["backend status", "backend start", "backend restart", "backend stop", "backend status",
                     "backend kill", "help", "about", "exit"]
         self.run_session(other, commands, backend_control=mock.Mock(side_effect=replies))
-        result = verifier.verify_session(other, expected_commands=commands)
+        result = self.verify_session(other, expected_commands=commands)
         self.assertEqual(result["outcome"], "PASS", result)
-        self.assertEqual(verifier.verify_session(other, require_live=True)["outcome"], "FAIL")
+        self.assertEqual(self.verify_session(other, require_live=True)["outcome"], "FAIL")
         text = (other / "console.log").read_text(encoding="utf-8")
         self.assertIn("AIOS model backend: RUNNING; backend ready", text)
         self.assertIn("Start generation 2;", text)
@@ -533,14 +674,14 @@ class ConsoleVerifierTests(unittest.TestCase):
             events = copy.deepcopy(baseline)
             mutation(events[1]["data"]["result"])
             self.rehash(events)
-            result = verifier.verify_session(self.session)
+            result = self.verify_session(self.session)
             with self.subTest(mutation=mutation):
                 self.assertEqual(result["outcome"], "FAIL", result)
         self.rehash(baseline)
         log = self.session / "console.log"
         log.write_bytes(log.read_bytes().replace(b"backend ready", b"backend not ready"))
         self.rehash()
-        result = verifier.verify_session(self.session)
+        result = self.verify_session(self.session)
         self.assertEqual(result["outcome"], "FAIL", result)
         self.assertIn("transcript_mismatch", str(result))
 
@@ -554,7 +695,7 @@ class ConsoleVerifierTests(unittest.TestCase):
         events[0]["data"].pop("source_process")
         self.rehash(events, lambda r: r.update(schema_version=5,
             source_hashes={k:v for k,v in r["source_hashes"].items() if k in verifier.SOURCES}))
-        result = verifier.verify_session(self.session)
+        result = self.verify_session(self.session)
         self.assertEqual(result["outcome"], "FAIL", result)
 
     def test_cell_management_and_transport_errors_are_clean_session_results(self):
@@ -563,13 +704,13 @@ class ConsoleVerifierTests(unittest.TestCase):
                    agent("cell-status", state="ABSENT", error="process-not-running"),
                    agent("cell-deactivate", state="UNSUPPORTED", error="unsupported-platform")]
         commands = ["cell activate", "cell status", "cell deactivate", "status", "exit"]
-        self.run_session(other, commands, agent_control=mock.Mock(side_effect=replies))
-        result = verifier.verify_session(other, expected_commands=commands)
+        self.run_session(other, commands, historical_schema=9, agent_control=mock.Mock(side_effect=replies))
+        result = self.verify_session(other, expected_commands=commands)
         self.assertEqual(result["outcome"], "PASS", result)
 
     def test_cell_response_and_transcript_cannot_disagree_after_rehash(self):
         self.session = self.root / "cell-forgery"
-        self.run_session(self.session, ["cell deactivate", "exit"], agent_control=mock.Mock(return_value=cell("deactivate")))
+        self.run_session(self.session, ["cell deactivate", "exit"], historical_schema=9, agent_control=mock.Mock(return_value=cell("deactivate")))
         baseline = self.events()
         for mutation in (lambda v: v.update(management_outcome=None),
                          lambda v: v.update(resource_result=resource_error()),
@@ -581,18 +722,18 @@ class ConsoleVerifierTests(unittest.TestCase):
             mutation(events[1]["data"]["result"])
             self.rehash(events)
             with self.subTest(mutation=mutation):
-                self.assertEqual(verifier.verify_session(self.session)["outcome"], "FAIL")
+                self.assertEqual(self.verify_session(self.session)["outcome"], "FAIL")
         self.rehash(baseline)
         path = self.session / "console.log"
         path.write_bytes(path.read_bytes().replace(b"Cell 1: inactive", b"Cell 1: active"))
         self.rehash()
-        result = verifier.verify_session(self.session)
+        result = self.verify_session(self.session)
         self.assertEqual(result["outcome"], "FAIL", result)
         self.assertIn("transcript_mismatch", str(result))
 
     def test_cell_evidence_cannot_be_relabelled_as_v04(self):
         self.session = self.root / "cell-version"
-        self.run_session(self.session, ["cell status", "exit"], agent_control=mock.Mock(return_value=cell()))
+        self.run_session(self.session, ["cell status", "exit"], historical_schema=9, agent_control=mock.Mock(return_value=cell()))
         events = self.events()
         for event in events:
             event["schema_version"] = 4
@@ -600,7 +741,7 @@ class ConsoleVerifierTests(unittest.TestCase):
         events[0]["data"].pop("source_process")
         events[1]["data"]["result"]["schema_version"] = 2
         self.rehash(events, lambda r: r.update(schema_version=4, source_hashes={k:v for k,v in r["source_hashes"].items() if k in verifier.SOURCES}))
-        result = verifier.verify_session(self.session)
+        result = self.verify_session(self.session)
         self.assertEqual(result["outcome"], "FAIL", result)
 
 
@@ -612,7 +753,7 @@ class BackendContractTests(unittest.TestCase):
     def test_success_actions_and_terminal_identity_are_exact(self):
         for value in (backend(state="ABSENT"), backend(state="STARTING"), backend(), backend("start"), backend("restart", generation=2),
                       backend("stop", state="STOPPED"), backend("stop", state="ABSENT"), backend(state="STOPPED")):
-            backend_contract.backend_result(self.command(value), 6)
+            backend_contract.backend_result(self.command(value), 8)
             for schema in range(1, 6):
                 with self.subTest(schema=schema, action=value["action"]), self.assertRaises(ValueError):
                     backend_contract.backend_result(self.command(value), schema)
@@ -708,7 +849,7 @@ class AgentResourceContractTests(unittest.TestCase):
             changed = copy.deepcopy(current)
             mutation(changed)
             with self.subTest(mutation=mutation), self.assertRaises(ValueError):
-                agent_contract.agent_result(self.command(changed), 6)
+                agent_contract.agent_result(self.command(changed), 8)
 
     def test_receipt_schema1_history_and_schema2_fixture_live_boundary(self):
         for protocol in (1, 2, 3, 4):
@@ -718,17 +859,17 @@ class AgentResourceContractTests(unittest.TestCase):
         current = agent("ask", bound=True, prompt="hello")
         current["capture_kind"] = "live"
         with self.assertRaisesRegex(ValueError, "missing_execution"):
-            agent_contract.agent_result(self.command(current), 6)
+            agent_contract.agent_result(self.command(current), 8)
         current["capture_kind"] = "fixture"
         for change in ({"schema_version": 1}, {"backend_execution": {}}, {"extra": None}):
             value = copy.deepcopy(current)
             value["inference_receipt"].update(change)
             with self.subTest(change=change), self.assertRaises(ValueError):
-                agent_contract.agent_result(self.command(value), 6)
+                agent_contract.agent_result(self.command(value), 8)
 
     def test_backend_changed_is_pre_request_error_and_not_a_legacy_error(self):
         value = agent("ask", bound=True, error="backend-changed")
-        agent_contract.agent_result(self.command(value), 6)
+        agent_contract.agent_result(self.command(value), 8)
         for protocol in (1, 2, 3):
             old = agent("ask", bound=True, error="backend-changed", protocol=protocol)
             with self.subTest(protocol=protocol), self.assertRaisesRegex(ValueError, "legacy_backend_error"):
@@ -751,7 +892,7 @@ class AgentResourceContractTests(unittest.TestCase):
         worker["raw_stat"] = head + ") " + " ".join(fields) + "\n"
         inference["elapsed_ns"] = 5000
         inference["backend_execution"] = execution
-        agent_contract.agent_result(self.command(value), 6)
+        agent_contract.agent_result(self.command(value), 8)
         for mutate in (lambda e: e["descriptor"].update(model_id="other-model"),
                        lambda e: e["descriptor"].update(backend_sha256="e" * 64),
                        lambda e: e["send"].update(server_fd_target="socket:[999]"),
@@ -759,15 +900,15 @@ class AgentResourceContractTests(unittest.TestCase):
             changed = copy.deepcopy(value)
             mutate(changed["inference_receipt"]["backend_execution"])
             with self.subTest(mutation=mutate), self.assertRaises(ValueError):
-                agent_contract.agent_result(self.command(changed), 6)
+                agent_contract.agent_result(self.command(changed), 8)
         changed = copy.deepcopy(value)
         changed["inference_receipt"]["elapsed_ns"] = 100
         with self.assertRaisesRegex(ValueError, "execution_window"):
-            agent_contract.agent_result(self.command(changed), 6)
+            agent_contract.agent_result(self.command(changed), 8)
         changed = copy.deepcopy(value)
         changed["inference_receipt"]["backend_execution"]["send"]["client"]["raw_stat"] = worker["raw_stat"].replace(") S 123 ", ") S 999 ")
         with self.assertRaisesRegex(ValueError, "execution_owner"):
-            agent_contract.agent_result(self.command(changed), 6)
+            agent_contract.agent_result(self.command(changed), 8)
 
     def test_failed_receipt_cannot_retain_successful_execution_evidence(self):
         value = agent("ask", bound=True, prompt="hello")["inference_receipt"]
@@ -783,26 +924,26 @@ class AgentResourceContractTests(unittest.TestCase):
     def test_resource_without_response_requires_transport_or_process_failure(self):
         for state, error in (("ABSENT", "process-not-running"), ("STOPPED", "process-not-running"),
                              ("UNSUPPORTED", "unsupported-platform"), ("RUNNING", "rpc-timeout")):
-            agent_contract.agent_result(self.command(agent("resources-status", state=state, error=error)), 6)
+            agent_contract.agent_result(self.command(agent("resources-status", state=state, error=error)), 8)
         for error in (None, "resource-unlinked", "already-running"):
             with self.subTest(error=error), self.assertRaises(ValueError):
-                agent_contract.agent_result(self.command(agent("resources-status", error=error)), 6)
+                agent_contract.agent_result(self.command(agent("resources-status", error=error)), 8)
 
     def test_resource_error_reply_is_independent_from_inference_outcome(self):
         value = {**agent("ask", bound=True, prompt="hello"), "capture_kind": "fixture",
                  "resource_result": resource_error("request", "process-exited")}
-        agent_contract.agent_result(self.command(value), 6)
+        agent_contract.agent_result(self.command(value), 8)
         self.assertEqual(value["outcome"], "OK")
         self.assertTrue(value["source_record"]["model_ready"])
         changed = copy.deepcopy(value)
         changed["resource_result"]["action"] = "sample"
         with self.assertRaises(ValueError):
-            agent_contract.agent_result(self.command(changed), 6)
+            agent_contract.agent_result(self.command(changed), 8)
 
     def test_resource_result_exact_boundary_and_parent_outcome_agree(self):
         valid = {**agent("resources-status", bound=True, error="resource-unlinked"), "capture_kind": "fixture",
                  "resource_result": resource_error()}
-        agent_contract.agent_result(self.command(valid), 6)
+        agent_contract.agent_result(self.command(valid), 8)
         mutations = (lambda v: v.update(outcome="OK", error=None), lambda v: v.update(error="process-exited"),
                      lambda v: v.update(capture_kind="live"), lambda v: v.update(management_outcome="accepted"),
                      lambda v: v["resource_result"].update(relation_current=True),
@@ -816,9 +957,9 @@ class AgentResourceContractTests(unittest.TestCase):
             changed = copy.deepcopy(valid)
             mutation(changed)
             with self.subTest(mutation=mutation), self.assertRaises(ValueError):
-                agent_contract.agent_result(self.command(changed), 6)
+                agent_contract.agent_result(self.command(changed), 8)
         with self.assertRaises(ValueError):
-            agent_contract.agent_result(self.command(valid), 6, require_live=True)
+            agent_contract.agent_result(self.command(valid), 8, require_live=True)
 
     def test_resource_display_reconstruction_and_cached_labels_are_independent(self):
         for action in ("sample", "status", "request"):
@@ -835,30 +976,30 @@ class AgentResourceContractTests(unittest.TestCase):
     def test_cell_success_status_accepts_active_and_inactive_but_actions_match(self):
         for value in (cell(), cell(active=False), cell("deactivate"), cell("activate", active=False),
                       cell("activate"), cell("deactivate", active=False), cell(bound=False)):
-            agent_contract.agent_result(self.command(value), 6)
+            agent_contract.agent_result(self.command(value), 8)
             for schema in (1, 2, 3, 4):
                 with self.subTest(action=value["action"], schema=schema), self.assertRaises(ValueError):
                     agent_contract.agent_result(self.command(value), schema)
         for value in (cell("activate"), cell("deactivate")):
             value["action"] = "cell-deactivate" if value["action"] == "cell-activate" else "cell-activate"
             with self.assertRaisesRegex(ValueError, "cell_activity"):
-                agent_contract.agent_result(self.command(value), 6)
+                agent_contract.agent_result(self.command(value), 8)
 
     def test_cell_state_reports_do_not_require_model_ready_or_promote_binding(self):
         value = cell(active=False)
         self.assertEqual(value["source_record"], agent_source())
         self.assertFalse(value["management_snapshot"]["binding_current"])
         self.assertTrue(value["source_record"]["model_ready"])
-        agent_contract.agent_result(self.command(value), 6)
+        agent_contract.agent_result(self.command(value), 8)
         value = cell(bound=False)
         value["source_record"].update(model_ready=False, source_generation=2)
-        agent_contract.agent_result(self.command(value), 6)
+        agent_contract.agent_result(self.command(value), 8)
 
     def test_cell_error_outcomes_and_empty_resource_contract_remain_exact(self):
         for management in (None, "rejected"):
             value = cell("activate", error="overflow")
             value["management_outcome"] = management
-            agent_contract.agent_result(self.command(value), 6)
+            agent_contract.agent_result(self.command(value), 8)
         valid = cell()
         for change in ({"management_outcome": "rejected"}, {"management_outcome": None},
                        {"inference_receipt": {}}, {"resource_result": {}}, {"state": "STOPPED"},

@@ -12,6 +12,7 @@ import hashlib
 import json
 import math
 import re
+import stat
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -28,6 +29,9 @@ SOURCES = (*LEGACY_SOURCES, 'aios_resources/__init__.py', 'aios_resources/proc.p
            'aios_resources/backend.py', 'aios_resources/runtime.py', 'aios_management/resources.py')
 MANAGED_SOURCES = (*SOURCES, 'aios-backend.py', 'aios_backend/__init__.py', 'aios_backend/protocol.py',
                    'aios_backend/client.py', 'aios_backend/daemon.py', 'aios_agent/backend_binding.py')
+SPACE_SOURCES = (*MANAGED_SOURCES, 'aios_agent/space.py')
+TASK_SOURCES = (*SPACE_SOURCES, 'aios_agent/async_inference.py', 'aios_agent/request_state.py',
+                'aios_agent/request_runtime.py')
 IDENTITY = ("source_id", "source_instance", "service_start_generation")
 FIXED_FILES = {"start.json", "config.json", "warmup.json", "source.json", "management.json", "events.jsonl"}
 RECEIPT_LINKS = {"source_before", "source_after", "authority_instance", "binding_generation"}
@@ -101,6 +105,21 @@ def record(path: Path) -> dict:
     return decode(read(path))
 
 
+def _verify_export_inventory(directory: Path, name: str, files: set[str]) -> None:
+    """Regular-file exports may omit an empty optional evidence directory."""
+    root = directory / name
+    expected = {path for path in files if path.startswith(name + '/')}
+    try:
+        mode = root.lstat().st_mode
+    except FileNotFoundError:
+        require(not expected, name + '_directory')
+        return
+    # lstat also exposes dangling symlinks; only an actual directory is valid.
+    require(stat.S_ISDIR(mode), name + '_directory')
+    require({name + '/' + child.name for child in root.iterdir()} == expected,
+            'unaccounted_' + name)
+
+
 def timestamp(value: object) -> datetime:
     require(type(value) is str and len(value) <= 64, "timestamp")
     result = datetime.fromisoformat(value)
@@ -122,9 +141,9 @@ def source_semantics(left: dict, right: dict) -> bool:
         k: v for k, v in right.items() if k != "completed_requests"}
 
 
-def verify_execution_receipt(value: dict, binding: dict, config: dict, require_live: bool) -> None:
+def verify_execution_receipt(value: dict, binding: dict, config: dict, require_live: bool, expected_schema: int = 2) -> None:
     from execution_output_contract import validate_execution
-    require(type(value['schema_version']) is int and value['schema_version'] == 2, 'execution_receipt_schema')
+    require(type(value['schema_version']) is int and value['schema_version'] == expected_schema, 'execution_receipt_schema')
     execution = value['backend_execution']
     if value['outcome'] == 'ERROR':
         require(execution is None, 'failed_execution_success_proof')
@@ -143,13 +162,13 @@ def _verify_run(directory: Path, source_root: Path, require_live: bool) -> dict:
     keys(start, {"schema_version", *IDENTITY, "service_kind", "capture_kind", "started_at",
                  "config_sha256", "source_hashes"}, "agent_start")
     schema = start['schema_version']
-    require(type(schema) is int and schema in (1, 2, 3, 4), "start_schema")
+    require(type(schema) is int and schema in (1, 2, 3, 4, 5, 6), "start_schema")
     for name in ("source_id", "source_instance"):
         identifier(start[name])
     require(integer(start["service_start_generation"], 1) and directory.name == start["source_instance"], "start_identity")
     require(start["service_kind"] == "AI_SERVICE" and start["capture_kind"] in ("live", "fixture"), "start_boundary")
     require(not require_live or start["capture_kind"] == "live", "fixture_not_live")
-    sources = LEGACY_SOURCES if schema == 1 else MANAGED_SOURCES if schema == 4 else SOURCES
+    sources = TASK_SOURCES if schema == 6 else LEGACY_SOURCES if schema == 1 else SPACE_SOURCES if schema in (5, 6) else MANAGED_SOURCES if schema == 4 else SOURCES
     keys(start["source_hashes"], set(sources), "agent_sources")
     for name in sources:
         require(digest(read(source_root / name)) == start["source_hashes"][name], "source_hash:" + name)
@@ -179,12 +198,13 @@ def _verify_run(directory: Path, source_root: Path, require_live: bool) -> dict:
     require(timestamp(result["completed_at"]) >= timestamp(start["started_at"]), "completion_before_start")
     warmup = record(directory / "warmup.json")
     receipt(warmup, purpose="warmup")
+    require(warmup["schema_version"] == (3 if schema in (5, 6) else 2 if schema == 4 else 1), "warmup_receipt_version")
     receipt_config(warmup, config)
     require(warmup["outcome"] == "OK", "warmup_failed")
     require(timestamp(start["started_at"]) <= timestamp(warmup["started_at"])
             <= timestamp(result["completed_at"]), "warmup_outside_run")
     execution_binding = None
-    if schema == 4:
+    if schema in (4, 5, 6):
         execution_binding = record(directory / 'backend-binding.json')
         keys(execution_binding, {'schema_version', 'capture_kind', 'initial_proof', 'descriptor'}, 'execution_binding')
         require(type(execution_binding['schema_version']) is int and execution_binding['schema_version'] == 1
@@ -195,7 +215,7 @@ def _verify_run(directory: Path, source_root: Path, require_live: bool) -> dict:
             validate_backend_proof(execution_binding['initial_proof'], config=config, require_live=require_live)
             require(execution_binding['initial_proof']['descriptor'] == execution_binding['descriptor'], 'execution_binding_descriptor')
         require(start['capture_kind'] != 'live' or execution_binding['descriptor'] is not None, 'execution_binding_missing')
-        verify_execution_receipt(warmup, execution_binding, config, require_live)
+        verify_execution_receipt(warmup, execution_binding, config, require_live, 3 if schema in (5, 6) else 2)
 
     raw_events = read(directory / "events.jsonl")
     require(raw_events.endswith(b"\n"), "events_truncated")
@@ -203,26 +223,33 @@ def _verify_run(directory: Path, source_root: Path, require_live: bool) -> dict:
     require(4 <= len(events) <= 64, "event_count")
     require([row["event"] for row in events[:2]] == ["STARTING", "RUNNING"]
             and [row["event"] for row in events[-2:]] == ["STOPPING", "STOPPED"]
-            and all(row["event"] in (('COMMAND', 'BACKEND_INVALIDATED') if schema == 4 else ('COMMAND',))
+            and all(row["event"] in (('COMMAND', 'BACKEND_INVALIDATED', 'REQUEST', 'REQUEST_RESULT') if schema == 6
+                                    else ('COMMAND', 'BACKEND_INVALIDATED') if schema in (4, 5) else ('COMMAND',))
                     for row in events[2:-2]), "event_lifecycle")
     files, requests, previous_source, previous_snapshot, authority_id = set(FIXED_FILES), [], None, None, None
-    if schema == 4:
+    if schema in (4, 5, 6):
         files.add('backend-binding.json')
     previous_ns = -1
     running_source = None
     request_ids = {warmup["request_id"]}
     resource_results = []
+    space_results, cached_observation = [], None
+    tasks = {}
     for index, event in enumerate(events, 1):
-        keys(event, EVENT_KEYS | ({'resource_file'} if schema >= 2 else set()), "agent_event")
+        keys(event, EVENT_KEYS | ({'resource_file'} if schema >= 2 else set())
+             | ({'space_file'} if schema in (5, 6) else set()) | ({'task_file'} if schema == 6 else set()), "agent_event")
         require(type(event["schema_version"]) is int and event["schema_version"] == schema
                 and event["source_instance"] == start["source_instance"], "event_identity")
         require(type(event["sequence"]) is int and event["sequence"] == index
                 and integer(event["monotonic_ns"]) and event["monotonic_ns"] >= previous_ns, "event_order")
+        prior_event_ns = previous_ns
         previous_ns = event["monotonic_ns"]
         require(event["outcome"] in ("OK", "ERROR") and (event["error"] is None) == (event["outcome"] == "OK"), "event_outcome")
         require(event["error"] is None or type(event["error"]) is str and (event["error"] in ERRORS
                 or schema >= 2 and str(event['action']).startswith('resources-')
                 and re.fullmatch(r'[a-z]+(?:-[a-z]+)*', event['error']) and len(event['error']) <= 64), "event_error")
+        require(schema in (5, 6) or event['error'] not in {'space-invalid', 'space-overflow', 'space-future',
+                                                     'space-source-mismatch', 'space-budget'}, 'legacy_space_error')
         snapshot = event["management_snapshot"]
         validate_snapshot(snapshot)
         require(snapshot["initialized"], "authority_uninitialized")
@@ -265,7 +292,7 @@ def _verify_run(directory: Path, source_root: Path, require_live: bool) -> dict:
                 require(not snapshot["binding_current"], "implicit_start_binding")
                 running_source = source
             elif event['event'] == 'BACKEND_INVALIDATED':
-                require(schema == 4 and execution_binding['descriptor'] is not None and previous_source is not None,
+                require(schema in (4, 5, 6) and execution_binding['descriptor'] is not None and previous_source is not None,
                         'unexpected_backend_invalidation')
                 require(previous_source['model_ready'] and source == {**previous_source, 'model_ready': False,
                         'source_generation': previous_source['source_generation'] + 1}, 'backend_invalidation_source')
@@ -285,18 +312,139 @@ def _verify_run(directory: Path, source_root: Path, require_live: bool) -> dict:
                     require(source == previous_source and snapshot == previous_snapshot, "terminal_snapshot_changed")
             previous_source = source
 
+        if schema == 6 and event['event'] in ('REQUEST', 'REQUEST_RESULT'):
+            from task_output_contract import validate_task_envelope, validate_task_transition
+            from newagent_output_contract import same
+            require(event['action'] is None and event['space_file'] is None, 'task_event_action')
+            task_path = event['task_file']
+            require(type(task_path) is str and re.fullmatch(r'tasks/[0-9a-f-]{36}/[0-9]{2}\.json', task_path),
+                    'task_path')
+            task_id, revision_text = task_path.split('/')[1:]
+            identifier(task_id)
+            if event['event'] == 'REQUEST':
+                require(task_path not in files and event['outcome'] == 'OK' and event['error'] is None
+                        and event['receipt_file'] is None and event['resource_file'] is None
+                        and same(source, source_before_event) and same(snapshot, previous_snapshot),
+                        'task_revision_event')
+                envelope = record(directory / task_path)
+                validate_task_envelope(envelope, config=config, require_live=require_live)
+                row = envelope['request_state']
+                require(row['request_id'] == task_id and revision_text == format(row['revision'], '02d') + '.json'
+                        and row['updated_ns'] <= event['monotonic_ns'], 'task_revision_path')
+                entry = tasks.get(task_id)
+                if entry is None:
+                    require(len(tasks) < 16 and task_id not in request_ids
+                            and not any(item['result_file'] is None for item in tasks.values()), 'task_admission_busy')
+                    require(row['revision'] == 1 and row['phase'] == 'ACCEPTED'
+                            and row['accepted_ns'] == row['updated_ns'] and row['backend_stop'] is None
+                            and same(row['source_before'], source) and same(row['management_before'], snapshot)
+                            and prior_event_ns <= row['accepted_ns'], 'task_admission')
+                    require(execution_binding is not None and execution_binding['descriptor'] is not None
+                            and same(row['backend_expected']['descriptor'], execution_binding['descriptor']),
+                            'task_admission_backend')
+                    context = row['space_context']
+                    require(prior_event_ns <= context['checked_monotonic_ns'], 'task_space_check_order')
+                    if cached_observation is None:
+                        require(prior_event_ns <= context['observation']['observed_monotonic_ns'],
+                                'task_space_initial_observation')
+                        cached_observation = context['observation']
+                    require(same(context['observation'], cached_observation), 'task_space_cached_observation')
+                    entry = {'revisions': [], 'paths': [], 'result_file': None}
+                    tasks[task_id] = entry
+                    request_ids.add(task_id)
+                else:
+                    previous = entry['revisions'][-1]
+                    validate_task_transition(previous['request_state'], row)
+                    require(same(previous['receipt_template'], envelope['receipt_template']), 'task_template_rewrite')
+                    if previous['worker_progress'] is not None and previous['worker_progress']['done']:
+                        require(row['phase'] == 'FINISHED'
+                                and same(previous['worker_progress'], envelope['worker_progress']), 'task_terminal_progress_rewrite')
+                    if previous['backend_observation'] is not None:
+                        require(same(previous['backend_observation'], envelope['backend_observation']),
+                                'task_backend_observation_rewrite')
+                entry['revisions'].append(envelope)
+                entry['paths'].append(task_path)
+                files.add(task_path)
+            else:
+                require(task_id in tasks, 'task_result_without_admission')
+                entry = tasks[task_id]
+                row = entry['revisions'][-1]['request_state']
+                require(entry['result_file'] is None and task_path == entry['paths'][-1]
+                        and row['phase'] == 'FINISHED', 'task_result_once')
+                before = row['source_before']
+                expected_source = dict(source_before_event)
+                if row['model_outcome'] == 'ANSWERED':
+                    expected_source['completed_requests'] += 1
+                elif row['model_outcome'] == 'UNKNOWN' and expected_source['model_ready']:
+                    expected_source.update(model_ready=False, source_generation=expected_source['source_generation'] + 1)
+                require(same(source, expected_source)
+                        and source_before_event['completed_requests'] == before['completed_requests'],
+                        'task_result_source')
+                require(same(snapshot['current_source'], source)
+                        and all(same(snapshot[key], previous_snapshot[key]) for key in
+                            ('parent', 'canonical', 'binding', 'retired_instances')), 'task_result_management')
+                if not source['model_ready']:
+                    require(not snapshot['source_trusted'] and not snapshot['binding_confirmed']
+                            and snapshot['discovered_source'] is None, 'task_result_invalidated')
+                else:
+                    require(all(same(snapshot[key], previous_snapshot[key]) for key in
+                        ('source_trusted', 'binding_confirmed', 'discovered_source')), 'task_result_binding')
+                receipt_path = event['receipt_file']
+                require((receipt_path is None) == (row['model_outcome'] == 'NOT_STARTED'), 'task_result_receipt_missing')
+                item = None
+                if receipt_path is not None:
+                    require(receipt_path == 'requests/' + task_id + '.json' and receipt_path not in files,
+                            'task_result_receipt_path')
+                    item = record(directory / receipt_path)
+                    require(set(item) == set(row['inference_receipt']) | RECEIPT_LINKS
+                            and same({key: item[key] for key in row['inference_receipt']}, row['inference_receipt']),
+                            'task_result_receipt')
+                    require(same(item['source_before'], before) and same(item['source_after'], source)
+                            and item['authority_instance'] == row['management_before']['authority_instance']
+                            and same(item['binding_generation'], row['management_before']['binding']['generation']),
+                            'task_result_admission')
+                    require(timestamp(start['started_at']) <= timestamp(item['started_at']) <= timestamp(result['completed_at']),
+                            'task_receipt_outside_run')
+                    require(event['outcome'] == item['outcome'] and event['error'] == item['error'], 'task_result_outcome')
+                    files.add(receipt_path)
+                    requests.append(item)
+                else:
+                    require(event['outcome'] == 'OK' and event['error'] is None and event['resource_file'] is None,
+                            'task_not_started_result')
+                resource_path = event['resource_file']
+                if resource_path is not None:
+                    from resource_output_contract import validate_resource_result
+                    require(resource_path == 'resources/' + task_id + '.json' and resource_path not in files,
+                            'task_resource_path')
+                    resource = record(directory / resource_path)
+                    validate_resource_result(resource, source=source, snapshot=snapshot, receipt=item,
+                                             config=config, require_live=require_live)
+                    require(resource['action'] == 'request' and resource['capture_kind'] == start['capture_kind'],
+                            'task_resource_join')
+                    files.add(resource_path)
+                    resource_results.append(resource)
+                entry['result_file'] = task_path
+            previous_snapshot = snapshot
+            continue
+        require(event.get('task_file') is None, 'unexpected_task_file')
         if event["event"] != "COMMAND":
             require(event["action"] is None and event["outcome"] ==
                     ('ERROR' if event['event'] == 'BACKEND_INVALIDATED' else 'OK'), "lifecycle_action")
-            require(event.get('resource_file') is None, 'lifecycle_resource')
+            require(event.get('resource_file') is None and event.get('space_file') is None, 'lifecycle_resource')
         else:
             action = event["action"]
+            require(schema != 6 or not any(entry['result_file'] is None for entry in tasks.values()),
+                    'task_busy_mutation')
+            require(schema != 6 or action != 'ask', 'task_sync_ask')
             allowed = ('room-discover', 'room-bind', 'room-reconcile', 'ask')
             if schema >= 2:
                 allowed += ('resources-link', 'resources-status', 'resources-sample')
             if schema >= 3:
                 allowed += ('cell-activate', 'cell-deactivate')
+            if schema in (5, 6):
+                allowed += ('space',)
             require(action in allowed, "event_action")
+            require(action == 'space' or event.get('space_file') is None, 'unexpected_space_file')
             require(source["lifecycle_state"] == "active", "command_after_exit")
             item = None
             if action == "ask" and event["receipt_file"] is not None:
@@ -308,9 +456,10 @@ def _verify_run(directory: Path, source_root: Path, require_live: bool) -> dict:
                 require(RECEIPT_LINKS <= item.keys(), "receipt_links")
                 base = {k: v for k, v in item.items() if k not in RECEIPT_LINKS}
                 receipt(base, purpose="user")
+                require(base["schema_version"] == (3 if schema in (5, 6) else 2 if schema == 4 else 1), "user_receipt_version")
                 receipt_config(base, config)
-                if schema == 4:
-                    verify_execution_receipt(base, execution_binding, config, require_live)
+                if schema in (4, 5, 6):
+                    verify_execution_receipt(base, execution_binding, config, require_live, 3 if schema in (5, 6) else 2)
                 require(item["request_id"] not in request_ids and path == "requests/" + item["request_id"] + ".json", "request_identity")
                 request_ids.add(item["request_id"])
                 for linked in (item["source_before"], item["source_after"]):
@@ -332,9 +481,38 @@ def _verify_run(directory: Path, source_root: Path, require_live: bool) -> dict:
                             and after["completed_requests"] == before["completed_requests"], "request_failure_state")
                 require(timestamp(start["started_at"]) <= timestamp(base["started_at"])
                         <= timestamp(result["completed_at"]), "request_outside_run")
+                if schema in (5, 6):
+                    from space_output_contract import validate_packet
+                    context = item['space_context']
+                    validate_packet(context, source=before, snapshot=previous_snapshot,
+                                    model_id=config['model_id'], now_ns=event['monotonic_ns'])
+                    require(prior_event_ns <= context['checked_monotonic_ns'], 'space_check_order')
+                    if cached_observation is None:
+                        require(prior_event_ns <= context['observation']['observed_monotonic_ns'], 'space_initial_observation')
+                        cached_observation = context['observation']
+                    require(context['observation'] == cached_observation, 'space_cached_observation')
                 requests.append(item)
             elif action == "ask":
                 require(event["outcome"] == "ERROR" and source == source_before_event, "ask_missing_receipt")
+            elif action == 'space':
+                from space_output_contract import validate_packet
+                require(event['outcome'] == 'OK' and event['receipt_file'] is None
+                        and event.get('resource_file') is None and source == source_before_event,
+                        'space_changed_producer')
+                require(snapshot == previous_snapshot, 'space_changed_management')
+                space_path = event['space_file']
+                require(type(space_path) is str and re.fullmatch(r'spaces/[0-9a-f-]{36}\.json', space_path)
+                        and space_path not in files, 'space_path')
+                identifier(Path(space_path).stem)
+                context = record(directory / space_path)
+                validate_packet(context, source=source, snapshot=snapshot,
+                                model_id=config['model_id'], now_ns=event['monotonic_ns'])
+                require(prior_event_ns <= context['observation']['observed_monotonic_ns'], 'space_refresh')
+                if cached_observation is not None:
+                    require(cached_observation['observation_id'] != context['observation']['observation_id'], 'space_not_refreshed')
+                cached_observation = context['observation']
+                files.add(space_path)
+                space_results.append(context)
             elif action.startswith('cell-'):
                 require(event['receipt_file'] is None and event.get('resource_file') is None
                         and source == source_before_event, 'cell_changed_producer')
@@ -393,22 +571,29 @@ def _verify_run(directory: Path, source_root: Path, require_live: bool) -> dict:
                 parent = int(worker['raw_stat'].rsplit(') ', 1)[1].split()[1])
                 require(parent == running_source['process_id'] and worker['uid'] == proof['peer_uid'], 'execution_main_worker')
     keys(result["files"], files, "result_files")
+    require(schema != 6 or len(files) <= 256, 'task_file_count')
     for name in files:
         require(digest(read(directory / name)) == result["files"][name], "artifact_hash:" + name)
-    request_root = directory / "requests"
-    if request_root.exists():
-        require(request_root.is_dir() and not request_root.is_symlink(), "requests_directory")
-        require({"requests/" + p.name for p in request_root.iterdir()} == {p for p in files if p.startswith('requests/')}, "unaccounted_requests")
-    resource_root = directory / 'resources'
+    _verify_export_inventory(directory, 'requests', files)
     if schema >= 2:
-        require(resource_root.is_dir() and not resource_root.is_symlink(), 'resources_directory')
-        require({'resources/' + p.name for p in resource_root.iterdir()} == {p for p in files if p.startswith('resources/')},
-                'unaccounted_resources')
+        _verify_export_inventory(directory, 'resources', files)
+    if schema in (5, 6):
+        _verify_export_inventory(directory, 'spaces', files)
+    if schema == 6:
+        require(all(entry['result_file'] is not None and entry['revisions'][-1]['request_state']['phase'] == 'FINISHED'
+                    for entry in tasks.values()), 'task_unfinished_run')
+        _verify_export_inventory(directory, 'tasks', {'tasks/' + key for key in tasks})
+        for task_id, entry in tasks.items():
+            task_root = directory / 'tasks' / task_id
+            require(not task_root.is_symlink() and task_root.is_dir(), 'task_directory')
+            require({path.name for path in task_root.iterdir()} == {Path(path).name for path in entry['paths']},
+                    'unaccounted_task_revisions')
     return {"outcome": "PASS", "reasons": [], "state": "STOPPED", "source_record": previous_source,
             "management_snapshot": previous_snapshot, "running_source": running_source,
             "capture_kind": start["capture_kind"], "requests": requests, "config": config,
             "events": events, "warmup": warmup, 'resource_results': resource_results,
-            'execution_binding': execution_binding,
+            'execution_binding': execution_binding, **({'space_results': space_results} if schema in (5, 6) else {}),
+            **({'tasks': tasks} if schema == 6 else {}),
             "process_exit_verified": False, "model_bytes_verified": False}
 
 
@@ -468,7 +653,7 @@ def verify_agent_runs(directory: Path, *, source_root: Path | None = None, requi
                 require(previous["source_record"]["source_instance"] in retired, "missing_retired_instance")
         latest = record(directory / "latest.json")
         agent_result({"name": "agent", "args": ["status"], "outcome": latest["outcome"], "result": latest},
-                     {1: 3, 2: 4, 3: 5, 4: 6}.get(latest['schema_version'], 0))
+                     {1: 3, 2: 4, 3: 5, 4: 6, 5: 8, 6: 10}.get(latest['schema_version'], 0))
         require(latest["state"] == "STOPPED" and latest["source_record"] == runs[-1]["source_record"]
                 and latest["management_snapshot"] == runs[-1]["management_snapshot"], "state_latest")
         exported = record(directory / "management.json")
@@ -610,14 +795,14 @@ def verify_stop(directory: Path) -> dict:
     require(not stderr and digest(stdout) == execution["stdout_sha256"] and digest(stderr) == execution["stderr_sha256"], "stop_output")
     stopped = decode(stdout)
     agent_result({"name": "agent", "args": ["stop"], "outcome": stopped["outcome"], "result": stopped},
-                 {1: 3, 2: 4, 3: 5, 4: 6}.get(stopped['schema_version'], 0), require_live=True)
+                 {1: 3, 2: 4, 3: 5, 4: 6, 5: 8, 6: 10}.get(stopped['schema_version'], 0), require_live=True)
     require(stopped["outcome"] == "OK" and stopped["state"] in ("ABSENT", "STOPPED"), "stop_receipt")
     return stopped
 
 
 def verify_interactive(directory: Path, *, source_root: Path | None = None, require_shutdown: bool = True,
                        resource_smoke: bool = False, cell_smoke: bool = False, backend_smoke: bool = False,
-                       recovery_smoke: bool = False) -> dict:
+                       recovery_smoke: bool = False, space_smoke: bool = False, task_smoke: bool = False) -> dict:
     """Verify a user-driven model-enabled console, even when MAIN is unused.
 
     Starting the model backend does not mean the MAIN daemon was started. An
@@ -628,12 +813,17 @@ def verify_interactive(directory: Path, *, source_root: Path | None = None, requ
         from verify_console import verify_execution
 
         source_root = source_root or directory / "runtime-source"
-        require(sum((resource_smoke, cell_smoke, backend_smoke, recovery_smoke)) <= 1, 'conflicting_workflows')
+        require(sum((resource_smoke, cell_smoke, backend_smoke, recovery_smoke, space_smoke, task_smoke)) <= 1, 'conflicting_workflows')
         console = verify_execution(directory, source_root=source_root, require_live=True,
-                                   require_internet=resource_smoke or cell_smoke or backend_smoke)
+                                   require_internet=resource_smoke or cell_smoke or backend_smoke or space_smoke or task_smoke)
         require(console["outcome"] == "PASS", "console_execution:" + json.dumps(console.get("reasons", [])))
         execution = record(directory / "execution.json")
-        if recovery_smoke:
+        if task_smoke:
+            require(execution["mode"] == "smoke" and type(execution["requested_commands"]) is list, "task_smoke_execution")
+        elif space_smoke:
+            from space_output_contract import SPACE_COMMANDS
+            require(execution['mode'] == 'smoke' and execution['requested_commands'] == SPACE_COMMANDS, 'space_commands')
+        elif recovery_smoke:
             from backend_recovery_contract import RECOVERY_COMMANDS
             require(execution['mode'] == 'smoke' and execution['requested_commands'] == RECOVERY_COMMANDS, 'recovery_commands')
         elif backend_smoke:
@@ -650,18 +840,22 @@ def verify_interactive(directory: Path, *, source_root: Path | None = None, requ
         if recovery_smoke:
             from resource_output_contract import validate_sample
             require(events[0]['event'] == 'START' and type(events[0]['schema_version']) is int
-                    and events[0]['schema_version'] == 7, 'recovery_session_schema')
+                    and events[0]['schema_version'] in (7, 8, 9, 10), 'recovery_session_schema')
+            # verify_execution already joins each version to its exact retained
+            # source set. These schemas carry the same raw CLI owner sample.
+            require(events[0]['data']['runtime_version'] == {7: '0.7.0', 8: '0.8.0', 9: '0.9.0', 10: '0.10.0'}[events[0]['schema_version']],
+                    'recovery_session_version')
             sample = events[0]['data']['source_process']
             validate_sample(sample)
             recovery_owner = {key: sample[key] for key in ('host_boot_id', 'process_id', 'process_start_ticks', 'uid')}
         backend = verify_model(directory, config, allow_recovered=recovery_smoke, recovery_owner=recovery_owner,
-                               require_start_control=not recovery_smoke)
+                               require_start_control=not (recovery_smoke or task_smoke))
         stopped = verify_stop(directory)
         agent_dir = directory / "agent"
         require(agent_dir.is_dir() and not agent_dir.is_symlink(), "state_directory")
         all_commands = [event['data'] for event in events if event['event'] == 'COMMAND']
         commands = [event["data"] for event in events if event["event"] == "COMMAND"
-                    and event["data"]["name"] in ("agent", "room", "ask", 'resources', 'cell')]
+                    and event["data"]["name"] in ("agent", "room", "ask", 'resources', 'cell', 'space', 'task')]
         runs = []
         if stopped["state"] == "ABSENT":
             require(not list(agent_dir.iterdir()), "absent_store_not_empty")
@@ -686,16 +880,25 @@ def verify_interactive(directory: Path, *, source_root: Path | None = None, requ
                 if item is not None:
                     require(receipts.get(item["request_id"]) == item, "interactive_receipt")
                     observed.append(item["request_id"])
-            require(len(observed) == len(set(observed)) and set(observed) == set(receipts), "interactive_request_accounting")
-            resource_values = [value for run in runs for value in run['resource_results']]
-            shown_resources = [command['result']['resource_result'] for command in commands
-                               if command['result'].get('resource_result') is not None]
-            require(shown_resources == resource_values, 'resource_delivery_accounting')
+            if events[0]['schema_version'] == 10:
+                verify_task_delivery(runs, commands, events[0]['data']['source_process'])
+                verify_task_backends(directory, runs, backend)
+                require(not observed, 'task_top_receipt')
+            else:
+                require(len(observed) == len(set(observed)) and set(observed) == set(receipts), "interactive_request_accounting")
+            resource_values = verify_resource_delivery(commands, runs, task_protocol=events[0]['schema_version'] == 10)
             if any(value['relation'] is not None for value in resource_values):
                 verify_resource_attestations(directory, resource_values, backend)
             verify_cell_delivery(commands, runs)
+            verify_space_delivery(commands, runs)
             verify_execution_backends(runs, backend)
         verify_backend_delivery(all_commands, backend)
+        task_result = None
+        if task_smoke:
+            from task_smoke_contract import verify_task_workflow
+            task_result = verify_task_workflow(directory, all_commands, runs, backend)
+        if space_smoke:
+            verify_space_workflow(all_commands, runs, backend)
         if backend_smoke:
             verify_backend_workflow(all_commands, runs, backend)
         if recovery_smoke:
@@ -730,6 +933,11 @@ def verify_interactive(directory: Path, *, source_root: Path | None = None, requ
                 'backend_workflow_verified': backend_smoke,
                 'backend_service_runs': len(backend.get('managed_runs', [])),
                 "vm_shutdown_verified": require_shutdown}
+        if task_smoke:
+            value.update(task_result)
+        if space_smoke:
+            value.update(space_workflow_verified=True, space_current_answers=2, space_stale_answers=1,
+                         space_target_rejections=3, space_observations=2)
         if recovery_smoke:
             recovered = [run for run in backend['managed_runs'] if run['state'] == 'RECOVERED']
             value.update(recovery_workflow_verified=True, backend_recovered_runs=len(recovered),
@@ -737,6 +945,64 @@ def verify_interactive(directory: Path, *, source_root: Path | None = None, requ
         return value
     except (OSError, ValueError, TypeError, KeyError, AttributeError, RecursionError) as exc:
         return {"outcome": "FAIL", "reasons": [str(exc) or type(exc).__name__]}
+
+
+def verify_space_delivery(commands: list, runs: list) -> None:
+    """Every explicit observation is delivered once; implicit ask capture stays in its receipt."""
+    shown = [c['result']['space_context'] for c in commands if c['result'].get('space_context') is not None]
+    retained = [value for run in runs for value in run.get('space_results', [])]
+    require(shown == retained, 'space_delivery_accounting')
+    displayed_events = [c['result'] for c in commands if c['name'] == 'space' and c['outcome'] == 'OK']
+    recorded_events = [e for run in runs for e in run['events'] if e['event'] == 'COMMAND' and e['action'] == 'space']
+    require(len(displayed_events) == len(recorded_events), 'space_delivery_count')
+    for value, event in zip(displayed_events, recorded_events):
+        require(all(value[key] == event[key] for key in ('action', 'outcome', 'error', 'source_record', 'management_snapshot')),
+                'space_delivery_transition')
+
+
+def verify_space_workflow(commands: list, runs: list, backend: dict) -> None:
+    """Fixed actual-model lane, separate from generic arbitrary-question acceptance."""
+    from space_output_contract import SPACE_COMMANDS, TTL_NS, validate_model_answer
+    require([' '.join([c['name'], *c['args']]) for c in commands] == SPACE_COMMANDS, 'space_command_sequence')
+    require(len(runs) == 2 and [len(run['requests']) for run in runs] == [1, 2]
+            and len(backend.get('managed_runs', [])) == 2, 'space_run_counts')
+    require(all(c['result'].get('schema_version') == 5 for c in commands
+                if c['name'] in ('agent', 'room', 'cell', 'ask', 'space')), 'space_protocol')
+    errors = {7: 'model-not-ready', 12: 'orphan', 14: 'stale'}
+    for index, command in enumerate(commands):
+        require(command['outcome'] == ('ERROR' if index in errors else 'OK'), 'space_command_outcomes')
+        if index in errors:
+            value = command['result']
+            require(value['error'] == errors[index] and value['inference_receipt'] is None
+                    and value['resource_result'] is None and value['space_context'] is None,
+                    'space_target_rejection')
+    answers = [commands[i]['result']['inference_receipt'] for i in (4, 18, 20)]
+    require(answers == [item for run in runs for item in run['requests']], 'space_answer_accounting')
+    for receipt in answers:
+        validate_model_answer(receipt)
+        require(receipt['backend_execution'] is not None, 'space_missing_model_execution')
+    require([item['space_context']['validity'] for item in answers] == ['CURRENT', 'CURRENT', 'STALE'], 'space_answer_validity')
+    for item in answers[:2]:
+        facts = item['space_context']['observation']['normalized']
+        require(all(facts[key] is not None for key in ('working_directory', 'logical_cpu_count', 'memory_total_bytes')),
+                'space_current_facts_missing')
+    require([len(run.get('space_results', [])) for run in runs] == [0, 2], 'space_explicit_observations')
+    observations = runs[1]['space_results']
+    require(answers[1]['space_context']['observation'] == observations[0]['observation']
+            and answers[2]['space_context']['observation'] == observations[1]['observation'], 'space_refresh_delivery')
+    require(answers[2]['space_context']['checked_monotonic_ns'] - observations[1]['checked_monotonic_ns'] > TTL_NS,
+            'space_wait_not_observed')
+    require(commands[6]['result']['source_record']['model_ready'] is False
+            and not commands[6]['result']['management_snapshot']['binding_current'], 'space_backend_invalidated')
+    require(runs[0]['execution_binding']['descriptor'] != runs[1]['execution_binding']['descriptor']
+            and runs[0]['running_source']['source_instance'] != runs[1]['running_source']['source_instance'],
+            'space_backend_replacement')
+    snapshots = [commands[i]['result']['management_snapshot'] for i in (10, 11, 13, 16)]
+    require([v['parent']['generation'] for v in snapshots] == [1, 2, 3, 3]
+            and [v['parent']['active'] for v in snapshots] == [True, False, True, True]
+            and [v['binding_current'] for v in snapshots] == [True, False, False, True], 'space_cell_recovery')
+    require(snapshots[0]['binding']['generation'] == 2 and snapshots[3]['binding']['generation'] == 3,
+            'space_explicit_rebind')
 
 
 def verify_cell_delivery(commands: list, runs: list) -> None:
@@ -843,6 +1109,163 @@ def verify_execution_backends(runs: list, backend: dict) -> None:
                 evidence = receipt['backend_execution']
                 require(first <= evidence['before']['read_start_ns'] <= evidence['after']['read_end_ns'] <= last,
                         'execution_outside_backend_lifetime')
+
+
+def verify_resource_delivery(commands, runs, *, task_protocol=False):
+    """Join displayed direct commands; Task request resources remain in run evidence."""
+    values = [value for run in runs for value in run['resource_results']]
+    expected = [value for value in values if not task_protocol or value['action'] != 'request']
+    shown = [command['result']['resource_result'] for command in commands
+             if command['result'].get('resource_result') is not None]
+    require(shown == expected, 'resource_delivery_accounting')
+    return values
+
+
+def verify_task_delivery(runs, commands, source_process):
+    """Repeated queries must deliver a saved revision of this CLI's admission."""
+    from newagent_output_contract import same
+    from resource_output_contract import validate_sample
+    tasks = {key: entry for run in runs for key, entry in run.get('tasks', {}).items()}
+    require(len(tasks) == sum(len(run.get('tasks', {})) for run in runs), 'task_cross_run_id')
+    if tasks:
+        validate_sample(source_process)
+        owner = {key: source_process[key] for key in ('host_boot_id', 'process_id', 'process_start_ticks', 'uid')}
+        for entry in tasks.values():
+            row = entry['revisions'][0]['request_state']
+            require(same(row['owner'], owner) and source_process['read_end_ns'] <= row['accepted_ns'], 'task_console_owner')
+    admitted, seen_revisions, confirmed_main = [], {}, None
+    possible_cancels, observed_cancels = set(), set()
+
+    def uncertain_cancel(request_id, main):
+        if request_id not in tasks or request_id not in admitted:
+            return
+        if request_id not in possible_cancels:
+            initial = tasks[request_id]['revisions'][0]['request_state']
+            require(main is not None and all(same(main[key], initial['source_before'][key])
+                    for key in ('source_id', 'source_instance', 'service_start_generation',
+                                'host_boot_id', 'process_id')), 'task_uncertain_cancel_instance')
+        possible_cancels.add(request_id)
+
+    for command in commands:
+        value = command['result']
+        prior_main = confirmed_main
+        if value.get('source_record') is not None:
+            confirmed_main = (value['source_record'] if value.get('state') == 'RUNNING'
+                              and value.get('outcome') == 'OK' else None)
+        elif (command['name'] == 'agent' and value.get('schema_version') == 6
+              and command['args'] and command['args'][0] in ('start', 'restart', 'stop')):
+            confirmed_main = None
+        if command['name'] not in ('ask', 'task'):
+            continue
+        if value.get('schema_version') != 6:
+            # The preceding exact console gate validates these local errors.
+            # They carry no request UUID and cannot account for an admission.
+            require(command['outcome'] == 'ERROR' and set(value) == {'error', 'message'}
+                    and value['error'] in ('invalid_arguments', 'interrupted'), 'task_delivery_protocol')
+            if (value['error'] == 'interrupted' and command['name'] == 'task'
+                    and len(command['args']) == 2 and command['args'][0] == 'cancel'):
+                # A console interrupt may hide the reply after MAIN persisted
+                # cancellation; the command still retains its exact Task UUID.
+                uncertain_cancel(command['args'][1], prior_main)
+            continue
+        row = value.get('task')
+        request_id = value['request_id']
+        if command['name'] == 'ask' and request_id in tasks:
+            initial = tasks[request_id]['revisions'][0]['request_state']
+            require(initial['user_prompt'] == ' '.join(command['args']), 'task_delivery_admission')
+            require(request_id not in admitted, 'task_admission_accounting')
+            if value['outcome'] == 'ERROR':
+                # A lost reply is not a refusal. The independently saved
+                # admission, exact prompt and CLI owner establish which task
+                # the caller can inspect using its retained UUID.
+                require(row is None and value.get('error') in ('rpc-timeout', 'protocol-error', 'state-io'),
+                        'task_refusal_admitted')
+                require(prior_main is not None and all(same(prior_main[key], initial['source_before'][key])
+                        for key in ('source_id', 'source_instance', 'service_start_generation',
+                                    'host_boot_id', 'process_id')), 'task_uncertain_main_instance')
+            admitted.append(request_id)
+        if row is None:
+            require(value['outcome'] == 'ERROR', 'task_delivery_missing')
+            if (command['name'] == 'task' and command['args'][0] == 'cancel'
+                    and value.get('error') in ('rpc-timeout', 'protocol-error', 'state-io')):
+                uncertain_cancel(request_id, prior_main)
+            continue
+        task_id = row['request_id']
+        require(task_id in tasks and task_id in admitted, 'task_delivery_orphan')
+        require(any(same(row, item['request_state']) for item in tasks[task_id]['revisions']), 'task_delivery_revision')
+        require(row['revision'] >= seen_revisions.get(task_id, 0), 'task_delivery_rollback')
+        seen_revisions[task_id] = row['revision']
+        if command['name'] == 'task' and command['args'][0] == 'cancel':
+            control = value.get('task_control')
+            require(type(control) is dict, 'task_cancel_delivery_control')
+            outcome = control['cancel_outcome']
+            if outcome == 'ACCEPTED':
+                require(task_id not in observed_cancels, 'task_cancel_duplicate_acceptance')
+                possible_cancels.add(task_id)
+            elif outcome == 'ALREADY_REQUESTED':
+                require(task_id in possible_cancels, 'task_cancel_missing_admission')
+            else:
+                require(outcome == 'ALREADY_TERMINAL' and row['phase'] == 'FINISHED'
+                        and row['model_outcome'] != 'UNKNOWN', 'task_cancel_terminal_outcome')
+        if row['cancel_requested_ns'] is not None:
+            require(task_id in possible_cancels, 'task_cancel_missing_admission')
+            observed_cancels.add(task_id)
+        if command['name'] == 'ask' and value['outcome'] == 'OK':
+            require(row['revision'] == 1 and row['phase'] == 'ACCEPTED'
+                    and row['user_prompt'] == ' '.join(command['args']), 'task_delivery_admission')
+    require(len(admitted) == len(set(admitted)) and set(admitted) == set(tasks), 'task_admission_accounting')
+    require(all(entry['revisions'][-1]['request_state']['cancel_requested_ns'] is None
+                or task_id in possible_cancels for task_id, entry in tasks.items()), 'task_cancel_missing_admission')
+
+
+def verify_task_backends(directory, runs, backend):
+    """Join Task backend snapshots to verified lifetimes and immutable run bytes."""
+    from newagent_output_contract import same
+    from task_output_contract import validate_task_backend_observation
+    task_entries = [entry for run in runs for entry in run.get('tasks', {}).values()]
+    if not task_entries:
+        return
+    require('managed_runs' in backend, 'task_backend_lifetimes')
+    def encoded(value):
+        return (json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False, allow_nan=False) + '\n').encode()
+    for entry in task_entries:
+        initial = entry['revisions'][0]['request_state']
+        expected = initial['backend_expected']
+        selected = [model for model in backend['managed_runs'] if same(model['descriptor'], expected['descriptor'])
+                    and same(model['events'][2]['service_record'], expected['service_record'])]
+        require(len(selected) == 1, 'task_backend_admission')
+        model = selected[0]
+        ended = (model['recovery']['recovery']['started_monotonic_ns'] if model['state'] == 'RECOVERED'
+                 else model['events'][3]['monotonic_ns'])
+        require(model['events'][2]['monotonic_ns'] <= initial['accepted_ns'] <= ended,
+                'task_backend_admission_time')
+        for envelope in entry['revisions']:
+            observation = envelope['backend_observation']
+            if observation is None:
+                continue
+            row = envelope['request_state']
+            validate_task_backend_observation(observation, row)
+            evidence = observation['evidence']
+            require(model['state'] == 'STOPPED' and same(observation['backend_stop']['service_record'], model['service_record'])
+                    and model['events'][-1]['monotonic_ns'] <= evidence['read_start_ns'], 'task_backend_terminal')
+            run_directory = Path(directory) / 'model-backend/runs' / expected['service_record']['instance_id']
+            for name, metadata in evidence['artifacts'].items():
+                raw = read(run_directory / name)
+                require(metadata == {'sha256': digest(raw), 'bytes': len(raw)}
+                        and digest(raw) == model['result']['files'][name], 'task_backend_artifact')
+            raw_result = read(run_directory / 'result.json')
+            require(evidence['terminal_files']['result.json'] == {'sha256': digest(raw_result), 'bytes': len(raw_result)},
+                    'task_backend_result_file')
+            # Mutable registry/latest may since describe a newer generation.
+            # Their exact canonical payloads are derived from this verified
+            # lifetime; the immutable run result/files are read above.
+            registry = {'schema_version': 1, **{key: expected['service_record'][key]
+                        for key in ('service_id', 'instance_id', 'start_generation')}}
+            latest = {**observation['backend_stop'], 'action': 'status'}
+            for name, payload in (('registry.json', registry), ('latest.json', latest)):
+                raw = encoded(payload)
+                require(evidence['terminal_files'][name] == {'sha256': digest(raw), 'bytes': len(raw)},
+                        'task_backend_terminal_snapshot')
 
 
 def verify_backend_delivery(commands: list, backend: dict) -> None:
@@ -987,9 +1410,19 @@ def main() -> int:
     parser.add_argument('--cells', action='store_true', help='Verify Cell lifecycle, explicit rebind, actual model and Internet')
     parser.add_argument('--backends', action='store_true', help='Verify backend replacement, explicit MAIN recovery, actual model and Internet')
     parser.add_argument('--recovery-smoke', action='store_true', help='Verify explicit owned backend recovery after a recorded supervisor crash')
+    parser.add_argument("--space", action="store_true", help="Verify actual CURRENT/UNKNOWN/STALE context consumption and target rejection")
+    parser.add_argument("--tasks", action="store_true", help="Verify the real model Task answer and cancellation scenario")
     parser.add_argument("--allow-fixture", action="store_true")
     args = parser.parse_args()
-    if args.recovery_smoke:
+    if args.tasks:
+        require(not any((args.run, args.workflow, args.interactive, args.resources, args.cells, args.backends,
+                         args.recovery_smoke, args.space, args.allow_fixture)), "tasks_live_only")
+        result = verify_interactive(args.artifact_dir, source_root=args.source_root, task_smoke=True)
+    elif args.space:
+        require(not any((args.run, args.workflow, args.interactive, args.resources, args.cells, args.backends,
+                         args.recovery_smoke, args.allow_fixture)), 'space_live_only')
+        result = verify_interactive(args.artifact_dir, source_root=args.source_root, space_smoke=True)
+    elif args.recovery_smoke:
         require(not any((args.run, args.workflow, args.interactive, args.resources, args.cells, args.backends, args.allow_fixture)),
                 'recovery_live_only')
         result = verify_interactive(args.artifact_dir, source_root=args.source_root, recovery_smoke=True)

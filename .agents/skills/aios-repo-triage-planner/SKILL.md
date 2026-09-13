@@ -10,7 +10,9 @@ Turn broad direction into the nearest useful, verifiable step.
 ## Orient before proposing
 
 1. Inspect branch, status, recent history, and repository layout.
-2. Read `PROJECT.md`, `CLAUDE.md`, `docs/meta/codex_handoff_tips_ko.md`, and the
+2. Read `docs/meta/aios_product_direction_ko.md` for product purpose and
+   `docs/meta/document_freshness_registry_ko.md` for review scope and recheck triggers.
+   Read `PROJECT.md`, `CLAUDE.md`, `docs/meta/codex_handoff_tips_ko.md`, and the
    current roadmap for the affected domain.
    For Kernel Room, Cell, Node, NodeBit, Axis Gate, Orbit, or attribution work,
    also read `docs/kernel-room/kernel_room_management_model_ko.md` and use
@@ -42,6 +44,12 @@ For Kernel Room-related planning, classify the candidate as `DIRECT`,
 `$aios-kernel-room-architecture`. Do not let process, scheduler, driver, or
 security hardening become the product milestone merely because it is the most
 implementation-ready work. Name the management milestone it supports.
+
+The single global queue is `docs/meta/minimal_io_and_maturity_workflow_ko.md`.
+Record the user/agent experience improved by the slice separately from its
+management classification. Workspace context and interactive control can consume
+existing interfaces; they need not wait for all native or authorization milestones.
+Actual new privileged actions still require their own ownership/authorization gates.
 
 ## Plan in evidence order
 

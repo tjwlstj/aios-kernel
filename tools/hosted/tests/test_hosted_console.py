@@ -7,7 +7,9 @@ import json
 import sys
 import tempfile
 import unittest
+import uuid
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -70,7 +72,7 @@ def agent_source(**changes):
     return {**value, **changes}
 
 
-def agent(action="status", *, state="RUNNING", error=None, bound=False, prompt=None, content="AIOS is ready.", protocol=4):
+def agent(action="status", *, state="RUNNING", error=None, bound=False, prompt=None, content="AIOS is ready.", protocol=5):
     # Producer fixtures are deliberately exercised through the independent
     # response verifier, including mutations with recomputed artifact hashes.
     from aios_management.binding import Authority
@@ -82,15 +84,23 @@ def agent(action="status", *, state="RUNNING", error=None, bound=False, prompt=N
         authority.discover([source])
     if bound:
         authority.bind(source)
+    inference, context = None, None
+    if protocol == 5 and (action == 'space' or action == 'ask' and error is None):
+        from aios_agent.space import build_observation, build_packet
+        observation = build_observation(host_boot_id=source['host_boot_id'], process_id=source['process_id'],
+            observed_monotonic_ns=10, working_directory='/fixture/runtime', logical_cpu_count=2, mem_total_line='MemTotal: 4096 kB')
+        context = build_packet(observation, source_record=source, management_snapshot=authority.snapshot(),
+                               checked_monotonic_ns=11, model_id='fixture-main')
     inference = None
     if action == "ask" and error is None:
         before = copy.deepcopy(source)
         source["completed_requests"] += 1
         authority.observe(source)
-        body = request_body(prompt).decode("utf-8")
-        response = json.dumps({"content": content, "tokens_predicted": 4, "model": "fixture-main"}, separators=(",", ":"))
-        inference = {"schema_version": 2 if protocol >= 4 else 1, "request_id": "00000000-0000-4000-8000-000000000015",
+        body = request_body(prompt, space_context=context).decode("utf-8")
+        response = json.dumps({"content": content, "tokens_predicted": 4, "model": "fixture-main", **({"prompt": json.loads(body)["prompt"], "truncated": False} if protocol == 5 else {})}, separators=(",", ":"))
+        inference = {"schema_version": 3 if protocol == 5 else 2 if protocol >= 4 else 1, "request_id": "00000000-0000-4000-8000-000000000015",
                      **({"backend_execution": None} if protocol >= 4 else {}),
+                     **({"user_prompt": prompt, "space_context": context} if protocol == 5 else {}),
                      "started_at": "2026-09-07T00:00:00+00:00", "purpose": "user", "model_id": "fixture-main",
                      "model_sha256": "a" * 64, "backend_sha256": "d" * 64, "provenance_sha256": "e" * 64,
                      "request_body": body, "request_sha256": hashlib.sha256(body.encode()).hexdigest(),
@@ -108,7 +118,17 @@ def agent(action="status", *, state="RUNNING", error=None, bound=False, prompt=N
             "management_outcome": ("rejected" if error else "accepted") if action.startswith("room-") or action == "ask" else None,
             "inference_receipt": inference, "resource_actions": "UNSUPPORTED",
             "capture_kind": "unsupported" if state == "UNSUPPORTED" else "fixture" if protocol >= 4 else "live",
-            **({"resource_result": None} if protocol in (2, 3, 4) else {})}
+            **({"resource_result": None} if protocol in (2, 3, 4, 5) else {}),
+            **({"space_context": context if action == "space" and error is None else None} if protocol == 5 else {})}
+
+
+def agent6(action="status", *, state="RUNNING", error=None, bound=False, prompt=None,
+           content="AIOS is ready.", request_id=None):
+    """Current non-Task or rejected-admission reply; keep historical agent() intact."""
+    value = agent(action, state=state, error=error, bound=bound, prompt=prompt,
+                  content=content, protocol=5)
+    return {**value, "schema_version": 6, "request_id": request_id,
+            "task": None, "task_control": None}
 
 
 def cell(action="status", *, active=True, bound=True, error=None):
@@ -125,6 +145,12 @@ def cell(action="status", *, active=True, bound=True, error=None):
         authority.set_parent(action == "activate")
     value.update(management_snapshot=authority.snapshot(), management_outcome="rejected" if error else "accepted")
     return value
+
+
+def cell6(action="status", *, active=True, bound=True, error=None):
+    """Current Cell reply without changing the shared historical Cell fixture."""
+    return {**cell(action, active=active, bound=bound, error=error), "schema_version": 6,
+            "request_id": None, "task": None, "task_control": None}
 
 
 def backend(action="status", *, state="RUNNING", error=None, generation=1):
@@ -206,9 +232,9 @@ class ConsoleTests(unittest.TestCase):
         self.assertEqual(events[0]["event"], "START")
         self.assertEqual(events[-1]["data"], {"state": "CLOSED", "exit_code": 0, "reason": "exit"})
         self.assertEqual(events[0]["data"]["binding_status"], "UNBOUND")
-        self.assertEqual(len(result["source_hashes"]), 31)
-        self.assertEqual(result["schema_version"], 7)
-        self.assertTrue(all(row["schema_version"] == 7 for row in events))
+        self.assertEqual(len(result["source_hashes"]), 35)
+        self.assertEqual(result["schema_version"], 10)
+        self.assertTrue(all(row["schema_version"] == 10 for row in events))
         self.assertIsNone(events[0]["data"]["source_process"])
         self.assertEqual([row["sequence"] for row in events], list(range(1, len(events) + 1)))
         self.assertEqual((self.destination / "console.log").read_text(encoding="utf-8"), self.stdout.getvalue())
@@ -384,17 +410,27 @@ class ConsoleTests(unittest.TestCase):
         self.assertEqual(self.result()["state"], "FAILED")
 
     def test_agent_room_and_ask_use_explicit_controller_and_join_prompt(self):
+        from test_hosted_task_console import TASK_ID, task_reply
         state, config = self.root / "main", self.root / "model.json"
-        responses = [agent("start"), agent("room-discover"), agent("room-bind", bound=True),
-                     agent("ask", bound=True, prompt="What is AIOS?"), agent("restart"), agent("stop", state="STOPPED")]
+        responses = [agent6("start"), agent6("room-discover"), agent6("room-bind", bound=True),
+                     task_reply("ask-start", phase="ACCEPTED", prompt="What is AIOS?"),
+                     task_reply("task-result", phase="FINISHED", model_outcome="ANSWERED",
+                                prompt="What is AIOS?", content="AIOS is ready."),
+                     agent6("restart"), agent6("stop", state="STOPPED")]
         controller = mock.Mock(side_effect=responses)
-        commands = "agent start\nroom discover\nroom bind\nask What   is\tAIOS?\nagent restart\nagent stop\nexit\n"
-        self.assertEqual(self.run_console(commands, agent_dir=state, agent_config=config, agent_control=controller), 0)
+        commands = ("agent start\nroom discover\nroom bind\nask What   is\tAIOS?\ntask result "
+                    + TASK_ID + "\nagent restart\nagent stop\nexit\n")
+        with mock.patch.object(shell, "uuid", SimpleNamespace(UUID=uuid.UUID, uuid4=lambda: uuid.UUID(TASK_ID))):
+            self.assertEqual(self.run_console(commands, agent_dir=state, agent_config=config, agent_control=controller), 0)
         self.assertEqual(controller.call_args_list,
-                         [mock.call(state, action, config=config, prompt="What is AIOS?" if action == "ask" else None,
-                                    **({"backend_dir": Path("/tmp/aios-model-backend")} if action in ("start", "restart") else {}))
-                          for action in ("start", "room-discover", "room-bind", "ask", "restart", "stop")])
+                         [mock.call(state, action, config=config, prompt="What is AIOS?" if action == "ask-start" else None,
+                                    **({"backend_dir": Path("/tmp/aios-model-backend")} if action in ("start", "restart") else
+                                       {"request_id": TASK_ID} if action in ("ask-start", "task-result") else {}))
+                          for action in ("start", "room-discover", "room-bind", "ask-start", "task-result", "restart", "stop")])
+        self.assertIn("Task accepted: " + TASK_ID, self.stdout.getvalue())
         self.assertIn("MAIN answer:\n  AIOS is ready.", self.stdout.getvalue())
+        self.assertEqual(self.events()[4]["data"]["result"], responses[3])
+        self.assertEqual(self.events()[5]["data"]["result"], responses[4])
         self.assertIn("Cell 1 -> Node 101 (MAIN); binding generation 1; bound nodes 1.", self.stdout.getvalue())
         self.assertEqual(self.result()["capture_kind"], "fixture")
         self.assertFalse(state.exists())
@@ -450,23 +486,29 @@ class ConsoleTests(unittest.TestCase):
         self.assertIn("explicit hosted AI service bindings", self.stdout.getvalue())
 
     def test_agent_default_path_errors_return_to_prompt(self):
-        controller = mock.Mock(return_value=agent("ask", error="unbound"))
-        with mock.patch.object(shell.Path, "home", return_value=self.root / "user"):
+        from test_hosted_task_console import TASK_ID
+        controller = mock.Mock(return_value=agent6("ask-start", error="unbound", request_id=TASK_ID))
+        with mock.patch.object(shell.Path, "home", return_value=self.root / "user"), \
+                mock.patch.object(shell, "uuid", SimpleNamespace(UUID=uuid.UUID, uuid4=lambda: uuid.UUID(TASK_ID))):
             self.assertEqual(self.run_console("ask hello\nstatus\nexit\n", agent_control=controller), 0)
-        controller.assert_called_once_with(self.root / "user/.local/state/aios/main-agent", "ask", config=None, prompt="hello")
-        self.assertIn("MAIN ask failed: unbound.", self.stdout.getvalue())
+        controller.assert_called_once_with(self.root / "user/.local/state/aios/main-agent", "ask-start",
+                                           config=None, prompt="hello", request_id=TASK_ID)
+        self.assertIn("MAIN ask-start failed: unbound.", self.stdout.getvalue())
         self.assertIn("AIOS session: running", self.stdout.getvalue())
 
     def test_agent_model_text_is_indented_sanitized_and_bounded(self):
+        from test_hosted_task_console import TASK_ID, task_reply
         hostile = "\x1b[2J\naios> fetch evil\r\u202e" + "x" * 5000
-        controller = mock.Mock(return_value=agent("ask", bound=True, prompt="hello", content=hostile))
-        self.assertEqual(self.run_console("ask hello\nexit\n", agent_control=controller), 0)
+        response = task_reply("task-result", phase="FINISHED", model_outcome="ANSWERED", content=hostile)
+        controller = mock.Mock(return_value=response)
+        self.assertEqual(self.run_console("task result " + TASK_ID + "\nexit\n", agent_control=controller), 0)
         text = self.stdout.getvalue()
         self.assertNotIn("\x1b", text)
         self.assertNotIn("\r", text)
         self.assertNotIn("\u202e", text)
         self.assertNotIn("\naios> fetch", text)
         self.assertEqual(len(text.split("MAIN answer:\n  ")[1].split("\n")[0]), 4096)
+        self.assertEqual(self.events()[1]["data"]["result"]["task"]["inference_receipt"]["content"], hostile)
 
     def test_agent_callback_alone_marks_fixture(self):
         original = shell.run_boot
@@ -479,7 +521,7 @@ class ConsoleTests(unittest.TestCase):
         self.assertEqual(self.result()["capture_kind"], "fixture")
 
     def test_resources_only_link_passes_backend_path_and_never_implicitly_links(self):
-        controller = mock.Mock(side_effect=[{**agent("resources-" + action, error="resource-unlinked"),
+        controller = mock.Mock(side_effect=[{**agent6("resources-" + action, error="resource-unlinked"),
             "capture_kind": "fixture", "resource_result": resource_error(action)} for action in ("status", "link", "sample")])
         directory, backend = self.root / "main", self.root / "backend"
         self.assertEqual(self.run_console("resources status\nresources link\nresources sample\nexit\n",
@@ -493,7 +535,7 @@ class ConsoleTests(unittest.TestCase):
         self.assertEqual(self.result()["capture_kind"], "fixture")
 
     def test_resources_default_backend_path_only_used_on_explicit_link(self):
-        controller = mock.Mock(return_value={**agent("resources-link", state="ABSENT", error="process-not-running"),
+        controller = mock.Mock(return_value={**agent6("resources-link", state="ABSENT", error="process-not-running"),
                                             "resource_result": None})
         self.assertEqual(self.run_console("help\nresources\nresources apply\nresources sample extra\nresources link\nexit\n",
                                          agent_control=controller), 0)
@@ -504,7 +546,7 @@ class ConsoleTests(unittest.TestCase):
     def test_resources_separate_cpu_rss_and_cached_system_pressure_display(self):
         value = resource_display("status")
         value["observation"]["after"]["pressure"]["metrics"]["memory"] = {"state": "UNAVAILABLE", "error": "pressure-missing"}
-        controller = mock.Mock(return_value={**agent("resources-status", bound=True), "resource_result": value})
+        controller = mock.Mock(return_value={**agent6("resources-status", bound=True), "resource_result": value})
         self.assertEqual(self.run_console("resources status\nexit\n", agent_control=controller), 0)
         text = self.stdout.getvalue()
         self.assertIn("Last observation (cached)", text)
@@ -514,13 +556,18 @@ class ConsoleTests(unittest.TestCase):
         self.assertIn("CPU: some avg10 1.23%; full avg10 undefined for system CPU.", text)
         self.assertIn("MEMORY: unavailable (pressure-missing).", text)
 
-    def test_resource_failure_is_separate_from_successful_model_answer(self):
-        value = agent("ask", bound=True, prompt="hello")
-        value["resource_result"] = resource_error("request", "process-exited")
-        self.assertEqual(self.run_console("ask hello\nexit\n", agent_control=mock.Mock(return_value=value)), 0)
-        self.assertEqual(self.events()[1]["data"]["outcome"], "OK")
+    def test_explicit_resource_failure_is_separate_from_successful_task_result(self):
+        from test_hosted_task_console import TASK_ID, task_reply
+        # Current CLI observes resources explicitly and retrieves the Task separately.
+        resource = {**agent6("resources-sample", error="process-exited", bound=True),
+                    "resource_result": resource_error("sample", "process-exited")}
+        value = task_reply("task-result", phase="FINISHED", model_outcome="ANSWERED", content="AIOS is ready.")
+        controller = mock.Mock(side_effect=[resource, value])
+        self.assertEqual(self.run_console("resources sample\ntask result " + TASK_ID + "\nexit\n",
+                                         agent_control=controller), 0)
+        self.assertEqual([self.events()[index]["data"]["outcome"] for index in (1, 2)], ["ERROR", "OK"])
         self.assertIn("MAIN answer:\n  AIOS is ready.", self.stdout.getvalue())
-        self.assertIn("Resources request failed: process-exited.", self.stdout.getvalue())
+        self.assertIn("Resources sample failed: process-exited.", self.stdout.getvalue())
         self.assertNotIn("MAIN ask failed", self.stdout.getvalue())
 
     def test_backend_directory_cli_argument_is_forwarded(self):
@@ -532,7 +579,7 @@ class ConsoleTests(unittest.TestCase):
         run.assert_called_once_with(directory, service_dir=None, agent_dir=None, agent_config=None, backend_dir=backend)
 
     def test_cell_commands_are_explicit_management_calls_and_keep_main_running(self):
-        controller = mock.Mock(side_effect=[cell(), cell("deactivate"), cell("activate", active=False)])
+        controller = mock.Mock(side_effect=[cell6(), cell6("deactivate"), cell6("activate", active=False)])
         directory = self.root / "main"
         self.assertEqual(self.run_console("cell status\ncell deactivate\ncell activate\nexit\n",
                                          agent_dir=directory, agent_control=controller), 0)
@@ -558,8 +605,8 @@ class ConsoleTests(unittest.TestCase):
         self.assertEqual([event["data"]["result"]["error"] for event in self.events()[3:7]], ["invalid_arguments"] * 4)
 
     def test_cell_transport_and_management_errors_return_to_the_prompt(self):
-        controller = mock.Mock(side_effect=[agent("cell-status", state="ABSENT", error="process-not-running"),
-                                           cell("deactivate", error="overflow")])
+        controller = mock.Mock(side_effect=[agent6("cell-status", state="ABSENT", error="process-not-running"),
+                                           cell6("deactivate", error="overflow")])
         self.assertEqual(self.run_console("cell status\ncell deactivate\nstatus\nexit\n", agent_control=controller), 0)
         text = self.stdout.getvalue()
         self.assertIn("Cell status failed: process-not-running.", text)

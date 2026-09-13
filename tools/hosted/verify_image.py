@@ -11,7 +11,7 @@ import uuid
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from urllib.parse import urlsplit
 
-from verify_console import MANAGED_SOURCES, verify_session
+from verify_console import MANAGED_SOURCES, SPACE_SOURCES, source_version, verify_session
 from verify_service import verify_service_runs
 from newagent_output_contract import agent_result
 from backend_output_contract import validate_backend_result
@@ -40,6 +40,8 @@ MODEL_ID = 'aios-qwen3-0.6b-q8_0'
 MANIFEST_KEYS = {'schema_version', 'image_id', 'profile', 'substrate', 'iso', 'runtime_files',
     'boot_config_sha256', 'installation_files', 'source_only', 'repository_import', 'redistribution_approved'}
 IMAGE_SOURCES = set(MANAGED_SOURCES) | {'aios-image-boot.py', 'aios_boot/__init__.py', 'aios_boot/archive.py', 'aios_boot/runtime.py'}
+SPACE_IMAGE_SOURCES = IMAGE_SOURCES | (set(SPACE_SOURCES) - set(MANAGED_SOURCES))
+SPACE_SESSION_VERSIONS = {'0.8.0': 8, '0.9.0': 9}
 ISO = {'url': 'https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/x86_64/alpine-virt-3.24.1-x86_64.iso',
        'version': '3.24.1', 'sha256': 'e73a6241bd5f3c5c2d4d38c02cc52c378c0415a7c888bd292066bf36e0f41a39'}
 INSTALLATION_FILES = {'packages.txt', 'kernel.txt', 'installed-runtime.json', 'kernel-image.sha256',
@@ -261,6 +263,21 @@ def validate_model_installation(directory, manifest):
     return config
 
 
+def image_session_schema(directory, manifest):
+    """Bind the space-family session to its hashed literal source version."""
+    if set(manifest['runtime_files']) != SPACE_IMAGE_SOURCES:
+        return None
+    raw = read(directory / 'runtime-source/aios_console/__init__.py')
+    require(digest(raw) == manifest['runtime_files']['aios_console/__init__.py'],
+            'runtime_source_hash:aios_console/__init__.py')
+    try:
+        version = source_version(raw)
+    except ValueError as exc:
+        raise ValueError('image_contract:space_runtime_version') from exc
+    require(version in SPACE_SESSION_VERSIONS, 'space_runtime_version')
+    return SPACE_SESSION_VERSIONS[version]
+
+
 def validate_manifest(directory):
     value = record(directory / 'image-manifest.json')
     model = value.get('profile') == 'local-model-cli'
@@ -280,12 +297,13 @@ def validate_manifest(directory):
             and url.path.endswith('/alpine-virt-' + value['iso']['version'] + '-x86_64.iso'), 'iso_source')
     sha(value['boot_config_sha256'])
     hashes = value['runtime_files']
-    require(type(hashes) is dict and hashes.keys() == IMAGE_SOURCES, 'runtime_source_set')
+    require(type(hashes) is dict and set(hashes) in (IMAGE_SOURCES, SPACE_IMAGE_SOURCES), 'runtime_source_set')
     for name, expected in hashes.items():
         relative(name)
         require(name.endswith('.py'), 'runtime_source_type')
         sha(expected)
         require(digest(read(directory / 'runtime-source' / name)) == expected, 'runtime_source_hash:' + name)
+    image_session_schema(directory, value)
     installed = value['installation_files']
     require(type(installed) is dict and (model or installed.keys() == INSTALLATION_FILES), 'installation_set')
     for name, expected in installed.items():
@@ -388,7 +406,9 @@ def validate_archive(path, manifest, previous, *, require_live=True):
         keys(row, {'service', 'action', 'outcome', 'error', 'response'}, 'cleanup_keys')
         require(row['action'] == 'stop' and row['outcome'] == 'OK' and row['error'] is None, 'cleanup_failed')
     main, backend, service = [row['response'] for row in cleanup]
-    agent_result({'name': 'agent', 'args': ['stop'], 'outcome': 'OK', 'result': main}, 6, require_live=require_live)
+    # CLI8 and CLI9 share MAIN5; cleanup has no console-rendering differences.
+    agent_result({'name': 'agent', 'args': ['stop'], 'outcome': 'OK', 'result': main},
+                 8 if set(manifest['runtime_files']) == SPACE_IMAGE_SOURCES else 6, require_live=require_live)
     validate_backend_result(backend, action='stop', require_live=require_live)
     if not model:
         require(main['state'] == backend['state'] == 'ABSENT' and main['source_record'] is None
@@ -468,12 +488,12 @@ def validate_running_kernel(directory, files):
 
 def validate_model_actors(path, directory, manifest, boot, worker, commands, source_root, *, require_live=True, allow_recovered=False):
     """Join displayed responses to independently verified boot-local actors."""
-    from verify_agent import verify_agent_runs, verify_execution_backends, verify_backend_delivery, verify_cell_delivery
+    from verify_agent import verify_agent_runs, verify_execution_backends, verify_backend_delivery, verify_cell_delivery, verify_space_delivery
     from verify_backend import verify_backend_runs
     from resource_output_contract import validate_resource_result
     config = record(directory / 'installation-files/model-config.json')
     main_stop, backend_stop = [row['response'] for row in worker['cleanup'][:2]]
-    main_commands = [row for row in commands if row['name'] in ('agent', 'room', 'cell', 'resources', 'ask')]
+    main_commands = [row for row in commands if row['name'] in ('agent', 'room', 'cell', 'resources', 'ask', 'space')]
     runs, backend_runs = [], []
     if backend_stop['state'] == 'ABSENT':
         require(not any(name.startswith('backend/') for name in archive_files(path)), 'absent_backend_store')
@@ -486,7 +506,7 @@ def validate_model_actors(path, directory, manifest, boot, worker, commands, sou
             from resource_output_contract import validate_sample
             session_events = [decode(line) for line in read(path / 'session/session.events.jsonl').splitlines()]
             first = session_events[0]
-            require(first['event'] == 'START' and type(first['schema_version']) is int and first['schema_version'] == 7,
+            require(first['event'] == 'START' and type(first['schema_version']) is int and first['schema_version'] in (7, 8, 9),
                     'model_recovery_session_schema')
             sample = first['data']['source_process']
             validate_sample(sample)
@@ -552,6 +572,7 @@ def validate_model_actors(path, directory, manifest, boot, worker, commands, sou
             require(all(event[key] == value[key] for key in ('action', 'outcome', 'error', 'source_record', 'management_snapshot')),
                     'model_command_delivery')
         verify_cell_delivery(main_commands, runs)
+        verify_space_delivery(main_commands, runs)
         resources = [value for run in runs for value in run['resource_results']]
         require(resources == [row['result']['resource_result'] for row in main_commands
                               if row['result'].get('resource_result') is not None], 'model_resource_delivery')
@@ -616,6 +637,7 @@ def validate_model_workflow(commands, actors, *, offline):
 def _verify_image(directory, source_root, require_live, verify_disk):
     require(not (directory / 'fault-instrumentation.json').exists(), 'expected_fault_image_not_normal')
     manifest = validate_manifest(directory)
+    expected_session_schema = image_session_schema(directory, manifest)
     model = is_model(manifest)
     source_root = source_root or directory / 'runtime-source'
     for name, expected in manifest['runtime_files'].items():
@@ -650,6 +672,9 @@ def _verify_image(directory, source_root, require_live, verify_disk):
         require(result['session_id'] not in sessions, 'reused_session')
         validate_archive_manifest(files, boot['boot_id'])
         validate_serial(raw, boot, result, record(path / 'archive/poweroff.json'), files['session/console.log'], result['worker_exit_code'])
+        session_schema = decode(files['session/session.events.jsonl'].splitlines()[0])['schema_version']
+        require(session_schema == expected_session_schema if expected_session_schema is not None
+                else session_schema not in (8, 9), 'image_session_source_version')
         console = verify_session(path / 'archive/session', source_root=source_root, require_live=require_live,
             require_internet=launch['network'] == 'online', process_exit=0, expected_commands=launch['stdin_commands'],
             expected_session_id=result['session_id'])
@@ -721,6 +746,7 @@ def _verify_operating_boot(image_root, boot_dir, source_root=None, *, require_li
     try:
         directory, path = Path(image_root), Path(boot_dir)
         manifest = validate_manifest(directory)
+        expected_session_schema = image_session_schema(directory, manifest)
         model = is_model(manifest)
         source_root = Path(source_root) if source_root else directory / 'runtime-source'
         for name, expected in manifest['runtime_files'].items():
@@ -745,6 +771,9 @@ def _verify_operating_boot(image_root, boot_dir, source_root=None, *, require_li
         require(header['boot_id'] == boot['boot_id'], 'export_boot')
         validate_archive_manifest(files, boot['boot_id'])
         validate_serial(raw, boot, result, record(path / 'archive/poweroff.json'), files['session/console.log'], result['worker_exit_code'])
+        session_schema = decode(files['session/session.events.jsonl'].splitlines()[0])['schema_version']
+        require(session_schema == expected_session_schema if expected_session_schema is not None
+                else session_schema not in (8, 9), 'image_session_source_version')
         console = verify_session(path / 'archive/session', source_root=source_root, require_live=require_live,
             process_exit=0, expected_commands=launch['stdin_commands'], expected_session_id=result['session_id'])
         require(console['outcome'] == 'PASS', 'console:' + json.dumps(console.get('reasons', [])))
