@@ -2,7 +2,7 @@
 
 > 문서 역할: 사람용 내용 검토·재검토 조건 원장
 > 문서 수명주기: 활성
-> 마지막 내용 검토: 2026-09-13 — v0.10 증거 보존·자기 참조 실증 절차와 전역 큐·mirror 대조
+> 마지막 내용 검토: 2026-09-13 — v0.10·연구 실패 보존·새 schema v2 실제 비교와 전역 큐·mirror 대조
 > 이번 검토 경계: 아래 추가 검토 설명과 해당 행의 범위만 갱신했다. 2026-09-09의 문서 역할 정비·당시 v0.8 소스 대조와 외부 기준일은 보존하며 실제 모델 Task·새 이미지 실행 판정과 구분한다.
 
 이 원장은 **어떤 사실을 어느 문서에서 확인하고, 언제 다시 확인할지**를 관리한다.
@@ -29,15 +29,21 @@ normal 3 episode calibration 선행을 대조했다. 별도 2호출 prompt probe
 rules-02 79파일/6episode/27decision 재생은 PASS, 원본 328개는 불변이다.
 GPT의 공개 피드백 예측 credit 지적과 실제 파일 14 World 재현의 영향 범위를
 대조했다. 이어 validation-02의 134개/132 PASS·2 skip·104.096초, source별 검사 범위와
-grammar probe의 6응답/파일 행동 0·ON 형식/귀속 오류를 확인했다. 최종 validation-03은
+grammar probe의 6응답/파일 행동 0·ON 형식/귀속 오류를 확인했다. 당시 validation-03은
 135개/133 PASS·2 skip·106.369초이며 grammar probe 독립 감사 78파일 PASS도 대조했다.
 calibration-02 ON 재생은 250파일/3episode/28decision/24query PASS지만 모델 목표는
 양쪽 모두 0이다. OFF는 22HTTP 응답 중 마지막 생성 미완료로 FAIL/NOT_EVALUABLE,
 관계 episode 미완료다. 원본 479개 불변·조건 대조 PASS와 별개로 전체 ON/OFF 비교는
 NOT_EVALUABLE이며 효과 비교를 수행하지 않았다. 마지막 실패 응답 포함 비용과 게시 전
 grammar 끝 LF 정리의 byte 경계, 새 코드의 rules-04 독립 재생 PASS를 정본 §6과 대조했다.
-개발 구현은 `PARTIAL`이고 다음 prompt 실험은 PLANNED다. 새 CI terminal·게시 검증과
-장기 목표는 별도이며 외부 연구의 현재 사실을 확인한 것으로 기록하지 않는다.
+이후 ae20 원격 Windows 실패와 경로 수정, b60 CI 7/7 PASS·artifact 감사는 연구 가이드
+§6.4–§6.5에 구분했다. 새 schema v2의 두 prompt 비교와 현재 Windows 191개 중
+188 PASS·권한 조건 3 skip·178.638초, 실제 두 episode·24 HTTP 200·독립 감사 PASS를
+대조했다. 원본 289파일·호출자 19파일·현재 source 14개·trusted consumer 3개는 불변이며,
+두 조건 모두 OBSERVE/SELF 반복·목표 0으로 후보 개선을 관측하지 못했다.
+개발 구현은 `PARTIAL`이고 다음은 원문 진단·기존 GPT의 다음 실험안 검토다.
+새 실험 구현·성과와 새 v2 source의 CI·장기 목표는 별도이며 외부 연구의 현재 사실을
+확인한 것으로 기록하지 않는다.
 
 ## 1. 읽는 방법
 
@@ -80,10 +86,10 @@ grammar 끝 LF 정리의 byte 경계, 새 코드의 rules-04 독립 재생 PASS�
 | [제품 방향](aios_product_direction_ko.md) | 제품 목적·공간·상호작용·성공 기준 정본 | 활성 | 2026-09-13, 기존 목적 유지·v0.10 Task 표면 대조 | 환경 문맥·Task 개발 PARTIAL, 한정 실제 모델 Task PASS, 미완료 범용 상호작용을 구분 | 사용자 목적·성공 기준 변경 | 제품 방향; 운용 계약·전역 큐에 영향 전달 |
 | [통합 작업 진입](integrated_work_guide_ko.md) | 요청 분류·사실 소유자·변경 절차 | 활성 | 2026-09-13, 문맥·Task 계약 소유자 연결 | 저장소 작업 규칙; runtime의 자동 환경 발견·영속 기억 구현 아님 | 작업 규칙·도메인·정본 경로 변경 | 문서 운영; 진입 경로와 스킬 라우팅 대조 |
 | [AGENTS](../../AGENTS.md), [프로젝트 스킬](../../.agents/README.md) | 작업 규칙·도메인별 절차 라우터 | 활성 | 2026-09-09, 제품 목적·전역 큐·신선도 연결 | 작업 규칙과 문서 동기화·triage·관리 구조·Linux 큐레이터 스킬; runtime 상태는 분야 정본에 위임 | 권한·작업 절차·도구·정본 경로 변경 | 저장소 운영; 관련 스킬의 규칙·링크 대조 |
-| [전역 작업흐름](minimal_io_and_maturity_workflow_ko.md) | 유일한 전역 큐·기술축 성숙도 정본 | 활성 | 2026-09-13, 장기 실증의 다섯 단계·첫 pilot과 반복 작업 순서 정렬 | v0.10 한정 PASS와 미완료 image39 보존; 자기 참조 PARTIAL·연구 검사/감사 PASS와 모델 목표 0/OFF 미완료·다음 한정 prompt 비교 분리 | 단계 완료·선행조건·사용자 우선순위 변경 | roadmap; `agent-consumer-next`와 기술축 표 함께 대조 |
-| [자기 참조 연구·실증](self_reference_research_workflow_ko.md) | 실험·beta 이후 기존 GPT 검토·로컬 반영 운영 가이드 | 활성 | 2026-09-13, 승인 절차·sandbox 계약·실패/재생·v2/grammar 감사·ON/OFF 최종 경계 대조 | RESEARCH/PARTIAL; 실패 원본·v2/grammar 감사 PASS·ON 모델 목표 0/OFF 미완료·479파일 불변/전체 비교 NOT_EVALUABLE; 전체 수락 기준은 전역 큐 | 실행·검증 결과, 실험 조건·모델 pin·연구 제안 채택 변경 | 연구·검증; 실제 artifact와 영향 mirror를 대조하고 원본 실패 보존 |
-| [PROJECT](../../PROJECT.md) | 도메인 맵·의존 방향 정본 | 활성 | 2026-09-13, v0.10과 자기 참조 연구의 도메인 책임 대조 | 기존 source별 지원 범위 보존; 연구 driver/검증과 향후 hosted Task runtime 분리 | 파일 이동·새 도메인·의존 경계 변경 | 저장소 구조; 각 도메인 README 연결 |
-| [CLAUDE](../../CLAUDE.md) | 구현 mirror·빌드·저수준 불변식 | 활성 | 2026-09-13, 실제 Task PASS의 stale 부정 정정·장기 실증 mirror 대조 | v0.10 증거와 image39 미완료 보존; 연구 PARTIAL·첫 실패/calibration 무결성/모델 행동 실패 분리 | 명령·공개 계약·gate·구현 상태 변경 | 구현·검증; 변경 사실의 원 소유 가이드 대조 |
+| [전역 작업흐름](minimal_io_and_maturity_workflow_ko.md) | 유일한 전역 큐·기술축 성숙도 정본 | 활성 | 2026-09-13, 장기 다섯 단계 보존·실제 SYSTEM 비교 결과와 다음 원문 진단 정렬 | v0.10 한정 PASS와 미완료 image39 보존; 자기 참조 PARTIAL·기존 실패 보존·새 schema v2 감사 PASS/두 조건 목표 0·다음 원문 진단 분리 | 단계 완료·선행조건·사용자 우선순위 변경 | roadmap; `agent-consumer-next`와 기술축 표 함께 대조 |
+| [자기 참조 연구·실증](self_reference_research_workflow_ko.md) | 실험·beta 이후 기존 GPT 검토·로컬 반영 운영 가이드 | 활성 | 2026-09-13, 승인 절차·schema v2 고정 비교·24응답/289파일 감사·source별 역사 경계 대조 | RESEARCH/PARTIAL; 기존 ON/OFF NOT_EVALUABLE 보존·새 SYSTEM 비교/감사 PASS·두 조건 목표 0/개선 미관측; 전체 수락 기준은 전역 큐 | 실행·검증 결과, 실험 조건·모델 pin·연구 제안 채택 변경 | 연구·검증; 실제 artifact와 영향 mirror를 대조하고 원본 실패 보존 |
+| [PROJECT](../../PROJECT.md) | 도메인 맵·의존 방향 정본 | 활성 | 2026-09-13, v0.10과 schema v2 연구 비교·검증의 도메인 책임 대조 | 기존 source별 지원 범위 보존; 연구 driver/검증과 향후 hosted Task runtime 분리 | 파일 이동·새 도메인·의존 경계 변경 | 저장소 구조; 각 도메인 README 연결 |
+| [CLAUDE](../../CLAUDE.md) | 구현 mirror·빌드·저수준 불변식 | 활성 | 2026-09-13, v0.10 보존·새 SYSTEM 비교 계약/실증과 장기 범위 mirror 대조 | v0.10 증거와 image39 미완료 보존; 연구 PARTIAL·기존 실패/새 비교 무결성 PASS와 두 모델 목표 0 분리 | 명령·공개 계약·gate·구현 상태 변경 | 구현·검증; 변경 사실의 원 소유 가이드 대조 |
 | [인수인계](codex_handoff_tips_ko.md) | 환경·장애 원인·검증 경계 운영 참고 | 활성 | 2026-09-13, v0.10과 최신 증거 정본 진입 대조 | native·hosted 역사 본문 유지; Windows 전체·Linux fixture와 한정 실제 모델 TaskSmoke PASS는 별도 | 실행 환경·명령·재현 조건 변경 | 작업 운영; 실제 현재 상태를 먼저 재확인 |
 | [관리 모델](../kernel-room/kernel_room_management_model_ko.md) | 관리 의미·권위·불변식·분야별 의존 정본 | 활성 | 2026-09-13, 환경 문맥 부재 문구 정정·Task 경계 | 관리 의미·native ABI 유지; hosted Task와 canonical identity 분리 | identity·세대·관계·용어·관리 권위 변경 | Kernel Room; topology·개발 가이드 동기화 |
 | [관리 개발 가이드](../kernel-room/development_guide_ko.md) | 관리 변경·검증 운영 가이드 | 활성 | 2026-09-13, 환경 문맥·Task와 전역 큐 대조 | native 계약·과거 실행 증거 유지; 한정 실제 모델 Task PASS·이미지 미완료 | 개발 절차·검증 경로·관리 계약 변경 | Kernel Room; 작은 변경과 verifier 대조 |

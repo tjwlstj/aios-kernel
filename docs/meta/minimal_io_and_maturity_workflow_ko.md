@@ -1,6 +1,6 @@
 # AIOS 제품 성숙도와 전역 작업흐름
 
-최종 갱신: 2026-09-13 (v0.10 검증 기준선 보존·자기 참조 실증의 장기 완료 기준·연구 기반과 실패 실증·다음 prompt 실험 정렬)
+최종 갱신: 2026-09-13 (v0.10 검증 기준선 보존·자기 참조 실증의 장기 완료 기준·실제 prompt 비교의 목표 미달·다음 원문 진단 정렬)
 
 문서 역할: K/M/C/W/H축의 제품 성숙도와 전역 작업 우선순위 정본. 요청 분류,
 스킬·주제별 정본 선택, 문서 관리와 게시 절차는
@@ -235,25 +235,22 @@ GPT의 제안은 검토 입력이며 실행 판정이나 정본 변경 권위가
    fixture·실제 모델·보존 source 독립 재생 결과는 환경 문맥 가이드 §6.3이 소유한다.
    §6.1·§6.2의 원본 FAIL과 과거 재생·fixture는 보존한다. 두 번째 요청의 서버 도달·
    토큰 생성 중단이나 개별 slot 취소를 입증한 것으로 확대하지 않는다.
-2. **지금 — 관측에서 실제 행동으로 넘어가는 공통 prompt 비교 (`RESEARCH`, 개발 `PARTIAL`):**
-   같은 pinned Qwen의 Windows CPU private sandbox에서 실제 파일 객체·version·
-   응용 owner·관측 channel을 다루는 연구 기반을 검증했다. 첫 pilot의 입력 정답
-   노출에 따른 FAIL/NOT_EVALUABLE과 calibration-01의 모델 목표 완료 0은 보존한다.
-   v2의 공개 근거/예측 미확정 처리를 포함한 최종 Windows 검사는 135개 중
-   133 PASS·권한 조건 2 skip이며, 실제 grammar probe의 정확 언어 독립 감사도 PASS다.
-   calibration-02 ON은 무결성·독립 재생 PASS지만 flat/관계 모델 모두 OBSERVE만
-   반복해 목표 완료 0이다. OFF는 관계 episode 생성 미완료로 FAIL/NOT_EVALUABLE,
-   전체 ON/OFF 효과 비교도 NOT_EVALUABLE이다. 479개 원본 불변과 조건 대조 PASS를
-   모델 성공이나 표현 우열로 바꾸지 않는다. 세부 결과·비용·source는 연구 가이드 §5–§6이 소유한다.
-   **다음 한 실험은 PLANNED:** 같은 Qwen·CPU2·grammar ON·관계 표현·normal·
-   12-step cap·scorer v2·실제 파일 초기 상태를 고정하고, 현재 SYSTEM과 관측 이후
-   SET/재관측/FINISH로 전이하는 규칙을 명확히 쓴 공통 SYSTEM 후보 하나만 비교한다.
-   두 모델 episode, 최대 24 decision으로 한정하고 순서·두 prompt 원문을 사전 보존한다.
-   새 oracle·정답 귀속·추가 action field를 입력에 주지 않는다. 실행 전 예측, 실제 SET
-   효과, 재관측과 확인 후 FINISH, 귀속 정확성, 잘못된 SET·gate 거부를 독립 검증한다.
-   2/2 episode가 끝나지 않으면 비교는 NOT_EVALUABLE이고, 목표가 확인되지 않으면
-   형식 PASS만으로 성공이라 하지 않는다. 이 결과를 보고 다음 실험을 정하며 전체
-   6-case/18-episode 비교를 완료했다고 부르지 않는다.
+2. **지금 — 반복 관측의 원문 진단과 다음 실험안 검토 (`RESEARCH`, 개발 `PARTIAL`):**
+   고정 Qwen·CPU2·grammar ON·relational·normal에서 현재 SYSTEM과 로컬 수정 후보
+   하나를 새 두 episode로 비교했다. 각 12 decision·전체 query invocation 상한 24를
+   지켰고 실제 24 HTTP 200 원문이 보존됐다. 실행 무결성과 289파일의 독립 감사는
+   PASS지만 두 조건 모두 OBSERVE/SELF를 12회 반복해 올바른 행동 1·귀속 0·목표 완료 0,
+   STEP_LIMIT였다. 후보의 행동 개선을 관측하지 못했으며 판정은
+   NOT_EVALUATED_CALIBRATION이다. 고정 순서·각 1회 normal 비교로 광범위한 효과를
+   판정하지 않는다. query 예약·실제 HTTP receipt·미확인 꼬리의 구분과 정확한 source·
+   원문·비용은 연구 가이드 §3.3·§7이 소유한다.
+   현재 source의 Windows 191개 검사는 188 PASS·권한 조건 3 skip이다. 이전 b60의
+   7/7 CI PASS는 그 source의 증거이며 새 v2 source의 CI 완료를 대신하지 않는다.
+   첫 pilot 실패·기존 ON/OFF NOT_EVALUABLE과 135/142개 검사·경로 수정 이력은 보존한다.
+   **다음 한정 작업:** 보존된 원시 응답과 action/attribution 분포, prompt/관측 연쇄를
+   진단하고 기존 GPT 연구 대화의 다음 실험안을 검토한다. 제안은 로컬 source·계약·
+   실패 증거와 대조해 채택·보류·기각하고 한 변경만의 다음 실험을 정한다.
+   새 실험 구현·성과는 PLANNED이며 이번 비교를 전체 6-case/18-episode 완료로 부르지 않는다.
    이것은 application-level sandbox 소유 검사로 canonical K5 principal/ownership/authorize나
    Windows/Linux OS ACL을 구현·증명하지 않는다.
 3. **pilot 이후 실제 사용 증거와 연구 반영:** pilot의 보존 결과를 beta와 기존 GPT

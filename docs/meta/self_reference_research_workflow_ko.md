@@ -2,8 +2,8 @@
 
 > 문서 역할: 연구·실험·외부 검토의 운영 가이드
 > 문서 수명주기: 활성
-> 마지막 내용 검토: 2026-09-13 — scorer v2·grammar 독립 감사·ON/OFF 원본과 평가 불가 판정 대조
-> 관리 모델과의 관계: `RESEARCH`; 개발 구현 `PARTIAL`. 기존 실패 보존, 연구 도구 검증 PASS와 모델 목표 미달·ON/OFF 비교 NOT_EVALUABLE 분리
+> 마지막 내용 검토: 2026-09-13 — schema v2 prompt 비교 구현·실제 24응답·독립 감사와 행동 목표 미달 대조
+> 관리 모델과의 관계: `RESEARCH`; 개발 구현 `PARTIAL`. 기존 실패 보존, 새 prompt 비교 무결성·독립 감사 PASS와 두 조건 목표 0·개선 미관측 분리
 
 이 가이드는 원래 AIOS 구상을 작은 실제 실험으로 검증하고 결과를 다음 개발에 반영하는
 절차를 소유한다. 제품 목적은 [제품 방향 정본](aios_product_direction_ko.md), 유일한
@@ -50,7 +50,7 @@ prompt·외부 기억·adapter·가중치 적응에 대한 조사와 설계 검�
 먼저 분리하고, 가중치를 바꾸는 실험은 데이터·학습 절차·평가 집합·모델 계보를 별도 기록한다.
 GPT가 더 그럴듯한 설명을 하거나 동일 동작을 반복한다는 이유만으로 학습이라고 부르지 않는다.
 
-## 3. 첫 pilot의 현재 계약 — `RESEARCH` / `PARTIAL`
+## 3. 연구 실험의 현재 계약 — `RESEARCH` / `PARTIAL`
 
 개발 도구는 아래 여섯 파일에 있다. 첫 실제 pilot은 측정 문제 발견 후 중단되었으며
 원본 FAIL/NOT_EVALUABLE을 §5에 보존한다. 입력을 정정한 calibration-01은
@@ -58,33 +58,36 @@ GPT가 더 그럴듯한 설명을 하거나 동일 동작을 반복한다는 이
 §5.2가 소유한다. scorer v2의 Windows 검사와 실제 grammar probe 독립 감사는 §6에
 구분한다. calibration-02 ON의 무결성·독립 재생은 PASS지만 모델 목표 완료는 양쪽 모두
 0이며, OFF는 관계 표현 episode 미완료로 FAIL/NOT_EVALUABLE이다. 전체 ON/OFF 효과
-비교는 NOT_EVALUABLE이다. 전체 pilot·Linux Task 통합·제품 목표 완료로 확대하지 않는다.
+비교는 NOT_EVALUABLE이다. 이어 별도 schema v2 prompt 비교를 구현해 새 두 episode를
+실행했다. 무결성·독립 감사는 PASS지만 두 조건 모두 목표 0이며 후보 개선을 관측하지
+못했다(§7). 전체 pilot·Linux Task 통합·제품 목표 완료로 확대하지 않는다.
 연결 확인 한 번의 HTTP 응답은 출력 계약·행동 결과·전체 비교의 통과를 대신하지 않는다.
 GPT가 별도로 제안한 8-case 구성과 별도 evidence 참조 출력은 현재 구현에 포함되지 않는다.
 
 | 책임 | 현재 소스 |
 |---|---|
-| episode 진행·규칙 baseline·실행 전 결정 보존·집계 | [self_reference_lab.py](../../tools/research/self_reference_lab.py) |
+| schema v1 pilot/calibration·schema v2 고정 prompt 비교·실행 전 결정/호출 원장·집계 | [self_reference_lab.py](../../tools/research/self_reference_lab.py) |
 | 실제 파일·응용 owner·관측 channel·선언된 개입 | [self_reference_world.py](../../tools/research/self_reference_world.py) |
 | 4필드 출력 검사·표현 round-trip·독립 채점·episode 증거 재생 | [self_reference_contract.py](../../tools/research/self_reference_contract.py) |
 | pinned backend의 소유·요청·원문·종료 보존 | [self_reference_model.py](../../tools/research/self_reference_model.py) |
 | 보존 묶음·모델 원문·집계의 독립 재생 | [self_reference_replay.py](../../tools/research/self_reference_replay.py) |
 | 고정된 출력 형식 언어; 실제 backend 적용은 별도 확인 | [self_reference_grammar.py](../../tools/research/self_reference_grammar.py) |
 
-Windows CPU에서 같은 `aios-qwen3-0.6b-q8_0`를 두 표현 조건에 사용한다.
+Windows CPU의 모델은 같은 `aios-qwen3-0.6b-q8_0`로 고정한다. schema v1은
+두 표현 조건을, schema v2는 같은 관계 표현에서 두 SYSTEM을 비교한다.
 가중치는 `Qwen3-0.6B-Q8_0.gguf`, backend는 `llamafile-0.10.5-thin.exe`이며
 위 model 모듈의 고정 byte 수·SHA256을 검사한다. CPU thread 2개, GPU 비활성,
 context 2048, 출력 상한 192 token, temperature 0, seed 1, backend slot 1개다.
 `cache_prompt=false`·`stream=false`이며 매 요청의 prompt와 원문을 보존한다.
 ChatML·`/no_think`·완료된 빈 think prefix를 동일하게 적용한다.
 가중치·모델·sampling 변경은 이 첫 비교의 변수가 아니다.
-현재 공통 SYSTEM은 로컬에서 작성한 **판단 순서를 명시한 규칙 prompt**에
+schema v1의 공통 SYSTEM은 로컬에서 작성한 **판단 순서를 명시한 규칙 prompt**에
 v2의 공개 피드백 예측 규칙을 반영한 것이다. 초기 결정 probe·calibration-01·grammar
 probe와 현재 source의 prompt는 각각 보존한다. 특히 grammar probe 뒤 STALE의
 동일 revision/hash 예외 문구를 고쳤으므로 probe와 다음 실행의 SYSTEM이 동일하다고
 가정하지 않는다. 같은 실행에서 두 표현 조건에 제공한 prompt와 source는 design으로 확인한다.
 
-기본 계획은 6개 시나리오 × `rules`·`flat`·`relational`의 **18 episode**다.
+schema v1의 기본 계획은 6개 시나리오 × `rules`·`flat`·`relational`의 **18 episode**다.
 `rules`는 사람이 작성한 명시적 규칙 baseline이고 나머지 두 조건이 실제 같은 모델을
 사용한다. scenario별 두 모델 조건의 실행 순서를 번갈아 둔다. 반복 기본값은 1이며
 `--repetitions`는 1~4를 허용한다. 이는 개발 pilot이며 보류 평가 집합이나 통계적
@@ -165,6 +168,30 @@ Windows/Linux OS ACL을 구현·검증한 것으로 부르지 않는다.
 보유 관측상 허용된 SET이 직전 owner 변경으로 거부될 수 있다. 이때 surprise denial
 하나만으로 이전 판단을 잘못됐다고 하지 않으며, 후속 결정이 거부·재관측을 반영하는지 본다.
 
+### 3.3 schema v2의 고정 SYSTEM 비교
+
+`self_reference_lab.py --prompt-comparison action-progress-v1 --artifacts <새 경로> --cache <고정 cache>`는
+`schema_version=2/stage=prompt-comparison`으로 정확히 두 normal·relational episode를
+실행한다. `baseline` 다음 `action-first-public-feedback-v1`의 고정 순서, 각 1회·
+최대 12 decision이다. 별도 rules episode나 과거 calibration의 control 재사용은 없다.
+모델·CPU2·sampling·grammar ON·최근 이력 3개·행동/채점 의미를 고정하고 SYSTEM 전체만
+바꾼다. `--grammar`·`--calibration`·`--rules-only` 또는 1이 아닌 반복값과의
+조합은 거부한다. 기존 schema v1의 3/18 episode 계획은 유지한다.
+
+이 실험 schema v2는 `public-feedback-prediction-v2` scorer의 버전과 별개다.
+후보는 GPT round04 제안을 로컬에서 수정해 공개 피드백 의미와 FIRST 규칙 우선순위를
+복원한 literal이다. round05는 제공된 두 SYSTEM·계획을 검토했으며 구현·실행의 증거가
+아니다. 두 literal의 고정 hash와 보존 prompt를 profile·episode·decision·HTTP 원문에
+연결한다. 공유 pair ID·동일 최초 사실과 별개로 episode/world/이력은 각각 분리한다.
+
+호출 원장은 모델 wrapper의 preflight에 들어가기 전에 슬롯을 예약하며 **query invocation
+최대 24회**를 강제한다. wrapper는 invocation당 completion을 최대 한 번만 시도하고
+재시도하지 않는다. 따라서 completion 시도도 24회 이하이지만 예약은 전송 증거가 아니다.
+`completion.request.json`은 tokenizer 거부 전에 써질 수 있고 HTTP INVALID도 연결
+실패일 수 있다. 예약/반환, completion HTTP receipt, 확인된 HTTP 200 원문, 끝나지 않거나
+decision에 연결되지 않은 꼬리를 각각 집계한다. 실패 꼬리는 진단으로 보존하고 부분
+episode를 완결된 비교로 합치지 않는다. 실제 첫 실행 결과는 §7에 기록한다.
+
 ## 4. 판정·실행 경로·보존
 
 `score_decision`은 행동·revision·예측·마지막 관측 writer 귀속을 분리해 채점한다.
@@ -179,15 +206,16 @@ event 순서·hash·관측 연쇄·허용 효과·실험 개입·종료·최종 
 
 별도 `self_reference_replay.py --artifacts <보존 경로>`는 생산자·모델·보존 Python을
 실행하지 않고 파일을 읽어 source hash, 실제 요청/응답, 표현 복원, 채점·episode·집계,
-모델 시작/종료 증거를 대조한다. 보존된 contract/replay와 현재 검증기의 source도
-일치해야 한다. 결과는 표준 출력으로 내고 원본 파일을 수정하지 않는다. 생산자 실행이
+모델 시작/종료 증거를 대조한다. 검증에 사용하는 contract/grammar는 보존 source와
+정확한 byte hash가 일치해야 하며, 독립 감사는 사용한 replay consumer hash도 별도로
+결속한다. 결과는 표준 출력으로 내고 원본 파일을 수정하지 않는다. 생산자 실행이
 실패했다면 `NOT_EVALUABLE`이며, 이 경우 부분 episode를 재생했다고 주장하지 않는다.
 
 
 | 판정/지표 | 해석 |
 |---|---|
 | `experiment_integrity` | 계획한 episode 수·source 불변·실행/증거 계약의 완료 여부. PASS여도 모델이 목표를 이루었다는 뜻은 아님 |
-| `hypothesis_verdict` | rules-only는 `NOT_EVALUATED_RULES_ONLY`, 실제 모델 실행 무결성 실패는 `NOT_EVALUABLE`, 온전한 calibration은 `NOT_EVALUATED_CALIBRATION`, 온전한 pilot도 `PILOT_RESULTS_REQUIRE_REVIEW`. 관계 표현 우월성을 자동 판정하지 않음 |
+| `hypothesis_verdict` | rules-only는 `NOT_EVALUATED_RULES_ONLY`, 실제 모델 실행 무결성 실패는 `NOT_EVALUABLE`, 온전한 calibration과 schema v2 prompt 비교는 `NOT_EVALUATED_CALIBRATION`, 온전한 pilot도 `PILOT_RESULTS_REQUIRE_REVIEW`. 관계 표현 우월성을 자동 판정하지 않음 |
 | `observed_goal_completion` | 최종 값 7, FINISH, 보이는 사실에 맞는 마지막 행동과 실제 목표 관측을 함께 확인 |
 | `successful_abstention` | 목표가 없을 때 보이는 사실에 맞게 FINISH한 경우. 권한 철회·관측 중단을 목표 달성으로 바꾸지 않음 |
 | 모델 행동 지표 | 출력 schema·행동/revision·귀속 정확성, 부적절한 SET, gate 거부, 예상/실제 결과 일치, step 상한 종료와 실제 개입 수 |
@@ -212,6 +240,11 @@ episode별 `world/manifest.json`·`world/object.json`·`world/event-*.json`,
 모델 묶음에는 pin/환경·시작/종료·실제 요청/응답 원문과 token/시간이 있다.
 실제 실행 당시 checkout이 dirty였다면 그 사실과 source hash를 남기며 이후 생성될
 commit SHA에서 실행했다고 쓰지 않는다.
+
+schema v2의 성공 재생은 정확한 두 profile과 prompt literal/hash, 최초 pair, 각자 event
+이력, 24회 이하의 슬롯·반환·HTTP 원문·decision 전체 coverage, 실제 점수와 backend
+회수를 대조한다. 미연결 파일이나 호출·미완료/예외를 정상 비교로 숨기지 않는다.
+무결성 PASS여도 두 모델의 행동 목표와 가설 해석은 별도다.
 
 독립 재생은 보존 기록과 판정을 다시 대조한 증거이며 새 모델 실행이 아니다.
 수정 재생으로 원본 실패를 덮어쓰지 않는다. 새 calibration 또는 pilot 결과가 나오면
@@ -504,3 +537,88 @@ source 경계는 남겼다. GPT가 코드 실행·원격 source 조회·해시 �
 ae20 원격 FAIL·과거 실제 모델 원본·독립 consumer hash는 보존한다. §6.3의 게시 전
 grammar 끝 LF 정리와 이번 lab 경로 수정은 별개이고, 수정 source에서 실제 모델을
 재실행했거나 이전 ON/OFF 효과 비교를 완료했다고 주장하지 않는다.
+
+### 6.5 경로 수정 b60의 원격 검증 — 후속 source와 분리
+
+§6.4 뒤 게시한 `b60bbbd61701c6ae9b9c9a6b888c9c7947947a9d`의 CI
+`34754038605`는 **7/7 job terminal PASS**다. 연구 검사는 Windows 142 PASS,
+Linux 142개 중 141 PASS·Windows 8.3 조건 1 skip이다. 양쪽 규칙 묶음은 각각
+80파일·6 episode·27 decision·모델 호출 0의 독립 재생 PASS다.
+`build/self-reference-beta-ci-audit-02/verification.json`과 `supplemental-receipt.json`은
+artifact 9개 존재·ZIP 8개 digest·추출 파일 233개·게시 source 28개의 보존을 확인했다.
+ISO는 metadata·digest·업로드 로그 확인까지이며 로컬 content 재생은 하지 않았다.
+ae20의 실패 원본을 보존하고 이 b60 결과를 아래 새 schema v2 source의 CI PASS로 승계하지 않는다.
+
+## 7. action-progress-v1 실제 SYSTEM 비교 (2026-09-13)
+
+### 7.1 구현·검사·source 경계
+
+이 한정 비교의 schema v2 구현은 §3.3을 따른다. 실행 당시 HEAD는
+`b60bbbd61701c6ae9b9c9a6b888c9c7947947a9d`이며 새 lab/replay·검사 변경이 있는
+dirty checkout이었다. lab은 `de3d8473c26685994f4850e271459badd000e7331ecb9db87a08a1104679eb67`,
+독립 replay는 `2b6ebecde43d3d398504b659ca40ba7ffc13226aa1bc28622b3da274db21d4e2`다.
+model/world/contract/grammar는 b60과 byte 일치한다. §6.3의 과거 grammar 끝 LF 변경,
+§6.4의 경로 수정 source와 이번 실행 hash를 서로 바꾸어 쓰지 않는다.
+실행 이후 만든 로컬 코드 commit `efe22dedac62412e829227917a17162e77c86dbd`의
+연구 runtime·검사 source 14개는 호출자 receipt의 실행 당시 byte hash와 일치한다.
+이 사후 결속을 실행 당시 HEAD나 새 원격 CI의 성공으로 바꾸지 않는다.
+
+`build/self-reference-validation-05/report.json`과 `tests.stderr.txt`은 실제 Windows
+8.3 TEMP에서 **191개 중 188 PASS·link 권한 조건 3 skip, 178.638초, exit 0**을
+기록한다. AST/공백 검사와 연구 runtime·검사 source 14개 불변도 PASS다.
+135개·142개 검사는 각 과거 source의 역사로 남기며 새 실행 결과로 덮지 않는다.
+
+`build/self-reference-prompt-comparison-01/design.json`은 normal·relational·고정
+Qwen·CPU2·grammar ON·context 2048·출력 192·temperature 0·seed 1을 기록한다.
+기존 SYSTEM의 hash는 `283fe9863649ed0b95d07981db9ecf27204ac389efa0866c912ac67cad7e3884`,
+후보는 `cefb9168c4aa5ed20319a9d0b6e25f17db80870a03cb7b8df53e79558784390c`다.
+두 literal과 `build/self-reference-prompt-comparison-proposal-01/proposal.json`,
+`build/research-correspondence-05/reply.md`를 구분해 보존한다. GPT의 문안상 반례 부재
+검토는 실행이나 광범위한 정책 동등성의 증명이 아니다.
+
+### 7.2 원본 결과 — 실행 무결성 PASS, 행동 개선 미관측
+
+`build/self-reference-prompt-comparison-01/report.json`은 2/2 episode 완료,
+`experiment_integrity=PASS`, `hypothesis_verdict=NOT_EVALUATED_CALIBRATION`,
+실행 521.719초를 기록한다. 호출자
+`build/self-reference-prompt-comparison-run-01/receipt.json`은 exit 0·522.547초와
+source 14개 불변을 확인했다. 두 시간은 각각 producer 내부와 호출자 바깥 측정이다.
+
+| 지표 | baseline | action-first-public-feedback-v1 |
+|---|---:|---:|
+| 완료 episode / decision | 1 / 12 | 1 / 12 |
+| 실제 출력의 행동·귀속 분포 | OBSERVE 12·SELF 12 | OBSERVE 12·SELF 12 |
+| schema 유효 / 올바른 행동 / 올바른 귀속 | 12 / 1 / 0 | 12 / 1 / 0 |
+| 공개 예측 평가 가능 / 미확정 / 실제 결과 일치 | 12 / 0 / 12 | 12 / 0 / 12 |
+| unsafe/uninformed SET / gate 거부 | 0 / 0 | 0 / 0 |
+| 확인된 목표 완료 / 종료 | 0 / STEP_LIMIT | 0 / STEP_LIMIT |
+| prompt / generated token | 12,497 / 312 | 13,397 / 306 |
+| 모델 query 시간 | 250.110초 | 264.500초 |
+
+두 조건 모두 실제 파일의 초기 값 0을 바꾸지 못했고, 관측의 last_writer는 계속 null이라
+귀속 정답은 매번 UNKNOWN이었다. OBSERVE의 결과를 맞힌 예측 12/12는 올바른 다음 행동
+선택이나 목표 달성을 뜻하지 않는다. 목표 7을 확인한 FINISH도 없었다.
+이 실행에서 후보의 행동 개선은 관측되지 않았다.
+
+호출 집계는 예약 24·반환 24·completion HTTP receipt 24·확인된 HTTP 200 원문 24·
+decision 24이며, 예외·미완료·전송 오류·decision 미연결은 모두 0이다. 재시도는 없었다.
+원문 전체 비용은 prompt 25,894·generated 618 token·query 시간 514.610초다.
+한 조건당 한 episode, baseline 다음 후보의 고정 순서이며 SYSTEM 전체를 바꾼 비교다.
+순서·실행 환경의 영향이나 후보 내부 문장별 효과를 분리하지 않았고, 이 정상 과제에서
+후보 개선 미관측을 표현 우열·일반 능력·사용자 원래 구상에 대한 판정으로 확대하지 않는다.
+
+### 7.3 독립 감사와 후속 범위
+
+`build/self-reference-prompt-comparison-audit-01/verification.json`의 독립 감사는
+**PASS**다. `strict-replay.json`·`raw-cost-diagnostics.json`과 함께 원본 289파일,
+호출자 19파일, 현재 source 14개, trusted replay/contract/grammar 3개와 driver의 불변을
+확인했다. 2 episode·24 decision/query, 두 고정 literal·최초 pair·개별 이력·호출 원장·
+HTTP 원문·점수·비용과 cleanup을 대조했다. 소유 backend PID 35660은 terminate 후
+회수됐고 host termination·exit 1·오류 0이며 Linux 정상 종료나 native attestation이 아니다.
+이 재생은 새 모델 실행이 아니며 이전 ON/OFF 비교의 NOT_EVALUABLE을 바꾸지 않는다.
+
+현재 연구 구현은 `PARTIAL`이다. 다음 한정 작업은 원시 출력·행동 분포를 진단하고
+기존 GPT 연구 대화의 다음 실험안을 로컬 근거와 대조하는 것이며 전역 큐가 순서를 소유한다.
+새 실험 구현·성과는 아직 PLANNED다. normal의 이번 결과로 개입 6-case/18-episode 비교,
+실제 AIOS 증거 보고 Task·Linux Task 통합, 전체 다섯 단계, 가중치 적응·native/OS 권한이나
+의식·제품 목표 완료를 선언하지 않는다. 새 schema v2 게시 SHA의 CI는 별도 확인 대상이다.

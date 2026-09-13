@@ -36,12 +36,13 @@ CLI 0.10.0/session 10/source 35개, MAIN protocol/run 6/source 28개, receipt 3�
 다섯 단계의 전체 수락 기준과 순서는 [전역 큐](docs/meta/minimal_io_and_maturity_workflow_ko.md#self-reference-acceptance)가 소유한다.
 첫 Windows CPU private sandbox pilot은 `RESEARCH`이며 개발 구현은 `PARTIAL`이다.
 첫 pilot의 FAIL/NOT_EVALUABLE과 이후 normal 3 episode calibration의 실행 무결성
-PASS·모델 목표 완료 0을 분리해 보존한다. v2의 공개 예측 미확정·고정 grammar,
-Windows 135개 검사(133 PASS·2 skip)와 실제 probe 독립 감사가 검증됐다.
-후속 ON은 모델 두 조건 모두 OBSERVE 반복·목표 0, OFF는 관계 episode 미완료로
-FAIL/NOT_EVALUABLE이며 전체 효과 비교도 NOT_EVALUABLE이다. 검증된 연구 도구와
-모델 행동 실패를 구분하며 다음 한정 prompt 비교·기본 6-case/18-episode 계획과
-전체 장기 목표를 유지한다.
+PASS·모델 목표 완료 0을 분리해 보존한다. 공개 예측 미확정 처리·고정 grammar와
+기존 ON/OFF NOT_EVALUABLE도 각 source의 계약·증거로 보존한다. 새 schema v2는 고정
+SYSTEM 두 profile의 normal·relational 비교, query invocation 최대 24회와 독립 검증을
+제공한다. 실제 2 episode·24 HTTP 200·독립 감사 PASS지만 두 조건 모두 목표 0이며
+후보 개선은 관측되지 않았다. 현재 Windows 검사는 191개 중 188 PASS·권한 조건 3 skip이다.
+다음은 원문·행동 분포 진단과 다음 실험안 검토이고 새 실험 구현·성과는 PLANNED다.
+기본 6-case/18-episode 계획과 전체 장기 목표는 유지한다.
 실험 driver·독립 검증은 `tools/` 책임이며 추후 Linux 제품 Task로 통합할 runtime은
 `hosted/` 책임을 따른다. 응용 owner/version/channel 검사를 canonical K5나 OS ACL로 승격하지 않는다.
 

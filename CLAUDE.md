@@ -464,17 +464,20 @@ The corrected-input, three-episode calibration completed with experiment-integri
 24 actual-model responses, but neither model arm completed the observed goal. It remains
 NOT_EVALUATED_CALIBRATION. Retained pre-v2 replay passed for all 249 calibration files.
 The public-feedback-prediction-v2 scorer separates unknown forecasts from action and actual-result
-scores. The final frozen Windows suite collected 135 tests: 133 passed and two link-privilege
-tests skipped in 106.369 seconds. The six-response grammar probe's exact-language independent
-audit passed, with wrong attribution and no file actions. Subsequent ON calibration replay passed
-for 250 files, three episodes and 24 model calls, but both model arms only repeated OBSERVE and
-completed no goal. OFF failed at query 22 on the output limit, leaving its relational episode
-incomplete. The entire paired comparison is NOT_EVALUABLE; 479 unchanged raw files and
-diagnostic condition parity do not establish efficacy. The SYSTEM changed after the probe, while
-ON and OFF used the same later source and SYSTEM in fixed ON-then-OFF order. The guide records
-the publication-only trailing-LF source boundary. This checkpoint provides verified research
-infrastructure and retained model failures. The next bounded prompt/action-policy comparison is
-PLANNED; a full 18-episode comparison and the original long-term goal remain incomplete.
+scores. Historical grammar/ON/OFF evidence, the 135/142-test suites, Windows alias failure and
+source boundaries remain in the guide. The old incomplete ON/OFF comparison remains NOT_EVALUABLE.
+The new schema-v2 action-progress-v1 path runs exactly two normal relational episodes, fixes
+grammar ON and reserves at most 24 query invocations before model preflight. Only the full SYSTEM
+differs. Reservation, completion HTTP receipts and actual HTTP 200 responses are separate evidence.
+The actual run completed two episodes and 24 HTTP 200 responses; independent audit passed for
+289 raw files. Both profiles repeated OBSERVE/SELF 12 times, scored one correct action and zero
+correct attributions, and reached STEP_LIMIT with no observed goal. Candidate improvement was
+not observed; the verdict remains NOT_EVALUATED_CALIBRATION. The current frozen Windows suite
+collected 191 tests: 188 passed and three link-privilege tests skipped in 178.638 seconds.
+The prior b60 CI passed all seven jobs; it does not certify the new dirty-b60 lab/replay source.
+Next work is raw-output/action-distribution diagnosis and assessment of the existing GPT chat's
+next experiment proposal. A new experiment and its results remain PLANNED; a full 18-episode
+comparison and all five long-term acceptance stages remain incomplete.
 Application-level owner checks are neither canonical
 K5 authorization nor OS ACL enforcement. The [research operating guide](docs/meta/self_reference_research_workflow_ko.md)
 owns experiment and existing-GPT-review procedure; the global queue retains all five long-term
