@@ -8,5 +8,7 @@ hosted/linux/**/*.py text eol=lf
 hosted/contracts/boot-inventory-v1.contract.json text eol=lf
 tools/hosted/*.py text eol=lf
 tools/hosted/tests/*.py text eol=lf
+tools/research/*.py text eol=lf
+tools/research/tests/*.py text eol=lf
 tools/hosted/*.sh text eol=lf
 tools/hosted/*.cmd text eol=crlf

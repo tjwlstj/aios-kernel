@@ -54,6 +54,23 @@ jobs:
       - name: Run hosted contracts and userspace tests (fail closed)
         run: python -m unittest discover -s tools/hosted/tests -p "test_*.py" -v
 
+      - name: Run isolated research contracts (no model execution)
+        run: python -B -m unittest discover -s tools/research/tests -p "test_*.py" -v
+
+      - name: Exercise research rules and independently replay artifacts
+        run: |
+          python -B tools/research/self_reference_lab.py --rules-only --artifacts build/self-reference-ci
+          python -B tools/research/self_reference_replay.py --artifacts build/self-reference-ci
+
+      - name: Upload research rules evidence (not model or native AIOS acceptance)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: self-reference-rules-${{ matrix.os }}
+          path: build/self-reference-ci/
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Run AIOS userspace boot and hardware observation (Linux only)
         if: runner.os == 'Linux'
         run: python tools/hosted/boot_smoke.py --artifact-dir build/hosted-boot/ci
