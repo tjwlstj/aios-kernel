@@ -38,6 +38,22 @@ CONTROLS = {"model_frozen": True, "sampling_frozen": True, "system_prompt_equal"
     "chat_template": "ChatML with /no_think and completed empty think prefix"}
 
 
+PROMPT_PLAN_ID = "action-progress-v1"
+PROMPT_PAIR_ID = "prompt-comparison-0-normal"
+PROMPT_PROFILES = (
+    {"prompt_id": "baseline", "system_constant": "SYSTEM", "system_path": "prompts/baseline.txt",
+     "system_sha256": "283fe9863649ed0b95d07981db9ecf27204ac389efa0866c912ac67cad7e3884",
+     "episode_id": "00-normal-baseline", "episode_path": "00-normal-baseline/episode.json"},
+    {"prompt_id": "action-first-public-feedback-v1", "system_constant": "ACTION_PROGRESS_SYSTEM_V1",
+     "system_path": "prompts/action-first-public-feedback-v1.txt",
+     "system_sha256": "cefb9168c4aa5ed20319a9d0b6e25f17db80870a03cb7b8df53e79558784390c",
+     "episode_id": "00-normal-action-first-public-feedback-v1",
+     "episode_path": "00-normal-action-first-public-feedback-v1/episode.json"},
+)
+QUERY_ACCOUNTING_KEYS = {"reserved", "returned", "raised", "unfinished", "completion_http_records",
+    "completion_http_responses", "completion_http_200", "completion_transport_errors", "without_decision"}
+
+
 def require(condition, reason):
     if not condition:
         raise ValueError(reason)
@@ -148,6 +164,8 @@ def source_check(disk, design, report):
     required = {"tools/research/self_reference_" + name + ".py"
                 for name in ("world", "contract", "model", "lab", "grammar")}
     require(type(files) is dict and required <= files.keys(), "source-coverage")
+    if design["schema_version"] == 2:
+        require(files.keys() == required, "prompt-source-coverage")
     for relative, digest in files.items():
         require(re.fullmatch(r"tools/research/self_reference_[a-z_]+\.py", relative)
                 and type(digest) is str and re.fullmatch(r"[0-9a-f]{64}", digest), "source-path-or-hash")
@@ -158,9 +176,19 @@ def source_check(disk, design, report):
             require(sha(local.read_bytes()) == digest, "replay-source-version:" + relative)
     # Read a literal constant only. Retained source is evidence, never executable input.
     tree = ast.parse(disk.raw("verification-source/tools/research/self_reference_lab.py").decode("utf-8"))
-    systems = [ast.literal_eval(node.value) for node in tree.body if isinstance(node, ast.Assign)
-               and any(isinstance(target, ast.Name) and target.id == "SYSTEM" for target in node.targets)]
-    same(systems, [design["system_prompt"]], "system-source-literal")
+    if design["schema_version"] == 2:
+        for profile in PROMPT_PROFILES:
+            systems = [ast.literal_eval(node.value) for node in tree.body if isinstance(node, ast.Assign)
+                       and any(isinstance(target, ast.Name) and target.id == profile["system_constant"]
+                               for target in node.targets)]
+            require(len(systems) == 1 and type(systems[0]) is str, "prompt-source-literal")
+            raw = disk.raw(profile["system_path"], 65536)
+            require(raw == systems[0].encode("utf-8") and sha(raw) == profile["system_sha256"],
+                    "prompt-source-bytes-and-pin")
+    else:
+        systems = [ast.literal_eval(node.value) for node in tree.body if isinstance(node, ast.Assign)
+                   and any(isinstance(target, ast.Name) and target.id == "SYSTEM" for target in node.targets)]
+        same(systems, [design["system_prompt"]], "system-source-literal")
     tree = ast.parse(disk.raw("verification-source/tools/research/self_reference_grammar.py").decode("utf-8"))
     literals = {}
     for node in tree.body:
@@ -313,7 +341,7 @@ def query_check(disk, design, decision, number):
     return query
 
 
-def episode_check(disk, design, relative, rep, scenario, arm, query_count):
+def episode_check(disk, design, relative, rep, scenario, arm, query_count, *, profile=None):
     saved = disk.json(relative + "/episode.json")
     manifest = disk.json(relative + "/world/manifest.json")
     event_names = disk.matching(relative + "/world/", r"event-[0-9]{3}\.json")
@@ -321,8 +349,9 @@ def episode_check(disk, design, relative, rep, scenario, arm, query_count):
     same(event_names, [relative + "/world/event-%03d.json" % n for n in range(1, len(event_names) + 1)], "event-file-sequence")
     events = [disk.json(name) for name in event_names]
     integrity = contract.verify_episode(manifest, events, disk.raw(relative + "/world/object.json", 2048))
+    pair_id = PROMPT_PAIR_ID if profile is not None else "pilot-%d-%s" % (rep, scenario)
     same({"scenario": manifest["scenario"], "run_id": manifest["run_id"]},
-         {"scenario": scenario, "run_id": "pilot-%d-%s" % (rep, scenario)}, "episode-pair")
+         {"scenario": scenario, "run_id": pair_id}, "episode-pair")
     decision_names = [relative + "/decision-%03d.json" % n for n in range(1, len(events) + 1)]
     same(disk.matching(relative + "/", r"decision-[0-9]{3}\.json"), decision_names, "decision-file-sequence")
     history, rows, queries = [], [], []
@@ -346,6 +375,8 @@ def episode_check(disk, design, relative, rep, scenario, arm, query_count):
         else:
             query_count += 1
             queries.append(query_check(disk, design, decision, query_count))
+            if profile is not None:
+                prompt_query_ledger(disk, design, profile, decision, name, number, query_count)
         schema_error = None
         try:
             proposal = contract.parse_decision(decision["content"])
@@ -392,7 +423,7 @@ def episode_check(disk, design, relative, rep, scenario, arm, query_count):
         "generated_tokens": sum(x["tokens"]["predicted"] for x in queries),
         "model_elapsed_seconds": sum(x["elapsed_seconds"] for x in queries)}
     last_correct = scores[-1]["action_correct_from_visible_facts"]
-    expected = {"schema_version": 1, "arm": arm, "scenario": scenario, "pair_id": "pilot-%d-%s" % (rep, scenario),
+    expected = {"schema_version": 1, "arm": arm, "scenario": scenario, "pair_id": pair_id,
         "integrity": integrity, "decisions": rows, "counts": counts,
         "observed_goal_completion": integrity["goal_value_present"] and integrity["termination"] == "FINISH"
             and last_correct and observation is not None and observation["value"] == 7,
@@ -414,11 +445,132 @@ def aggregate(episodes):
     return result
 
 
+def prompt_query_ledger(disk, design, profile, decision, decision_path, step, number):
+    """Bind one reserved query slot to one returned query and one decision."""
+    require(1 <= number <= 24, "prompt-query-cap")
+    prefix = "ledger/query-%04d" % number
+    start_raw = disk.raw(prefix + ".start.json")
+    start = decoded(start_raw)
+    same(start, {"schema_version": 1, "kind": "query-start", "invocation_index": number,
+        "run_id": design["run_id"], "plan_id": PROMPT_PLAN_ID, "prompt_id": profile["prompt_id"],
+        "episode_id": profile["episode_id"], "episode_step": step, "decision_path": decision_path,
+        "expected_query_artifact_dir": "model/query-%04d" % number,
+        "system_sha256": profile["system_sha256"], "context": decision["context"],
+        "context_sha256": contract.digest(decision["context"]), "user": decision["user"],
+        "user_sha256": sha(decision["user"].encode("utf-8"))}, "prompt-ledger-start")
+    finish = disk.json(prefix + ".finish.json")
+    finite_seconds(finish["elapsed_seconds"], "prompt-ledger-elapsed")
+    same(finish, {"schema_version": 1, "kind": "query-finish", "invocation_index": number,
+        "start_sha256": sha(start_raw), "status": "RETURNED",
+        "query_artifact_dir": "model/query-%04d" % number,
+        "result_sha256": sha(disk.raw("model/query-%04d/result.json" % number)),
+        "error": None, "elapsed_seconds": finish["elapsed_seconds"]}, "prompt-ledger-finish")
+
+
+def verify_prompt_comparison(disk, design, report):
+    """Versioned two-episode plan, sharing evidence rules with unchanged v1."""
+    for item in (design, report):
+        require(type(item.get("schema_version")) is int and item["schema_version"] == 2
+                and item.get("classification") == "RESEARCH", "prompt-research-schema")
+    if report.get("experiment_integrity") == "FAIL":
+        # These are bounded inventory observations, not replayed lifecycle/accounting.
+        # A failure must never become an efficacy or complete-integrity PASS.
+        return {"schema_version": 2, "outcome": "NOT_EVALUABLE", "classification": "RESEARCH",
+            "producer_experiment_integrity": "FAIL", "partial_evidence_replayed": False,
+            "reason": "producer-failed-experiment", "producer_failure": report.get("failure"),
+            "replay_consumer_sha256": sha(Path(__file__).read_bytes()),
+            "unverified_inventory": {
+                "query_start_files": len(disk.matching("ledger/", r"query-[0-9]{4}\.start\.json")),
+                "query_finish_files": len(disk.matching("ledger/", r"query-[0-9]{4}\.finish\.json")),
+                "completion_http_files": len(disk.matching("model/", r"query-[0-9]{4}/completion\.http\.json"))},
+            "hypothesis_verdict": "NOT_EVALUABLE"}
+    require(report.get("experiment_integrity") == "PASS" and report.get("failure") is None, "producer-verdict")
+    design_keys = {"schema_version", "classification", "mode", "stage", "plan_id", "run_id", "pair_id",
+        "source", "artifact_root", "host", "created_at", "limits", "scenarios", "repetitions", "profiles", "controls"}
+    report_keys = {"schema_version", "classification", "experiment_integrity", "actual_model_executed",
+        "hypothesis_verdict", "elapsed_seconds", "failure", "source_unchanged", "source_before", "source_after",
+        "stage", "plan_id", "run_id", "pair_id", "profiles", "planned_episodes", "completed_episodes",
+        "episode_paths", "query_accounting"}
+    require(design.keys() == design_keys and report.keys() == report_keys, "prompt-document-fields")
+    require(type(design["run_id"]) is str and re.fullmatch(
+        r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}", design["run_id"]), "prompt-run-id")
+    identity = {"stage": "prompt-comparison", "plan_id": PROMPT_PLAN_ID,
+                "run_id": design["run_id"], "pair_id": PROMPT_PAIR_ID}
+    for item in (design, report):
+        same({key: item[key] for key in identity}, identity, "prompt-plan-identity")
+    same(design["profiles"], list(PROMPT_PROFILES), "prompt-profile-plan")
+    same({"mode": design["mode"], "scenarios": design["scenarios"], "repetitions": design["repetitions"]},
+         {"mode": "actual-model", "scenarios": ["normal"], "repetitions": 1}, "prompt-experiment-plan")
+    recorded_path(design["artifact_root"])
+    source = source_check(disk, design, report)
+    controls = {key: value for key, value in CONTROLS.items() if key != "flat_projection_lossless"}
+    controls.update(system_prompt_equal=False, representation="relational", max_query_invocations=24,
+                    output_constraint="static-decision-v1", grammar_sha256=sha(disk.static_grammar.encode("utf-8")))
+    same(design["controls"], controls, "prompt-controls")
+    paths = [profile["episode_path"] for profile in PROMPT_PROFILES]
+    same(report["episode_paths"], paths, "prompt-report-paths")
+    same(report["planned_episodes"], 2, "prompt-planned-episodes")
+    same(report["completed_episodes"], 2, "prompt-completed-episodes")
+    evidence = model_evidence(disk, design)
+    episodes, profiles, initials, query_count = [], {}, [], 0
+    for profile in PROMPT_PROFILES:
+        local_design = {**design, "system_prompt": disk.raw(profile["system_path"], 65536).decode("utf-8")}
+        relative = profile["episode_id"]
+        episode, query_count = episode_check(disk, local_design, relative, 0, "normal", "relational",
+                                             query_count, profile=profile)
+        episodes.append(episode)
+        profiles[profile["prompt_id"]] = aggregate([episode])["relational"]
+        manifest = disk.json(relative + "/world/manifest.json")
+        event = disk.json(relative + "/world/event-001.json")
+        decision = disk.json(relative + "/decision-001.json")
+        require(decision["context"]["step"] == 0 and decision["context"]["history"] == []
+                and decision["context"]["observation"] is None and decision["context"]["last_result"] is None
+                and decision["context"]["last_set_step"] is None, "prompt-initial-context")
+        initials.append({"manifest": manifest, "before": event["before"],
+                         "context": decision["context"], "user": decision["user"]})
+    same(initials[0], initials[1], "prompt-initial-pairing")
+    require(2 <= query_count <= 24, "prompt-query-cap")
+    for suffix in ("start", "finish"):
+        same(disk.matching("ledger/", r"query-[0-9]{4}\." + suffix + r"\.json"),
+             ["ledger/query-%04d.%s.json" % (n, suffix) for n in range(1, query_count + 1)], "prompt-ledger-coverage")
+    same(disk.matching("model/", r"query-[0-9]{4}/completion\.http\.json"),
+         ["model/query-%04d/completion.http.json" % n for n in range(1, query_count + 1)], "prompt-http-coverage")
+    accounting = {"reserved": query_count, "returned": query_count, "raised": 0, "unfinished": 0,
+        "completion_http_records": query_count, "completion_http_responses": query_count,
+        "completion_http_200": query_count, "completion_transport_errors": 0, "without_decision": 0}
+    require(type(report["query_accounting"]) is dict and report["query_accounting"].keys() == QUERY_ACCOUNTING_KEYS
+            and all(type(value) is int and value >= 0 for value in report["query_accounting"].values()), "prompt-accounting-shape")
+    same(report["query_accounting"], accounting, "prompt-query-accounting")
+    same(report["profiles"], profiles, "prompt-report-profiles")
+    same(report["actual_model_executed"], True, "report-actual-model-executed")
+    same(report["hypothesis_verdict"], "NOT_EVALUATED_CALIBRATION", "report-hypothesis")
+    finite_seconds(report["elapsed_seconds"], "report-elapsed")
+    require(disk.read.keys() == disk.files.keys(), "unreferenced-artifacts:" +
+            ",".join(sorted(disk.files.keys() - disk.read.keys())[:5]))
+    for relative in list(disk.read):
+        disk.raw(relative, 64 * 1024 * 1024 if relative.endswith(".log") else 1024 * 1024)
+    return {"schema_version": 2, "outcome": "PASS", "classification": "RESEARCH",
+        "producer_experiment_integrity": "PASS", "source_head_sha": source["head_sha"],
+        "stage": "prompt-comparison", "plan_id": PROMPT_PLAN_ID, "run_id": design["run_id"],
+        "replay_consumer_sha256": sha(Path(__file__).read_bytes()), "source_files_verified": len(source["files"]),
+        "files_verified": len(disk.read), "episodes_verified": 2,
+        "decisions_verified": sum(episode["counts"]["decisions"] for episode in episodes),
+        "model_queries_verified": query_count, "query_accounting": accounting,
+        "actual_model_evidence_verified": True, "generation_settings": disk.generation_settings,
+        "generation_settings_sha256": contract.digest(disk.generation_settings),
+        "model_lifecycle": evidence, "profiles": profiles, "initial_contexts_paired": True,
+        "file_evidence": disk.read, "hypothesis_verdict": "NOT_EVALUATED_CALIBRATION",
+        "scope": "Two fixed-order normal relational episodes; SYSTEM is the planned difference. "
+                 "Internal provenance and replay, not model efficacy or physical attestation."}
+
+
 def verify_artifacts(artifacts):
     """Return independent PASS/FAIL/NOT_EVALUABLE; do not write any files."""
     try:
         disk = Disk(artifacts)
         design, report = disk.json("design.json"), disk.json("report.json")
+        if type(design.get("schema_version")) is int and design["schema_version"] == 2:
+            return verify_prompt_comparison(disk, design, report)
         for item in (design, report):
             require(type(item["schema_version"]) is int and item["schema_version"] == 1
                     and item["classification"] == "RESEARCH", "research-schema")
