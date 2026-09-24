@@ -2,8 +2,8 @@
 
 > 문서 역할: Linux-hosted MAIN의 환경 관측·모델 입력·독립 검증 운영 가이드
 > 문서 수명주기: 활성
-> 내용 검토일: 2026-09-13 — v0.10 실제 모델 TaskSmoke의 종료 판정과 source별 근거 확인; 보존된 v0.8/v0.9 기록은 별도
-> 구현 상태: `PARTIAL`; 보존된 v0.8 실제 소비는 수정 검증기 재생 PASS. 이 체크포인트의 개발 소스는 v0.10이며 보존된 v0.9 개발 이력·Linux 프로세스 fixture 검증과 실제 모델 판정을 구분한다. 실제 모델 TaskSmoke는 §6.3의 한정 범위에서 PASS이며 새 운영 이미지 검증은 별도다.
+> 내용 검토일: 2026-09-24 — v0.10 실제 모델 TaskSmoke의 보존 판정과 새 증거 보고 Task의 준비된 코드 경계를 대조; 보존된 v0.8/v0.9 기록은 별도
+> 구현 상태: `PARTIAL`; 보존된 v0.8 실제 소비는 수정 검증기 재생 PASS. 이 체크포인트의 개발 소스는 v0.10이며 보존된 v0.9 개발 이력·Linux 프로세스 fixture 검증과 실제 모델 판정을 구분한다. 실제 모델 TaskSmoke는 §6.3의 한정 범위에서 PASS이고 새 증거 보고 Task는 §6.4의 `PREPARED`다. 새 운영 이미지 검증은 별도다.
 > 상위 정본: [제품 목적](../meta/aios_product_direction_ko.md), [에이전트 운용 계약](../autonomy/agent_operating_contract_ko.md)
 > 전역 순서: [현재 작업흐름](../meta/minimal_io_and_maturity_workflow_ko.md#agent-consumer-next)
 
@@ -381,3 +381,49 @@ stdout/stderr/입력·시간·원문 session과 실패 결과도 보존해야 �
 source 39개 운영 이미지 이행은 별도다. 이미지 부팅 시 backend를 시작하는 주체와 같은
 CLI의 실제 소유 handle 유무는 아직 분석하지 않았다. 외부 init이 시작한 backend를 CLI가
 자동 소유한다고 가정하지 않으며 기존 image35/36 family와 새 image39 실행을 구분한다.
+
+<a id="evidence-report-feedback"></a>
+### 6.4. 증거 보고·저장·재확인 Task — `PREPARED` (2026-09-24)
+
+`evidence-report-feedback-v1`은 §6.3의 정상 답변·별도 취소 TaskSmoke를 변경하지 않는
+별도 연구 검증 경로다. [계획 생성기](../../tools/hosted/evidence_report_plan.py)는
+게시된 정적 readout의 `build/self-reference-readout-01/`과 독립 감사
+`build/self-reference-readout-audit-01/`을 읽어 원본 SHA·여섯 readout·현재 연구 source
+19개를 대조한다. 그 결과 E0에는 run ID, 감사 영수증 SHA, 감사 시점, C0/C1의 표본·점수,
+상태별 결정과 점수의 일치 여부, **이번 새 readout의 World 효과 0회**를 기록한다.
+별도 원본 번들에 포함된 과거 World 기록까지 0회라는 뜻이 아니다. 원 연구의 판정은
+`STATIC_ONLY`이며, E0는 그 결과를 보고할 입력이지 행동 효과의 새 실행 증거가 아니다.
+
+준비된 [개발 VM runner](../../tools/hosted/qemu_console.py)의 `--evidence-report`와
+`--evidence-report-plan`은 그 계획과 원본 열 파일을 임시 guest share에 고정해 전달한다.
+[guest driver](../../tools/hosted/evidence_report_guest.py)는 같은 살아 있는 CLI와 backend
+소유 수명에서 최대 두 개의 실제 UUID 추론 Task를 사용하도록 구성했다. 첫 Task는 E0의
+두 조건·효과를 네 줄로 판단하고 저장을 요청할 수 있다. `ANSWERED`는 내용 성공이
+아니므로, 형식·참조·사실이 맞고 `SAVE`를 요청한 경우에만 driver가 정해진 새
+`saved-report.txt` 하나를 배타적으로 쓰고 다시 읽는다. 모델은 요청 주체이고 파일을
+실제로 쓴 주체는 driver다. 재읽기한 바이트·SHA, 첫 UUID·응답 SHA·저장 action ID·
+writer를 E1로 묶은 뒤에만 두 번째 UUID Task가 저장 결과를 판단한다. 두 Task 사이의
+정보는 명시적으로 전달되며 모델의 자동 기억이나 재시작을 넘는 identity를 증명하지 않는다.
+
+실행 직전의 실제 `space_data+question` 문맥과 모델 tokenizer로 입력 토큰·192 출력
+상한·24토큰 여유가 1,024 문맥에 들어오는지 검사한다. 질문 접수·모델 추론의 재시도는
+0회이고, 입력 변경·판단 오류·저장/재읽기 실패·수명 변경·종료 미확인은 실패로 남긴다.
+[독립 계약](../../tools/hosted/evidence_report_contract.py)과
+`verify_agent.py --evidence-report`는 원본 E0, 두 UUID의 실제 request/response와
+상태·result, driver 쓰기·재읽기, guest/VM 종료를 따로 확인하도록 준비했다.
+
+**코드는 `PREPARED`지만 이 경로의 실제 QEMU 실증은 PASS가 아니다.**
+`build/evidence-report-feedback-run-01/`은 첫 질문의 모델 입력 829토큰이 허용
+808토큰을 넘어서 `model_context_overflow`로 끝났다. UUID Task 접수 0회이며 모델
+답변·저장은 없었다. 수정된 입력의 `build/evidence-report-feedback-run-02/`은 실제
+tokenizer 검사 768/808토큰을 통과하고 첫 UUID Task
+`86823895-a8c7-4c12-b17a-5334b5179548`을 접수했다. 그러나 backend는 제한 시간에
+프롬프트 768토큰 중 576토큰(75%)만 평가했고 약 2,395초의 HTTP 읽기 제한이 끝날
+때까지 응답 본문을 반환하지 않았다. driver는 `first_not_answered`로 실패했다. 첫
+Task의 `ANSWERED`·두 번째 Task·`saved-report.txt` 쓰기/재읽기·E1 판단은 없다.
+종료 정리 중 backend의 비정상 stop은 `backend_run:not_normal_stop`으로 남았고 독립
+`verify_agent.py --evidence-report` 판정도 FAIL이다. VM 자체는 exit 0·host 강제 종료
+없음으로 닫혔으나 시나리오 성공을 뜻하지 않는다. host 합성 검사와 기존 §6.3
+TaskSmoke PASS도 이 경로의 두 실제 답변·저장 효과를 대신하지 않는다. 이 한정
+저장이 나중에 확인되더라도 원 연구의 World 행동, native 권한, 일반적 자기 수정,
+운영 이미지 acceptance를 입증하지 않는다.

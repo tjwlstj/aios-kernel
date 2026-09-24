@@ -2,7 +2,7 @@
 
 > 문서 역할: 사람용 내용 검토·재검토 조건 원장
 > 문서 수명주기: 활성
-> 마지막 내용 검토: 2026-09-24 — v0.10·연구 실패 보존·고정 상태 6응답 STATIC_ONLY 진단/독립 감사와 전역 큐·mirror 대조
+> 마지막 내용 검토: 2026-09-24 — v0.10·연구 실패 보존·5bd readout 게시/검토 및 증거 보고 Task PREPARED/실제 QEMU FAIL과 전역 큐·mirror 대조
 > 이번 검토 경계: 아래 추가 검토 설명과 해당 행의 범위만 갱신했다. 2026-09-09의 문서 역할 정비·당시 v0.8 소스 대조와 외부 기준일은 보존하며 실제 모델 Task·새 이미지 실행 판정과 구분한다.
 
 이 원장은 **어떤 사실을 어느 문서에서 확인하고, 언제 다시 확인할지**를 관리한다.
@@ -54,8 +54,12 @@ grammar 끝 LF 정리의 byte 경계, 새 코드의 rules-04 독립 재생 PASS�
 현재 Windows 전체 검사는 238개 중 234 PASS·link 권한 조건 4 skip·978.276초이고
 실제 8.3 TEMP 별칭·source 19개 불변·기존 14개의 과거 실제 실행과의 일치를 확인했다.
 개발 구현은 `PARTIAL`, 결과는 `STATIC_ONLY`로 실제 행동·목표 완료를 시험하지 않았다.
-새 readout 게시 SHA의 CI, 유용한 증거 보고 Task의 설계·연결 실증과 장기 다섯 단계는
-미완료다. 이번 내용 검토는 새 운영 이미지·native 권한·가중치 학습 검증을 포함하지 않는다.
+이후 readout 게시 SHA `5bd35e81`의 CI 7/7과 별도 artifact 감사, 기존 GPT 대화의
+제공 자료 한정 검토를 대조했다. `evidence-report-feedback-v1`은 E0 계획 생성·
+별도 두 UUID Task driver·독립 계약 코드가 준비된 `PREPARED`다. 실제 QEMU run01은
+토큰 예산 초과로 Task 0개, run02는 첫 Task 접수 후 답변 미완료로 독립 FAIL이다.
+저장·E1 피드백은 실행되지 않았고 합성 검사는 이를 대신하지 않는다. 장기 다섯 단계는 미완료다.
+이번 내용 검토는 새 운영 이미지·native 권한·가중치 학습 검증을 포함하지 않는다.
 
 ## 1. 읽는 방법
 
@@ -98,10 +102,10 @@ grammar 끝 LF 정리의 byte 경계, 새 코드의 rules-04 독립 재생 PASS�
 | [제품 방향](aios_product_direction_ko.md) | 제품 목적·공간·상호작용·성공 기준 정본 | 활성 | 2026-09-13, 기존 목적 유지·v0.10 Task 표면 대조 | 환경 문맥·Task 개발 PARTIAL, 한정 실제 모델 Task PASS, 미완료 범용 상호작용을 구분 | 사용자 목적·성공 기준 변경 | 제품 방향; 운용 계약·전역 큐에 영향 전달 |
 | [통합 작업 진입](integrated_work_guide_ko.md) | 요청 분류·사실 소유자·변경 절차 | 활성 | 2026-09-13, 문맥·Task 계약 소유자 연결 | 저장소 작업 규칙; runtime의 자동 환경 발견·영속 기억 구현 아님 | 작업 규칙·도메인·정본 경로 변경 | 문서 운영; 진입 경로와 스킬 라우팅 대조 |
 | [AGENTS](../../AGENTS.md), [프로젝트 스킬](../../.agents/README.md) | 작업 규칙·도메인별 절차 라우터 | 활성 | 2026-09-09, 제품 목적·전역 큐·신선도 연결 | 작업 규칙과 문서 동기화·triage·관리 구조·Linux 큐레이터 스킬; runtime 상태는 분야 정본에 위임 | 권한·작업 절차·도구·정본 경로 변경 | 저장소 운영; 관련 스킬의 규칙·링크 대조 |
-| [전역 작업흐름](minimal_io_and_maturity_workflow_ko.md) | 유일한 전역 큐·기술축 성숙도 정본 | 활성 | 2026-09-24, 다섯 수락 기준 보존·순서 진단 결과와 증거 보고 Task 선행 대조 정렬 | v0.10/image39 경계 보존; 연구 PARTIAL·STATIC_ONLY 감사 PASS/개선 미관측·새 Task 실증 미완료 | 단계 완료·선행조건·사용자 우선순위 변경 | roadmap; `agent-consumer-next`와 기술축 표 함께 대조 |
-| [자기 참조 연구·실증](self_reference_research_workflow_ko.md) | 실험·beta 이후 기존 GPT 검토·로컬 반영 운영 가이드 | 활성 | 2026-09-24, bfea CI/GPT06 범위·238개 검사·새 6응답/379파일 감사 대조 | RESEARCH/PARTIAL; 기존 실패 보존·STATIC_ONLY 무결성/감사 PASS·순서 변경 개선 미관측; 전체 수락 기준은 전역 큐 | 실행·검증 결과, 실험 조건·모델 pin·연구 제안 채택 변경 | 연구·검증; 실제 artifact와 영향 mirror를 대조하고 원본 실패 보존 |
-| [PROJECT](../../PROJECT.md) | 도메인 맵·의존 방향 정본 | 활성 | 2026-09-24, v0.10 보존·static readout과 후속 Task의 도메인 책임 대조 | 기존 source별 지원 범위 보존; 연구 driver/검증과 향후 hosted Task runtime 분리 | 파일 이동·새 도메인·의존 경계 변경 | 저장소 구조; 각 도메인 README 연결 |
-| [CLAUDE](../../CLAUDE.md) | 구현 mirror·빌드·저수준 불변식 | 활성 | 2026-09-24, 고정 상태 6응답/독립 감사·238개 검사와 장기 범위 mirror 대조 | v0.10/image39 경계 보존; 연구 PARTIAL·STATIC_ONLY PASS와 행동 개선 미관측 분리 | 명령·공개 계약·gate·구현 상태 변경 | 구현·검증; 변경 사실의 원 소유 가이드 대조 |
+| [전역 작업흐름](minimal_io_and_maturity_workflow_ko.md) | 유일한 전역 큐·기술축 성숙도 정본 | 활성 | 2026-09-24, 다섯 수락 기준 보존·5bd 게시/검토 뒤 증거 보고 Task PREPARED/실행 FAIL 정렬 | v0.10/image39 경계 보존; 연구 PARTIAL·STATIC_ONLY 감사 PASS/개선 미관측·새 Task 실증 미완료 | 단계 완료·선행조건·사용자 우선순위 변경 | roadmap; `agent-consumer-next`와 기술축 표 함께 대조 |
+| [자기 참조 연구·실증](self_reference_research_workflow_ko.md) | 실험·beta 이후 기존 GPT 검토·로컬 반영 운영 가이드 | 활성 | 2026-09-24, bfea/5bd CI·GPT06/07 범위·6응답/379파일 감사와 E0·QEMU 두 시도 대조 | RESEARCH/PARTIAL; 기존 실패 보존·STATIC_ONLY 개선 미관측; 새 Task 코드는 PREPARED, 실행은 두 번 FAIL | 실행·검증 결과, 실험 조건·모델 pin·연구 제안 채택 변경 | 연구·검증; 실제 artifact와 영향 mirror를 대조하고 원본 실패 보존 |
+| [PROJECT](../../PROJECT.md) | 도메인 맵·의존 방향 정본 | 활성 | 2026-09-24, v0.10·5bd readout과 hosted 증거 보고 driver/검증의 도메인 책임·실행 판정 대조 | 연구 driver/검증은 tools, 제품 runtime은 hosted; 새 Task PREPARED와 두 QEMU 실패 분리 | 파일 이동·새 도메인·의존 경계 변경 | 저장소 구조; 각 도메인 README 연결 |
+| [CLAUDE](../../CLAUDE.md) | 구현 mirror·빌드·저수준 불변식 | 활성 | 2026-09-24, 고정 상태 6응답·5bd CI/검토·증거 보고 Task 준비/실행 FAIL과 장기 범위 대조 | v0.10/image39 경계 보존; STATIC_ONLY 연구 결과와 새 Task 실패 실행 분리 | 명령·공개 계약·gate·구현 상태 변경 | 구현·검증; 변경 사실의 원 소유 가이드 대조 |
 | [인수인계](codex_handoff_tips_ko.md) | 환경·장애 원인·검증 경계 운영 참고 | 활성 | 2026-09-13, v0.10과 최신 증거 정본 진입 대조 | native·hosted 역사 본문 유지; Windows 전체·Linux fixture와 한정 실제 모델 TaskSmoke PASS는 별도 | 실행 환경·명령·재현 조건 변경 | 작업 운영; 실제 현재 상태를 먼저 재확인 |
 | [관리 모델](../kernel-room/kernel_room_management_model_ko.md) | 관리 의미·권위·불변식·분야별 의존 정본 | 활성 | 2026-09-13, 환경 문맥 부재 문구 정정·Task 경계 | 관리 의미·native ABI 유지; hosted Task와 canonical identity 분리 | identity·세대·관계·용어·관리 권위 변경 | Kernel Room; topology·개발 가이드 동기화 |
 | [관리 개발 가이드](../kernel-room/development_guide_ko.md) | 관리 변경·검증 운영 가이드 | 활성 | 2026-09-13, 환경 문맥·Task와 전역 큐 대조 | native 계약·과거 실행 증거 유지; 한정 실제 모델 Task PASS·이미지 미완료 | 개발 절차·검증 경로·관리 계약 변경 | Kernel Room; 작은 변경과 verifier 대조 |
@@ -113,8 +117,9 @@ grammar 끝 LF 정리의 byte 경계, 새 코드의 rules-04 독립 재생 PASS�
 활성 색인이다. 저장소 문서 색인은 2026-09-13에 v0.10 Task와 증거 정본의 진입을
 추가 대조하고 자기 참조 연구·실증 가이드의 진입을 연결했다. README·PROJECT·CLAUDE의
 첫 실패·calibration 재생·v2 검사/grammar probe·후속 source와 미완료 행동 비교 경계도 함께 대조했다.
-2026-09-24에는 연구의 고정 상태 6응답·독립 감사·현재 238개 검사와 후속 Task 선행조건
-대조 범위를 같은 mirror와 문서 색인에 반영했다. 버전·테스트 수·source별 상세 결과는 위 정본과 아래 가이드가 소유한다.
+2026-09-24에는 연구의 고정 상태 6응답·독립 감사·현재 238개 검사, 5bd 게시/검토와
+후속 증거 보고 Task의 코드 `PREPARED`와 실제 QEMU 두 시도의 FAIL을 같은 mirror와
+문서 색인에 반영했다. 버전·테스트 수·source별 상세 결과는 위 정본과 아래 가이드가 소유한다.
 새 문서·도메인·실행 경로가 생기면 연결을 함께 대조한다.
 hosted 도메인 진입과 Kernel Room 허브는 2026-09-13에 v0.10 Task의 문맥·취소 경계를
 추가 대조했다. 이 체크포인트의 v0.10과 보존된 v0.9·기존 beta·이미지 기록을 구분하며, 보존된 실제 문맥
@@ -133,7 +138,7 @@ hosted 도메인 진입과 Kernel Room 허브는 2026-09-13에 v0.10 Task의 문
 | [CLI·인터넷](../os/aios_cli_internet_guide_ko.md) | 고유 CLI·DNS/HTTP(S) 실행 가이드 | 활성 | 2026-09-13, v0.10 UUID 질문 흐름 연결; 공식 검토는 09-03 유지 | 보존된 기존 CLI·인터넷 증거와 새 Task의 실제 모델 검증을 구분 | 명령·네트워크 계약·launcher 변경 | hosted; CLI 사용법·session 판정 대조 |
 | [일반 서비스](../os/aios_service_lifecycle_guide_ko.md) | CONSOLE_RUNTIME 수명·재접속 계약 | 활성 | 2026-09-04, 본문 공식 검토 기록 | 서비스 기반과 실제 MAIN AI_SERVICE를 구분 | 서비스 수명·identity·receipt·재접속 변경 | hosted; source와 service verifier 대조 |
 | [MAIN 결속](../os/aios_agent_binding_guide_ko.md) | 실제 모델 요청·명시적 관리 결속 계약 | 활성 | 2026-09-13, v0.10 개발 경계 연결; 본문 실행 기록은 09-07 유지 | 당시 결속·모델 실행과 후속 문맥·Task 검증의 source를 구분 | MAIN protocol·binding·모델 profile 변경 | hosted·Kernel Room; 모델 응답과 실행 증거 구분 |
-| [MAIN 환경 문맥](../os/aios_space_context_guide_ko.md) | 환경 관측·신선도·실제 모델 입력과 소비 검증 정본 | 활성 | 2026-09-13, v0.10·Windows 전체·Linux fixture·한정 실제 모델·독립 재생 대조 | PARTIAL; §6.3의 Windows 990개/85개 제외와 Linux fixture 3개 PASS, 한정 실제 모델 TaskSmoke와 보존 source 독립 재생 PASS·미완료 image39를 분리. 과거 원본 FAIL/수정 재생 유지 | 관측 범위·TTL·입력·receipt·모델 실행·실제 검증 결과 변경 | hosted·autonomy·testkit; raw→입력→실행→사용자 출력과 거부·복구 대조 |
+| [MAIN 환경 문맥](../os/aios_space_context_guide_ko.md) | 환경 관측·신선도·실제 모델 입력과 소비 검증 정본 | 활성 | 2026-09-24, v0.10 한정 TaskSmoke 보존·새 E0/두 UUID Task 준비 및 QEMU 두 시도 대조 | PARTIAL; §6.3의 실제 모델 TaskSmoke PASS와 §6.4의 증거 보고 Task 코드 PREPARED/실행 FAIL·미완료 image39를 분리. 합성 검사는 새 실행 증거가 아님 | 관측 범위·TTL·입력·receipt·모델 실행·실제 검증 결과 변경 | hosted·autonomy·testkit; raw→입력→실행→사용자 출력과 거부·복구 대조 |
 | [자원 관측](../os/aios_resource_observation_guide_ko.md) | MAIN/backend 관계·CPU/RSS·PSI 관측 | 활성 | 2026-09-13, v0.10 개발 경계 연결; 본문 근거는 09-07 유지 | 당시 source 관측 증거 유지; Task 자원 창과 모델 계산 귀속을 구분 | 관계·관측 필드·source 유효성 변경 | hosted·resource; 관측과 제어 주장 분리 |
 | [Cell 수명](../os/aios_cell_lifecycle_guide_ko.md) | 한정 Cell 관리 전이·재결속 계약 | 활성 | 2026-09-13, v0.10 개발 경계 연결; 본문 근거는 09-07 유지 | 당시 관리 세대 전이·거부 증거 유지; 전체 hierarchy·Task acceptance와 별도 | 관리 상태·세대·reconcile 변경 | Kernel Room·hosted; 해당 세대 전이와 verifier 확인 |
 | [backend 수명](../os/aios_backend_lifecycle_guide_ko.md) | 실행 대상 결속·같은 CLI의 recover | 활성 | 2026-09-13, v0.10 취소 소유 범위 연결; recover 근거는 09-08 유지 | 같은 CLI retained handle 범위의 명시적 정지와 MAIN의 독립 종료 관측; 한정 실제 모델 TaskSmoke PASS | backend identity·owner lease·receipt·recover 변경 | hosted; 허용된 cleanup·정상 종료 경계 확인 |

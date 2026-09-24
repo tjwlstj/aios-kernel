@@ -36,8 +36,14 @@ FAIL/NOT_EVALUABLE을 보존했습니다. 입력 정정 후 calibration은 실�
 이후 관측 블록의 위치만 바꾼 고정 상태 6응답 진단도 두 조건의 출력이 모두 같아
 행동·귀속 개선을 관측하지 못했습니다. 실행 무결성·독립 감사 PASS이며 `STATIC_ONLY`로,
 실제 행동이나 목표 달성을 시험한 결과는 아닙니다. 현재 Windows 검사는 238개 중
-234 PASS·권한 조건 4 skip입니다. 다음은 beta·기존 GPT 검토와 실제 AIOS 증거를
-보고하는 유용한 Task의 설계·연결 선행조건 대조이며, 추가 prompt 진단을 자동 반복하지 않습니다.
+234 PASS·권한 조건 4 skip입니다. 이 결과는 beta `5bd35e81`의 CI 7/7 성공과
+기존 GPT 연구 대화의 범위가 제한된 검토까지 마쳤습니다. 실제 AIOS 증거를 첫 UUID
+Task가 보고하고, driver의 한 파일 저장·재읽기 결과를 두 번째 Task가 판단하는
+`evidence-report-feedback-v1` 코드는 **`PREPARED`**입니다. 실제 QEMU run01은
+입력 토큰 예산 초과로 Task 접수 전 FAIL, run02는 첫 UUID Task를 접수했지만 제한
+시간 안에 답변하지 못해 독립 판정 FAIL입니다. 두 번째 Task와 저장·재읽기 효과는
+없으며 합성 검사는 이를 대신하지 않습니다.
+추가 prompt 진단을 자동 반복하지 않습니다.
 [실험 운영 가이드](docs/meta/self_reference_research_workflow_ko.md)는
 반복 연구·검토 절차를, [전역 큐](docs/meta/minimal_io_and_maturity_workflow_ko.md#self-reference-acceptance)는
 전체 다섯 단계 수락 기준을 소유합니다. 첫 pilot의 응용 owner 검사를 native 권한 구현으로 보지 않습니다.

@@ -1,6 +1,6 @@
 # AIOS 제품 성숙도와 전역 작업흐름
 
-최종 갱신: 2026-09-24 (v0.10 기준선·장기 다섯 수락 기준 보존·고정 상태 순서 진단의 개선 미관측·실제 증거 보고 Task 선행 대조 정렬)
+최종 갱신: 2026-09-24 (v0.10 기준선·장기 다섯 수락 기준 보존·5bd readout 게시/검토와 증거 보고 Task PREPARED 경계 정렬)
 
 문서 역할: K/M/C/W/H축의 제품 성숙도와 전역 작업 우선순위 정본. 요청 분류,
 스킬·주제별 정본 선택, 문서 관리와 게시 절차는
@@ -253,10 +253,18 @@ GPT의 제안은 검토 입력이며 실행 판정이나 정본 변경 권위가
    독립 감사의 범위는 연구 가이드 §3.4·§8이 소유한다. 현재 Windows 전체 검사는
    238개 중 234 PASS·권한 조건 4 skip이며 source 19개는 불변이다. bfea CI를 이
    후속 readout source의 원격 검증으로 승계하지 않는다.
+   readout은 beta `5bd35e81dbad8bf00f34422742964ed5907bc890`에 게시됐고 해당
+   CI `35953258664`의 7개 job과 별도 artifact 감사가 PASS다. 기존 GPT 연구 대화의
+   round07은 제공된 자료를 검토했으며 실행·해시·CI를 직접 검증하지 않았다.
    첫 pilot 실패·기존 ON/OFF NOT_EVALUABLE과 135/142개 검사·경로 수정 이력은 보존한다.
-   **다음 한정 작업:** 결과를 beta에 게시하고 정확한 SHA의 CI·보존 증거를 확인한 뒤
-   기존 GPT 연구 대화에서 검토한다. 로컬 근거와 제안을 대조하고 유용한 AIOS 증거
-   보고 Task의 입력·출력·사실 검증과 실제 Task 연결의 선행조건을 확인한다.
+   **다음 한정 작업:** `evidence-report-feedback-v1`은 검증된 E0를 첫 UUID Task로
+   보고하고, 유효한 `SAVE` 요청 뒤 driver가 고정 파일 하나를 저장·재읽어 E1을 두 번째
+   UUID Task에 주는 별도 경로로 코드가 준비됐다(`PREPARED`). 합성 host 검사는 실제
+   모델 답변이나 저장 효과가 아니다. 실제 QEMU run01은 829>808토큰 사전검사 실패로
+   Task 0개, run02는 768/808토큰 통과와 첫 UUID 접수 뒤 시간 한도 안에 답변하지
+   못해 `first_not_answered`·독립 FAIL이다. 두 번째 Task·파일 효과·E1은 미실행이다.
+   입력 예산·두 실제 응답·쓰기와 재읽기·독립 종단 판정·정상 종료를 모두 확인할
+   때까지 실행 PASS로 승격하지 않는다.
    추가 0.6B prompt 진단을 자동 반복하지 않는다. Task 설계·연결의 실증은 미완료이며
    이번 정적 진단을 실제 행동 피드백이나 전체 6-case/18-episode 완료로 부르지 않는다.
    이것은 application-level sandbox 소유 검사로 canonical K5 principal/ownership/authorize나

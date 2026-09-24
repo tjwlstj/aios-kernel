@@ -12,6 +12,8 @@ param(
     [switch]$BackendSmoke,
     [switch]$SpaceSmoke,
     [switch]$TaskSmoke,
+    [switch]$EvidenceReport,
+    [string]$EvidencePlan = '',
     [switch]$GuestTests
 )
 $ErrorActionPreference = 'Stop'
@@ -23,7 +25,8 @@ $expectedHash = 'e73a6241bd5f3c5c2d4d38c02cc52c378c0415a7c888bd292066bf36e0f41a3
 if (-not (Test-Path -LiteralPath $QemuPath -PathType Leaf)) { throw "QEMU executable missing: $QemuPath" }
 $pythonLauncher = (Get-Command py.exe -ErrorAction Stop).Source
 $archiveTool = (Get-Command tar.exe -ErrorAction Stop).Source
-if ($Agent -or $AgentSmoke -or $ResourceSmoke -or $CellSmoke -or $BackendSmoke -or $SpaceSmoke -or $TaskSmoke) {
+if ($EvidenceReport -and [string]::IsNullOrWhiteSpace($EvidencePlan)) { throw 'EvidenceReport requires EvidencePlan.' }
+if ($Agent -or $AgentSmoke -or $ResourceSmoke -or $CellSmoke -or $BackendSmoke -or $SpaceSmoke -or $TaskSmoke -or $EvidenceReport) {
     if ($Smoke -or $ServiceSmoke) { throw 'Choose one console smoke workflow.' }
     if ([string]::IsNullOrWhiteSpace($InferenceCache)) {
         $InferenceCache = Join-Path $env:LOCALAPPDATA 'AIOS\hosted-inference'
@@ -58,7 +61,8 @@ if ($CellSmoke) { $consoleArgs += '--cell-smoke' }
 if ($BackendSmoke) { $consoleArgs += '--backend-smoke' }
 if ($SpaceSmoke) { $consoleArgs += '--space-smoke' }
 if ($TaskSmoke) { $consoleArgs += '--task-smoke' }
-if ($Agent -or $AgentSmoke -or $ResourceSmoke -or $CellSmoke -or $BackendSmoke -or $SpaceSmoke -or $TaskSmoke) { $consoleArgs += @('--inference-cache', $InferenceCache) }
+if ($EvidenceReport) { $consoleArgs += @('--evidence-report', '--evidence-report-plan', $EvidencePlan) }
+if ($Agent -or $AgentSmoke -or $ResourceSmoke -or $CellSmoke -or $BackendSmoke -or $SpaceSmoke -or $TaskSmoke -or $EvidenceReport) { $consoleArgs += @('--inference-cache', $InferenceCache) }
 if ($GuestTests) { $consoleArgs += '--guest-tests' }
 & $pythonLauncher @consoleArgs
 exit $LASTEXITCODE

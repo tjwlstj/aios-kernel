@@ -30,6 +30,7 @@ AGENT_PROMPT_SECONDS = 2450
 # On TCG it outgrew the original 400-second setup checkpoint.
 GUEST_TEST_SECONDS = 1200
 TASK_SMOKE_SECONDS = 6000
+EVIDENCE_REPORT_SECONDS = 6000
 PROMPT_PATTERN = rb"(?:^|\r?\n)aios> "
 SERVICE_DIR = "/tmp/aios-runtime"
 SERVICE_FIRST = ["service status", "about", "resolve example.com", "fetch https://example.com/", "exit"]
@@ -115,6 +116,72 @@ def run_task_smoke_guest(guest, output: Path, retained: Path) -> dict:
         verdict = verify_execution(output, source_root=retained, require_live=True, require_internet=True)
     save_json(output / "verdict.json", verdict)
     return verdict
+
+
+def run_evidence_report_guest(guest, output: Path, retained: Path) -> dict:
+    """Run the report/feedback Task pair without changing TaskSmoke's plan."""
+    driver_error = None
+    try:
+        guest.step("Testing evidence report and observed storage feedback in one CLI",
+                   "su aios -s /bin/sh -c 'PYTHONDONTWRITEBYTECODE=1 python3 "
+                   "/mnt/aios/tools/hosted/evidence_report_guest.py /tmp/aios-evidence-report "
+                   "--plan /mnt/aios/evidence-report/plan.json'",
+                   EVIDENCE_REPORT_SECONDS)
+    except RuntimeError as exc:
+        driver_error = str(exc)
+    export_guest(guest, "/tmp/aios-evidence-report", output)
+    if driver_error is not None:
+        verdict = {"outcome": "FAIL", "reasons": ["evidence_report_driver", driver_error]}
+    else:
+        verdict = verify_execution(output, source_root=retained, require_live=True)
+    save_json(output / "verdict.json", verdict)
+    return verdict
+
+
+def stage_evidence_report(root: Path, share: Path, output: Path, plan_path: Path) -> None:
+    """Snapshot the exact plan and ten pinned sources before starting the VM."""
+    from evidence_report_plan import AUDIT_REL, CALLER_REL, READOUT_REL, build_plan
+
+    if not plan_path.is_file() or plan_path.is_symlink():
+        raise ValueError("evidence report plan is not a regular file")
+    raw = plan_path.read_bytes()
+    if len(raw) > 65536:
+        raise ValueError("evidence report plan size")
+    def unique(items):
+        value = {}
+        for key, item in items:
+            if key in value:
+                raise ValueError("evidence report plan duplicate JSON key")
+            value[key] = item
+        return value
+
+    plan = json.loads(raw, object_pairs_hook=unique,
+                      parse_constant=lambda _: (_ for _ in ()).throw(ValueError("evidence report plan nonfinite JSON")))
+    if (type(plan) is not dict or plan.get("schema_version") != 1
+            or plan.get("scenario") != "evidence-report-feedback-v1"
+            or type(plan.get("source_files")) is not dict or len(plan["source_files"]) != 10):
+        raise ValueError("evidence report plan contract")
+    expected = build_plan(root / READOUT_REL, root / AUDIT_REL, root / CALLER_REL)
+    if plan != expected:
+        raise ValueError("evidence report plan differs from pinned evidence")
+    for rel, item in sorted(plan["source_files"].items()):
+        parts = rel.split("/")
+        if (not rel.startswith("build/") or any(not part or part in (".", "..") for part in parts)
+                or type(item) is not dict or set(item) != {"bytes", "sha256"}):
+            raise ValueError("evidence report source path or metadata")
+        source = root.joinpath(*parts)
+        if not source.is_file() or source.is_symlink():
+            raise ValueError("evidence report source absent or linked")
+        data = source.read_bytes()
+        if len(data) != item["bytes"] or hashlib.sha256(data).hexdigest() != item["sha256"]:
+            raise ValueError("evidence report source changed")
+        target = output / "evidence-source" / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+    (output / "evidence-plan.json").write_bytes(raw)
+    target = share / "evidence-report"
+    target.mkdir()
+    (target / "plan.json").write_bytes(raw)
 
 
 class SpaceSmokeScript:
@@ -381,13 +448,19 @@ def main() -> int:
     parser.add_argument('--recovery-smoke', action='store_true', help='Inject supervisor loss and verify same-CLI recovery with the real model.')
     parser.add_argument('--space-smoke', action='store_true', help='Verify actual model consumption of fresh and stale space observations, target rejection and recovery.')
     parser.add_argument("--task-smoke", action="store_true", help="Verify one real model answer and an explicitly cancelled second Task in the same CLI.")
+    parser.add_argument("--evidence-report", action="store_true",
+                        help="Run the bounded evidence report, file write and feedback Task pair.")
+    parser.add_argument("--evidence-report-plan", type=Path,
+                        help="Exclusive frozen plan prepared from the independently audited readout.")
     parser.add_argument("--inference-cache", type=Path,
                         default=Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "AIOS/hosted-inference")
     args = parser.parse_args()
     if re.fullmatch(r"test_hosted[a-zA-Z0-9_*]*\.py", args.guest_test_pattern) is None:
         parser.error("Invalid guest test filename pattern")
-    if sum((args.smoke, args.service_smoke, args.agent_smoke, args.resource_smoke, args.cell_smoke, args.backend_smoke, args.recovery_smoke, args.space_smoke, args.task_smoke)) > 1:
+    if sum((args.smoke, args.service_smoke, args.agent_smoke, args.resource_smoke, args.cell_smoke, args.backend_smoke, args.recovery_smoke, args.space_smoke, args.task_smoke, args.evidence_report)) > 1:
         parser.error("Choose one smoke workflow")
+    if args.evidence_report != (args.evidence_report_plan is not None):
+        parser.error("--evidence-report requires --evidence-report-plan and vice versa")
     if args.agent and (args.smoke or args.service_smoke):
         parser.error("Choose one console workflow with the MAIN model")
     space_commands = None
@@ -395,7 +468,7 @@ def main() -> int:
         from space_output_contract import SPACE_COMMANDS
         space_commands = list(SPACE_COMMANDS)
         SpaceSmokeScript(space_commands)
-    use_agent = args.agent or args.agent_smoke or args.resource_smoke or args.cell_smoke or args.backend_smoke or args.recovery_smoke or args.space_smoke or args.task_smoke
+    use_agent = args.agent or args.agent_smoke or args.resource_smoke or args.cell_smoke or args.backend_smoke or args.recovery_smoke or args.space_smoke or args.task_smoke or args.evidence_report
     root = Path(__file__).resolve().parents[2]
     output = args.artifact_dir.resolve()
     output.mkdir(parents=True, exist_ok=False)
@@ -414,6 +487,8 @@ def main() -> int:
         shutil.copytree(root / "hosted/linux", share / "hosted/linux", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
         shutil.copytree(root / "hosted/contracts", share / "hosted/contracts")
         shutil.copytree(root / "tools/hosted", share / "tools/hosted", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+        if args.evidence_report:
+            stage_evidence_report(root, share, output, args.evidence_report_plan)
         if args.guest_tests:
             # The management test compares semantic constants with this C oracle;
             # the Linux runtime neither imports nor executes the native kernel.
@@ -451,7 +526,7 @@ def main() -> int:
                       "model_sha256": MODEL_SHA, "backend_sha256": BACKEND_SHA, "verification": "host-read-complete"})
         retained = output / "runtime-source"
         shutil.copytree(share / "hosted/linux", retained)
-        if args.recovery_smoke or args.space_smoke or args.task_smoke:
+        if args.recovery_smoke or args.space_smoke or args.task_smoke or args.evidence_report:
             shutil.copytree(share / "tools/hosted", output / "verification-source")
         command = [str(args.qemu), "-machine", "q35", "-accel", "tcg", "-m", "3072" if use_agent else "768", "-smp", "2",
                    "-kernel", str(args.kernel), "-initrd", str(args.initramfs),
@@ -480,6 +555,10 @@ def main() -> int:
         if args.task_smoke:
             environment['task_smoke'] = True
             environment['task_smoke_timeout_seconds'] = TASK_SMOKE_SECONDS
+        if args.evidence_report:
+            environment["evidence_report"] = True
+            environment["evidence_report_timeout_seconds"] = EVIDENCE_REPORT_SECONDS
+            environment["evidence_plan_sha256"] = hashlib.sha256((output / "evidence-plan.json").read_bytes()).hexdigest()
         (output / "environment.json").write_text(json.dumps(environment, indent=2) + "\n", encoding="utf-8")
         try:
             print("[AIOS] Starting the Linux hardware layer...", flush=True)
@@ -502,7 +581,7 @@ def main() -> int:
                 guest.step("Loading the pinned local model", "python3 /mnt/aios/tools/hosted/model_backend.py prepare && "
                            "chmod 755 /tmp/aios-model && cp /mnt/aios/inference/agent-config.json " + AGENT_CONFIG, 120)
                 export_guest(guest, "/tmp/aios-model", output / "model-integrity", ["integrity.json"])
-                if not (args.recovery_smoke or args.task_smoke):
+                if not (args.recovery_smoke or args.task_smoke or args.evidence_report):
                     control_backend_guest(guest, 'start', output / 'backend-start')
             if args.service_smoke:
                 print("[AIOS] Starting the private runtime service...", flush=True)
@@ -512,6 +591,8 @@ def main() -> int:
                 commands = space_commands
             if args.task_smoke:
                 verdict = run_task_smoke_guest(guest, output, retained)
+            elif args.evidence_report:
+                verdict = run_evidence_report_guest(guest, output, retained)
             elif args.recovery_smoke:
                 try:
                     guest.step("Testing explicit model recovery in the same CLI", "su aios -s /bin/sh -c 'PYTHONDONTWRITEBYTECODE=1 python3 /mnt/aios/tools/hosted/backend_recovery_guest.py /tmp/aios-recovery'", 1800)
@@ -537,7 +618,7 @@ def main() -> int:
                 if second["outcome"] != "PASS":
                     verdict = second
             if use_agent:
-                if args.task_smoke:
+                if args.task_smoke or args.evidence_report:
                     cleanup_issues = cleanup_task_model(guest, output)
                     if cleanup_issues:
                         verdict = {"outcome": "FAIL", "reasons": ["task_cleanup", cleanup_issues, verdict]}
@@ -559,7 +640,8 @@ def main() -> int:
                                  verify_interactive(output, source_root=retained, require_shutdown=False,
                                                     resource_smoke=args.resource_smoke, cell_smoke=args.cell_smoke,
                                                     backend_smoke=args.backend_smoke, recovery_smoke=args.recovery_smoke,
-                                                    space_smoke=args.space_smoke, task_smoke=args.task_smoke))
+                                                    space_smoke=args.space_smoke, task_smoke=args.task_smoke,
+                                                    evidence_report=args.evidence_report))
                 save_json(output / "agent-verdict.json", agent_verdict)
                 if agent_verdict["outcome"] != "PASS":
                     verdict = agent_verdict
@@ -597,7 +679,8 @@ def main() -> int:
                 from verify_agent import verify_workflow as verify_agent_workflow, verify_interactive
                 final_agent = (verify_agent_workflow(output) if args.agent_smoke else verify_interactive(output,
                     resource_smoke=args.resource_smoke, cell_smoke=args.cell_smoke, backend_smoke=args.backend_smoke,
-                    recovery_smoke=args.recovery_smoke, space_smoke=args.space_smoke, task_smoke=args.task_smoke))
+                    recovery_smoke=args.recovery_smoke, space_smoke=args.space_smoke,
+                    task_smoke=args.task_smoke, evidence_report=args.evidence_report))
                 save_json(output / "agent-verdict.json", final_agent)
                 if final_agent["outcome"] != "PASS":
                     verdict = {**verdict, "outcome": "FAIL", "reasons": ["agent_final_verification", final_agent]}

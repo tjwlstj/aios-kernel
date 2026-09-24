@@ -802,7 +802,8 @@ def verify_stop(directory: Path) -> dict:
 
 def verify_interactive(directory: Path, *, source_root: Path | None = None, require_shutdown: bool = True,
                        resource_smoke: bool = False, cell_smoke: bool = False, backend_smoke: bool = False,
-                       recovery_smoke: bool = False, space_smoke: bool = False, task_smoke: bool = False) -> dict:
+                       recovery_smoke: bool = False, space_smoke: bool = False, task_smoke: bool = False,
+                       evidence_report: bool = False) -> dict:
     """Verify a user-driven model-enabled console, even when MAIN is unused.
 
     Starting the model backend does not mean the MAIN daemon was started. An
@@ -813,12 +814,13 @@ def verify_interactive(directory: Path, *, source_root: Path | None = None, requ
         from verify_console import verify_execution
 
         source_root = source_root or directory / "runtime-source"
-        require(sum((resource_smoke, cell_smoke, backend_smoke, recovery_smoke, space_smoke, task_smoke)) <= 1, 'conflicting_workflows')
+        require(sum((resource_smoke, cell_smoke, backend_smoke, recovery_smoke, space_smoke, task_smoke,
+                     evidence_report)) <= 1, 'conflicting_workflows')
         console = verify_execution(directory, source_root=source_root, require_live=True,
                                    require_internet=resource_smoke or cell_smoke or backend_smoke or space_smoke or task_smoke)
         require(console["outcome"] == "PASS", "console_execution:" + json.dumps(console.get("reasons", [])))
         execution = record(directory / "execution.json")
-        if task_smoke:
+        if task_smoke or evidence_report:
             require(execution["mode"] == "smoke" and type(execution["requested_commands"]) is list, "task_smoke_execution")
         elif space_smoke:
             from space_output_contract import SPACE_COMMANDS
@@ -849,7 +851,7 @@ def verify_interactive(directory: Path, *, source_root: Path | None = None, requ
             validate_sample(sample)
             recovery_owner = {key: sample[key] for key in ('host_boot_id', 'process_id', 'process_start_ticks', 'uid')}
         backend = verify_model(directory, config, allow_recovered=recovery_smoke, recovery_owner=recovery_owner,
-                               require_start_control=not (recovery_smoke or task_smoke))
+                               require_start_control=not (recovery_smoke or task_smoke or evidence_report))
         stopped = verify_stop(directory)
         agent_dir = directory / "agent"
         require(agent_dir.is_dir() and not agent_dir.is_symlink(), "state_directory")
@@ -897,6 +899,9 @@ def verify_interactive(directory: Path, *, source_root: Path | None = None, requ
         if task_smoke:
             from task_smoke_contract import verify_task_workflow
             task_result = verify_task_workflow(directory, all_commands, runs, backend)
+        if evidence_report:
+            from evidence_report_contract import verify_evidence_report_workflow
+            task_result = verify_evidence_report_workflow(directory, all_commands, runs, backend)
         if space_smoke:
             verify_space_workflow(all_commands, runs, backend)
         if backend_smoke:
@@ -933,7 +938,7 @@ def verify_interactive(directory: Path, *, source_root: Path | None = None, requ
                 'backend_workflow_verified': backend_smoke,
                 'backend_service_runs': len(backend.get('managed_runs', [])),
                 "vm_shutdown_verified": require_shutdown}
-        if task_smoke:
+        if task_smoke or evidence_report:
             value.update(task_result)
         if space_smoke:
             value.update(space_workflow_verified=True, space_current_answers=2, space_stale_answers=1,
@@ -1412,9 +1417,17 @@ def main() -> int:
     parser.add_argument('--recovery-smoke', action='store_true', help='Verify explicit owned backend recovery after a recorded supervisor crash')
     parser.add_argument("--space", action="store_true", help="Verify actual CURRENT/UNKNOWN/STALE context consumption and target rejection")
     parser.add_argument("--tasks", action="store_true", help="Verify the real model Task answer and cancellation scenario")
+    parser.add_argument("--evidence-report", action="store_true",
+                        help="Verify the bounded real-model evidence report and feedback scenario")
     parser.add_argument("--allow-fixture", action="store_true")
     args = parser.parse_args()
-    if args.tasks:
+    if args.evidence_report:
+        require(not any((args.run, args.workflow, args.interactive, args.resources, args.cells,
+                         args.backends, args.recovery_smoke, args.space, args.tasks, args.allow_fixture)),
+                "evidence_report_live_only")
+        result = verify_interactive(args.artifact_dir, source_root=args.source_root,
+                                    evidence_report=True)
+    elif args.tasks:
         require(not any((args.run, args.workflow, args.interactive, args.resources, args.cells, args.backends,
                          args.recovery_smoke, args.space, args.allow_fixture)), "tasks_live_only")
         result = verify_interactive(args.artifact_dir, source_root=args.source_root, task_smoke=True)

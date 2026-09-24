@@ -43,8 +43,13 @@ SYSTEM 두 profile의 normal·relational 비교, query invocation 최대 24회�
 후보 개선은 관측되지 않았다. 2026-09-24에 대조한 후속 고정 상태 readout은 관측 블록
 위치만 바꾼 두 조건의 새 6응답·실행 무결성·독립 감사 PASS지만 행동·귀속 개선은 미관측이다.
 이는 실제 효과를 실행하지 않는 `STATIC_ONLY`이며 현재 Windows 검사는 238개 중
-234 PASS·권한 조건 4 skip이다. 다음은 beta·기존 GPT 검토로 결과를 대조하고 유용한
-AIOS 증거 보고 Task의 설계·실제 연결 선행조건을 확인하는 것이다. 추가 prompt 진단을 자동 반복하지 않는다.
+234 PASS·권한 조건 4 skip이다. 이 readout의 beta `5bd35e81` CI 7/7과 기존 GPT
+연구 대화의 제한된 검토를 마쳤다. 연구 증거 E0를 첫 UUID Task가 보고하고 driver가
+고정 파일을 저장·재읽어 E1을 두 번째 Task에 전달하는 독립 경로는 `tools/hosted/`에
+준비됐다(`PREPARED`). 실제 QEMU run01은 입력 예산 초과로 Task 0개, run02는 첫
+UUID Task 접수 후 답변 미완료로 FAIL이다. 두 번째 Task·파일 효과는 없고 독립
+종단 판정도 FAIL이다.
+합성 fixture를 제품 Task의 실증으로 세지 않으며 추가 prompt 진단을 자동 반복하지 않는다.
 기본 6-case/18-episode 계획과 전체 장기 목표는 유지한다.
 실험 driver·독립 검증은 `tools/` 책임이며 추후 Linux 제품 Task로 통합할 runtime은
 `hosted/` 책임을 따른다. 응용 owner/version/channel 검사를 canonical K5나 OS ACL로 승격하지 않는다.

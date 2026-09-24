@@ -481,11 +481,20 @@ All six outputs remained OBSERVE/SELF. Both conditions scored action/revision 1/
 remains STATIC_ONLY without a goal metric.
 The current frozen Windows suite collected 238 tests: 234 passed and four link-privilege tests
 skipped in 978.276 seconds. Its 19 research/test files were unchanged; the old 14 still match
-the prior actual run. The bfea CI does not certify this subsequent readout source.
-Next work is beta publication and scoped existing-GPT review, then design and prerequisite
-checks for a useful AIOS evidence-reporting Task and its actual connection. Do not automatically
-repeat additional 0.6B prompt diagnostics. A full 18-episode comparison, actual feedback effects,
-Linux Task integration and all five long-term acceptance stages remain incomplete.
+the prior actual run. The bfea CI does not certify this subsequent readout source. The readout
+was published as `5bd35e81`; its seven CI jobs and separate artifact audit passed. The existing
+GPT research chat reviewed supplied source and results, not direct execution or CI.
+The separate `evidence-report-feedback-v1` hosted path is `PREPARED`: one UUID Task reports
+pinned E0, the driver exclusively writes and rereads one fixed report after a valid SAVE request,
+and a second UUID Task judges that E1 storage evidence. Two QEMU attempts are recorded as FAIL:
+run01 exceeded the input budget (829 > 808 tokens) before any Task, while run02 passed the
+token check (768 <= 808), admitted one UUID Task, but returned no answer before the inference
+deadline. Its driver reported `first_not_answered`; the independent end-to-end verdict is FAIL.
+No report was written or reread, and no second Task ran. VM shutdown was observed with exit 0,
+which does not turn the scenario into a PASS. Fixture tests are not actual-model evidence. Do
+not automatically repeat additional 0.6B prompt diagnostics. A full 18-episode
+comparison, actual World feedback effects, persistent model memory, operating-image acceptance
+and all five long-term acceptance stages remain incomplete.
 Application-level owner checks are neither canonical
 K5 authorization nor OS ACL enforcement. The [research operating guide](docs/meta/self_reference_research_workflow_ko.md)
 owns experiment and existing-GPT-review procedure; the global queue retains all five long-term

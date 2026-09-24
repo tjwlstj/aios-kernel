@@ -2,7 +2,7 @@
 
 > 문서 역할: 연구·실험·외부 검토의 운영 가이드
 > 문서 수명주기: 활성
-> 마지막 내용 검토: 2026-09-24 — bfea CI·GPT06 범위와 고정 상태 6응답 STATIC_ONLY 진단/독립 감사·238개 검사 대조
+> 마지막 내용 검토: 2026-09-24 — bfea·5bd beta 검증, GPT06/07의 제공 자료 범위와 고정 상태 6응답 STATIC_ONLY 진단·증거 보고 Task 준비 경계 대조
 > 관리 모델과의 관계: `RESEARCH`; 개발 구현 `PARTIAL`. 기존 실패·목표 미달 보존, 순서 변경 진단의 실행 무결성과 행동·귀속 개선 미관측 분리
 
 이 가이드는 원래 AIOS 구상을 작은 실제 실험으로 검증하고 결과를 다음 개발에 반영하는
@@ -801,9 +801,44 @@ Linux 정상 종료·native 권한·물리적 실행 주체의 증명으로 확�
 보존한다. 순서가 일반적으로 무관하다거나 고정 모델의 능력 한계를 확정하지 않는다.
 기존 pilot/ON-OFF 실패와 SYSTEM 비교 목표 0도 그대로 유지한다.
 
-다음 한정 작업은 결과를 beta에 게시해 정확한 SHA의 CI와 보존 증거를 확인하고 기존
-GPT 연구 대화에서 검토한 뒤, 유용한 AIOS 증거 보고 Task의 입력·출력·사실 검증과
-실제 Task 연결의 선행조건을 대조하는 것이다. 추가 0.6B prompt 진단을 자동 반복하지
-않는다. 개발 구현은 `PARTIAL`이며 Task 설계·실제 연결·Linux 통합·행동 피드백과
-장기 다섯 수락 기준은 미완료다. §7.4의 bfea CI를 새 readout source의 원격 검증으로
-승계하지 않는다.
+게시된 SHA의 CI·기존 GPT 검토와 다음 증거 보고 Task의 준비 범위는 §9에 구분한다.
+추가 0.6B prompt 진단을 자동 반복하지 않는다. 개발 구현은 `PARTIAL`이며 실제
+Task 연결·행동 피드백과 장기 다섯 수락 기준은 미완료다.
+
+## 9. 게시된 readout의 증거 보고 Task 연결 — `PREPARED` (2026-09-24)
+
+§8의 실제 readout과 문서는 beta `5bd35e81dbad8bf00f34422742964ed5907bc890`에
+게시됐다. 이 SHA의 CI `35953258664`는 일곱 job 모두 terminal success이고 별도
+artifact 감사도 PASS다. CI의 연구 lane은 규칙/fixture 검사이며 새 실제 모델 호출을
+수행한 결과가 아니다. 사용자가 지정한 기존 GPT 연구 대화의 round07은 제공된 신규
+producer/consumer·표시된 결과·감사 요약을 검토했다. GPT는 원본 전체 artifact나
+CI를 직접 실행·확인하지 않았으며, 표시용 readout 요약과 실제 JSON의 스키마 차이는
+로컬 원본 여섯 개·독립 감사와 대조해 처리했다. GPT 의견은 실행 판정이 아니다.
+
+다음 `evidence-report-feedback-v1`의 E0는 run
+`51ad65ad-7081-4c90-8bb6-419e47f307f2`, 감사 영수증 SHA
+`1d28876744097f181cbb04511dc7fbf850f477546eaad62726b9c96d302bc776`,
+감사 시점과 C0/C1의 각 세 readout·action/revision 1/3·귀속 0/3·예측 3/3을 원본
+바이트에서 추출한다. 상태별 결정·정적 점수도 쌍으로 대조한다. 원 연구는
+`STATIC_ONLY`라 이번 readout의 World 효과는 0회다. E0의 사실을 전달하는 것과
+모델이 비교·효과를 올바르게 판단하는 것은 별개다.
+
+[환경 문맥 가이드 §6.4](../os/aios_space_context_guide_ko.md#evidence-report-feedback)가
+준비된 Linux-hosted UUID Task 경로의 실행·검증 계약을 소유한다. 첫 Task가 검증된
+보고와 `SAVE`를 요청할 때만 **driver**가 고정 파일 하나를 배타적으로 저장·재읽고,
+그 실제 결과 E1을 같은 CLI의 두 번째 Task에 전달하도록 구성했다. 최대 실제 추론
+Task 2개, 재접수·재추론 0회다. 저장 writer는 모델이 아니며 두 번째 질문에 앞선
+증거를 명시적으로 넣는 것은 모델의 지속 기억이 아니다.
+
+코드는 **`PREPARED`**이나 실제 QEMU 시도 두 번은 모두 FAIL로 보존한다.
+`build/evidence-report-feedback-run-01/`은 첫 입력 829토큰이 허용 808토큰을
+넘어 사전검사에서 거부되어 UUID Task 0개였다. 입력을 줄인
+`build/evidence-report-feedback-run-02/`은 실제 tokenizer 검사 768/808토큰을
+통과하고 첫 UUID Task `86823895-a8c7-4c12-b17a-5334b5179548`을 접수했다.
+backend가 제한 시간 안에 프롬프트 평가를 끝내지 못해 답변 본문 없이
+`first_not_answered`로 끝났으며, 첫 답변·저장/재읽기·두 번째 Task/E1은 없다.
+정리 중 backend stop의 비정상 판정과 독립 `verify_agent.py --evidence-report` FAIL도
+보존한다. VM exit 0·host 강제 종료 없음은 Task 성공이 아니다. 실행별 세부 토큰·
+backend·종료 증거는 [환경 문맥 가이드 §6.4](../os/aios_space_context_guide_ko.md#evidence-report-feedback)가
+소유한다. 이 결과는 §8 연구의 World 행동 피드백이나 전역 큐의 다섯 수락 단계
+전체를 완료시키지 않는다.

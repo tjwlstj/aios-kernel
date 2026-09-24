@@ -2,7 +2,7 @@
 
 > 문서 역할: 문서 탐색 색인
 > 문서 수명주기: 활성
-> 마지막 내용 검토: 2026-09-24 — v0.10 증거 경계 보존·자기 참조 6응답 STATIC_ONLY 진단과 전역 큐·연구 가이드 진입 대조
+> 마지막 내용 검토: 2026-09-24 — v0.10 증거 경계·5bd readout 게시/검토와 증거 보고 Task PREPARED/실제 QEMU FAIL의 정본 진입 대조
 
 이 파일은 `docs/` 아래 문서를 찾는 **단일 탐색 색인**이다. 제품 목적은
 [제품 방향 정본](meta/aios_product_direction_ko.md), 다음 작업은
@@ -20,12 +20,12 @@
 | 현재 구현, 빌드 명령, 저수준 불변식 | [CLAUDE.md](../CLAUDE.md) | 현재 구현 mirror·운영 기준 |
 | 파일 위치와 의존 방향 | [PROJECT.md](../PROJECT.md) | 도메인 맵 정본 |
 | 현재 전역 우선순위와 다음 작은 작업 | [성숙도 우선 작업흐름](meta/minimal_io_and_maturity_workflow_ko.md#agent-consumer-next) | 전역 작업 큐·성숙도 정본 |
-| 자기 참조 실험·beta 이후 기존 GPT 검토·다음 실험 반영 | [연구·실증 운영 가이드](meta/self_reference_research_workflow_ko.md) | 활성 운영 가이드; `RESEARCH` 개발 `PARTIAL`; 기존 실패·SYSTEM 비교 목표 0 보존·후속 6응답 STATIC_ONLY 무결성/독립 감사 PASS·순서 변경 개선 미관측, 전체 수락 기준은 전역 큐 |
+| 자기 참조 실험·beta 이후 기존 GPT 검토·다음 실험 반영 | [연구·실증 운영 가이드](meta/self_reference_research_workflow_ko.md) | 활성 운영 가이드; `RESEARCH` 개발 `PARTIAL`; 6응답 STATIC_ONLY 개선 미관측·5bd 게시/검토와 증거 보고 Task 코드 `PREPARED`/QEMU 두 시도 FAIL 구분, 전체 수락 기준은 전역 큐 |
 | AI가 읽는 상태·가능한 행동·거부 이유 | [에이전트 운용 계약](autonomy/agent_operating_contract_ko.md) | 계약 요구와 현재 구현 경계 |
 | 관리 의미와 source 결속 | [Kernel Room 관리 모델](kernel-room/kernel_room_management_model_ko.md), [H1 trace/replay](os/h1_binding_trace_replay_workplan_ko.md) | 관리 정본·분야별 계약 |
 | 부팅, 고유 CLI, 하드웨어·인터넷 | [운영 이미지](os/aios_operating_image_guide_ko.md), [CLI·인터넷](os/aios_cli_internet_guide_ko.md) | 실행·검증 가이드; Linux-hosted `PARTIAL` |
 | 실제 모델·서비스·자원 관계 | [MAIN](os/aios_agent_binding_guide_ko.md), [backend](os/aios_backend_lifecycle_guide_ko.md), [Cell](os/aios_cell_lifecycle_guide_ko.md), [자원](os/aios_resource_observation_guide_ko.md) | 각 계약·증거의 소유 가이드 |
-| MAIN 환경 문맥과 UUID Task의 접수·조회·결과·취소 | [환경 문맥](os/aios_space_context_guide_ko.md) | v0.10 `PARTIAL`; Windows 전체·Linux fixture 결과와 한정 실제 모델 TaskSmoke PASS·미완료 image39를 구분 |
+| MAIN 환경 문맥과 UUID Task의 접수·조회·결과·취소 | [환경 문맥](os/aios_space_context_guide_ko.md) | v0.10 `PARTIAL`; 한정 실제 모델 TaskSmoke PASS와 새 증거 보고·저장·재확인 Task 코드 `PREPARED`/실행 FAIL, 미완료 image39를 구분 |
 | 검증 판정과 실제 명령 | [검증 도구 진화 설계](tools/verification_tooling_evolution_design_ko.md), [Testkit 가이드](tools/testkit_guide_ko.md) | 검증 정본·운영 가이드 |
 | 문서 검토 범위와 다시 확인할 조건 | [문서 신선도 원장](meta/document_freshness_registry_ko.md) | 사람용 검토 메타데이터 |
 
@@ -96,7 +96,7 @@
 - [aios_userspace_boot_hardware_guide_ko.md](os/aios_userspace_boot_hardware_guide_ko.md) — 활성 운영 가이드; 독자 AIOS·Linux 드라이버 경계와 시작 로그·하드웨어 관측
 - [aios_service_lifecycle_guide_ko.md](os/aios_service_lifecycle_guide_ko.md) — 활성 운영 가이드; CLI와 분리된 CONSOLE_RUNTIME의 시작·중지·재시작·세대 증거, SUPPORTING/PARTIAL
 - [aios_agent_binding_guide_ko.md](os/aios_agent_binding_guide_ko.md) — 활성 운영 가이드; 실제 MAIN 모델 요청·hosted authority 결속·재결속과 실행 증거, DIRECT/PARTIAL
-- [aios_space_context_guide_ko.md](os/aios_space_context_guide_ko.md) — 활성 개발 계약·운영 가이드; MAIN의 명시적 환경 갱신·질문 문맥·신선도·실제 모델 소비 검증. v0.10 PARTIAL, 한정 실제 모델 TaskSmoke PASS와 source별 과거 기록·미완료 image39 구분
+- [aios_space_context_guide_ko.md](os/aios_space_context_guide_ko.md) — 활성 개발 계약·운영 가이드; MAIN의 환경 갱신·질문 문맥·실제 모델 소비 검증. v0.10 PARTIAL, 한정 TaskSmoke PASS와 새 증거 보고·저장·재확인 Task 코드 PREPARED/실행 FAIL·미완료 image39 구분
 - [aios_resource_observation_guide_ko.md](os/aios_resource_observation_guide_ko.md) — MAIN/backend 명시적 관계·CPU/RSS 및 system PSI 관측의 계약과 검증, DIRECT/PARTIAL
 - [aios_cell_lifecycle_guide_ko.md](os/aios_cell_lifecycle_guide_ko.md) — 활성 계약·운영 가이드; Cell 1 활성/비활성·관리 세대·명시적 재결속, DIRECT/PARTIAL
 - [aios_backend_lifecycle_guide_ko.md](os/aios_backend_lifecycle_guide_ko.md) — 활성 계약·운영 가이드; backend 수명·실제 요청 대상 결속·동일 CLI recover, DIRECT/PARTIAL
@@ -125,7 +125,7 @@
 ## meta/ — 점검 보고서 · 로드맵 · 외부 사례 · 릴리스
 - [aios_product_direction_ko.md](meta/aios_product_direction_ko.md) — 활성 제품 방향 정본; 로컬 효율·작업 공간·지속 상호작용의 의미와 성공 기준
 - [integrated_work_guide_ko.md](meta/integrated_work_guide_ko.md) — 저장소 전체 작업 진입·라우팅과 문서 관리 가이드
-- [self_reference_research_workflow_ko.md](meta/self_reference_research_workflow_ko.md) — 활성 연구·실증 운영 가이드; 실제 증거·beta·기존 GPT 검토의 반복 절차와 첫 sandbox 실험 계약, 전역 큐 아님
+- [self_reference_research_workflow_ko.md](meta/self_reference_research_workflow_ko.md) — 활성 연구·실증 운영 가이드; 실제 증거·beta·기존 GPT 검토의 반복 절차와 5bd readout 이후 E0 Task 준비 경계, 전역 큐 아님
 - [document_freshness_registry_ko.md](meta/document_freshness_registry_ko.md) — 활성 검토 원장; 주요 문서의 역할·검토 범위·재검토 조건·담당 분야
 - [maturity_levers_backlog_ko.md](meta/maturity_levers_backlog_ko.md) — 활성 지원 문서; SUPPORTING/ORTHOGONAL 품질 후보와 역사적 진단, 전역 큐 아님
 - [codex_handoff_tips_ko.md](meta/codex_handoff_tips_ko.md)
