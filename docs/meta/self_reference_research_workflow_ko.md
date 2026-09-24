@@ -2,8 +2,8 @@
 
 > 문서 역할: 연구·실험·외부 검토의 운영 가이드
 > 문서 수명주기: 활성
-> 마지막 내용 검토: 2026-09-13 — schema v2 prompt 비교 구현·실제 24응답·독립 감사와 행동 목표 미달 대조
-> 관리 모델과의 관계: `RESEARCH`; 개발 구현 `PARTIAL`. 기존 실패 보존, 새 prompt 비교 무결성·독립 감사 PASS와 두 조건 목표 0·개선 미관측 분리
+> 마지막 내용 검토: 2026-09-24 — bfea CI·GPT06 범위와 고정 상태 6응답 STATIC_ONLY 진단/독립 감사·238개 검사 대조
+> 관리 모델과의 관계: `RESEARCH`; 개발 구현 `PARTIAL`. 기존 실패·목표 미달 보존, 순서 변경 진단의 실행 무결성과 행동·귀속 개선 미관측 분리
 
 이 가이드는 원래 AIOS 구상을 작은 실제 실험으로 검증하고 결과를 다음 개발에 반영하는
 절차를 소유한다. 제품 목적은 [제품 방향 정본](aios_product_direction_ko.md), 유일한
@@ -52,7 +52,7 @@ GPT가 더 그럴듯한 설명을 하거나 동일 동작을 반복한다는 이
 
 ## 3. 연구 실험의 현재 계약 — `RESEARCH` / `PARTIAL`
 
-개발 도구는 아래 여섯 파일에 있다. 첫 실제 pilot은 측정 문제 발견 후 중단되었으며
+개발 도구는 아래 여덟 파일에 있다. 첫 실제 pilot은 측정 문제 발견 후 중단되었으며
 원본 FAIL/NOT_EVALUABLE을 §5에 보존한다. 입력을 정정한 calibration-01은
 실행 무결성 PASS로 끝났지만 두 모델 조건의 확인된 목표 완료는 0이다. 원본 계약·결과는
 §5.2가 소유한다. scorer v2의 Windows 검사와 실제 grammar probe 독립 감사는 §6에
@@ -60,7 +60,9 @@ GPT가 더 그럴듯한 설명을 하거나 동일 동작을 반복한다는 이
 0이며, OFF는 관계 표현 episode 미완료로 FAIL/NOT_EVALUABLE이다. 전체 ON/OFF 효과
 비교는 NOT_EVALUABLE이다. 이어 별도 schema v2 prompt 비교를 구현해 새 두 episode를
 실행했다. 무결성·독립 감사는 PASS지만 두 조건 모두 목표 0이며 후보 개선을 관측하지
-못했다(§7). 전체 pilot·Linux Task 통합·제품 목표 완료로 확대하지 않는다.
+못했다(§7). 후속 고정 상태의 순서 진단은 새 6응답·실행 무결성·독립 감사 PASS지만 두 조건의
+행동·귀속 개선은 미관측이다(§8). 실제 효과 없는 `STATIC_ONLY`이며 전체 pilot·
+Linux Task 통합·제품 목표 완료로 확대하지 않는다.
 연결 확인 한 번의 HTTP 응답은 출력 계약·행동 결과·전체 비교의 통과를 대신하지 않는다.
 GPT가 별도로 제안한 8-case 구성과 별도 evidence 참조 출력은 현재 구현에 포함되지 않는다.
 
@@ -72,6 +74,8 @@ GPT가 별도로 제안한 8-case 구성과 별도 evidence 참조 출력은 현
 | pinned backend의 소유·요청·원문·종료 보존 | [self_reference_model.py](../../tools/research/self_reference_model.py) |
 | 보존 묶음·모델 원문·집계의 독립 재생 | [self_reference_replay.py](../../tools/research/self_reference_replay.py) |
 | 고정된 출력 형식 언어; 실제 backend 적용은 별도 확인 | [self_reference_grammar.py](../../tools/research/self_reference_grammar.py) |
+| 고정 공개 문맥 세 상태·두 직렬화 순서의 6호출 진단; World 효과 없음 | [self_reference_readout.py](../../tools/research/self_reference_readout.py) |
+| 원본·입력 변환·6호출·원문·정적 채점·비용·cleanup의 독립 재생 | [self_reference_readout_replay.py](../../tools/research/self_reference_readout_replay.py) |
 
 Windows CPU의 모델은 같은 `aios-qwen3-0.6b-q8_0`로 고정한다. schema v1은
 두 표현 조건을, schema v2는 같은 관계 표현에서 두 SYSTEM을 비교한다.
@@ -191,6 +195,67 @@ Windows/Linux OS ACL을 구현·검증한 것으로 부르지 않는다.
 실패일 수 있다. 예약/반환, completion HTTP receipt, 확인된 HTTP 200 원문, 끝나지 않거나
 decision에 연결되지 않은 꼬리를 각각 집계한다. 실패 꼬리는 진단으로 보존하고 부분
 episode를 완결된 비교로 합치지 않는다. 실제 첫 실행 결과는 §7에 기록한다.
+
+### 3.4 고정 공개 문맥의 순서 진단 — `frozen-readout-order-v1`
+
+2026-09-24 구현 계약 대조: 별도
+[self_reference_readout.py](../../tools/research/self_reference_readout.py)와
+[self_reference_readout_replay.py](../../tools/research/self_reference_readout_replay.py)는
+`schema_version=1/kind=static-public-context-readout`, `relationship=RESEARCH`,
+`evaluation_scope=STATIC_ONLY`를 사용한다. 이는 §3.3의 두 episode 계획과 구분되는
+고정 상태의 결정 출력 진단이다. World를 생성하거나 제안 행동을 실행하지 않으며,
+실제 목표 완료·gate 거부·행동 결과 일치 지표를 만들지 않는다.
+
+원본은 §7의 `action-progress-v1` run
+`9d42a778-ed01-470c-8033-5c62f7ee7e58` 전체 289파일이다. 원본 경로·raw SHA256의
+canonical manifest는 `6575e701107dd78a16d3a254a15a02abed8989a4295b3b53e5322965627e6ed8`로
+고정하며, 독립 재생을 통과한 원본의 byte 사본을 새 묶음의 `origin/`에 보존한다.
+원본 파일은 변경하지 않는다. 후보 `action-first-public-feedback-v1`의 decision
+001·002·012, 즉 context step 0·1·11을 S0·S1·S11로 선택하고 각각의 raw decision,
+context와 user hash를 design·입력 파일·호출 슬롯에 연결한다.
+
+| 조건 | 실제 모델 입력 |
+|---|---|
+| C0 | 해당 원본 decision의 user 문자열을 UTF-8 byte 그대로 사용 |
+| C1 | 같은 user에서 `observation` 블록만 `history` 바로 앞으로 이동; 다른 필드의 상대 순서·모든 값·history 순서·하위 객체 byte 보존 |
+
+원래 순서는 `channel, goal, history, identity, last_result, last_set_step, observation, schema_version, step`이다.
+C1은 `channel, goal, observation, history, identity, last_result, last_set_step, schema_version, step`이다.
+같은 사실임을 확인하는 canonical hash와 순서를 비교하는 실제 user byte hash를
+분리한다. 조건 이름·정답·점수·새 설명을 모델 입력에 추가하지 않고, 새 출력도 이후
+입력의 history에 넣지 않는다. history 삭제는 채택하지 않았다.
+
+SYSTEM은 §7의 후보 literal hash
+`cefb9168c4aa5ed20319a9d0b6e25f17db80870a03cb7b8df53e79558784390c`로 고정한다.
+같은 모델·backend pin, CPU2·context 2048·출력 192·temperature 0·seed 1·
+`cache_prompt=false`·`stream=false`와 504조합의 고정 grammar를 유지한다.
+각 원시 응답의 전체 generation settings는 원본 비교에서 독립 검증한 설정과 대조한다.
+
+호출 순서는 **S0C0 → S0C1 → S1C1 → S1C0 → S11C0 → S11C1**이다.
+양쪽 조건 모두 새 응답을 받으며 과거 응답을 control로 재사용하지 않는다.
+모델 wrapper 진입 전 슬롯을 예약하고 **최대 6회 진입·재시도 0회**를 강제한다.
+별도 모델 warm-up이나 probe를 추가하지 않는다. 예약·반환/예외·실제 completion HTTP
+원문·readout 연결은 따로 집계하고 tokenizer 요청도 raw 증거에 보존한다.
+상태별 action/revision 적합성·attribution·둘의 동시 적합성, 선택한 행동의 공개 예측과
+원문 비용을 각각 기록한다. 올바른 예측만으로 올바른 행동 선택을 인정하지 않는다.
+
+의미가 틀려도 출력 계약이 유효하면 예정된 다음 슬롯으로 진행한다. 전송·생성 한도·
+출력 계약·source/settings·증거 연결·cleanup 실패에는 자동 재시도 없이 중단하고
+전체 비교를 `NOT_EVALUABLE`로 남긴다. 독립 consumer는 생산자 FAIL의 부분 결과를
+재생 PASS로 바꾸지 않으며 원시 실패 진단과 미확정 비용을 별도로 보존한다.
+consumer 자체의 계약 불일치는 `FAIL`이다.
+
+runtime source manifest는 기존 model/replay/contract/grammar와 새 producer/consumer
+6개다. 독립 consumer는 고정한 로컬 replay/contract만 import하고, 생산자·World·모델이나
+artifact 안의 Python을 실행하지 않는다. 원본 289파일, 선택된 세 상태, byte 단위 입력
+변환, 여섯 슬롯과 HTTP·점수·비용·cleanup을 독립 대조한 뒤 전체 파일과 source의
+불변·목록을 다시 확인한다. 실제 실행의 완료 여부와 결과는 이 구현 계약만으로
+판정하지 않는다.
+
+세 상태는 모두 마지막 writer가 null이다. UNKNOWN을 맞혀도 null 처리의 관찰이며
+SELF/OTHER 일반 구별 능력의 증거가 아니다. SET을 제안해도 실제 적용·재관측·피드백
+수정은 시험하지 않은 상태다. 세 상태·각 조건 한 번의 차이나 무차이를 일반적인
+표현 우열·attention 원인·모델 능력으로 확대하지 않으며 장기 단계 2를 완료하지 않는다.
 
 ## 4. 판정·실행 경로·보존
 
@@ -622,3 +687,123 @@ HTTP 원문·점수·비용과 cleanup을 대조했다. 소유 backend PID 35660
 새 실험 구현·성과는 아직 PLANNED다. normal의 이번 결과로 개입 6-case/18-episode 비교,
 실제 AIOS 증거 보고 Task·Linux Task 통합, 전체 다섯 단계, 가중치 적응·native/OS 권한이나
 의식·제품 목표 완료를 선언하지 않는다. 새 schema v2 게시 SHA의 CI는 별도 확인 대상이다.
+
+### 7.4 bfea 게시 검증과 GPT round06 — 보존 증거의 후속 대조
+
+2026-09-24 내용 검토: §7.1–§7.3은 2026-09-13 실행·게시 전 경계를 보존한 기록이다.
+그 뒤 게시한 `bfea21d648db635f14848f54fa53c20ba6af5db3`에는 실행 당시 연구 runtime·검사
+14개와 동일한 소스가 들어 있다. 이 byte 결속은 새 SHA를 checkout해 모델을 다시
+실행했다는 뜻이 아니다. 게시 후 두 원격 CI와 기존 GPT의 검토를 아래 범위로 구분한다.
+
+| 해당 beta의 CI | terminal 상태 | 연구 검사 | 보존·독립 대조 범위 |
+|---|---|---|---|
+| [34756076634](https://github.com/tjwlstj/aios-kernel/actions/runs/34756076634) | 7/7 job success | Windows 191 PASS, 72.066초; Linux 190 PASS·Windows 조건 1 skip, 4.851초 | 9 artifact identity·8 ZIP의 provider digest, 추출 233파일과 게시 source/contract 36개 불변; 아래 독립 재생 |
+| [34756077256](https://github.com/tjwlstj/aios-kernel/actions/runs/34756077256) | 7/7 job success | Windows 191 PASS, 67.402초; Linux 190 PASS·Windows 조건 1 skip, 6.119초 | 별도 API·7 job 로그·9 artifact identity 확인; ZIP 다운로드·독립 재생은 하지 않음 |
+
+두 run은 같은 workflow와 beta push SHA, 각각 attempt 1인 별개 실행이다. 중복 발생
+원인은 이 증거에서 추론하지 않는다. 주 실행의
+`build/self-reference-beta-ci-audit-03/verification.json`과 `supplemental-receipt.json`,
+보조 실행의 `secondary-run/verification.json`에 범위를 보존했다. Windows의 실제
+8.3 TEMP 경로 회귀도 통과했다. 주 실행의 양쪽 rules 묶음은 각각 80파일·6 episode·
+27 decision·모델 호출 0으로 독립 재생 PASS이며 source 5개를 게시 byte와 대조했다.
+H1 양쪽 12/12 fixture·독립 parity와 hosted live boot의 READY·exit 0도 확인했다.
+kernel job·upload·provider metadata는 성공했지만 ISO ZIP은 내려받거나 로컬 재생하지
+않았다. CI의 rules/fixture 성공은 실제 모델 행동 개선이나 새 readout source의 CI를
+대신하지 않는다.
+
+기존 GPT 연구 대화의 round06 원문은 `build/research-correspondence-06/reply.md`에
+보존했다. GPT가 직접 검토한 범위는 제공된 producer/replay diff, 두 SYSTEM,
+각 profile의 decision 1·2·12 응답과 context, report·감사 요약이다. 전체 source
+14개·추가 검사 본문·원본 HTTP/cleanup·감사 도구·원격 CI는 직접 확인하지 않았다.
+그 범위에서 새로 확정한 P1/P2 결함이나 성공 과장은 없다는 의견이며, 독립 실행
+PASS나 전체 코드 검토 판정으로 사용하지 않는다. CI는 검토 요청 당시 별도 확인
+중이었으므로 이후 terminal 성공을 GPT가 검증한 사실로 바꾸지 않는다.
+
+로컬 원문 진단 `build/self-reference-prompt-diagnosis-01/report.json`에서 두 조건의
+24개 출력 content는 같은 OBSERVE/SELF 결정이었다. 첫 상태는 history가 비어 있으므로
+history 복사만으로 최초 SELF 오류를 설명할 수 없다. 원문은 EOS 종료·잘림 없음이고
+입력과 출력 상한의 합은 context 안에 있지만, 이를 문맥 길이의 영향이 없다는 증명으로
+해석하지 않는다. 원인 가설은 미확정이다.
+
+round06은 같은 공개 사실을 보존하고 `observation` 하나만 `history` 앞으로 옮기는
+§3.4의 최대 6호출 진단을 제안했다. 로컬에서는 source·계약·원본 실패와 대조해 이
+한 변경을 채택하고 history 삭제를 보류했다. 기존 여러 필드를 앞으로 옮기는 초안
+`build/self-reference-readout-design-01/design.md`는 미채택 이력으로 보존하며,
+최종 선택은 같은 디렉터리의 `selection.json`이 기록한다. 제안 채택·구현 계약과
+실제 모델 실행·독립 검증 완료는 별도 단계다. 장기 다섯 수락 기준과 실제 AIOS 증거
+보고 Task·Linux Task 통합의 미완료 범위는 그대로 유지한다.
+
+## 8. frozen-readout-order-v1 실제 진단 (2026-09-24)
+
+### 8.1 실행 source와 검사 경계
+
+실행 당시 HEAD는 `bfea21d648db635f14848f54fa53c20ba6af5db3`이며 readout 구현·검사와
+문서 변경이 있는 dirty checkout이었다. 생산자는
+`253cac832b90529b517e24d1a255ef36bfeeeab6c686c361f5703c8c808293e0`, 독립 consumer는
+`b95a55dc2a3f3d588e18b6962ea463c0a7184f114409fb2df521d8d5a65b6248`이다.
+기존 연구 runtime·검사 14개는 이전 실제 SYSTEM 비교 때의 byte와 같고 새 파일은
+producer/consumer·합성 fixture·검사 두 개다. 전체 연구 source/test 19개와 실제 실행의
+runtime manifest 6개는 서로 다른 범위다. 합성 fixture 검사는 실제 모델 호출이 아니며
+생산자의 원본 pin을 바꾸어 실제 증거로 사용하지 않는다.
+
+`build/self-reference-validation-06/report.json`과 `tests.stderr.txt`는 실제 Windows
+8.3 TEMP 별칭에서 **238개 수집·234 PASS·link 권한 조건 4 skip·978.276초**를
+기록한다. 호출자 전체 시간은 979.328초, exit 0이다. AST/공백·source 목록과 byte
+불변, 기존 14개의 과거 실제 실행과의 일치도 PASS다. 이 결과는 §7의 191개 검사나
+bfea 원격 CI를 소급 변경하지 않는다. 새 readout 게시 SHA의 CI는 별도 확인 대상이다.
+
+### 8.2 원본 결과 — 무결성 PASS, 순서 변경의 개선 미관측
+
+`build/self-reference-readout-01/report.json`의 run
+`51ad65ad-7081-4c90-8bb6-419e47f307f2`는 계획된 **6/6 readout**을 완료했다.
+`experiment_integrity=PASS`, `evaluation_scope=STATIC_ONLY`이며 producer 시간은
+119.938초다. 호출자 `build/self-reference-readout-run-01/receipt.json`은 exit 0·
+133.359초와 source 19개·원본 289파일·driver 불변을 기록한다.
+
+| 지표 | C0 원래 순서 | C1 observation을 history 앞으로 |
+|---|---:|---:|
+| 새 HTTP 200 / schema 유효 | 3 / 3 | 3 / 3 |
+| 출력 분포 | OBSERVE 3·SELF 3 | OBSERVE 3·SELF 3 |
+| action/revision 적합 / attribution 적합 / 동시 적합 | 1 / 0 / 0 | 1 / 0 / 0 |
+| 공개 예측 평가 가능 / 올바른 예측 | 3 / 3 | 3 / 3 |
+| prompt / generated token | 2,750 / 78 | 2,750 / 78 |
+| 모델 query 시간 | 56.703초 | 54.594초 |
+
+여섯 content byte 문자열은 모두 같은
+`{"action":"OBSERVE","expected_revision":null,"prediction":"OBSERVED","attribution":"SELF"}`다.
+각 상태의 C0/C1 입력은 다른 직렬화 순서지만 사실은 같으며 토큰 수도 각각
+S0 595·S1 952·S11 1,203으로 같았다. S0의 OBSERVE만 적절한 행동이고,
+관측을 가진 S1·S11에서는 SET이 필요했다. 모든 상태의 attribution 정답은 UNKNOWN이다.
+OBSERVE에 대한 올바른 공개 예측은 그 행동의 선택이나 귀속이 올바르다는 뜻이 아니다.
+
+호출 원장은 예약 6·반환 6·completion HTTP receipt/200 원문 6·readout 6이며,
+예외·미완료·전송 오류·미연결은 모두 0이다. 추가 호출·재시도는 없었다.
+전체 원문 비용은 prompt 5,500·generated 156 token·query 시간 111.297초이며,
+토큰·시간 미확정 기록은 없다. 조건별 한 번의 query 시간 차이를 효율 개선으로
+판정하지 않는다. 행동·귀속 판단에서 순서 변경의 개선은 관측하지 못했다.
+
+### 8.3 독립 감사와 남은 범위
+
+`build/self-reference-readout-audit-01/verification.json`과 `strict-replay.json`은
+**PASS**, 독립 감사 시간은 9.171초다. trusted 로컬 source 6개로 새 묶음 379파일의
+원본 연결·입력 변환·호출 원장·원시 HTTP·전체 generation settings·채점·집계·비용·
+cleanup을 대조했다. 새 묶음 379파일·호출자 26파일·별도 원본 289파일·현재 source
+19개·trusted source 6개와 driver는 감사 전후 불변이고 오류 목록은 비어 있다.
+원본 289파일의 이전 비교 재생도 PASS다. 보존 artifact 안의 생산자나 모델 코드를
+실행한 결과가 아니며 새 모델 호출을 추가하지 않았다.
+
+소유 backend PID 20552는 terminate 요청 뒤 회수됐고 kill 요청은 없었다.
+`host_termination`, exit 1, cleanup 오류 0이며 Windows의 소유 프로세스 정리 증거다.
+Linux 정상 종료·native 권한·물리적 실행 주체의 증명으로 확대하지 않는다.
+
+이번 결과는 세 고정 상태의 정적 출력 진단이다. World 효과·SET 이후 재관측·다음
+행동 수정·목표 완료를 시험하지 않았으며, 모든 writer가 null인 조건의 귀속 오류를
+보존한다. 순서가 일반적으로 무관하다거나 고정 모델의 능력 한계를 확정하지 않는다.
+기존 pilot/ON-OFF 실패와 SYSTEM 비교 목표 0도 그대로 유지한다.
+
+다음 한정 작업은 결과를 beta에 게시해 정확한 SHA의 CI와 보존 증거를 확인하고 기존
+GPT 연구 대화에서 검토한 뒤, 유용한 AIOS 증거 보고 Task의 입력·출력·사실 검증과
+실제 Task 연결의 선행조건을 대조하는 것이다. 추가 0.6B prompt 진단을 자동 반복하지
+않는다. 개발 구현은 `PARTIAL`이며 Task 설계·실제 연결·Linux 통합·행동 피드백과
+장기 다섯 수락 기준은 미완료다. §7.4의 bfea CI를 새 readout source의 원격 검증으로
+승계하지 않는다.

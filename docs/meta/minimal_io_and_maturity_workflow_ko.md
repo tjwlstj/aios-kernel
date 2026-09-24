@@ -1,6 +1,6 @@
 # AIOS 제품 성숙도와 전역 작업흐름
 
-최종 갱신: 2026-09-13 (v0.10 검증 기준선 보존·자기 참조 실증의 장기 완료 기준·실제 prompt 비교의 목표 미달·다음 원문 진단 정렬)
+최종 갱신: 2026-09-24 (v0.10 기준선·장기 다섯 수락 기준 보존·고정 상태 순서 진단의 개선 미관측·실제 증거 보고 Task 선행 대조 정렬)
 
 문서 역할: K/M/C/W/H축의 제품 성숙도와 전역 작업 우선순위 정본. 요청 분류,
 스킬·주제별 정본 선택, 문서 관리와 게시 절차는
@@ -235,7 +235,7 @@ GPT의 제안은 검토 입력이며 실행 판정이나 정본 변경 권위가
    fixture·실제 모델·보존 source 독립 재생 결과는 환경 문맥 가이드 §6.3이 소유한다.
    §6.1·§6.2의 원본 FAIL과 과거 재생·fixture는 보존한다. 두 번째 요청의 서버 도달·
    토큰 생성 중단이나 개별 slot 취소를 입증한 것으로 확대하지 않는다.
-2. **지금 — 반복 관측의 원문 진단과 다음 실험안 검토 (`RESEARCH`, 개발 `PARTIAL`):**
+2. **지금 — 고정 상태 진단의 게시·검토와 유용한 Task 연결 선행 대조 (`RESEARCH`, 개발 `PARTIAL`):**
    고정 Qwen·CPU2·grammar ON·relational·normal에서 현재 SYSTEM과 로컬 수정 후보
    하나를 새 두 episode로 비교했다. 각 12 decision·전체 query invocation 상한 24를
    지켰고 실제 24 HTTP 200 원문이 보존됐다. 실행 무결성과 289파일의 독립 감사는
@@ -244,13 +244,21 @@ GPT의 제안은 검토 입력이며 실행 판정이나 정본 변경 권위가
    NOT_EVALUATED_CALIBRATION이다. 고정 순서·각 1회 normal 비교로 광범위한 효과를
    판정하지 않는다. query 예약·실제 HTTP receipt·미확인 꼬리의 구분과 정확한 source·
    원문·비용은 연구 가이드 §3.3·§7이 소유한다.
-   현재 source의 Windows 191개 검사는 188 PASS·권한 조건 3 skip이다. 이전 b60의
-   7/7 CI PASS는 그 source의 증거이며 새 v2 source의 CI 완료를 대신하지 않는다.
+   이후 게시한 bfea의 두 CI는 각각 7/7 terminal success이며 감사 범위는 연구 가이드
+   §7.4에 구분했다. GPT round06의 제안은 전체 source·실행·CI를 직접 검증한 결과가 아니다.
+   관측 블록만 history 앞으로 옮기는 한 변경을 채택해 세 고정 상태의 두 조건을 새
+   6응답으로 비교했다. 실행 무결성·379파일 독립 감사 PASS지만 모두 OBSERVE/SELF로, 조건별 올바른
+   action/revision 1/3·귀속 0/3·동시 정답 0/3이며 순서 변경 개선은 미관측이다.
+   `STATIC_ONLY`로 실제 효과·재관측·목표 완료는 시험하지 않았다. 계약·비용·실행과
+   독립 감사의 범위는 연구 가이드 §3.4·§8이 소유한다. 현재 Windows 전체 검사는
+   238개 중 234 PASS·권한 조건 4 skip이며 source 19개는 불변이다. bfea CI를 이
+   후속 readout source의 원격 검증으로 승계하지 않는다.
    첫 pilot 실패·기존 ON/OFF NOT_EVALUABLE과 135/142개 검사·경로 수정 이력은 보존한다.
-   **다음 한정 작업:** 보존된 원시 응답과 action/attribution 분포, prompt/관측 연쇄를
-   진단하고 기존 GPT 연구 대화의 다음 실험안을 검토한다. 제안은 로컬 source·계약·
-   실패 증거와 대조해 채택·보류·기각하고 한 변경만의 다음 실험을 정한다.
-   새 실험 구현·성과는 PLANNED이며 이번 비교를 전체 6-case/18-episode 완료로 부르지 않는다.
+   **다음 한정 작업:** 결과를 beta에 게시하고 정확한 SHA의 CI·보존 증거를 확인한 뒤
+   기존 GPT 연구 대화에서 검토한다. 로컬 근거와 제안을 대조하고 유용한 AIOS 증거
+   보고 Task의 입력·출력·사실 검증과 실제 Task 연결의 선행조건을 확인한다.
+   추가 0.6B prompt 진단을 자동 반복하지 않는다. Task 설계·연결의 실증은 미완료이며
+   이번 정적 진단을 실제 행동 피드백이나 전체 6-case/18-episode 완료로 부르지 않는다.
    이것은 application-level sandbox 소유 검사로 canonical K5 principal/ownership/authorize나
    Windows/Linux OS ACL을 구현·증명하지 않는다.
 3. **pilot 이후 실제 사용 증거와 연구 반영:** pilot의 보존 결과를 beta와 기존 GPT

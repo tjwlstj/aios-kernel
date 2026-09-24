@@ -472,12 +472,20 @@ differs. Reservation, completion HTTP receipts and actual HTTP 200 responses are
 The actual run completed two episodes and 24 HTTP 200 responses; independent audit passed for
 289 raw files. Both profiles repeated OBSERVE/SELF 12 times, scored one correct action and zero
 correct attributions, and reached STEP_LIMIT with no observed goal. Candidate improvement was
-not observed; the verdict remains NOT_EVALUATED_CALIBRATION. The current frozen Windows suite
-collected 191 tests: 188 passed and three link-privilege tests skipped in 178.638 seconds.
-The prior b60 CI passed all seven jobs; it does not certify the new dirty-b60 lab/replay source.
-Next work is raw-output/action-distribution diagnosis and assessment of the existing GPT chat's
-next experiment proposal. A new experiment and its results remain PLANNED; a full 18-episode
-comparison and all five long-term acceptance stages remain incomplete.
+not observed; the verdict remains NOT_EVALUATED_CALIBRATION. The published bfea source passed
+two separate seven-job CI runs; the guide records their different artifact-audit scopes.
+The subsequent frozen-readout-order-v1 diagnostic moves only observation before history in
+three fixed contexts, makes six fresh queries with no retries, and executes no World effects.
+All six outputs remained OBSERVE/SELF. Both conditions scored action/revision 1/3 and attribution
+0/3; experiment integrity and independent audit passed for 379 files, while the evaluation
+remains STATIC_ONLY without a goal metric.
+The current frozen Windows suite collected 238 tests: 234 passed and four link-privilege tests
+skipped in 978.276 seconds. Its 19 research/test files were unchanged; the old 14 still match
+the prior actual run. The bfea CI does not certify this subsequent readout source.
+Next work is beta publication and scoped existing-GPT review, then design and prerequisite
+checks for a useful AIOS evidence-reporting Task and its actual connection. Do not automatically
+repeat additional 0.6B prompt diagnostics. A full 18-episode comparison, actual feedback effects,
+Linux Task integration and all five long-term acceptance stages remain incomplete.
 Application-level owner checks are neither canonical
 K5 authorization nor OS ACL enforcement. The [research operating guide](docs/meta/self_reference_research_workflow_ko.md)
 owns experiment and existing-GPT-review procedure; the global queue retains all five long-term

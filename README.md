@@ -33,8 +33,11 @@ FAIL/NOT_EVALUABLE을 보존했습니다. 입력 정정 후 calibration은 실�
 모델 두 조건의 확인된 목표 완료는 0입니다. 기존 ON/OFF 비교의 NOT_EVALUABLE도
 보존합니다. 새 schema v2는 SYSTEM만 바꾼 두 정상 episode·24 HTTP 200 응답과
 독립 감사 PASS를 확보했지만, 두 조건 모두 관측을 반복해 목표 0·후보 개선 미관측입니다.
-현재 Windows 검사는 191개 중 188 PASS·권한 조건 3 skip입니다. 다음 단계는 원시
-출력·행동 분포 진단과 기존 GPT의 다음 실험안 검토이며 새 실험 성과는 아직 없습니다.
+이후 관측 블록의 위치만 바꾼 고정 상태 6응답 진단도 두 조건의 출력이 모두 같아
+행동·귀속 개선을 관측하지 못했습니다. 실행 무결성·독립 감사 PASS이며 `STATIC_ONLY`로,
+실제 행동이나 목표 달성을 시험한 결과는 아닙니다. 현재 Windows 검사는 238개 중
+234 PASS·권한 조건 4 skip입니다. 다음은 beta·기존 GPT 검토와 실제 AIOS 증거를
+보고하는 유용한 Task의 설계·연결 선행조건 대조이며, 추가 prompt 진단을 자동 반복하지 않습니다.
 [실험 운영 가이드](docs/meta/self_reference_research_workflow_ko.md)는
 반복 연구·검토 절차를, [전역 큐](docs/meta/minimal_io_and_maturity_workflow_ko.md#self-reference-acceptance)는
 전체 다섯 단계 수락 기준을 소유합니다. 첫 pilot의 응용 owner 검사를 native 권한 구현으로 보지 않습니다.

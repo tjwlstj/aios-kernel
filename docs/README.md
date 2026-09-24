@@ -2,7 +2,7 @@
 
 > 문서 역할: 문서 탐색 색인
 > 문서 수명주기: 활성
-> 마지막 내용 검토: 2026-09-13 — v0.10 증거 경계 보존·자기 참조 실증 가이드와 전역 큐 진입 대조; 새 pilot 실행 판정 아님
+> 마지막 내용 검토: 2026-09-24 — v0.10 증거 경계 보존·자기 참조 6응답 STATIC_ONLY 진단과 전역 큐·연구 가이드 진입 대조
 
 이 파일은 `docs/` 아래 문서를 찾는 **단일 탐색 색인**이다. 제품 목적은
 [제품 방향 정본](meta/aios_product_direction_ko.md), 다음 작업은
@@ -20,7 +20,7 @@
 | 현재 구현, 빌드 명령, 저수준 불변식 | [CLAUDE.md](../CLAUDE.md) | 현재 구현 mirror·운영 기준 |
 | 파일 위치와 의존 방향 | [PROJECT.md](../PROJECT.md) | 도메인 맵 정본 |
 | 현재 전역 우선순위와 다음 작은 작업 | [성숙도 우선 작업흐름](meta/minimal_io_and_maturity_workflow_ko.md#agent-consumer-next) | 전역 작업 큐·성숙도 정본 |
-| 자기 참조 실험·beta 이후 기존 GPT 검토·다음 실험 반영 | [연구·실증 운영 가이드](meta/self_reference_research_workflow_ko.md) | 활성 운영 가이드; `RESEARCH` 개발 `PARTIAL`; 기존 ON/OFF NOT_EVALUABLE 보존·새 schema v2 prompt 비교/감사 PASS·두 조건 목표 0/개선 미관측, 전체 수락 기준은 전역 큐 |
+| 자기 참조 실험·beta 이후 기존 GPT 검토·다음 실험 반영 | [연구·실증 운영 가이드](meta/self_reference_research_workflow_ko.md) | 활성 운영 가이드; `RESEARCH` 개발 `PARTIAL`; 기존 실패·SYSTEM 비교 목표 0 보존·후속 6응답 STATIC_ONLY 무결성/독립 감사 PASS·순서 변경 개선 미관측, 전체 수락 기준은 전역 큐 |
 | AI가 읽는 상태·가능한 행동·거부 이유 | [에이전트 운용 계약](autonomy/agent_operating_contract_ko.md) | 계약 요구와 현재 구현 경계 |
 | 관리 의미와 source 결속 | [Kernel Room 관리 모델](kernel-room/kernel_room_management_model_ko.md), [H1 trace/replay](os/h1_binding_trace_replay_workplan_ko.md) | 관리 정본·분야별 계약 |
 | 부팅, 고유 CLI, 하드웨어·인터넷 | [운영 이미지](os/aios_operating_image_guide_ko.md), [CLI·인터넷](os/aios_cli_internet_guide_ko.md) | 실행·검증 가이드; Linux-hosted `PARTIAL` |
